@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcVigenciaEnd, diasRestantes, stackPaquete } from "./rules";
+import { calcVigenciaEnd, derivarEstado, diasRestantes, stackPaquete } from "./rules";
 
 describe("stackPaquete", () => {
   it("adds classes and days onto the current package (brief Q5)", () => {
@@ -64,5 +64,26 @@ describe("diasRestantes", () => {
   });
   it("is negative once expired", () => {
     expect(diasRestantes(new Date(2026, 4, 25), new Date(2026, 4, 27))).toBe(-2);
+  });
+});
+
+describe("derivarEstado", () => {
+  it("is activo with classes and time to spare", () => {
+    expect(derivarEstado({ clases: 8, dias: 20 })).toBe("activo");
+    expect(derivarEstado({ clases: "ilimitado", dias: 20 })).toBe("activo");
+  });
+  it("is por_vencer at <= 5 days left", () => {
+    expect(derivarEstado({ clases: 8, dias: 5 })).toBe("por_vencer");
+    expect(derivarEstado({ clases: "ilimitado", dias: 3 })).toBe("por_vencer");
+  });
+  it("is por_vencer at <= 2 classes left", () => {
+    expect(derivarEstado({ clases: 2, dias: 20 })).toBe("por_vencer");
+  });
+  it("is sin_clases when out of classes", () => {
+    expect(derivarEstado({ clases: 0, dias: 20 })).toBe("sin_clases");
+  });
+  it("is sin_clases when expired", () => {
+    expect(derivarEstado({ clases: 5, dias: 0 })).toBe("sin_clases");
+    expect(derivarEstado({ clases: 5, dias: -2 })).toBe("sin_clases");
   });
 });

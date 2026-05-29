@@ -5,7 +5,7 @@
 // "how the gym works"; screens/DAL call these, never reimplement them.
 // ──────────────────────────────────────────────────────────────
 
-import type { Clases, CompraPaquete, Saldo, Vigencia } from "./types";
+import type { Clases, CompraPaquete, EstadoCliente, Saldo, Vigencia } from "./types";
 
 /**
  * Buying a package early STACKS onto the current one (brief Q5):
@@ -46,4 +46,24 @@ export function diasRestantes(vence: Date, hoy: Date): number {
   const a = new Date(vence.getFullYear(), vence.getMonth(), vence.getDate());
   const b = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
   return Math.round((a.getTime() - b.getTime()) / 86_400_000);
+}
+
+/**
+ * Derive a client's lifecycle state from what's left (ADR-0002 — never
+ * stored). Replaces the stored `estado` field and the three conflicting
+ * threshold checks scattered across the mock screens.
+ *  - sin_clases: expired (dias <= 0) OR out of classes (clases <= 0)
+ *  - por_vencer: <= 5 days left OR <= 2 classes left (not ilimitado)
+ *  - activo: otherwise
+ */
+export function derivarEstado(saldo: Saldo): EstadoCliente {
+  const expirado = saldo.dias <= 0;
+  const sinClases = saldo.clases !== "ilimitado" && saldo.clases <= 0;
+  if (expirado || sinClases) return "sin_clases";
+
+  const pocosDias = saldo.dias <= 5;
+  const pocasClases = saldo.clases !== "ilimitado" && saldo.clases <= 2;
+  if (pocosDias || pocasClases) return "por_vencer";
+
+  return "activo";
 }
