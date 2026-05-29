@@ -44,9 +44,14 @@ describe("calcVigenciaEnd", () => {
     expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 4, 31]); // 31 may
   });
 
+  it("runs Ilimitado to Dec 31 (year stays the same)", () => {
+    const end = calcVigenciaEnd(new Date(2026, 11, 5), "mes"); // 5 dic
+    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 11, 31]);
+  });
+
   it("handles month-end for a short non-leap February", () => {
     const end = calcVigenciaEnd(new Date(2026, 1, 15), "mes");
-    expect(end.getDate()).toBe(28);
+    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 1, 28]);
   });
 });
 
