@@ -133,4 +133,19 @@ describe("renderPlantilla", () => {
   it("substitutes the datos_pago block", () => {
     expect(renderPlantilla("{datos_pago}", { datos_pago: "CLABE 123" })).toBe("CLABE 123");
   });
+  it("renders a realistic multi-token template body", () => {
+    const body =
+      "Hola {nombre} 👋\n\nTe quedan {clases} de tu paquete (*{paquete}*), vence {vence}. Datos: {datos_pago}";
+    expect(
+      renderPlantilla(body, {
+        nombre: "Andrea",
+        clases: "5 clases",
+        paquete: "Ilimitado",
+        vence: "02 jun",
+        datos_pago: "CLABE 123",
+      }),
+    ).toBe(
+      "Hola Andrea 👋\n\nTe quedan 5 clases de tu paquete (*Ilimitado*), vence 02 jun. Datos: CLABE 123",
+    );
+  });
 });

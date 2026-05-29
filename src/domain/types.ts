@@ -41,6 +41,8 @@ export interface PlantillaContext {
   nombre?: string;
   /** Pre-formatted display string (e.g. "5 clases" or "Ilimitado") — NOT a Clases count. */
   clases?: string;
+  /** The package name, e.g. "Ilimitado" — used by the recordatorio template. */
+  paquete?: string;
   vence?: string;
   dias?: string;
   precios?: string;
