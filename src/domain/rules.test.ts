@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, stackPaquete } from "./rules";
+import { calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, stackPaquete } from "./rules";
 
 describe("stackPaquete", () => {
   it("adds classes and days onto the current package (brief Q5)", () => {
@@ -115,5 +115,22 @@ describe("forfeit", () => {
   });
   it("leaves ilimitado untouched", () => {
     expect(forfeit("ilimitado", -1)).toBe("ilimitado");
+  });
+});
+
+describe("renderPlantilla", () => {
+  it("substitutes known tokens", () => {
+    expect(
+      renderPlantilla("Hola {nombre}, te quedan {clases}.", {
+        nombre: "Andrea",
+        clases: "5 clases",
+      }),
+    ).toBe("Hola Andrea, te quedan 5 clases.");
+  });
+  it("leaves unknown tokens intact so typos are visible", () => {
+    expect(renderPlantilla("Saldo {desconocido}", {})).toBe("Saldo {desconocido}");
+  });
+  it("substitutes the datos_pago block", () => {
+    expect(renderPlantilla("{datos_pago}", { datos_pago: "CLABE 123" })).toBe("CLABE 123");
   });
 });

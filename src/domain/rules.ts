@@ -5,7 +5,7 @@
 // "how the gym works"; screens/DAL call these, never reimplement them.
 // ──────────────────────────────────────────────────────────────
 
-import type { Clases, CompraPaquete, EstadoCliente, Saldo, Vigencia } from "./types";
+import type { Clases, CompraPaquete, EstadoCliente, PlantillaContext, Saldo, Vigencia } from "./types";
 
 /**
  * Buying a package early STACKS onto the current one (brief Q5):
@@ -85,4 +85,17 @@ export function consumirClase(clases: Clases): Clases {
 export function forfeit(clases: Clases, dias: number): Clases {
   if (clases === "ilimitado") return "ilimitado";
   return dias <= 0 ? 0 : clases;
+}
+
+/**
+ * Render a WhatsApp template body by substituting {token} placeholders from
+ * `ctx`. Unknown tokens are left intact so a typo is visible, not silently
+ * blanked. The single home for message rendering — screens must not
+ * hand-build message strings (replaces the two inline builders in the mock).
+ */
+export function renderPlantilla(body: string, ctx: PlantillaContext): string {
+  return body.replace(/\{(\w+)\}/g, (match, key: string) => {
+    const value = ctx[key as keyof PlantillaContext];
+    return value ?? match;
+  });
 }
