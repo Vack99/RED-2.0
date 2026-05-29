@@ -23,6 +23,7 @@ export function Sheet({
 
   React.useEffect(() => {
     if (open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional mount-on-open; unmount is deferred 320ms for the exit animation
       setMounted(true);
     } else {
       const t = setTimeout(() => setMounted(false), 320);

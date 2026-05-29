@@ -89,6 +89,7 @@ export function VenderScreen() {
     setSubmitting(true);
     await new Promise((r) => setTimeout(r, 700));
     setSubmitting(false);
+    // eslint-disable-next-line react-hooks/purity -- mock folio; replaced by a real DB sequence in the migration cycle (see docs/MIGRATION.md)
     const folio = 9100 + Math.floor(Math.random() * 800);
     const cliente =
       mode === "new"

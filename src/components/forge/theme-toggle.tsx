@@ -12,6 +12,7 @@ import { Icon } from "./icon";
 export function ThemeToggle() {
   const { resolvedTheme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- canonical one-time mount guard to avoid an SSR hydration mismatch (next-themes)
   React.useEffect(() => setMounted(true), []);
 
   const isLight = resolvedTheme !== "dark";
