@@ -20,4 +20,10 @@ describe("stackPaquete", () => {
       stackPaquete({ clases: 5, dias: 3 }, { clases: "ilimitado", dias: 30 }),
     ).toEqual({ clases: "ilimitado", dias: 33 });
   });
+
+  it("keeps classes ilimitado when both packages are ilimitado", () => {
+    expect(
+      stackPaquete({ clases: "ilimitado", dias: 10 }, { clases: "ilimitado", dias: 20 }),
+    ).toEqual({ clases: "ilimitado", dias: 30 });
+  });
 });

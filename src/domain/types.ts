@@ -39,6 +39,7 @@ export interface CompraPaquete {
  *  template body. See renderPlantilla. */
 export interface PlantillaContext {
   nombre?: string;
+  /** Pre-formatted display string (e.g. "5 clases" or "Ilimitado") — NOT a Clases count. */
   clases?: string;
   vence?: string;
   dias?: string;
