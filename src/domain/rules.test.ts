@@ -107,6 +107,9 @@ describe("forfeit", () => {
   it("forfeits remaining classes once expired (brief Q2)", () => {
     expect(forfeit(5, -1)).toBe(0);
   });
+  it("forfeits classes on the expiry day itself (dias === 0)", () => {
+    expect(forfeit(5, 0)).toBe(0);
+  });
   it("keeps classes while still valid", () => {
     expect(forfeit(5, 3)).toBe(5);
   });
