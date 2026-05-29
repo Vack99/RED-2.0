@@ -3,6 +3,8 @@
 # `pnpm install` / `pnpm run dev` don't halt on ERR_PNPM_IGNORED_BUILDS.
 #   sharp        -> next/image optimization
 #   unrs-resolver -> eslint import resolver (oxc)
+#   esbuild      -> vitest's transpiler
 allowBuilds:
   sharp: true
   unrs-resolver: true
+  esbuild: true
