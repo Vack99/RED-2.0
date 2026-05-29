@@ -71,6 +71,8 @@ describe("derivarEstado", () => {
   it("is activo with classes and time to spare", () => {
     expect(derivarEstado({ clases: 8, dias: 20 })).toBe("activo");
     expect(derivarEstado({ clases: "ilimitado", dias: 20 })).toBe("activo");
+    expect(derivarEstado({ clases: 3, dias: 20 })).toBe("activo"); // just above the 2-class threshold
+    expect(derivarEstado({ clases: 8, dias: 6 })).toBe("activo"); // just above the 5-day threshold
   });
   it("is por_vencer at <= 5 days left", () => {
     expect(derivarEstado({ clases: 8, dias: 5 })).toBe("por_vencer");
