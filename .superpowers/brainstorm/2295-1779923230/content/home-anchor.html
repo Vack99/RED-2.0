@@ -1,0 +1,189 @@
+<h2>¿Cuál es el "ancla" de la pantalla principal?</h2>
+<p class="subtitle">El owner abre la app — ¿qué ve primero? Esta decisión define toda la arquitectura de información.</p>
+
+<style>
+  .phone-frame {
+    width: 240px;
+    height: 460px;
+    border: 2px solid #444;
+    border-radius: 24px;
+    margin: 0 auto;
+    overflow: hidden;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+  }
+  .phone-status {
+    height: 18px;
+    background: #222;
+    color: #fff;
+    font-size: 9px;
+    text-align: center;
+    line-height: 18px;
+  }
+  .phone-header {
+    padding: 8px 12px;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    font-weight: 600;
+    font-size: 13px;
+  }
+  .phone-body {
+    flex: 1;
+    padding: 8px;
+    overflow: hidden;
+  }
+  .row {
+    padding: 7px 8px;
+    margin-bottom: 4px;
+    background: #fff;
+    border-radius: 6px;
+    border: 1px solid #e8e8e8;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .row .avatar {
+    width: 22px; height: 22px;
+    border-radius: 50%;
+    background: #d4d4d4;
+    margin-right: 6px;
+  }
+  .row .name { flex: 1; font-size: 10px; }
+  .row .meta { font-size: 9px; color: #888; }
+  .pill {
+    font-size: 8px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    background: #e8f5e9;
+    color: #2e7d32;
+  }
+  .pill.warn { background: #fff3e0; color: #e65100; }
+  .pill.bad  { background: #ffebee; color: #c62828; }
+  .search {
+    background: #f0f0f0;
+    border-radius: 6px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+    font-size: 10px;
+    color: #888;
+  }
+  .section-label {
+    font-size: 9px;
+    color: #999;
+    text-transform: uppercase;
+    margin: 6px 2px 4px;
+    font-weight: 600;
+  }
+  .fab {
+    position: absolute;
+    bottom: 8px; right: 8px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: #1976d2;
+    color: #fff;
+    font-size: 18px;
+    text-align: center;
+    line-height: 36px;
+  }
+  .check-btn {
+    background: #1976d2;
+    color: #fff;
+    font-size: 9px;
+    padding: 3px 8px;
+    border-radius: 12px;
+  }
+  .today-banner {
+    background: #1976d2;
+    color: #fff;
+    padding: 8px 10px;
+    border-radius: 6px;
+    margin-bottom: 6px;
+  }
+  .today-banner .label { font-size: 8px; opacity: 0.85; }
+  .today-banner .big { font-size: 14px; font-weight: 600; }
+  .cards .card .card-image { padding: 16px 8px 8px; }
+  .cards .card .card-body { padding: 10px 12px 14px; }
+  .cards .card .card-body h3 { font-size: 14px; margin: 0 0 4px; }
+  .cards .card .card-body p { font-size: 11px; line-height: 1.4; }
+</style>
+
+<div class="cards">
+
+  <div class="card" data-choice="client" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="phone-frame" style="position: relative;">
+        <div class="phone-status">9:41</div>
+        <div class="phone-header">Clientes</div>
+        <div class="phone-body">
+          <div class="search">🔍 Buscar cliente...</div>
+          <div class="row"><div class="avatar"></div><div class="name">Ana García</div><span class="pill">5/8</span></div>
+          <div class="row"><div class="avatar"></div><div class="name">Carlos Méndez</div><span class="pill warn">2/8</span></div>
+          <div class="row"><div class="avatar"></div><div class="name">Diana Soto</div><span class="pill">11/12</span></div>
+          <div class="row"><div class="avatar"></div><div class="name">Eduardo Ruiz</div><span class="pill bad">0/8</span></div>
+          <div class="row"><div class="avatar"></div><div class="name">Fernanda L.</div><span class="pill">ilim.</span></div>
+        </div>
+        <div class="fab">+</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>A · Anclada en cliente</h3>
+      <p>Home = lista de clientes con sus saldos. Tap → ficha del cliente → "marcar asistencia". El owner piensa en términos de personas. Bueno para "¿cuántas clases le quedan a Ana?". Lento para "marcar 8 asistencias del día".</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="day" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="phone-frame" style="position: relative;">
+        <div class="phone-status">9:41</div>
+        <div class="phone-header">Hoy · mié 27 may</div>
+        <div class="phone-body">
+          <div class="today-banner">
+            <div class="label">Asistencias de hoy</div>
+            <div class="big">6 visitas</div>
+          </div>
+          <div class="search">🔍 Agregar asistencia...</div>
+          <div class="section-label">Hoy</div>
+          <div class="row"><div class="avatar"></div><div class="name">Ana García</div><div class="meta">7:00 am</div></div>
+          <div class="row"><div class="avatar"></div><div class="name">Carlos Méndez</div><div class="meta">7:02 am</div></div>
+          <div class="row"><div class="avatar"></div><div class="name">Diana Soto</div><div class="meta">7:05 am</div></div>
+          <div class="row"><div class="avatar"></div><div class="name">Fernanda L.</div><div class="meta">7:11 am</div></div>
+        </div>
+        <div class="fab">+</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>B · Anclada en día</h3>
+      <p>Home = "hoy". Quien viene se agrega arriba. El owner piensa en "¿quién está en el gym ahora mismo?". Rápido para check-in en vivo. Para ver un cliente específico, hay que buscar.</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="hybrid" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="phone-frame" style="position: relative;">
+        <div class="phone-status">9:41</div>
+        <div class="phone-header">Inicio</div>
+        <div class="phone-body">
+          <div class="today-banner">
+            <div class="label">Hoy · mié 27 may</div>
+            <div class="big">6 visitas · 2 vencen</div>
+          </div>
+          <div class="search">🔍 Buscar o agregar asistencia...</div>
+          <div class="section-label">Asistencias de hoy</div>
+          <div class="row"><div class="avatar"></div><div class="name">Ana García</div><div class="meta">7:00</div></div>
+          <div class="row"><div class="avatar"></div><div class="name">Carlos Méndez</div><div class="meta">7:02</div></div>
+          <div class="section-label">Clientes activos</div>
+          <div class="row"><div class="avatar"></div><div class="name">Diana Soto</div><span class="pill">11/12</span></div>
+          <div class="row"><div class="avatar"></div><div class="name">Eduardo R.</div><span class="pill bad">0/8</span></div>
+        </div>
+        <div class="fab">+</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>C · Híbrida (recomendada)</h3>
+      <p>Home = "hoy" arriba + clientes activos abajo. Una sola pantalla cubre los dos casos: marcar quien acaba de entrar (arriba) y revisar a un cliente sin buscar (abajo). Más densidad — bien para mobile-first.</p>
+    </div>
+  </div>
+
+</div>

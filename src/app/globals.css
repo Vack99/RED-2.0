@@ -1,0 +1,217 @@
+@import "tailwindcss";
+
+/* Enable class-based dark mode (next-themes toggles `.dark` on <html>). */
+@custom-variant dark (&:is(.dark *));
+
+/* ──────────────────────────────────────────────────────────────
+   Forge design tokens.
+   Ported 1:1 from the prototype's THEME_LIGHT / THEME_DARK (ui.jsx).
+   Light is the default theme (the user's design decision); `.dark`
+   overrides swap the whole surface/text/line palette in place.
+
+   Token roles:
+     yellow = FILL accent (bright; dark `ink` text reads on it both themes)
+     gold   = FOREGROUND accent text/icon (deep on light so it reads on white)
+     ink    = constant dark, used for content placed ON a yellow fill
+   ────────────────────────────────────────────────────────────── */
+:root,
+.light {
+  --canvas: #f4f2ed;
+  --surface: #ffffff;
+  --sunk: #e8e5de;
+  --line: #e2ded4;
+  --line-soft: #ece9e1;
+
+  --yellow: #e3a81f;
+  --gold: #8f6d09;
+  --yellow-dim: #caa23c;
+  --yellow-soft: rgba(227, 168, 31, 0.16);
+  --yellow-edge: rgba(143, 109, 9, 0.4);
+  --press-yellow: #f0bb45;
+
+  --silver: #6f6e69;
+  --silver-dim: #9b9a93;
+
+  --fg: #16150f;
+  --muted: #82807a;
+  --muted-soft: #bdbab2;
+
+  --green: #1f9d57;
+  --red: #d6443c;
+  --green-soft: rgba(31, 157, 87, 0.13);
+  --red-soft: rgba(214, 68, 60, 0.12);
+
+  --ink: #0a0a0a;
+  --glass: rgba(255, 255, 255, 0.78);
+  --scrim: rgba(24, 22, 16, 0.42);
+  --tab-bg: #ffffff;
+
+  /* page backdrop behind the centered app column on wide screens */
+  --backdrop: #e7e3d9;
+}
+
+.dark {
+  --canvas: #0a0a0a;
+  --surface: #141414;
+  --sunk: #070707;
+  --line: #1f1f1f;
+  --line-soft: #161616;
+
+  --yellow: #f5c542;
+  --gold: #f5c542;
+  --yellow-dim: #7a6020;
+  --yellow-soft: rgba(245, 197, 66, 0.14);
+  --yellow-edge: rgba(245, 197, 66, 0.42);
+  --press-yellow: #ffd54f;
+
+  --silver: #c5c5c5;
+  --silver-dim: #6e6e6e;
+
+  --fg: #fafafa;
+  --muted: #7a7a7a;
+  --muted-soft: #3f3f3f;
+
+  --green: #5cd47a;
+  --red: #ff5a5a;
+  --green-soft: rgba(92, 212, 122, 0.14);
+  --red-soft: rgba(255, 90, 90, 0.14);
+
+  --ink: #0a0a0a;
+  --glass: rgba(20, 20, 20, 0.72);
+  --scrim: rgba(0, 0, 0, 0.64);
+  --tab-bg: #0a0a0a;
+
+  --backdrop: #050505;
+}
+
+/* Map tokens → Tailwind utilities (bg-canvas, text-fg, border-line, …).
+   `inline` keeps them as var() references so they swap at runtime. */
+@theme inline {
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-sunk: var(--sunk);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+
+  --color-yellow: var(--yellow);
+  --color-yellow-dim: var(--yellow-dim);
+  --color-yellow-soft: var(--yellow-soft);
+  --color-yellow-edge: var(--yellow-edge);
+  --color-press-yellow: var(--press-yellow);
+  --color-gold: var(--gold);
+
+  --color-silver: var(--silver);
+  --color-silver-dim: var(--silver-dim);
+
+  --color-ink: var(--ink);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-muted-soft: var(--muted-soft);
+
+  --color-green: var(--green);
+  --color-green-soft: var(--green-soft);
+  --color-red: var(--red);
+  --color-red-soft: var(--red-soft);
+
+  --color-backdrop: var(--backdrop);
+
+  --font-sans: var(--font-outfit);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--backdrop);
+  color: var(--fg);
+  font-family: var(--font-outfit), system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Tabular numerals — used pervasively for stats, counts, money. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum", "ss01";
+}
+
+/* Hide scrollbars inside the app (matches the prototype's phone chrome). */
+.forge-scroll {
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.forge-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+/* fix textarea font inheritance (WhatsApp bubble composer, later) */
+textarea {
+  font-family: inherit;
+}
+
+/* ── Animations (ported from the prototype <style>) ── */
+@keyframes forge-enter {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes forge-flash {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+@keyframes forge-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes forge-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes forge-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

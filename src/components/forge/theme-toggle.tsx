@@ -1,0 +1,29 @@
+"use client";
+
+import { useTheme } from "next-themes";
+import * as React from "react";
+import { Icon } from "./icon";
+
+/**
+ * Sun/moon theme switch — the 38px bordered button used in the Cuenta
+ * app bar. Renders a stable placeholder until mounted to avoid a
+ * hydration mismatch on the resolved theme.
+ */
+export function ThemeToggle() {
+  const { resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => setMounted(true), []);
+
+  const isLight = resolvedTheme !== "dark";
+
+  return (
+    <button
+      onClick={() => setTheme(isLight ? "dark" : "light")}
+      aria-label={isLight ? "Cambiar a tema oscuro" : "Cambiar a tema claro"}
+      className="flex items-center justify-center border border-line bg-surface"
+      style={{ width: 38, height: 38, padding: 0, cursor: "pointer" }}
+    >
+      {mounted && <Icon name={isLight ? "moon" : "sun"} size={16} color="var(--gold)" />}
+    </button>
+  );
+}

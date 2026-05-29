@@ -1,0 +1,235 @@
+<h2>Síntesis — diseño refinado vs. minimalista</h2>
+<p class="subtitle">Después de cruzar brainstorm lateral + investigación de competencia + realidad operativa del dueño. Ambas opciones rechazan A (lista de clientes) y se anclan en "hoy" — la diferencia es cuánta info se muestra de un vistazo.</p>
+
+<style>
+  .phone-frame {
+    width: 270px;
+    height: 540px;
+    border: 2px solid #444;
+    border-radius: 26px;
+    margin: 0 auto;
+    overflow: hidden;
+    background: #fafafa;
+    display: flex;
+    flex-direction: column;
+    font-size: 11px;
+    position: relative;
+  }
+  .phone-status {
+    height: 18px;
+    background: #222;
+    color: #fff;
+    font-size: 9px;
+    text-align: center;
+    line-height: 18px;
+  }
+  .phone-header {
+    padding: 10px 12px;
+    background: #fff;
+    border-bottom: 1px solid #e0e0e0;
+    font-weight: 600;
+    font-size: 13px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .phone-header .date-sub { font-weight: 400; color: #888; font-size: 10px; }
+  .phone-body { flex: 1; padding: 8px; overflow: hidden; }
+  .kpi-strip {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .kpi {
+    flex: 1;
+    background: #fff;
+    border-radius: 6px;
+    padding: 6px 6px;
+    border: 1px solid #e8e8e8;
+    text-align: center;
+  }
+  .kpi .num { font-size: 14px; font-weight: 700; color: #1976d2; }
+  .kpi.warn .num { color: #e65100; }
+  .kpi.bad .num { color: #c62828; }
+  .kpi .lbl { font-size: 8px; color: #666; text-transform: uppercase; }
+  .search {
+    background: #fff;
+    border: 1.5px solid #1976d2;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    font-size: 11px;
+    color: #1976d2;
+    font-weight: 500;
+  }
+  .search.big {
+    padding: 14px 14px;
+    font-size: 13px;
+  }
+  .section-label {
+    font-size: 9px;
+    color: #999;
+    text-transform: uppercase;
+    margin: 8px 2px 4px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .row {
+    padding: 7px 8px;
+    margin-bottom: 4px;
+    background: #fff;
+    border-radius: 6px;
+    border: 1px solid #e8e8e8;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .row.checked { background: #f1f8f4; border-color: #c8e6c9; }
+  .row .avatar {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #cfd8dc, #b0bec5);
+    flex-shrink: 0;
+    color: #fff;
+    font-size: 10px;
+    text-align: center;
+    line-height: 26px;
+    font-weight: 600;
+  }
+  .row .name {
+    flex: 1;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .row .name .sub {
+    display: block;
+    font-size: 9px;
+    color: #888;
+    font-weight: 400;
+    margin-top: 1px;
+  }
+  .row .chips { display: flex; gap: 3px; flex-shrink: 0; }
+  .pill {
+    font-size: 8px;
+    padding: 2px 5px;
+    border-radius: 8px;
+    background: #e8f5e9;
+    color: #2e7d32;
+    font-weight: 600;
+  }
+  .pill.warn { background: #fff3e0; color: #e65100; }
+  .pill.bad  { background: #ffebee; color: #c62828; }
+  .pill.debt { background: #ffebee; color: #c62828; }
+  .pill.check { background: #2e7d32; color: #fff; }
+  .fab {
+    position: absolute;
+    bottom: 14px; right: 14px;
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: #1976d2;
+    color: #fff;
+    font-size: 24px;
+    text-align: center;
+    line-height: 44px;
+    box-shadow: 0 4px 12px rgba(25,118,210,0.4);
+  }
+  .stack-empty {
+    padding: 30px 12px;
+    text-align: center;
+    color: #aaa;
+    font-size: 10px;
+    background: #fff;
+    border-radius: 6px;
+    border: 1px dashed #ddd;
+  }
+  .annotations {
+    margin-top: 16px;
+    background: #f6f8fa;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border-left: 3px solid #1976d2;
+  }
+  .annotations h4 { margin: 0 0 6px; font-size: 12px; }
+  .annotations ul { margin: 0; padding-left: 18px; font-size: 11px; line-height: 1.5; }
+  .annotations li { margin-bottom: 2px; }
+  .cards .card .card-image { padding: 18px 8px 6px; }
+  .cards .card .card-body { padding: 12px 14px 16px; }
+  .cards .card .card-body h3 { font-size: 14px; margin: 0 0 6px; }
+  .cards .card .card-body p { font-size: 11px; line-height: 1.45; }
+</style>
+
+<div class="cards">
+
+  <!-- OPTION D: Refined Today (synthesis pick) -->
+  <div class="card" data-choice="refined" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="phone-frame">
+        <div class="phone-status">9:41</div>
+        <div class="phone-header">
+          <span>Hoy</span>
+          <span class="date-sub">mié 27 may</span>
+        </div>
+        <div class="phone-body">
+          <div class="kpi-strip">
+            <div class="kpi"><div class="num">6</div><div class="lbl">visitas</div></div>
+            <div class="kpi warn"><div class="num">2</div><div class="lbl">deben</div></div>
+            <div class="kpi bad"><div class="num">1</div><div class="lbl">vence</div></div>
+          </div>
+          <div class="search big">🔍 Marcar asistencia o buscar...</div>
+          <div class="section-label">Asistencias de hoy</div>
+          <div class="row checked"><div class="avatar">AG</div><div class="name">Ana García<span class="sub">7:00 am</span></div><div class="chips"><span class="pill check">✓</span></div></div>
+          <div class="row checked"><div class="avatar">CM</div><div class="name">Carlos Méndez<span class="sub">7:02 am</span></div><div class="chips"><span class="pill check">✓</span></div></div>
+          <div class="section-label">Clientes activos</div>
+          <div class="row"><div class="avatar">DS</div><div class="name">Diana Soto<span class="sub">vence 30 may</span></div><div class="chips"><span class="pill">11/12</span></div></div>
+          <div class="row"><div class="avatar">ER</div><div class="name">Eduardo Ruiz<span class="sub">paquete activo</span></div><div class="chips"><span class="pill debt">debe $750</span><span class="pill bad">0/8</span></div></div>
+          <div class="row"><div class="avatar">FL</div><div class="name">Fernanda L.<span class="sub">ilimitado</span></div><div class="chips"><span class="pill">∞</span></div></div>
+        </div>
+        <div class="fab">+</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>D · "Hoy" refinada (recomendada)</h3>
+      <p><b>Zonas:</b> KPIs arriba → buscador grande (acción primaria) → "asistencias de hoy" → "clientes activos" con saldos, deudas y vigencias visibles en la misma fila. Cubre el momento de la puerta (vistazo glanceable) y el post-clase (un tap para marcar). Backdating disponible al editar cualquier asistencia. Robar de Gymdesk + Glofox + PushPress Open Gym.</p>
+    </div>
+  </div>
+
+  <!-- OPTION E: The Stack (minimalist) -->
+  <div class="card" data-choice="stack" onclick="toggleSelect(this)">
+    <div class="card-image">
+      <div class="phone-frame">
+        <div class="phone-status">9:41</div>
+        <div class="phone-header">
+          <span>Tu Gym</span>
+          <span class="date-sub">mié 27 may</span>
+        </div>
+        <div class="phone-body">
+          <div class="search big" style="padding: 18px 14px; font-size: 14px;">🔍 Marca asistencia...</div>
+          <div class="section-label">Hoy · 4 visitas</div>
+          <div class="row checked"><div class="avatar">AG</div><div class="name">Ana García<span class="sub">7:00 am · 5/8</span></div></div>
+          <div class="row checked"><div class="avatar">CM</div><div class="name">Carlos Méndez<span class="sub">7:02 am · 2/8</span></div></div>
+          <div class="row checked"><div class="avatar">DS</div><div class="name">Diana Soto<span class="sub">7:05 am · 11/12</span></div></div>
+          <div class="row checked"><div class="avatar">FL</div><div class="name">Fernanda L.<span class="sub">7:11 am · ilim.</span></div></div>
+          <div class="stack-empty">El día sigue. Toca el buscador para agregar.</div>
+        </div>
+        <div class="fab">≡</div>
+      </div>
+    </div>
+    <div class="card-body">
+      <h3>E · "La Pila" minimalista</h3>
+      <p><b>Sin home, solo entrada:</b> un buscador gigante arriba, la pila del día crece abajo. La info de saldos y vencimientos vive en la búsqueda misma (mientras escribes ves el saldo). Sin "lista de activos" — para ver clientes que <i>no</i> vinieron hoy, hay que abrir el menú lateral. Más minimalista, más rápido en lo cotidiano, pero esconde la vista de "quién está cerca de vencer."</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="annotations">
+  <h4>Qué cambió respecto a la propuesta original</h4>
+  <ul>
+    <li><b>Murió A</b> (lista de clientes) — los 3 agentes coincidieron: entierra la acción primaria.</li>
+    <li><b>Murió C</b> (híbrida ingenua) — sin densidad de info por fila no sirve para el momento de la puerta.</li>
+    <li><b>Sobrevivió B</b>, pero enriquecida con: chips de saldo/deuda/vigencia por fila, strip de KPIs, y backdating inline (no un "modo batch" separado).</li>
+    <li><b>Domingo batch es fantasía</b> (insight de logística): si no se logueó en el momento, se pierde. Diseño optimiza in-the-moment, no retro.</li>
+    <li><b>Indicador de deuda</b> ("debe $X") es derivado — el cliente no lo pidió explícito pero "te pago mañana" es realidad constante.</li>
+    <li><b>Rechazos:</b> per-class roster (no hay schedule), QR self-check-in (no hay app cliente en v1), voz (ruido + fricción cultural), dashboard de KPIs primero (overkill para 1 operador).</li>
+  </ul>
+</div>

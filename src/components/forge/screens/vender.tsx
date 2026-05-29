@@ -1,0 +1,542 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { ForgeLockup } from "@/components/forge/brand";
+import { Icon, type IconName } from "@/components/forge/icon";
+import { Sheet } from "@/components/forge/sheet";
+import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
+import { usePaquetes, useClientes } from "@/lib/data/store";
+import type { Cliente, Paquete } from "@/lib/data/types";
+import { waLink } from "@/lib/format";
+
+type Mode = "new" | "existing";
+type Metodo = "Efectivo" | "Tarjeta" | "Transferencia" | "Por pagar";
+
+interface ReciboArgs {
+  folio: number;
+  cliente: { id: number; nombre: string; tel: string; inicial: string };
+  isNew: boolean;
+  paq: Paquete;
+  metodo: Metodo | null;
+  fecha: string;
+}
+
+const VIG_END: Record<string, string> = { "8": "16 JUN", "12": "21 JUN", ilim: "26 JUN" };
+
+export function VenderScreen() {
+  const router = useRouter();
+  const [paquetes] = usePaquetes();
+  const [clientes] = useClientes();
+
+  const [mode, setMode] = React.useState<Mode>("new");
+  const [nuevo, setNuevo] = React.useState({ nombre: "", tel: "" });
+  const [clientId, setClientId] = React.useState<number | null>(null);
+  const [sel, setSel] = React.useState<string | null>(null);
+  const [metodo, setMetodo] = React.useState<Metodo | null>(null);
+  const [openSection, setOpenSection] = React.useState<string | null>("cliente");
+  const [submitting, setSubmitting] = React.useState(false);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
+  const [pickerQuery, setPickerQuery] = React.useState("");
+  const [recibo, setRecibo] = React.useState<ReciboArgs | null>(null);
+
+  const existing = clientes.find((x) => x.id === clientId) ?? null;
+  const paq = sel ? paquetes.find((p) => p.id === sel) ?? null : null;
+  const vigenciaEnd = sel ? VIG_END[sel] ?? null : null;
+
+  const clienteValid =
+    mode === "new"
+      ? nuevo.nombre.trim().length >= 3 && nuevo.tel.replace(/\D/g, "").length >= 8
+      : !!existing;
+  const canSubmit = clienteValid && !!sel && !!metodo && !submitting;
+
+  const clienteSummary = (() => {
+    if (mode === "new") {
+      const n = nuevo.nombre.trim();
+      if (!n) return null;
+      return nuevo.tel.trim() ? `${n} · ${nuevo.tel.trim()}` : `${n} · Nuevo`;
+    }
+    return existing ? `${existing.nombre} · ${existing.tel}` : null;
+  })();
+  const paqueteSummary = paq ? `${paq.nombre.toUpperCase()} · $${paq.precio.toLocaleString("es-MX")}` : null;
+  const pagoSummary = metodo ? (metodo === "Por pagar" ? "POR PAGAR" : metodo.toUpperCase()) : null;
+
+  const toggle = (k: string) => setOpenSection((s) => (s === k ? null : k));
+
+  // Auto-advance once per section as it first completes.
+  const advanced = React.useRef({ cliente: false, paquete: false, metodo: false });
+  React.useEffect(() => {
+    if (clienteValid && !advanced.current.cliente && openSection === "cliente") {
+      advanced.current.cliente = true;
+      setTimeout(() => setOpenSection((s) => (s === "cliente" ? "paquete" : s)), 320);
+    }
+  }, [clienteValid, openSection]);
+  React.useEffect(() => {
+    if (sel && !advanced.current.paquete && openSection === "paquete") {
+      advanced.current.paquete = true;
+      setTimeout(() => setOpenSection((s) => (s === "paquete" ? "metodo" : s)), 320);
+    }
+  }, [sel, openSection]);
+  React.useEffect(() => {
+    if (metodo && !advanced.current.metodo && openSection === "metodo") {
+      advanced.current.metodo = true;
+      setTimeout(() => setOpenSection((s) => (s === "metodo" ? null : s)), 320);
+    }
+  }, [metodo, openSection]);
+
+  const finish = async () => {
+    if (!canSubmit || !paq) return;
+    setSubmitting(true);
+    await new Promise((r) => setTimeout(r, 700));
+    setSubmitting(false);
+    const folio = 9100 + Math.floor(Math.random() * 800);
+    const cliente =
+      mode === "new"
+        ? {
+            id: 999,
+            nombre: nuevo.nombre.trim() || "Cliente nuevo",
+            tel: nuevo.tel,
+            inicial:
+              nuevo.nombre.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase() || "CN",
+          }
+        : { id: existing!.id, nombre: existing!.nombre, tel: existing!.tel, inicial: existing!.inicial };
+    setRecibo({
+      folio,
+      cliente,
+      isNew: mode === "new",
+      paq,
+      metodo: metodo === "Por pagar" ? null : metodo,
+      fecha: "28 may",
+    });
+  };
+
+  const resetForm = () => {
+    setMode("new");
+    setNuevo({ nombre: "", tel: "" });
+    setClientId(null);
+    setSel(null);
+    setMetodo(null);
+    setOpenSection("cliente");
+    advanced.current = { cliente: false, paquete: false, metodo: false };
+    setRecibo(null);
+  };
+
+  if (recibo) {
+    return (
+      <Recibo
+        args={recibo}
+        onClose={resetForm}
+        onOtra={resetForm}
+        onVerCliente={(id) => router.push(`/clientes/${id}`)}
+      />
+    );
+  }
+
+  const filteredClients = clientes.filter(
+    (c) =>
+      !pickerQuery ||
+      c.nombre.toLowerCase().includes(pickerQuery.toLowerCase()) ||
+      c.tel.replace(/\D/g, "").includes(pickerQuery.replace(/\D/g, "")),
+  );
+
+  const missing: string[] = [];
+  if (!clienteValid) missing.push("cliente");
+  if (!sel) missing.push("paquete");
+  if (!metodo) missing.push("método");
+
+  return (
+    <div className="flex h-full flex-col bg-canvas">
+      <div className="flex items-center justify-between" style={{ padding: "14px 22px 4px" }}>
+        <Eyebrow>NUEVA VENTA</Eyebrow>
+        <div style={{ width: 38 }} />
+      </div>
+      <div style={{ padding: "20px 22px 28px" }}>
+        <H1 size={44}>
+          NUEVA
+          <br />
+          VENTA
+        </H1>
+      </div>
+
+      {/* Accordion */}
+      <div className="forge-scroll flex-1 overflow-auto">
+        <AccordionSection label="CLIENTE" summary={clienteSummary} emptyHint="Agregar cliente" complete={clienteValid} open={openSection === "cliente"} onToggle={() => toggle("cliente")}>
+          <ClienteEditor mode={mode} setMode={setMode} nuevo={nuevo} setNuevo={setNuevo} existing={existing} openPicker={() => setPickerOpen(true)} />
+        </AccordionSection>
+
+        <AccordionSection label="PAQUETE" summary={paqueteSummary} emptyHint="Elegir paquete" complete={!!sel} open={openSection === "paquete"} onToggle={() => toggle("paquete")}>
+          <PaqueteEditor paquetes={paquetes} sel={sel} setSel={setSel} vigenciaEnd={vigenciaEnd} />
+        </AccordionSection>
+
+        <AccordionSection label="MÉTODO" summary={pagoSummary} emptyHint="Elegir método" complete={!!metodo} open={openSection === "metodo"} onToggle={() => toggle("metodo")} last>
+          <MetodoEditor metodo={metodo} setMetodo={setMetodo} />
+        </AccordionSection>
+
+        <div style={{ height: 28 }} />
+      </div>
+
+      {/* Footer */}
+      <div className="bg-canvas" style={{ borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
+        <div className="flex items-baseline justify-between" style={{ marginBottom: 14 }}>
+          <Eyebrow>TOTAL</Eyebrow>
+          <Tnum className="font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
+            {paq ? `$${paq.precio.toLocaleString("es-MX")}` : <>$<span style={{ opacity: 0.6 }}>—</span></>}
+            <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 6, fontWeight: 600 }}>MXN</span>
+          </Tnum>
+        </div>
+        <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={finish}>
+          {submitting ? "PROCESANDO…" : paq ? `COBRAR $${paq.precio.toLocaleString("es-MX")}` : "CONFIRMAR VENTA"}
+        </Button>
+        {missing.length > 0 && (
+          <div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)", letterSpacing: 0.4, textAlign: "center" }}>
+            Falta {missing.join(" · ")}
+          </div>
+        )}
+      </div>
+
+      {/* Existing-client picker */}
+      <Sheet open={pickerOpen} onClose={() => setPickerOpen(false)}>
+        <div style={{ padding: "8px 22px 12px" }}>
+          <H1 size={22}>ELIGE CLIENTE</H1>
+        </div>
+        <div style={{ padding: "0 16px 12px" }}>
+          <Input icon="search" placeholder="Nombre o teléfono…" value={pickerQuery} onChange={setPickerQuery} autoFocus />
+        </div>
+        <div>
+          {filteredClients.length === 0 && (
+            <div style={{ padding: "40px 24px", textAlign: "center" }}>
+              <div className="uppercase font-extrabold" style={{ fontSize: 13, color: "var(--fg)", letterSpacing: 0.4 }}>Sin resultados</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>Crea un cliente nuevo en su lugar.</div>
+              <div style={{ marginTop: 14, display: "flex", justifyContent: "center" }}>
+                <Button variant="secondary" size="sm" icon="plus" onClick={() => { setPickerOpen(false); setMode("new"); }}>CAMBIAR A NUEVO</Button>
+              </div>
+            </div>
+          )}
+          {filteredClients.map((cc) => (
+            <button
+              key={cc.id}
+              onClick={() => { setClientId(cc.id); setMode("existing"); setPickerOpen(false); setPickerQuery(""); }}
+              className="flex w-full items-center text-left"
+              style={{ gap: 12, padding: "14px 22px", background: cc.id === clientId ? "var(--surface)" : "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }}
+            >
+              <Avatar initial={cc.inicial} size={36} />
+              <div className="min-w-0 flex-1">
+                <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{cc.nombre}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}><Tnum>{cc.tel}</Tnum> · {cc.paquete}</div>
+              </div>
+              {cc.id === clientId && <Icon name="check" size={16} color="var(--gold)" />}
+            </button>
+          ))}
+        </div>
+      </Sheet>
+    </div>
+  );
+}
+
+function AccordionSection({
+  label,
+  summary,
+  emptyHint,
+  complete,
+  open,
+  onToggle,
+  children,
+  last,
+}: {
+  label: string;
+  summary: string | null;
+  emptyHint?: string;
+  complete: boolean;
+  open: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+  last?: boolean;
+}) {
+  return (
+    <div style={{ borderTop: "1px solid var(--line)", borderBottom: last ? "1px solid var(--line)" : "none" }}>
+      <button onClick={onToggle} className="flex w-full items-center justify-between text-left" style={{ padding: 22, background: "transparent", border: "none", cursor: "pointer", color: "var(--fg)", gap: 12 }}>
+        <div className="flex min-w-0 flex-1 flex-col" style={{ gap: 6 }}>
+          <div className="flex items-center" style={{ gap: 8 }}>
+            <Eyebrow color={open ? "var(--yellow)" : "var(--muted)"}>{label}</Eyebrow>
+            {complete && !open && <span style={{ width: 5, height: 5, borderRadius: 999, background: "var(--yellow)", opacity: 0.7 }} />}
+          </div>
+          {!open && summary && (
+            <span className="overflow-hidden font-semibold" style={{ fontSize: 16, color: "var(--fg)", letterSpacing: 0.2, textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{summary}</span>
+          )}
+          {!open && !summary && (
+            <span className="flex items-center font-medium" style={{ fontSize: 14, color: "var(--muted)", letterSpacing: 0.2, gap: 6 }}>
+              {emptyHint || "Sin completar"}
+              <Icon name="arrow" size={11} color="var(--muted)" />
+            </span>
+          )}
+        </div>
+        <div className="flex items-center justify-center" style={{ width: 30, height: 30, transition: "transform 220ms ease", transform: open ? "rotate(90deg)" : "rotate(0deg)" }}>
+          <Icon name="chev" size={14} color="var(--muted)" />
+        </div>
+      </button>
+      {open && <div style={{ padding: "4px 22px 28px", animation: "forge-enter 220ms ease both" }}>{children}</div>}
+    </div>
+  );
+}
+
+function ClienteEditor({
+  mode,
+  setMode,
+  nuevo,
+  setNuevo,
+  existing,
+  openPicker,
+}: {
+  mode: Mode;
+  setMode: (m: Mode) => void;
+  nuevo: { nombre: string; tel: string };
+  setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string }>>;
+  existing: Cliente | null;
+  openPicker: () => void;
+}) {
+  return (
+    <>
+      <div className="flex" style={{ marginBottom: 22, borderBottom: "1px solid var(--line)" }}>
+        {([{ k: "new", l: "NUEVO" }, { k: "existing", l: "EXISTENTE" }] as const).map((t) => {
+          const on = mode === t.k;
+          return (
+            <button
+              key={t.k}
+              onClick={() => setMode(t.k)}
+              className="flex-1 font-bold"
+              style={{ padding: "10px 0", marginBottom: -1, background: "transparent", border: "none", borderBottom: `2px solid ${on ? "var(--yellow)" : "transparent"}`, color: on ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.4, cursor: "pointer" }}
+            >
+              {t.l}
+            </button>
+          );
+        })}
+      </div>
+
+      {mode === "new" && (
+        <div className="flex flex-col" style={{ gap: 12 }}>
+          <Input placeholder="Nombre completo" value={nuevo.nombre} onChange={(v) => setNuevo((n) => ({ ...n, nombre: v }))} autoFocus />
+          <Input icon="phone" placeholder="614 000 0000" value={nuevo.tel} onChange={(v) => setNuevo((n) => ({ ...n, tel: v }))} suffix="MX" inputMode="tel" />
+        </div>
+      )}
+
+      {mode === "existing" &&
+        (existing ? (
+          <button onClick={openPicker} className="flex w-full items-center text-left" style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--line)", gap: 12, cursor: "pointer", color: "var(--fg)" }}>
+            <Avatar initial={existing.inicial} accent size={40} />
+            <div className="min-w-0 flex-1">
+              <div className="uppercase font-bold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{existing.nombre}</div>
+              <Tnum style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>{existing.tel}</Tnum>
+            </div>
+            <span className="font-bold" style={{ fontSize: 10, color: "var(--gold)", letterSpacing: 1.2 }}>CAMBIAR</span>
+          </button>
+        ) : (
+          <button onClick={openPicker} className="flex w-full items-center justify-center" style={{ padding: "22px 16px", background: "transparent", border: "1px dashed var(--line)", gap: 10, cursor: "pointer", color: "var(--gold)" }}>
+            <Icon name="search" size={16} color="var(--gold)" />
+            <span className="uppercase font-bold" style={{ fontSize: 12, letterSpacing: 1.2 }}>Elegir cliente</span>
+          </button>
+        ))}
+    </>
+  );
+}
+
+function PaqueteEditor({
+  paquetes,
+  sel,
+  setSel,
+  vigenciaEnd,
+}: {
+  paquetes: Paquete[];
+  sel: string | null;
+  setSel: (id: string) => void;
+  vigenciaEnd: string | null;
+}) {
+  return (
+    <div className="flex flex-col" style={{ gap: 8 }}>
+      {paquetes.map((p) => {
+        const on = sel === p.id;
+        return (
+          <button
+            key={p.id}
+            onClick={() => setSel(p.id)}
+            className="flex items-center justify-between text-left"
+            style={{ padding: 18, background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: "var(--fg)", cursor: "pointer", transition: "border-color 140ms ease" }}
+          >
+            <div className="flex flex-col" style={{ gap: 4 }}>
+              <div className="uppercase font-bold" style={{ fontSize: 16, letterSpacing: -0.1 }}>{p.nombre}</div>
+              <div className="uppercase" style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.8 }}>{on && vigenciaEnd ? `Hasta ${vigenciaEnd}` : p.vigencia}</div>
+            </div>
+            <Tnum className="font-extrabold" style={{ fontSize: 22, color: on ? "var(--yellow)" : "var(--fg)", letterSpacing: -0.4 }}>${p.precio.toLocaleString("es-MX")}</Tnum>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo: (m: Metodo) => void }) {
+  const opts: { k: Metodo; icon: IconName }[] = [
+    { k: "Efectivo", icon: "cash" },
+    { k: "Tarjeta", icon: "card" },
+    { k: "Transferencia", icon: "swap" },
+  ];
+  const porPagar = metodo === "Por pagar";
+  return (
+    <>
+      <div className="grid grid-cols-3" style={{ gap: 8 }}>
+        {opts.map((o) => {
+          const on = metodo === o.k;
+          return (
+            <button
+              key={o.k}
+              onClick={() => setMetodo(o.k)}
+              className="flex flex-col items-center"
+              style={{ padding: "18px 6px", background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: on ? "var(--yellow)" : "var(--fg)", cursor: "pointer", gap: 8, transition: "border-color 140ms ease" }}
+            >
+              <Icon name={o.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
+              <span className="uppercase font-bold" style={{ fontSize: 10.5, letterSpacing: 1.2 }}>{o.k}</span>
+            </button>
+          );
+        })}
+      </div>
+      <button
+        onClick={() => setMetodo(porPagar ? "Efectivo" : "Por pagar")}
+        className="flex items-center uppercase font-bold"
+        style={{ marginTop: 16, padding: 0, background: "transparent", border: "none", color: porPagar ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer", gap: 6 }}
+      >
+        <span className="flex items-center justify-center" style={{ width: 14, height: 14, border: `1.5px solid ${porPagar ? "var(--yellow)" : "var(--line)"}`, background: porPagar ? "var(--yellow)" : "transparent" }}>
+          {porPagar && <Icon name="check" size={9} color="var(--ink)" />}
+        </span>
+        Registrar como por pagar
+      </button>
+    </>
+  );
+}
+
+function Recibo({
+  args,
+  onClose,
+  onOtra,
+  onVerCliente,
+}: {
+  args: ReciboArgs;
+  onClose: () => void;
+  onOtra: () => void;
+  onVerCliente: (id: number) => void;
+}) {
+  const { folio, cliente: c, isNew, paq, metodo, fecha } = args;
+  const [showCheck, setShowCheck] = React.useState(false);
+  React.useEffect(() => {
+    const t = setTimeout(() => setShowCheck(true), 80);
+    return () => clearTimeout(t);
+  }, []);
+
+  const vigEnd = VIG_END[paq.id] ?? "—";
+  const wa = () => {
+    const nombre = c.nombre.split(" ")[0];
+    const msg = `Hola ${nombre} 👋\n\n¡Gracias por tu compra en Forge Bootcamp! Tu paquete *${paq.nombre}* queda activo del 27 mayo al ${vigEnd.toLowerCase()}.\n\nFolio · F-${folio}\nTotal · $${paq.precio} MXN${metodo ? ` · ${metodo}` : ""}\n\nNos vemos en el bootcamp. 💪🔥`;
+    window.open(waLink(c.tel, msg), "_blank");
+  };
+
+  const perf = "repeating-linear-gradient(to right, var(--canvas) 0 4px, transparent 4px 10px)";
+
+  return (
+    <div className="flex h-full flex-col bg-canvas">
+      <div className="flex items-center justify-between" style={{ padding: "14px 16px 8px" }}>
+        <div style={{ width: 56 }} />
+        <Eyebrow color="var(--gold)">VENTA CONFIRMADA</Eyebrow>
+        <button onClick={onClose} className="font-bold" style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer" }}>CERRAR</button>
+      </div>
+
+      <div className="forge-scroll flex-1 overflow-auto" style={{ padding: "12px 0 24px" }}>
+        <div className="flex justify-center" style={{ padding: "20px 22px 12px" }}>
+          <div
+            className="flex items-center justify-center"
+            style={{ width: 84, height: 84, background: "var(--yellow)", transform: showCheck ? "scale(1)" : "scale(0.4)", opacity: showCheck ? 1 : 0, transition: "transform 420ms cubic-bezier(.32,1.5,.5,1), opacity 280ms ease", boxShadow: "0 12px 40px color-mix(in srgb, var(--yellow) 33%, transparent)" }}
+          >
+            <Icon name="check" size={48} color="var(--ink)" />
+          </div>
+        </div>
+
+        <div style={{ padding: "0 22px 16px", textAlign: "center" }}>
+          <H1 size={30}>{isNew ? "CLIENTE Y\nVENTA CREADOS" : "VENTA\nREGISTRADA"}</H1>
+          <div style={{ marginTop: 10, fontSize: 13, color: "var(--muted)", maxWidth: 290, marginLeft: "auto", marginRight: "auto" }}>
+            {isNew
+              ? `${c.nombre.split(" ")[0]} ya está dado de alta con su primer paquete activo.`
+              : `Folio listo y paquete activo en la ficha de ${c.nombre.split(" ")[0]}.`}
+          </div>
+        </div>
+
+        {/* Receipt — fixed cream palette in both themes */}
+        <div style={{ margin: "8px 16px 0" }}>
+          <div style={{ background: "#f5f1ea", color: "#1c1917", padding: "22px 22px 24px", position: "relative", boxShadow: "0 16px 40px rgba(0,0,0,0.4)" }}>
+            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 4, background: perf }} />
+            <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 4, background: perf }} />
+
+            <div className="flex items-start justify-between">
+              <ForgeLockup size={11} />
+              <div style={{ textAlign: "right" }}>
+                <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>FOLIO</div>
+                <Tnum className="font-extrabold" style={{ fontSize: 14, color: "#1c1917" }}>F-{folio}</Tnum>
+              </div>
+            </div>
+
+            <div style={{ height: 1, background: "#1c1917", opacity: 0.15, margin: "16px 0" }} />
+
+            <div className="flex items-baseline justify-between" style={{ marginBottom: 4 }}>
+              <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>CLIENTE</div>
+              {isNew && <div className="uppercase" style={{ fontSize: 9, color: "#7a5a26", letterSpacing: 1.5, padding: "2px 6px", background: "rgba(199,149,69,0.18)" }}>NUEVO</div>}
+            </div>
+            <div className="flex items-baseline justify-between" style={{ marginTop: 2 }}>
+              <div className="uppercase font-extrabold" style={{ fontSize: 18, letterSpacing: 0.4 }}>{c.nombre}</div>
+              <Tnum style={{ fontSize: 11, color: "#7a5a26" }}>#{String(c.id).padStart(3, "0")}</Tnum>
+            </div>
+            <Tnum style={{ display: "block", marginTop: 3, fontSize: 11.5, color: "#7a5a26" }}>{c.tel}</Tnum>
+
+            <div style={{ height: 1, background: "#1c1917", opacity: 0.15, margin: "14px 0" }} />
+
+            <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>CONCEPTO</div>
+            <div className="flex justify-between" style={{ marginTop: 6, fontSize: 14 }}>
+              <span>{paq.nombre}</span>
+              <Tnum style={{ fontWeight: 700 }}>${paq.precio.toLocaleString("es-MX")}.00</Tnum>
+            </div>
+            <div style={{ marginTop: 6, fontSize: 11.5, color: "#7a5a26" }}>Vigencia · {paq.vigencia}</div>
+
+            <div style={{ height: 1, background: "#1c1917", opacity: 0.15, margin: "14px 0" }} />
+
+            {[
+              ["FECHA", fecha.toUpperCase() + " · 2026"],
+              ["VIGENCIA", `27 MAY → ${vigEnd}`],
+              ["MÉTODO", metodo ? metodo.toUpperCase() : "POR PAGAR"],
+              ["ATIENDE", "COACH JC"],
+            ].map(([k, v], i) => (
+              <div key={i} className="flex justify-between" style={{ padding: "4px 0", fontSize: 11.5, color: "#7a5a26", letterSpacing: 0.6 }}>
+                <span>{k}</span>
+                <Tnum style={{ color: "#1c1917", fontWeight: 600 }}>{v}</Tnum>
+              </div>
+            ))}
+
+            <div className="flex items-baseline justify-between" style={{ marginTop: 14, padding: "14px 0 4px", borderTop: "2px solid #1c1917" }}>
+              <span className="uppercase font-extrabold" style={{ fontSize: 14, letterSpacing: 0.4 }}>TOTAL</span>
+              <Tnum className="font-extrabold" style={{ fontSize: 28, letterSpacing: -0.6 }}>
+                ${paq.precio.toLocaleString("es-MX")}
+                <span style={{ fontSize: 11, color: "#7a5a26", marginLeft: 6, letterSpacing: 1, fontWeight: 700 }}>MXN</span>
+              </Tnum>
+            </div>
+
+            <div className="uppercase" style={{ marginTop: 14, fontSize: 10.5, color: "#7a5a26", letterSpacing: 1, textAlign: "center" }}>FORGE BOOTCAMP · CHIHUAHUA, MX</div>
+          </div>
+        </div>
+
+        <div className="flex flex-col" style={{ padding: "20px 16px 0", gap: 10 }}>
+          <Button variant="wa" full icon="wa" onClick={wa}>ENVIAR POR WHATSAPP</Button>
+          <div className="flex" style={{ gap: 8 }}>
+            {!isNew && (
+              <Button variant="secondary" full icon="user" onClick={() => onVerCliente(c.id)}>VER CLIENTE</Button>
+            )}
+            <Button variant="secondary" full icon="plus" onClick={onOtra}>OTRA VENTA</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
