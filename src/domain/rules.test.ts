@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcVigenciaEnd, derivarEstado, diasRestantes, stackPaquete } from "./rules";
+import { calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, stackPaquete } from "./rules";
 
 describe("stackPaquete", () => {
   it("adds classes and days onto the current package (brief Q5)", () => {
@@ -87,5 +87,30 @@ describe("derivarEstado", () => {
   it("is sin_clases when expired", () => {
     expect(derivarEstado({ clases: 5, dias: 0 })).toBe("sin_clases");
     expect(derivarEstado({ clases: 5, dias: -2 })).toBe("sin_clases");
+  });
+});
+
+describe("consumirClase", () => {
+  it("subtracts one class", () => {
+    expect(consumirClase(5)).toBe(4);
+  });
+  it("never goes below zero", () => {
+    expect(consumirClase(1)).toBe(0);
+    expect(consumirClase(0)).toBe(0);
+  });
+  it("never decrements ilimitado", () => {
+    expect(consumirClase("ilimitado")).toBe("ilimitado");
+  });
+});
+
+describe("forfeit", () => {
+  it("forfeits remaining classes once expired (brief Q2)", () => {
+    expect(forfeit(5, -1)).toBe(0);
+  });
+  it("keeps classes while still valid", () => {
+    expect(forfeit(5, 3)).toBe(5);
+  });
+  it("leaves ilimitado untouched", () => {
+    expect(forfeit("ilimitado", -1)).toBe("ilimitado");
   });
 });

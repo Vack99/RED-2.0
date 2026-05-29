@@ -67,3 +67,22 @@ export function derivarEstado(saldo: Saldo): EstadoCliente {
 
   return "activo";
 }
+
+/**
+ * Consume one class for an attendance. Same-day duplicate attendance is
+ * allowed and each still consumes a class (brief Q6). Ilimitado is never
+ * decremented; a limited count never goes below 0.
+ */
+export function consumirClase(clases: Clases): Clases {
+  if (clases === "ilimitado") return "ilimitado";
+  return Math.max(0, clases - 1);
+}
+
+/**
+ * On expiry, remaining classes are FORFEITED (brief Q2): returns 0 once
+ * `dias` <= 0. Ilimitado has no count to forfeit; otherwise unchanged.
+ */
+export function forfeit(clases: Clases, dias: number): Clases {
+  if (clases === "ilimitado") return "ilimitado";
+  return dias <= 0 ? 0 : clases;
+}
