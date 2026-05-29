@@ -1,4 +1,4 @@
-import { ClientesScreen } from "@/components/forge/screens/clientes";
+import { ClientesScreen } from "./_components/clientes";
 
 export default function Page() {
   return <ClientesScreen />;

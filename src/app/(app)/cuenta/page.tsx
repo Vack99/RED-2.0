@@ -1,4 +1,4 @@
-import { CuentaScreen } from "@/components/forge/screens/cuenta";
+import { CuentaScreen } from "./_components/cuenta";
 
 export default function Page() {
   return <CuentaScreen />;
