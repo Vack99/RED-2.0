@@ -5,44 +5,47 @@ import { useRouter } from "next/navigation";
 import { ForgeLockup } from "@/components/forge/brand";
 import { Icon, type IconName } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
+import { forgeToast } from "@/components/forge/toaster";
 import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
-import { usePaquetes, useClientes } from "@/lib/data/store";
-import type { Cliente, Paquete } from "@/lib/data/types";
+import type { ClienteLiteDTO } from "@/lib/data/clientes";
+import type { PaqueteDTO } from "@/lib/data/paquetes";
+import type { Metodo as MetodoEnum, VentaResult } from "@/lib/data/ventas";
 import { waLink } from "@/lib/format";
+import { crearVentaAction } from "../actions";
 
 type Mode = "new" | "existing";
 type Metodo = "Efectivo" | "Tarjeta" | "Transferencia" | "Por pagar";
 
-interface ReciboArgs {
-  folio: number;
-  cliente: { id: number; nombre: string; tel: string; inicial: string };
-  isNew: boolean;
-  paq: Paquete;
-  metodo: Metodo | null;
-  fecha: string;
-}
+const METODO_ENUM: Record<Metodo, MetodoEnum> = {
+  Efectivo: "efectivo",
+  Tarjeta: "tarjeta",
+  Transferencia: "transferencia",
+  "Por pagar": "pendiente",
+};
 
-const VIG_END: Record<string, string> = { "8": "16 JUN", "12": "21 JUN", ilim: "26 JUN" };
-
-export function VenderScreen() {
+export function VenderScreen({
+  paquetes,
+  clientes,
+}: {
+  paquetes: PaqueteDTO[];
+  clientes: ClienteLiteDTO[];
+}) {
   const router = useRouter();
-  const [paquetes] = usePaquetes();
-  const [clientes] = useClientes();
 
   const [mode, setMode] = React.useState<Mode>("new");
   const [nuevo, setNuevo] = React.useState({ nombre: "", tel: "" });
-  const [clientId, setClientId] = React.useState<number | null>(null);
+  const [clientId, setClientId] = React.useState<string | null>(null);
   const [sel, setSel] = React.useState<string | null>(null);
   const [metodo, setMetodo] = React.useState<Metodo | null>(null);
   const [openSection, setOpenSection] = React.useState<string | null>("cliente");
   const [submitting, setSubmitting] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [pickerQuery, setPickerQuery] = React.useState("");
-  const [recibo, setRecibo] = React.useState<ReciboArgs | null>(null);
+  const [recibo, setRecibo] = React.useState<VentaResult | null>(null);
 
   const existing = clientes.find((x) => x.id === clientId) ?? null;
-  const paq = sel ? paquetes.find((p) => p.id === sel) ?? null : null;
-  const vigenciaEnd = sel ? VIG_END[sel] ?? null : null;
+  const paq = sel ? (paquetes.find((p) => p.id === sel) ?? null) : null;
+  const vigenciaEnd = paq?.hasta ?? null;
 
   const clienteValid =
     mode === "new"
@@ -85,30 +88,23 @@ export function VenderScreen() {
   }, [metodo, openSection]);
 
   const finish = async () => {
-    if (!canSubmit || !paq) return;
+    if (!canSubmit || !sel || !metodo) return;
     setSubmitting(true);
-    await new Promise((r) => setTimeout(r, 700));
-    setSubmitting(false);
-    // eslint-disable-next-line react-hooks/purity -- mock folio; replaced by a real DB sequence in the migration cycle (see docs/MIGRATION.md)
-    const folio = 9100 + Math.floor(Math.random() * 800);
-    const cliente =
-      mode === "new"
-        ? {
-            id: 999,
-            nombre: nuevo.nombre.trim() || "Cliente nuevo",
-            tel: nuevo.tel,
-            inicial:
-              nuevo.nombre.trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join("").toUpperCase() || "CN",
-          }
-        : { id: existing!.id, nombre: existing!.nombre, tel: existing!.tel, inicial: existing!.inicial };
-    setRecibo({
-      folio,
-      cliente,
-      isNew: mode === "new",
-      paq,
-      metodo: metodo === "Por pagar" ? null : metodo,
-      fecha: "28 may",
-    });
+    try {
+      const result = await crearVentaAction({
+        mode,
+        nuevoNombre: mode === "new" ? nuevo.nombre : undefined,
+        nuevoTel: mode === "new" ? nuevo.tel : undefined,
+        clienteId: mode === "existing" ? (clientId ?? undefined) : undefined,
+        paqueteId: sel,
+        metodo: METODO_ENUM[metodo],
+      });
+      setRecibo(result);
+    } catch {
+      forgeToast({ tone: "warning", title: "No se pudo cobrar", body: "Revisa los datos e intenta de nuevo." });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const resetForm = () => {
@@ -125,7 +121,7 @@ export function VenderScreen() {
   if (recibo) {
     return (
       <Recibo
-        args={recibo}
+        result={recibo}
         onClose={resetForm}
         onOtra={resetForm}
         onVerCliente={(id) => router.push(`/clientes/${id}`)}
@@ -223,7 +219,7 @@ export function VenderScreen() {
               <Avatar initial={cc.inicial} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{cc.nombre}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}><Tnum>{cc.tel}</Tnum> · {cc.paquete}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}><Tnum>{cc.tel}</Tnum> · {cc.paqueteLabel}</div>
               </div>
               {cc.id === clientId && <Icon name="check" size={16} color="var(--gold)" />}
             </button>
@@ -292,7 +288,7 @@ function ClienteEditor({
   setMode: (m: Mode) => void;
   nuevo: { nombre: string; tel: string };
   setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string }>>;
-  existing: Cliente | null;
+  existing: ClienteLiteDTO | null;
   openPicker: () => void;
 }) {
   return (
@@ -346,7 +342,7 @@ function PaqueteEditor({
   setSel,
   vigenciaEnd,
 }: {
-  paquetes: Paquete[];
+  paquetes: PaqueteDTO[];
   sel: string | null;
   setSel: (id: string) => void;
   vigenciaEnd: string | null;
@@ -414,29 +410,25 @@ function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo:
 }
 
 function Recibo({
-  args,
+  result,
   onClose,
   onOtra,
   onVerCliente,
 }: {
-  args: ReciboArgs;
+  result: VentaResult;
   onClose: () => void;
   onOtra: () => void;
-  onVerCliente: (id: number) => void;
+  onVerCliente: (id: string) => void;
 }) {
-  const { folio, cliente: c, isNew, paq, metodo, fecha } = args;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, coach, waText } = result;
+  const isNew = c.isNew;
   const [showCheck, setShowCheck] = React.useState(false);
   React.useEffect(() => {
     const t = setTimeout(() => setShowCheck(true), 80);
     return () => clearTimeout(t);
   }, []);
 
-  const vigEnd = VIG_END[paq.id] ?? "—";
-  const wa = () => {
-    const nombre = c.nombre.split(" ")[0];
-    const msg = `Hola ${nombre} 👋\n\n¡Gracias por tu compra en Forge Bootcamp! Tu paquete *${paq.nombre}* queda activo del 27 mayo al ${vigEnd.toLowerCase()}.\n\nFolio · F-${folio}\nTotal · $${paq.precio} MXN${metodo ? ` · ${metodo}` : ""}\n\nNos vemos en el bootcamp. 💪🔥`;
-    window.open(waLink(c.tel, msg), "_blank");
-  };
+  const wa = () => window.open(waLink(c.tel, waText), "_blank");
 
   const perf = "repeating-linear-gradient(to right, var(--canvas) 0 4px, transparent 4px 10px)";
 
@@ -487,28 +479,25 @@ function Recibo({
               <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>CLIENTE</div>
               {isNew && <div className="uppercase" style={{ fontSize: 9, color: "#7a5a26", letterSpacing: 1.5, padding: "2px 6px", background: "rgba(199,149,69,0.18)" }}>NUEVO</div>}
             </div>
-            <div className="flex items-baseline justify-between" style={{ marginTop: 2 }}>
-              <div className="uppercase font-extrabold" style={{ fontSize: 18, letterSpacing: 0.4 }}>{c.nombre}</div>
-              <Tnum style={{ fontSize: 11, color: "#7a5a26" }}>#{String(c.id).padStart(3, "0")}</Tnum>
-            </div>
+            <div className="uppercase font-extrabold" style={{ fontSize: 18, letterSpacing: 0.4, marginTop: 2 }}>{c.nombre}</div>
             <Tnum style={{ display: "block", marginTop: 3, fontSize: 11.5, color: "#7a5a26" }}>{c.tel}</Tnum>
 
             <div style={{ height: 1, background: "#1c1917", opacity: 0.15, margin: "14px 0" }} />
 
             <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>CONCEPTO</div>
             <div className="flex justify-between" style={{ marginTop: 6, fontSize: 14 }}>
-              <span>{paq.nombre}</span>
-              <Tnum style={{ fontWeight: 700 }}>${paq.precio.toLocaleString("es-MX")}.00</Tnum>
+              <span>{p.nombre}</span>
+              <Tnum style={{ fontWeight: 700 }}>${p.precio.toLocaleString("es-MX")}.00</Tnum>
             </div>
-            <div style={{ marginTop: 6, fontSize: 11.5, color: "#7a5a26" }}>Vigencia · {paq.vigencia}</div>
+            <div style={{ marginTop: 6, fontSize: 11.5, color: "#7a5a26" }}>Vigencia · {p.vigencia}</div>
 
             <div style={{ height: 1, background: "#1c1917", opacity: 0.15, margin: "14px 0" }} />
 
             {[
-              ["FECHA", fecha.toUpperCase() + " · 2026"],
-              ["VIGENCIA", `27 MAY → ${vigEnd}`],
-              ["MÉTODO", metodo ? metodo.toUpperCase() : "POR PAGAR"],
-              ["ATIENDE", "COACH JC"],
+              ["FECHA", fechaDisplay.toUpperCase()],
+              ["VIGENCIA", `${compradoDisplay.toUpperCase()} → ${venceDisplay.toUpperCase()}`],
+              ["MÉTODO", metodoDisplay],
+              ["ATIENDE", coach.toUpperCase()],
             ].map(([k, v], i) => (
               <div key={i} className="flex justify-between" style={{ padding: "4px 0", fontSize: 11.5, color: "#7a5a26", letterSpacing: 0.6 }}>
                 <span>{k}</span>
@@ -519,12 +508,14 @@ function Recibo({
             <div className="flex items-baseline justify-between" style={{ marginTop: 14, padding: "14px 0 4px", borderTop: "2px solid #1c1917" }}>
               <span className="uppercase font-extrabold" style={{ fontSize: 14, letterSpacing: 0.4 }}>TOTAL</span>
               <Tnum className="font-extrabold" style={{ fontSize: 28, letterSpacing: -0.6 }}>
-                ${paq.precio.toLocaleString("es-MX")}
+                ${p.precio.toLocaleString("es-MX")}
                 <span style={{ fontSize: 11, color: "#7a5a26", marginLeft: 6, letterSpacing: 1, fontWeight: 700 }}>MXN</span>
               </Tnum>
             </div>
 
-            <div className="uppercase" style={{ marginTop: 14, fontSize: 10.5, color: "#7a5a26", letterSpacing: 1, textAlign: "center" }}>FORGE BOOTCAMP · CHIHUAHUA, MX</div>
+            <div className="uppercase" style={{ marginTop: 14, fontSize: 10.5, color: "#7a5a26", letterSpacing: 1, textAlign: "center" }}>
+              {`${negocio}${ciudad ? ` · ${ciudad}` : ""}`}
+            </div>
           </div>
         </div>
 

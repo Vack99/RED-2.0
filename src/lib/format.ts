@@ -8,6 +8,19 @@ export function firstName(nombre: string): string {
   return (nombre || "").trim().split(/\s+/)[0] || "";
 }
 
+/** Up-to-two-letter avatar initials from a name (e.g. "Coach JC" -> "CJ"). */
+export function iniciales(nombre: string): string {
+  return (
+    (nombre || "")
+      .trim()
+      .split(/\s+/)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "?"
+  );
+}
+
 /** Classes-remaining label that handles the ∞ (ilimitado) sentinel. */
 export function clasesLabel(clasesRest: number | "∞"): string {
   if (clasesRest === "∞") return "clases ilimitadas";

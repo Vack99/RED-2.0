@@ -14,6 +14,78 @@ export type Database = {
   }
   public: {
     Tables: {
+      clientes: {
+        Row: {
+          clases_restantes: number | null
+          created_at: string
+          id: string
+          nombre: string
+          paquete_nombre: string | null
+          tel: string
+          user_id: string
+          vence: string | null
+        }
+        Insert: {
+          clases_restantes?: number | null
+          created_at?: string
+          id?: string
+          nombre: string
+          paquete_nombre?: string | null
+          tel: string
+          user_id: string
+          vence?: string | null
+        }
+        Update: {
+          clases_restantes?: number | null
+          created_at?: string
+          id?: string
+          nombre?: string
+          paquete_nombre?: string | null
+          tel?: string
+          user_id?: string
+          vence?: string | null
+        }
+        Relationships: []
+      }
+      paquetes: {
+        Row: {
+          clases: number | null
+          created_at: string
+          id: string
+          nombre: string
+          orden: number
+          popular: boolean
+          precio: number
+          user_id: string
+          vigencia_dias: number | null
+          vigencia_tipo: string
+        }
+        Insert: {
+          clases?: number | null
+          created_at?: string
+          id?: string
+          nombre: string
+          orden?: number
+          popular?: boolean
+          precio: number
+          user_id: string
+          vigencia_dias?: number | null
+          vigencia_tipo?: string
+        }
+        Update: {
+          clases?: number | null
+          created_at?: string
+          id?: string
+          nombre?: string
+          orden?: number
+          popular?: boolean
+          precio?: number
+          user_id?: string
+          vigencia_dias?: number | null
+          vigencia_tipo?: string
+        }
+        Relationships: []
+      }
       perfil: {
         Row: {
           ciudad: string | null
@@ -43,6 +115,59 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      ventas: {
+        Row: {
+          clases: number | null
+          cliente_id: string
+          created_at: string
+          fecha: string
+          folio: number
+          id: string
+          metodo: string
+          monto: number
+          paquete_nombre: string
+          user_id: string
+          vigencia_dias: number | null
+          vigencia_tipo: string
+        }
+        Insert: {
+          clases?: number | null
+          cliente_id: string
+          created_at?: string
+          fecha?: string
+          folio?: number
+          id?: string
+          metodo: string
+          monto: number
+          paquete_nombre: string
+          user_id: string
+          vigencia_dias?: number | null
+          vigencia_tipo: string
+        }
+        Update: {
+          clases?: number | null
+          cliente_id?: string
+          created_at?: string
+          fecha?: string
+          folio?: number
+          id?: string
+          metodo?: string
+          monto?: number
+          paquete_nombre?: string
+          user_id?: string
+          vigencia_dias?: number | null
+          vigencia_tipo?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ventas_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
