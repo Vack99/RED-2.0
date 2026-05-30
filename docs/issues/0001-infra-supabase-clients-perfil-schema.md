@@ -1,6 +1,7 @@
 # Issue 1 — Infra: Supabase clients, perfil schema + RLS, deps
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** AFK · **Labels:** `ready-for-agent`
+> **Status:** ✅ Done — branch `feat/supabase-infra-perfil` @ `186f7b4` (2026-05-29). Gates green: lint clean · test 28/28 · build OK (proxy registered).
 
 ## What to build
 

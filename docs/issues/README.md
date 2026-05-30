@@ -4,6 +4,10 @@
 > files **are** the issue store; `/to-goal` consumes them directly. Source PRD:
 > `docs/prds/prd-supabase-migration.md`.
 
+> **Progress (2026-05-29):** #1 ✅ done (`feat/supabase-infra-perfil` @ `186f7b4`).
+> #2 is the active **HITL gate** — a human provisions the Supabase auth user + runtime
+> env before the AFK queue (#3–#8) can proceed.
+
 **Labels:** `ready-for-agent` = AFK, eligible for the autonomous `/to-goal` queue ·
 `hitl` = human-gated (`/to-goal` skips it and treats it as a non-closeable blocker).
 
@@ -11,7 +15,7 @@ Issue number `#N` ↔ file `000N-*.md`. "Blocked by" lines reference `#N`.
 
 | # | File | Title | Type | Label | Blocked by |
 |---|------|-------|------|-------|-----------|
-| 1 | `0001-infra-supabase-clients-perfil-schema.md` | Infra: Supabase clients, perfil schema + RLS | AFK | `ready-for-agent` | — |
+| 1 | ✅ `0001-infra-supabase-clients-perfil-schema.md` | Infra: Supabase clients, perfil schema + RLS **(done @186f7b4)** | AFK | `ready-for-agent` | — |
 | 2 | `0002-auth-login-perfil-read.md` | Auth: single-operator login + first authed read | **HITL** | `hitl` | #1 |
 | 3 | `0003-ventas-tracer-bullet.md` | Ventas tracer bullet | AFK | `ready-for-agent` | #2 |
 | 4 | `0004-asistencia-pase-de-lista.md` | Asistencia (pase de lista) | AFK | `ready-for-agent` | #3 |
