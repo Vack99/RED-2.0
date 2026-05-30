@@ -117,7 +117,7 @@ Pure functions in `src/domain/rules.ts`, unit-tested against the brief's worked 
   Replaces the stored `estado` field and the three conflicting threshold checks scattered across `clientes.tsx`, `inicio.tsx`, `cliente-detalle.tsx`, `asistencia.tsx`.
 - **`consumirClase(cliente)`** — each attendance −1 class unless Ilimitado; floored at 0; reaching 0 ends the package (`sin_clases`). **Same-day duplicate attendance is allowed and consumes a class** (a class is a class).
 - **`forfeit(cliente, hoy)`** — on vigencia expiry, remaining classes are forfeited (brief Q2/Q3).
-- **`renderPlantilla(plantilla, contexto)`** — substitutes `{nombre} {clases} {vence} {dias} {precios} {datos_pago}` from cliente + paquete + cobro. Replaces the two hand-built inline WhatsApp messages and wires up the otherwise-dead `SEED_PLANTILLAS`.
+- **`renderPlantilla(plantilla, contexto)`** — substitutes `{nombre} {clases} {paquete} {vence} {dias} {precios} {datos_pago} {negocio}` from cliente + paquete + cobro + perfil. Replaces the two hand-built inline WhatsApp messages and wires up the otherwise-dead `SEED_PLANTILLAS`.
 
 ## 8. Brief reconciliations
 

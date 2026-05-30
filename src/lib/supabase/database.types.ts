@@ -163,6 +163,30 @@ export type Database = {
         }
         Relationships: []
       }
+      plantillas: {
+        Row: {
+          body: string
+          clave: string
+          created_at: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          body: string
+          clave: string
+          created_at?: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          body?: string
+          clave?: string
+          created_at?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ventas: {
         Row: {
           clases: number | null

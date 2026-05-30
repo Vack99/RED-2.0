@@ -133,6 +133,11 @@ describe("renderPlantilla", () => {
   it("substitutes the datos_pago block", () => {
     expect(renderPlantilla("{datos_pago}", { datos_pago: "CLABE 123" })).toBe("CLABE 123");
   });
+  it("substitutes the negocio (brand) token", () => {
+    expect(
+      renderPlantilla("Gracias por tu compra en {negocio}.", { negocio: "FORGE" }),
+    ).toBe("Gracias por tu compra en FORGE.");
+  });
   it("renders a realistic multi-token template body", () => {
     const body =
       "Hola {nombre} 👋\n\nTe quedan {clases} de tu paquete (*{paquete}*), vence {vence}. Datos: {datos_pago}";

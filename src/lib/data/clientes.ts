@@ -9,6 +9,7 @@ import { firstName, iniciales, pesos } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
 import { derivarCliente, type ClienteDerivado } from "./derive";
+import { getPlantilla } from "./plantillas";
 
 export interface ClienteLiteDTO {
   id: string;
@@ -154,7 +155,7 @@ export const getClienteFicha = cache(async (id: string): Promise<ClienteFichaDTO
     .maybeSingle();
   if (!c) return null;
 
-  const [asistRes, ventasRes, idsRes, perfilRes] = await Promise.all([
+  const [asistRes, ventasRes, idsRes, perfilRes, recordatorioBody] = await Promise.all([
     supabase
       .from("asistencias")
       .select("fecha, hora")
@@ -169,6 +170,7 @@ export const getClienteFicha = cache(async (id: string): Promise<ClienteFichaDTO
       .order("fecha", { ascending: false }),
     supabase.from("clientes").select("id").order("nombre"),
     supabase.from("perfil").select("negocio").maybeSingle(),
+    getPlantilla("recordatorio"),
   ]);
 
   const asistMes = asistRes.data ?? [];
@@ -202,12 +204,12 @@ export const getClienteFicha = cache(async (id: string): Promise<ClienteFichaDTO
   const derivado = derivarCliente(c, hoy, asistMes.length);
 
   const negocio = perfilRes.data?.negocio?.trim() || "FORGE";
-  const waBody = `Hola {nombre} 👋 Aún tienes {clases} de tu paquete (*{paquete}*), vence el {vence}. ¡Te esperamos! 💪 — ${negocio}`;
-  const waText = renderPlantilla(waBody, {
+  const waText = renderPlantilla(recordatorioBody, {
     nombre: firstName(c.nombre),
     clases: derivado.clasesRest === "ilimitado" ? "clases ilimitadas" : `${derivado.clasesRest} clases`,
     paquete: derivado.paquete,
     vence: derivado.venceDisplay,
+    negocio,
   });
 
   const order = (idsRes.data ?? []).map((x) => x.id);

@@ -10,6 +10,8 @@ import { firstName, iniciales } from "@/lib/format";
 import type { Database } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 
+import { getPlantilla } from "./plantillas";
+
 export type Metodo = "efectivo" | "transferencia" | "tarjeta" | "pendiente";
 
 export const crearVentaSchema = z
@@ -149,10 +151,10 @@ export async function crearVenta(raw: unknown): Promise<VentaResult> {
     .single();
   if (ventaErr || !venta) throw new Error("No se pudo registrar la venta");
 
-  const { data: perfil } = await supabase
-    .from("perfil")
-    .select("negocio, coach, ciudad")
-    .maybeSingle();
+  const [{ data: perfil }, reciboBody] = await Promise.all([
+    supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
+    getPlantilla("recibo"),
+  ]);
   const negocio = perfil?.negocio?.trim() || "FORGE";
   const coach = perfil?.coach?.trim() || "COACH";
   const ciudad = perfil?.ciudad?.trim() || "";
@@ -161,13 +163,14 @@ export async function crearVenta(raw: unknown): Promise<VentaResult> {
   const fechaDisplay = fmtShort(hoy);
   const metodoDisplay = input.metodo === "pendiente" ? "POR PAGAR" : input.metodo.toUpperCase();
 
-  // renderPlantilla is the single home for message bodies; the brand is the
-  // operator's own perfil ("FORGE"), never a hard-coded "Forge Bootcamp".
-  const waBody = `Hola {nombre} 👋\n\n¡Gracias por tu compra en ${negocio}! Tu paquete *{paquete}* queda activo hasta el {vence}.\n\nNos vemos en el bootcamp. 💪🔥`;
-  const waText = renderPlantilla(waBody, {
+  // The recibo confirmation is a stored, editable plantilla; renderPlantilla is
+  // the single home for message rendering, and the brand comes from the operator's
+  // perfil via the {negocio} token — never a hard-coded "Forge Bootcamp".
+  const waText = renderPlantilla(reciboBody, {
     nombre: firstName(cliente.nombre),
     paquete: paq.nombre,
     vence: venceDisplay,
+    negocio,
   });
 
   return {

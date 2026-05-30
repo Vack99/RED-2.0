@@ -47,4 +47,6 @@ export interface PlantillaContext {
   dias?: string;
   precios?: string;
   datos_pago?: string;
+  /** The operator's brand, sourced from perfil.negocio (e.g. "FORGE"). */
+  negocio?: string;
 }
