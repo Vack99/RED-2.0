@@ -2,7 +2,7 @@
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** AFK · **Labels:** `ready-for-agent`
 >
-> **Status:** ✅ Done @75a9c44 — gates green; both fresh-eyes gates YES (Elegance + Senior Dev).
+> **Status:** ✅ Done @48f4de9 — gates green; both fresh-eyes gates YES (Elegance + Senior Dev).
 > store.ts/seed.ts/legacy-types.ts deleted; offset-date scaffolding removed (pure helpers kept);
 > `no-orphans` enabled + green (68 modules). The migration is complete — pending operator
 > in-browser verification before merge.
