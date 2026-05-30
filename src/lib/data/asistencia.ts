@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { consumirClase } from "@/domain/rules";
 import type { Clases } from "@/domain/types";
-import { horaChihuahua, hoyIsoChihuahua } from "@/lib/fecha";
+import { horaChihuahua, hoyChihuahua, hoyIsoChihuahua, toIsoDay } from "@/lib/fecha";
+import { iniciales } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
 /**
@@ -110,4 +111,60 @@ export async function togglePase(raw: unknown): Promise<TogglePaseResult> {
   }
 
   return { present: true, hora };
+}
+
+export interface AsistenciaHoy {
+  cliente_id: string;
+  nombre: string;
+  inicial: string;
+  paquete: string;
+  /** "HH:MM" check-in time, or "" for a back-entered row with no time. */
+  hora: string;
+}
+
+/**
+ * Today's asistencia rows joined to clientes, ordered by time (most recent
+ * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
+ * returns DTOs only (no raw rows cross the boundary, ADR-0001).
+ */
+export async function getAsistenciasHoy(): Promise<AsistenciaHoy[]> {
+  const supabase = await createClient();
+  const hoyIso = toIsoDay(hoyChihuahua());
+
+  const { data: asis, error } = await supabase
+    .from("asistencias")
+    .select("cliente_id, hora")
+    .eq("fecha", hoyIso)
+    .is("deleted_at", null)
+    .order("hora", { ascending: false });
+  if (error) throw error;
+
+  const rows = asis ?? [];
+  if (rows.length === 0) return [];
+
+  const ids = [...new Set(rows.map((a) => a.cliente_id))];
+  const { data: clientes, error: cErr } = await supabase
+    .from("clientes")
+    .select("id, nombre, paquete_nombre")
+    .in("id", ids);
+  if (cErr) throw cErr;
+
+  const byId = new Map(
+    (clientes ?? []).map((c) => [
+      c.id,
+      { nombre: c.nombre, paquete: c.paquete_nombre ?? "Sin paquete" },
+    ]),
+  );
+
+  return rows.map((a) => {
+    const c = byId.get(a.cliente_id);
+    const nombre = c?.nombre ?? "—";
+    return {
+      cliente_id: a.cliente_id,
+      nombre,
+      inicial: iniciales(nombre),
+      paquete: c?.paquete ?? "Sin paquete",
+      hora: (a.hora ?? "").slice(0, 5),
+    };
+  });
 }

@@ -35,6 +35,45 @@ export interface CompraPaquete {
   dias: number;
 }
 
+/** A venta reduced to what the monthly resumen needs: when + how much.
+ *  The DAL parses the DB row's timestamp to a Chihuahua-local Date. */
+export interface VentaResumen {
+  /** Chihuahua-local calendar date of the sale. */
+  fecha: Date;
+  monto: number;
+}
+
+/** An asistencia reduced to what the monthly resumen needs: when.
+ *  The DAL parses the DB row's `date` to a Chihuahua-local Date. */
+export interface AsistenciaResumen {
+  /** Chihuahua-local calendar date of the attendance. */
+  fecha: Date;
+}
+
+/** Dashboard / cuenta monthly aggregates — DERIVED at read from the ventas +
+ *  asistencias ledgers (ADR-0002). Pure: `hoy` is passed into calcularResumenMes,
+ *  never read from a clock. Prior-period fields let the screen show deltas. */
+export interface ResumenMes {
+  /** Sum of `monto` for ventas in the current calendar month. */
+  ingresosMes: number;
+  /** Count of ventas in the current calendar month. */
+  ventasMes: number;
+  /** Count of asistencias in the current calendar month. */
+  asistMes: number;
+  /** Same three totals for the PRIOR calendar month (for period-over-period deltas). */
+  ingresosMesPrev: number;
+  ventasMesPrev: number;
+  asistMesPrev: number;
+  /** Asistencias whose fecha === hoy. */
+  asistenciasHoy: number;
+  /** Asistencias whose fecha === hoy − 1 day. */
+  asistenciasAyer: number;
+  /** Sum of `monto` for ventas in the last 7 days (inclusive of hoy). */
+  ingresosSemana: number;
+  /** 7-element daily asistencia counts, oldest→newest, the last entry === hoy. */
+  asistenciasSemana: number[];
+}
+
 /** Tokens available to WhatsApp templates; each maps to a {token} in a
  *  template body. See renderPlantilla. */
 export interface PlantillaContext {

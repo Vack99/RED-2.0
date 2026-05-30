@@ -1,0 +1,45 @@
+import "server-only";
+
+import { cache } from "react";
+
+import { createClient } from "@/lib/supabase/server";
+
+/** Safe cobro DTO for the cuenta "Datos de cobro" section — no id / user_id.
+ *  The cobro row is the source for the {datos_pago} plantilla token (token
+ *  injection into a message body lands with the retención editor). */
+export interface CobroDTO {
+  titular: string | null;
+  banco: string | null;
+  clabe: string | null;
+  tarjeta: string | null;
+  aceptaEfectivo: boolean;
+  aceptaTransferencia: boolean;
+  aceptaTarjeta: boolean;
+}
+
+/**
+ * The operator's datos de cobro, as a safe DTO. RLS scopes the row to
+ * (select auth.uid()); returns null until the cobro row is seeded. Memoized
+ * per request.
+ */
+export const getCobro = cache(async (): Promise<CobroDTO | null> => {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("cobro")
+    .select(
+      "titular, banco, clabe, tarjeta, acepta_efectivo, acepta_transferencia, acepta_tarjeta",
+    )
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+
+  return {
+    titular: data.titular,
+    banco: data.banco,
+    clabe: data.clabe,
+    tarjeta: data.tarjeta,
+    aceptaEfectivo: data.acepta_efectivo,
+    aceptaTransferencia: data.acepta_transferencia,
+    aceptaTarjeta: data.acepta_tarjeta,
+  };
+});

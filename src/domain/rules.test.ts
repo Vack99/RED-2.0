@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, stackPaquete } from "./rules";
+import { calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, stackPaquete } from "./rules";
+import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete", () => {
   it("adds classes and days onto the current package (brief Q5)", () => {
@@ -152,5 +153,113 @@ describe("renderPlantilla", () => {
     ).toBe(
       "Hola Andrea 👋\n\nTe quedan 5 clases de tu paquete (*Ilimitado*), vence 02 jun. Datos: CLABE 123",
     );
+  });
+});
+
+describe("calcularResumenMes", () => {
+  // Fixed "today" = Wed 27 May 2026 (months are 0-based). Prior month = April 2026.
+  const HOY = new Date(2026, 4, 27);
+  const v = (y: number, m: number, d: number, monto: number): VentaResumen => ({
+    fecha: new Date(y, m, d),
+    monto,
+  });
+  const a = (y: number, m: number, d: number): AsistenciaResumen => ({
+    fecha: new Date(y, m, d),
+  });
+
+  // Worked fixture: spans April (prior) and May (current) 2026.
+  // Ventas:
+  //   Apr:  3 abr $500, 28 abr $700           => prev: 2 ventas / $1200
+  //   May:  1 may $400, 21 may $1000 (last 7d),
+  //         26 may $300 (ayer/last 7d), 27 may $250 (hoy/last 7d)
+  //                                            => mes: 4 ventas / $1950
+  //   ingresosSemana (21..27 may incl hoy): 1000 + 300 + 250 = 1550
+  const ventas: VentaResumen[] = [
+    v(2026, 3, 3, 500),
+    v(2026, 3, 28, 700),
+    v(2026, 4, 1, 400),
+    v(2026, 4, 21, 1000),
+    v(2026, 4, 26, 300),
+    v(2026, 4, 27, 250),
+  ];
+
+  // Asistencias:
+  //   Apr: 3 rows (prev month)
+  //   May within the 7-day window (21..27 may):
+  //     21 may x1, 24 may x1, 26 may x2 (ayer), 27 may x3 (hoy)
+  //   plus 2 May rows OUTSIDE the window (2 may, 10 may) — count toward asistMes only
+  const asistencias: AsistenciaResumen[] = [
+    a(2026, 3, 5),
+    a(2026, 3, 6),
+    a(2026, 3, 30),
+    a(2026, 4, 2),
+    a(2026, 4, 10),
+    a(2026, 4, 21),
+    a(2026, 4, 24),
+    a(2026, 4, 26),
+    a(2026, 4, 26),
+    a(2026, 4, 27),
+    a(2026, 4, 27),
+    a(2026, 4, 27),
+  ];
+
+  const r = calcularResumenMes(ventas, asistencias, HOY);
+
+  it("totals ingresos / ventas for the current calendar month", () => {
+    expect(r.ingresosMes).toBe(1950);
+    expect(r.ventasMes).toBe(4);
+  });
+
+  it("totals asistencias for the current calendar month", () => {
+    // May rows: 2, 10, 21, 24, 26x2, 27x3 = 9 (2 of them outside the 7-day window)
+    expect(r.asistMes).toBe(9);
+  });
+
+  it("totals the PRIOR calendar month for period-over-period deltas", () => {
+    expect(r.ingresosMesPrev).toBe(1200);
+    expect(r.ventasMesPrev).toBe(2);
+    expect(r.asistMesPrev).toBe(3);
+  });
+
+  it("counts asistencias hoy vs ayer", () => {
+    expect(r.asistenciasHoy).toBe(3); // 27 may x3
+    expect(r.asistenciasAyer).toBe(2); // 26 may x2
+  });
+
+  it("sums ingresos over the last 7 days (inclusive of hoy)", () => {
+    expect(r.ingresosSemana).toBe(1550); // 1000 + 300 + 250
+  });
+
+  it("builds a 7-element weekly asistencia series oldest→newest ending today", () => {
+    // window days: 21,22,23,24,25,26,27 may
+    expect(r.asistenciasSemana).toEqual([1, 0, 0, 1, 0, 2, 3]);
+    expect(r.asistenciasSemana).toHaveLength(7);
+    // last element is hoy
+    expect(r.asistenciasSemana[6]).toBe(r.asistenciasHoy);
+  });
+
+  it("is all-zero for empty ledgers", () => {
+    const empty = calcularResumenMes([], [], HOY);
+    expect(empty.ingresosMes).toBe(0);
+    expect(empty.ventasMes).toBe(0);
+    expect(empty.asistMes).toBe(0);
+    expect(empty.ingresosMesPrev).toBe(0);
+    expect(empty.asistenciasHoy).toBe(0);
+    expect(empty.asistenciasAyer).toBe(0);
+    expect(empty.ingresosSemana).toBe(0);
+    expect(empty.asistenciasSemana).toEqual([0, 0, 0, 0, 0, 0, 0]);
+  });
+
+  it("rolls the prior month across a year boundary (Jan hoy → Dec prev)", () => {
+    const enero = new Date(2026, 0, 15);
+    const rr = calcularResumenMes(
+      [v(2025, 11, 20, 900), v(2026, 0, 10, 100)],
+      [a(2025, 11, 31), a(2026, 0, 5)],
+      enero,
+    );
+    expect(rr.ingresosMes).toBe(100);
+    expect(rr.ingresosMesPrev).toBe(900);
+    expect(rr.asistMes).toBe(1);
+    expect(rr.asistMesPrev).toBe(1);
   });
 });

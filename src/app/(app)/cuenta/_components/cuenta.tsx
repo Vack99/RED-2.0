@@ -13,21 +13,60 @@ import {
   SectionHeader,
   Tnum,
 } from "@/components/forge/ui";
-import { HOY } from "@/lib/data/seed";
+import type { ResumenMes } from "@/domain/types";
+import type { CobroDTO } from "@/lib/data/cobro";
+import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";
-import { useCobro, usePaquetes, usePlantillas } from "@/lib/data/store";
 
-// Sub-screens (Paquetes editor, Plantillas, Cobro, Perfil) arrive in
-// pass 2. For now their entry points surface a "próximamente" toast.
+interface CuentaScreenProps {
+  perfil: PerfilDTO | null;
+  resumen: ResumenMes;
+  cobro: CobroDTO | null;
+  paquetes: PaqueteDTO[];
+  plantillasCount: number;
+  /** Real es-MX month label, e.g. "MAYO 2026". */
+  mesLabel: string;
+}
+
+// Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
+// slice — their entry points surface a "próximamente" toast but show real data.
 function proximamente(label: string) {
   forgeToast({ tone: "info", title: "Próximamente", body: `${label} llega en la siguiente entrega.` });
 }
 
-export function CuentaScreen({ perfil }: { perfil: PerfilDTO | null }) {
-  const [paquetes] = usePaquetes();
-  const [plantillas] = usePlantillas();
-  const [cobro] = useCobro();
+/** Whole-percent change vs the prior month, or null when there's no baseline. */
+function deltaPct(actual: number, prev: number): number | null {
+  if (prev === 0) return null;
+  return Math.round(((actual - prev) / prev) * 100);
+}
 
+/** Compact "+18% VS MES ANT." caption (color-coded), or "—" with no baseline. */
+function DeltaCaption({ actual, prev }: { actual: number; prev: number }) {
+  const pct = deltaPct(actual, prev);
+  if (pct === null) {
+    return (
+      <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, fontWeight: 600 }}>
+        SIN MES ANT.
+      </div>
+    );
+  }
+  const color = pct > 0 ? "var(--green)" : pct < 0 ? "var(--gold)" : "var(--muted)";
+  return (
+    <div style={{ fontSize: 10, color, marginTop: 4, fontWeight: 700 }}>
+      {pct > 0 ? "+" : ""}
+      {pct}% VS MES ANT.
+    </div>
+  );
+}
+
+export function CuentaScreen({
+  perfil,
+  resumen,
+  cobro,
+  paquetes,
+  plantillasCount,
+  mesLabel,
+}: CuentaScreenProps) {
   const coach = perfil?.coach?.trim() || "Coach";
   const inicial =
     coach
@@ -38,11 +77,25 @@ export function CuentaScreen({ perfil }: { perfil: PerfilDTO | null }) {
       .toUpperCase() || "C";
   const negocio = perfil?.negocio?.trim() || "FORGE";
 
-  const metActivos = Object.values(cobro.metodos || {}).filter(Boolean).length;
-  const cobroSub = `${metActivos} método${metActivos === 1 ? "" : "s"}${cobro.banco?.trim() ? " · " + cobro.banco.trim() : ""}`;
+  const { ingresosMes, ventasMes, asistMes, ingresosMesPrev, ventasMesPrev, asistMesPrev } =
+    resumen;
+
+  // Datos de cobro subtitle, derived from the real cobro row.
+  const metActivos = cobro
+    ? [cobro.aceptaEfectivo, cobro.aceptaTransferencia, cobro.aceptaTarjeta].filter(Boolean)
+        .length
+    : 0;
+  const cobroSub = cobro
+    ? `${metActivos} método${metActivos === 1 ? "" : "s"}${cobro.banco?.trim() ? " · " + cobro.banco.trim() : ""}`
+    : "Próximamente";
 
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
-    { icon: "wa", label: "PLANTILLAS DE WHATSAPP", sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`, onClick: () => proximamente("Plantillas de WhatsApp") },
+    {
+      icon: "wa",
+      label: "PLANTILLAS DE WHATSAPP",
+      sub: `${plantillasCount} configurada${plantillasCount === 1 ? "" : "s"}`,
+      onClick: () => proximamente("Plantillas de WhatsApp"),
+    },
     { icon: "bell", label: "NOTIFICACIONES", sub: "Próximamente", onClick: () => proximamente("Notificaciones") },
     { icon: "card", label: "DATOS DE COBRO", sub: cobroSub, onClick: () => proximamente("Datos de cobro") },
     { icon: "user", label: "EDITAR PERFIL", sub: "Nombre, teléfono, contraseña", onClick: () => proximamente("Editar perfil") },
@@ -68,31 +121,31 @@ export function CuentaScreen({ perfil }: { perfil: PerfilDTO | null }) {
         </div>
       </div>
 
-      {/* Resumen del mes */}
-      <SectionHeader trailing="MAYO 2026">RESUMEN DEL MES</SectionHeader>
+      {/* Resumen del mes — real ventas + asistencias, prior-period deltas */}
+      <SectionHeader trailing={mesLabel}>RESUMEN DEL MES</SectionHeader>
       <Card style={{ margin: "0 16px" }}>
         <div className="grid grid-cols-3" style={{ gap: 18 }}>
           <div>
             <Eyebrow style={{ fontSize: 9.5 }}>INGRESOS</Eyebrow>
             <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1, letterSpacing: -0.4 }}>
-              ${HOY.ingresosMes.toLocaleString("es-MX")}
+              ${ingresosMes.toLocaleString("es-MX")}
             </Tnum>
-            <div style={{ fontSize: 10, color: "var(--green)", marginTop: 4, fontWeight: 700 }}>+18% VS ABR</div>
+            <DeltaCaption actual={ingresosMes} prev={ingresosMesPrev} />
           </div>
           <div>
             <Eyebrow style={{ fontSize: 9.5 }}>VENTAS</Eyebrow>
-            <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1 }}>{HOY.ventasMes}</Tnum>
-            <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, fontWeight: 600 }}>PAQUETES</div>
+            <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1 }}>{ventasMes}</Tnum>
+            <DeltaCaption actual={ventasMes} prev={ventasMesPrev} />
           </div>
           <div>
             <Eyebrow style={{ fontSize: 9.5 }}>ASIST.</Eyebrow>
-            <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1 }}>{HOY.asistMes}</Tnum>
-            <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, fontWeight: 600 }}>REGISTRADAS</div>
+            <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1 }}>{asistMes}</Tnum>
+            <DeltaCaption actual={asistMes} prev={asistMesPrev} />
           </div>
         </div>
       </Card>
 
-      {/* Paquetes y precios */}
+      {/* Paquetes y precios — real catalog (read-only) */}
       <SectionHeader
         trailing={
           <button
@@ -169,7 +222,7 @@ export function CuentaScreen({ perfil }: { perfil: PerfilDTO | null }) {
       </div>
 
       <div className="uppercase" style={{ padding: "32px 22px 28px", textAlign: "center", fontSize: 10, color: "var(--muted-soft)", letterSpacing: 1.6 }}>
-        {`${negocio} · v0.9 (MVP)`}
+        {`${negocio} · v1.0`}
       </div>
     </div>
   );

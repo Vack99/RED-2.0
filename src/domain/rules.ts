@@ -5,7 +5,17 @@
 // "how the gym works"; screens/DAL call these, never reimplement them.
 // ──────────────────────────────────────────────────────────────
 
-import type { Clases, CompraPaquete, EstadoCliente, PlantillaContext, Saldo, Vigencia } from "./types";
+import type {
+  AsistenciaResumen,
+  Clases,
+  CompraPaquete,
+  EstadoCliente,
+  PlantillaContext,
+  ResumenMes,
+  Saldo,
+  VentaResumen,
+  Vigencia,
+} from "./types";
 
 /**
  * Buying a package early STACKS onto the current one (brief Q5):
@@ -85,6 +95,103 @@ export function consumirClase(clases: Clases): Clases {
 export function forfeit(clases: Clases, dias: number): Clases {
   if (clases === "ilimitado") return "ilimitado";
   return dias <= 0 ? 0 : clases;
+}
+
+// ── Date helpers for the resumen (local-field comparisons only; the caller
+//    owns the timezone — Forge hands these Chihuahua-local Dates) ──
+
+/** True when two Dates fall on the same local calendar day. */
+function mismoDia(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/** True when `d` falls in the calendar month/year of `ref`. */
+function mismoMes(d: Date, ref: Date): boolean {
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth();
+}
+
+/** Whole-day signed distance from `a` to `b` at local-midnight granularity. */
+function difDias(a: Date, b: Date): number {
+  const x = new Date(a.getFullYear(), a.getMonth(), a.getDate());
+  const y = new Date(b.getFullYear(), b.getMonth(), b.getDate());
+  return Math.round((y.getTime() - x.getTime()) / 86_400_000);
+}
+
+/**
+ * Aggregate the ventas + asistencias ledgers into the dashboard / cuenta
+ * monthly resumen (ADR-0002 — derived at read, never stored). PURE: `hoy` is
+ * passed in (a Chihuahua-local Date), never read from a clock; no I/O. The DAL
+ * maps DB rows to the minimal VentaResumen / AsistenciaResumen shapes (parsing
+ * dates at the boundary) and calls this with `hoyChihuahua()`.
+ *
+ * Reported windows:
+ *  - *Mes / *MesPrev: the current and prior CALENDAR months (prior rolls across
+ *    a year boundary, e.g. Jan hoy → Dec prev).
+ *  - hoy / ayer: exact-day asistencia counts.
+ *  - semana: the last 7 days INCLUSIVE of hoy. `ingresosSemana` is their venta
+ *    total; `asistenciasSemana` is a 7-element daily series, oldest→newest, the
+ *    last entry === hoy (drives the sparkline).
+ */
+export function calcularResumenMes(
+  ventas: VentaResumen[],
+  asistencias: AsistenciaResumen[],
+  hoy: Date,
+): ResumenMes {
+  const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+  const ayer = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1);
+
+  let ingresosMes = 0;
+  let ventasMes = 0;
+  let ingresosMesPrev = 0;
+  let ventasMesPrev = 0;
+  let ingresosSemana = 0;
+
+  for (const venta of ventas) {
+    if (mismoMes(venta.fecha, hoy)) {
+      ingresosMes += venta.monto;
+      ventasMes += 1;
+    } else if (mismoMes(venta.fecha, mesPrev)) {
+      ingresosMesPrev += venta.monto;
+      ventasMesPrev += 1;
+    }
+    const offset = difDias(venta.fecha, hoy); // 0 = hoy, >0 = in the past
+    if (offset >= 0 && offset <= 6) ingresosSemana += venta.monto;
+  }
+
+  let asistMes = 0;
+  let asistMesPrev = 0;
+  let asistenciasHoy = 0;
+  let asistenciasAyer = 0;
+  // index 6 = hoy, index 0 = hoy − 6 days (oldest→newest).
+  const asistenciasSemana = [0, 0, 0, 0, 0, 0, 0];
+
+  for (const asis of asistencias) {
+    if (mismoMes(asis.fecha, hoy)) asistMes += 1;
+    else if (mismoMes(asis.fecha, mesPrev)) asistMesPrev += 1;
+
+    if (mismoDia(asis.fecha, hoy)) asistenciasHoy += 1;
+    else if (mismoDia(asis.fecha, ayer)) asistenciasAyer += 1;
+
+    const offset = difDias(asis.fecha, hoy); // 0 = hoy, 6 = six days ago
+    if (offset >= 0 && offset <= 6) asistenciasSemana[6 - offset] += 1;
+  }
+
+  return {
+    ingresosMes,
+    ventasMes,
+    asistMes,
+    ingresosMesPrev,
+    ventasMesPrev,
+    asistMesPrev,
+    asistenciasHoy,
+    asistenciasAyer,
+    ingresosSemana,
+    asistenciasSemana,
+  };
 }
 
 /**

@@ -94,6 +94,45 @@ export type Database = {
         }
         Relationships: []
       }
+      cobro: {
+        Row: {
+          acepta_efectivo: boolean
+          acepta_tarjeta: boolean
+          acepta_transferencia: boolean
+          banco: string | null
+          clabe: string | null
+          created_at: string
+          id: string
+          tarjeta: string | null
+          titular: string | null
+          user_id: string
+        }
+        Insert: {
+          acepta_efectivo?: boolean
+          acepta_tarjeta?: boolean
+          acepta_transferencia?: boolean
+          banco?: string | null
+          clabe?: string | null
+          created_at?: string
+          id?: string
+          tarjeta?: string | null
+          titular?: string | null
+          user_id: string
+        }
+        Update: {
+          acepta_efectivo?: boolean
+          acepta_tarjeta?: boolean
+          acepta_transferencia?: boolean
+          banco?: string | null
+          clabe?: string | null
+          created_at?: string
+          id?: string
+          tarjeta?: string | null
+          titular?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       paquetes: {
         Row: {
           clases: number | null
