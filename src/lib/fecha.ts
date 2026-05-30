@@ -3,8 +3,9 @@
 // them must carry the Chihuahua calendar Y/M/D in its local fields. These helpers
 // bridge the wall clock + Postgres `date` strings into that shape.
 //
-// Unlike src/lib/date.ts (DEMO_TODAY scaffolding, retired in the cleanup slice),
-// this module is the keeper.
+// src/lib/date.ts holds pure calendar helpers (labels + local-component date
+// math); its DEMO_TODAY offset scaffolding was retired in the cleanup slice.
+// This module is the source of "today" — the Chihuahua-tz wall clock.
 
 export const TZ = "America/Chihuahua";
 

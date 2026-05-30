@@ -18,6 +18,29 @@ module.exports = {
       from: {},
       to: { circular: true },
     },
+    {
+      name: "no-orphans",
+      comment:
+        "Every module must have a caller (or be an entry point) — no dead files. " +
+        "The pathNot exceptions are genuine entry points the framework loads directly " +
+        "(Next pages/layouts/templates/route handlers + the proxy), test files (run by " +
+        "vitest), ambient type decls, and root config/dotfiles.",
+      severity: "error",
+      from: {
+        orphan: true,
+        pathNot: [
+          "\\.d\\.ts$",
+          "\\.(test|spec)\\.[jt]sx?$",
+          "(^|/)src/proxy\\.ts$",
+          "(^|/)src/app/.*(page|layout|template|loading|error|not-found|route|default|global-error)\\.[jt]sx?$",
+          "(^|/)tsconfig",
+          "(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$",
+          "\\.config\\.[jt]s$",
+          "\\.config\\.mjs$",
+        ],
+      },
+      to: {},
+    },
   ],
   options: {
     doNotFollow: { path: "node_modules" },
@@ -26,6 +49,3 @@ module.exports = {
     tsPreCompilationDeps: true,
   },
 };
-// NOTE: `no-orphans` is intentionally omitted this phase — the freshly-created
-// domain core is not yet wired into screens (that happens in the Supabase
-// migration cycle). Enable it then, once everything has a caller.

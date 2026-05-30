@@ -1,11 +1,9 @@
 // ──────────────────────────────────────────────────────────────
-// Demo calendar.
-// The prototype pins "today" to Thu 27 May 2026 so the seeded data
-// (vence dates, "hoy" markers, the attendance week) stays coherent.
-// All date math in the app is relative to DEMO_TODAY, not the wall clock.
+// Pure calendar helpers (es-MX labels + local-component date math).
+// All functions here are pure: they read/produce a Date's LOCAL Y/M/D,
+// never the wall clock. The DEMO_TODAY offset scaffolding was retired in
+// the cleanup slice; "today" now comes from src/lib/fecha.ts (Chihuahua tz).
 // ──────────────────────────────────────────────────────────────
-
-export const DEMO_TODAY = new Date(2026, 4, 27); // months are 0-based → May
 
 export const DOW = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];
 export const MON = [
@@ -28,16 +26,6 @@ export function addDays(d: Date, n: number): Date {
   const r = startOfDay(d);
   r.setDate(r.getDate() + n);
   return r;
-}
-
-/** Whole-day signed offset from DEMO_TODAY (0 = today, -1 = yesterday). */
-export function offsetFromToday(d: Date): number {
-  const ms = startOfDay(d).getTime() - startOfDay(DEMO_TODAY).getTime();
-  return Math.round(ms / 86_400_000);
-}
-
-export function dateFromOffset(n: number): Date {
-  return addDays(DEMO_TODAY, n);
 }
 
 export function isoDay(d: Date): string {
