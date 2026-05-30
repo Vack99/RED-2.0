@@ -5,12 +5,12 @@ import type { Database } from '@/lib/supabase/database.types'
 
 /**
  * Next 16 request proxy (formerly `middleware.ts` — do NOT reintroduce that
- * name). Runs on the Node.js runtime before rendering. Its job here is to
- * refresh the Supabase auth session and write any rotated cookies back onto the
- * response, so Server Components see a valid session.
+ * name). Runs on the Node.js runtime before rendering. It:
+ *   1. refreshes the Supabase auth session and writes rotated cookies back onto
+ *      the response so Server Components see a valid session, and
+ *   2. gates routes — unauthenticated requests are sent to `/login`.
  *
- * The route gate (redirect unauthenticated users to `/login`) is wired in the
- * auth slice (issue #2); this scaffolds the session-refresh half.
+ * Authorization uses `getClaims()` (verified), never `getSession()`.
  */
 export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request })
@@ -41,9 +41,24 @@ export async function proxy(request: NextRequest) {
     },
   )
 
-  // Refresh the session (and trigger setAll on rotation). Authorize with
-  // getClaims() — verified — never getSession().
-  await supabase.auth.getClaims()
+  const { data } = await supabase.auth.getClaims()
+  const authed = Boolean(data?.claims)
+
+  const { pathname } = request.nextUrl
+  const isLogin = pathname === '/login'
+
+  // Unauthenticated requests to app routes go to /login; an already-authenticated
+  // visit to /login bounces to the dashboard.
+  if (!authed && !isLogin) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+  if (authed && isLogin) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/inicio'
+    return NextResponse.redirect(url)
+  }
 
   return response
 }
@@ -52,7 +67,7 @@ export const config = {
   matcher: [
     /*
      * Match all request paths except static assets and image files, so the
-     * session refresh runs on real navigations only:
+     * session refresh + gate run on real navigations only:
      * - _next/static, _next/image (build output / image optimizer)
      * - favicon.ico and common image extensions
      */

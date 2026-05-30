@@ -14,13 +14,8 @@ import {
   Tnum,
 } from "@/components/forge/ui";
 import { HOY } from "@/lib/data/seed";
-import {
-  perfilInicial,
-  useCobro,
-  usePaquetes,
-  usePerfil,
-  usePlantillas,
-} from "@/lib/data/store";
+import type { PerfilDTO } from "@/lib/data/perfil";
+import { useCobro, usePaquetes, usePlantillas } from "@/lib/data/store";
 
 // Sub-screens (Paquetes editor, Plantillas, Cobro, Perfil) arrive in
 // pass 2. For now their entry points surface a "próximamente" toast.
@@ -28,11 +23,20 @@ function proximamente(label: string) {
   forgeToast({ tone: "info", title: "Próximamente", body: `${label} llega en la siguiente entrega.` });
 }
 
-export function CuentaScreen() {
+export function CuentaScreen({ perfil }: { perfil: PerfilDTO | null }) {
   const [paquetes] = usePaquetes();
   const [plantillas] = usePlantillas();
-  const [perfil] = usePerfil();
   const [cobro] = useCobro();
+
+  const coach = perfil?.coach?.trim() || "Coach";
+  const inicial =
+    coach
+      .split(/\s+/)
+      .map((w) => w[0])
+      .slice(0, 2)
+      .join("")
+      .toUpperCase() || "C";
+  const negocio = perfil?.negocio?.trim() || "FORGE";
 
   const metActivos = Object.values(cobro.metodos || {}).filter(Boolean).length;
   const cobroSub = `${metActivos} método${metActivos === 1 ? "" : "s"}${cobro.banco?.trim() ? " · " + cobro.banco.trim() : ""}`;
@@ -50,15 +54,15 @@ export function CuentaScreen() {
 
       {/* Coach identity */}
       <div className="flex items-center" style={{ padding: "20px 22px 16px", gap: 16 }}>
-        <Avatar initial={perfilInicial(perfil)} accent size={72} style={{ fontSize: 26 }} />
+        <Avatar initial={inicial} accent size={72} style={{ fontSize: 26 }} />
         <div className="min-w-0 flex-1">
           <H1 size={24} style={{ letterSpacing: -0.3, lineHeight: 1.05 }}>
-            {perfil.nombre?.trim() || "Coach"}
+            {coach}
           </H1>
-          <Tnum style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>{perfil.tel}</Tnum>
+          <Tnum style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>{perfil?.tel ?? ""}</Tnum>
           <div style={{ marginTop: 6 }}>
             <Badge state="success">
-              {`${perfil.negocio?.trim() || "Negocio"} · ${perfil.ciudad?.trim() || "—"}`.toUpperCase()}
+              {`${negocio} · ${perfil?.ciudad?.trim() || "—"}`.toUpperCase()}
             </Badge>
           </div>
         </div>
@@ -165,7 +169,7 @@ export function CuentaScreen() {
       </div>
 
       <div className="uppercase" style={{ padding: "32px 22px 28px", textAlign: "center", fontSize: 10, color: "var(--muted-soft)", letterSpacing: 1.6 }}>
-        FORGE BOOTCAMP · v0.9 (MVP)
+        {`${negocio} · v0.9 (MVP)`}
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ const outfit = Outfit({
 
 export const metadata: Metadata = {
   title: "Forge",
-  description: "Forge Bootcamp — administración del gimnasio.",
+  description: "FORGE — administración del gimnasio.",
 };
 
 export const viewport: Viewport = {
