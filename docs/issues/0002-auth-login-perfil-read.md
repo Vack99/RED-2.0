@@ -1,6 +1,7 @@
 # Issue 2 — Auth: single-operator login + first authed read (perfil on cuenta)
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** HITL · **Labels:** `hitl`
+> **Status:** ✅ Done — branch `feat/supabase-infra-perfil` @ `f7b823f` (2026-05-29). Auth user + env provisioned by operator; gate verified headless (logged-out /cuenta·/·/inicio → 307 /login). In-browser login verification pending.
 
 ## What to build
 
