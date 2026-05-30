@@ -1,6 +1,7 @@
 # Issue 4 — Asistencia (pase de lista)
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** AFK · **Labels:** `ready-for-agent`
+> **Status:** ✅ Done — branch `feat/supabase-infra-perfil` @ `9a597c3` (2026-05-29). Gates green; RLS verified. Full mark/undo/back-entry is the operator's in-browser check.
 
 ## What to build
 
