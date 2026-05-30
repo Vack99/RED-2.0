@@ -6,43 +6,61 @@ import { Icon } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
 import { Avatar, Card, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
-import {
-  DEMO_TODAY,
-  DOW,
-  MON,
-  dateFromOffset,
-  fmtFull,
-  offsetFromToday,
-  sameDay,
-} from "@/lib/date";
-import { isPresent, paseIds, togglePase, useClientes, usePase } from "@/lib/data/store";
-import type { Cliente } from "@/lib/data/types";
+import type { PaseClienteDTO } from "@/lib/data/clientes";
+import { addDays, DOW, fmtFull, isoDay, MON, sameDay } from "@/lib/date";
+import { parseDay } from "@/lib/fecha";
 import { firstName } from "@/lib/format";
+import { togglePaseAction } from "../actions";
 
 const DAYS_BACK = 104;
+type Marcadas = Record<string, string[]>;
 
-export function AsistenciaScreen() {
+export function AsistenciaScreen({
+  clientes,
+  marcadas: marcadasInicial,
+  hoyIso,
+}: {
+  clientes: PaseClienteDTO[];
+  marcadas: Marcadas;
+  hoyIso: string;
+}) {
   const router = useRouter();
-  const [clientes] = useClientes();
-  const [grid, setGrid] = usePase();
-  const [selOffset, setSelOffset] = React.useState(0);
+  const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
+
+  const [marcadas, setMarcadas] = React.useState<Marcadas>(marcadasInicial);
+  const [selDate, setSelDate] = React.useState<Date>(() => parseDay(hoyIso));
   const [query, setQuery] = React.useState("");
   const [calOpen, setCalOpen] = React.useState(false);
 
+  const selIso = isoDay(selDate);
+  const presentes = marcadas[selIso] ?? [];
   const total = clientes.length;
-  const count = paseIds(grid, selOffset).length;
+  const count = presentes.length;
   const pct = total ? Math.round((count / total) * 100) : 0;
-  const selDate = dateFromOffset(selOffset);
+  const esHoy = sameDay(selDate, hoy);
 
   const filtered = clientes.filter((c) =>
     c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
-  function toggle(c: Cliente) {
-    const nowPresent = togglePase(setGrid, selOffset, c.id);
-    if (nowPresent) {
-      const time = "07:" + String(30 + (c.id % 25)).padStart(2, "0");
-      forgeToast({ tone: "success", title: "Asistencia registrada", body: `${firstName(c.nombre)} · ${time}` });
+  async function toggle(c: PaseClienteDTO) {
+    try {
+      const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
+      setMarcadas((m) => {
+        const cur = new Set(m[selIso] ?? []);
+        if (res.present) cur.add(c.id);
+        else cur.delete(c.id);
+        return { ...m, [selIso]: [...cur] };
+      });
+      if (res.present) {
+        forgeToast({
+          tone: "success",
+          title: "Asistencia registrada",
+          body: `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
+        });
+      }
+    } catch {
+      forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
     }
   }
 
@@ -54,7 +72,7 @@ export function AsistenciaScreen() {
           <H1 size={38}>ASISTENCIA</H1>
           <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
             <Tnum style={{ color: "var(--gold)", fontWeight: 700 }}>{count}</Tnum>{" "}
-            {selOffset === 0 ? "hoy" : "registradas"} ·{" "}
+            {esHoy ? "hoy" : "registradas"} ·{" "}
             <Tnum>{total - count}</Tnum> pendientes
           </div>
         </div>
@@ -67,15 +85,15 @@ export function AsistenciaScreen() {
             height: 38,
             padding: 0,
             cursor: "pointer",
-            borderColor: selOffset < 0 ? "var(--yellow)" : "var(--line)",
+            borderColor: !esHoy ? "var(--yellow)" : "var(--line)",
           }}
         >
-          <Icon name="cal" size={17} color={selOffset < 0 ? "var(--gold)" : "var(--muted)"} />
+          <Icon name="cal" size={17} color={!esHoy ? "var(--gold)" : "var(--muted)"} />
         </button>
       </div>
 
       {/* Day strip */}
-      <DayStrip grid={grid} selOffset={selOffset} onSelect={setSelOffset} />
+      <DayStrip hoy={hoy} marcadas={marcadas} selDate={selDate} onSelect={setSelDate} />
 
       {/* Progress hero */}
       <Card style={{ margin: "8px 16px 0" }}>
@@ -111,7 +129,7 @@ export function AsistenciaScreen() {
           <PaseRow
             key={c.id}
             cliente={c}
-            present={isPresent(grid, selOffset, c.id)}
+            present={presentes.includes(c.id)}
             first={i === 0}
             onToggle={() => toggle(c)}
             onOpen={() => router.push(`/clientes/${c.id}`)}
@@ -128,10 +146,11 @@ export function AsistenciaScreen() {
 
       <Sheet open={calOpen} onClose={() => setCalOpen(false)}>
         <PaseCalendar
-          grid={grid}
+          hoy={hoy}
+          marcadas={marcadas}
           selDate={selDate}
           onPick={(d) => {
-            setSelOffset(offsetFromToday(d));
+            setSelDate(d);
             setCalOpen(false);
           }}
         />
@@ -141,21 +160,24 @@ export function AsistenciaScreen() {
 }
 
 function DayStrip({
-  grid,
-  selOffset,
+  hoy,
+  marcadas,
+  selDate,
   onSelect,
 }: {
-  grid: Record<number, number[]>;
-  selOffset: number;
-  onSelect: (off: number) => void;
+  hoy: Date;
+  marcadas: Marcadas;
+  selDate: Date;
+  onSelect: (d: Date) => void;
 }) {
   const scroller = React.useRef<HTMLDivElement>(null);
   const selRef = React.useRef<HTMLButtonElement>(null);
 
+  const selKey = isoDay(selDate);
   // Park on / center the selected day (today by default) on mount + change.
   React.useEffect(() => {
     selRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
-  }, [selOffset]);
+  }, [selKey]);
 
   // Desktop click-drag to pan.
   const drag = React.useRef<{ x: number; left: number; on: boolean }>({ x: 0, left: 0, on: false });
@@ -171,7 +193,7 @@ function DayStrip({
 
   const items: React.ReactNode[] = [];
   for (let off = -DAYS_BACK; off <= 0; off++) {
-    const d = dateFromOffset(off);
+    const d = addDays(hoy, off);
     if (off === -DAYS_BACK || d.getDate() === 1) {
       items.push(
         <div key={`m${off}`} className="flex shrink-0 flex-col items-center justify-center" style={{ width: 30 }}>
@@ -179,14 +201,14 @@ function DayStrip({
         </div>,
       );
     }
-    const isSel = off === selOffset;
+    const isSel = sameDay(d, selDate);
     const isToday = off === 0;
-    const hasMarks = (grid[off]?.length ?? 0) > 0;
+    const hasMarks = (marcadas[isoDay(d)]?.length ?? 0) > 0;
     items.push(
       <button
         key={`d${off}`}
         ref={isSel ? selRef : undefined}
-        onClick={() => onSelect(off)}
+        onClick={() => onSelect(d)}
         className="flex shrink-0 flex-col items-center"
         style={{
           width: 46,
@@ -228,15 +250,13 @@ function PaseRow({
   onToggle,
   onOpen,
 }: {
-  cliente: Cliente;
+  cliente: PaseClienteDTO;
   present: boolean;
   first: boolean;
   onToggle: () => void;
   onOpen: () => void;
 }) {
   const c = cliente;
-  const claseInfo = c.clasesRest === "∞" ? "Ilimitado" : `${c.clasesRest} de ${c.totalClases} clases`;
-  const vence = c.diasRest <= 5;
   return (
     <div
       onClick={onToggle}
@@ -261,8 +281,8 @@ function PaseRow({
       >
         <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{c.nombre}</div>
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
-          {c.paquete} · {claseInfo}
-          {vence && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
+          {c.paquete} · {c.clasesLabel}
+          {c.porVencer && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
         </div>
       </button>
       <div
@@ -283,11 +303,13 @@ function PaseRow({
 }
 
 function PaseCalendar({
-  grid,
+  hoy,
+  marcadas,
   selDate,
   onPick,
 }: {
-  grid: Record<number, number[]>;
+  hoy: Date;
+  marcadas: Marcadas;
   selDate: Date;
   onPick: (d: Date) => void;
 }) {
@@ -296,7 +318,7 @@ function PaseCalendar({
   const first = new Date(view.y, view.m, 1);
   const lead = first.getDay();
   const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
-  const atCurrentMonth = view.y === DEMO_TODAY.getFullYear() && view.m === DEMO_TODAY.getMonth();
+  const atCurrentMonth = view.y === hoy.getFullYear() && view.m === hoy.getMonth();
 
   const cells: (Date | null)[] = [];
   for (let i = 0; i < lead; i++) cells.push(null);
@@ -304,11 +326,11 @@ function PaseCalendar({
 
   const stepMonth = (delta: number) => {
     const next = new Date(view.y, view.m + delta, 1);
-    if (next > DEMO_TODAY) return;
+    if (next > hoy) return;
     setView({ y: next.getFullYear(), m: next.getMonth() });
   };
 
-  const selCount = paseIds(grid, offsetFromToday(selDate)).length;
+  const selCount = (marcadas[isoDay(selDate)]?.length ?? 0);
 
   return (
     <div style={{ padding: "8px 18px 6px" }}>
@@ -342,13 +364,13 @@ function PaseCalendar({
       <div className="grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
         {cells.map((d, i) => {
           if (!d) return <div key={`b${i}`} />;
-          const future = d > DEMO_TODAY;
+          const future = d > hoy;
           const isSel = sameDay(d, selDate);
-          const isToday = sameDay(d, DEMO_TODAY);
-          const has = (grid[offsetFromToday(d)]?.length ?? 0) > 0;
+          const isToday = sameDay(d, hoy);
+          const has = (marcadas[isoDay(d)]?.length ?? 0) > 0;
           return (
             <button
-              key={d.toISOString()}
+              key={isoDay(d)}
               onClick={() => !future && onPick(d)}
               disabled={future}
               className="relative flex aspect-square items-center justify-center"
@@ -377,7 +399,7 @@ function PaseCalendar({
           </div>
         </div>
         <button
-          onClick={() => onPick(DEMO_TODAY)}
+          onClick={() => onPick(hoy)}
           className="uppercase font-extrabold"
           style={{ padding: "10px 16px", background: "var(--yellow)", color: "var(--ink)", fontSize: 12, letterSpacing: 1, cursor: "pointer" }}
         >

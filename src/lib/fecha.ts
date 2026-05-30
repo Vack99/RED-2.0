@@ -33,3 +33,20 @@ export function toIsoDay(d: Date): string {
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 }
+
+/** Today's iso day in America/Chihuahua ("YYYY-MM-DD"). */
+export function hoyIsoChihuahua(): string {
+  return toIsoDay(hoyChihuahua());
+}
+
+/** Current wall-clock time in America/Chihuahua as "HH:MM" (24h). */
+export function horaChihuahua(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const get = (t: string) => parts.find((p) => p.type === t)!.value;
+  return `${get("hour")}:${get("minute")}`;
+}

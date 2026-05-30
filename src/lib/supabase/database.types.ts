@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      asistencias: {
+        Row: {
+          cliente_id: string
+          consumio: boolean
+          created_at: string
+          deleted_at: string | null
+          fecha: string
+          hora: string | null
+          id: string
+          user_id: string
+        }
+        Insert: {
+          cliente_id: string
+          consumio?: boolean
+          created_at?: string
+          deleted_at?: string | null
+          fecha: string
+          hora?: string | null
+          id?: string
+          user_id: string
+        }
+        Update: {
+          cliente_id?: string
+          consumio?: boolean
+          created_at?: string
+          deleted_at?: string | null
+          fecha?: string
+          hora?: string | null
+          id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "asistencias_cliente_id_fkey"
+            columns: ["cliente_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clientes: {
         Row: {
           clases_restantes: number | null
