@@ -39,6 +39,18 @@ export function hoyIsoChihuahua(): string {
   return toIsoDay(hoyChihuahua());
 }
 
+/** The Chihuahua-local calendar Date for a timestamptz string (handles tz drift). */
+export function fechaChihuahua(isoTimestamp: string): Date {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date(isoTimestamp));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  return new Date(get("year"), get("month") - 1, get("day"));
+}
+
 /** Current wall-clock time in America/Chihuahua as "HH:MM" (24h). */
 export function horaChihuahua(): string {
   const parts = new Intl.DateTimeFormat("en-GB", {

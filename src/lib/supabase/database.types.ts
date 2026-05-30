@@ -57,8 +57,10 @@ export type Database = {
       }
       clientes: {
         Row: {
+          birthday: string | null
           clases_restantes: number | null
           created_at: string
+          email: string | null
           id: string
           nombre: string
           paquete_nombre: string | null
@@ -67,8 +69,10 @@ export type Database = {
           vence: string | null
         }
         Insert: {
+          birthday?: string | null
           clases_restantes?: number | null
           created_at?: string
+          email?: string | null
           id?: string
           nombre: string
           paquete_nombre?: string | null
@@ -77,8 +81,10 @@ export type Database = {
           vence?: string | null
         }
         Update: {
+          birthday?: string | null
           clases_restantes?: number | null
           created_at?: string
+          email?: string | null
           id?: string
           nombre?: string
           paquete_nombre?: string | null

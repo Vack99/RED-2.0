@@ -4,8 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/forge/icon";
 import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
-import { useClientes } from "@/lib/data/store";
-import type { Cliente } from "@/lib/data/types";
+import type { ClienteDerivado } from "@/lib/data/derive";
 
 // Thresholds tuned for 8/12-class, 20–30 day memberships.
 const CL_DAYS = { hot: 3, warm: 7, soft: 14 };
@@ -19,9 +18,9 @@ type Sort = "dias" | "nombre" | "asist";
  * dimension. `binding` is whichever (clases|días) lapses first; `score`
  * (lower = sooner) drives the urgency sort.
  */
-function clientUrgency(c: Cliente) {
+function clientUrgency(c: ClienteDerivado) {
   const days = c.diasRest;
-  const cls = c.clasesRest === "∞" ? Infinity : c.clasesRest;
+  const cls = c.clasesRest === "ilimitado" ? Infinity : c.clasesRest;
   let level: Level = "ok";
   if (days <= CL_DAYS.hot || cls <= CL_CLS.hot) level = "critico";
   else if (days <= CL_DAYS.warm || cls <= CL_CLS.warm) level = "urgente";
@@ -39,9 +38,8 @@ function urgencyColor(level: Level) {
     : "var(--muted)";
 }
 
-export function ClientesScreen() {
+export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const router = useRouter();
-  const [clientes] = useClientes();
   const [query, setQuery] = React.useState("");
   const [showFilters, setShowFilters] = React.useState(false);
   const [renovar, setRenovar] = React.useState(false);
@@ -187,7 +185,7 @@ export function ClientesScreen() {
         {list.map(({ c, u }) => {
           const col = urgencyColor(u.level);
           const showBar = u.level === "critico" || u.level === "urgente";
-          const clsLabel = c.clasesRest === "∞" ? "∞" : c.clasesRest;
+          const clsLabel = c.clasesRestLabel;
           const bindingIsDias = u.binding === "dias";
           return (
             <button

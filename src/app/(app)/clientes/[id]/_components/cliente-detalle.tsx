@@ -15,69 +15,53 @@ import {
   SectionHeader,
   Tnum,
 } from "@/components/forge/ui";
-import { useAsistTimes, useClientes, usePase } from "@/lib/data/store";
+import type { ClienteFichaDTO } from "@/lib/data/clientes";
+import { MON } from "@/lib/date";
+import { parseDay } from "@/lib/fecha";
 import { firstName, waLink } from "@/lib/format";
+import { togglePaseAction } from "../actions";
 
-const HISTORIAL = [
-  { d: "mié 27", t: "07:30", tag: "Funcional" },
-  { d: "lun 25", t: "18:00", tag: "Funcional" },
-  { d: "vie 22", t: "07:30", tag: "Funcional" },
-  { d: "mié 20", t: "07:30", tag: "Funcional" },
-  { d: "lun 18", t: "19:00", tag: "Funcional" },
-];
-const PAGOS = [
-  { d: "13 may", p: "12 clases", m: "$1,100", met: "Efectivo" },
-  { d: "20 abr", p: "8 clases", m: "$750", met: "Transferencia" },
-  { d: "02 abr", p: "8 clases", m: "$750", met: "Efectivo" },
-];
-
-export function ClienteDetalle({ id }: { id: number }) {
+export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const router = useRouter();
-  const [clientes] = useClientes();
-  const [grid, setGrid] = usePase();
-  const [times, setTimes] = useAsistTimes();
+  const c = ficha.cliente;
 
-  const idx = Math.max(0, clientes.findIndex((x) => x.id === id));
-  const c = clientes[idx];
-
-  const present = (grid[0] ?? []).includes(c?.id);
-  const asistHoy = present ? times[c?.id] ?? "07:30" : null;
-
-  // Swipe between clients.
-  const prevC = idx > 0 ? clientes[idx - 1] : null;
-  const nextC = idx < clientes.length - 1 ? clientes[idx + 1] : null;
-  const swipe = React.useRef({ x: 0, dx: 0, on: false });
+  const [present, setPresent] = React.useState(ficha.presentHoy);
+  const [horaHoy, setHoraHoy] = React.useState<string | null>(ficha.horaHoy);
+  const [busy, setBusy] = React.useState(false);
   const [dx, setDx] = React.useState(0);
+  const swipe = React.useRef({ x: 0, dx: 0, on: false });
 
-  if (!c) {
-    return (
-      <div style={{ padding: 40, color: "var(--muted)" }}>Cliente no encontrado.</div>
-    );
-  }
+  const mesLabel = MON[parseDay(ficha.hoyIso).getMonth()];
+  const ilimitado = c.clasesRest === "ilimitado";
+  const restRatio =
+    c.clasesRest === "ilimitado"
+      ? 1
+      : ficha.totalClases
+        ? Math.max(0.06, c.clasesRest / ficha.totalClases)
+        : 0.06;
+  const dayRatio = Math.max(0.04, c.diasRest / ficha.dayDenom);
+  const asistCount = ficha.historial.length + (present ? 1 : 0);
 
-  const marcar = () => {
-    const t = new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", hour12: false });
-    setGrid((g) => ({ ...g, 0: (g[0] ?? []).includes(c.id) ? g[0] ?? [] : [...(g[0] ?? []), c.id] }));
-    setTimes((m) => ({ ...m, [c.id]: t }));
-    forgeToast({ tone: "success", title: "Asistencia registrada", body: `${c.nombre} · hoy ${t}` });
-  };
-  const quitar = () => {
-    setGrid((g) => ({ ...g, 0: (g[0] ?? []).filter((x) => x !== c.id) }));
-    setTimes((m) => {
-      const n = { ...m };
-      delete n[c.id];
-      return n;
-    });
-    forgeToast({ tone: "warning", title: "Asistencia quitada", body: `Se deshizo el registro de hoy de ${firstName(c.nombre)}.` });
-  };
-  const mensaje = () => {
-    const text = `Hola ${firstName(c.nombre)} 👋 Aún tienes ${c.clasesRest === "∞" ? "clases ilimitadas" : `${c.clasesRest} clases`} de tu paquete (${c.paquete}), vence el ${c.vence}. ¡Te esperamos! 💪 — Forge Bootcamp`;
-    window.open(waLink(c.tel, text), "_blank");
+  const toggleAsistencia = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await togglePaseAction({ clienteId: c.id, fecha: ficha.hoyIso });
+      setPresent(res.present);
+      setHoraHoy(res.hora);
+      forgeToast(
+        res.present
+          ? { tone: "success", title: "Asistencia registrada", body: `${c.nombre}${res.hora ? " · hoy " + res.hora : ""}` }
+          : { tone: "warning", title: "Asistencia quitada", body: `Se deshizo el registro de hoy de ${firstName(c.nombre)}.` },
+      );
+    } catch {
+      forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
+    } finally {
+      setBusy(false);
+    }
   };
 
-  const restRatio = c.clasesRest === "∞" ? 1 : Math.max(0.06, (c.clasesRest as number) / (c.totalClases as number));
-  const dayDenom = c.paquete.startsWith("8") ? 20 : c.paquete.startsWith("12") ? 25 : 30;
-  const dayRatio = Math.max(0.04, c.diasRest / dayDenom);
+  const mensaje = () => window.open(waLink(c.tel, ficha.waText), "_blank");
 
   const onTouchStart = (e: React.TouchEvent) => (swipe.current = { x: e.touches[0].clientX, dx: 0, on: true });
   const onTouchMove = (e: React.TouchEvent) => {
@@ -88,16 +72,21 @@ export function ClienteDetalle({ id }: { id: number }) {
   const onTouchEnd = () => {
     const cur = swipe.current.dx;
     swipe.current.on = false;
-    if (cur < -80 && nextC) router.replace(`/clientes/${nextC.id}`);
-    else if (cur > 80 && prevC) router.replace(`/clientes/${prevC.id}`);
+    if (cur < -80 && ficha.vecinos.nextId) router.replace(`/clientes/${ficha.vecinos.nextId}`);
+    else if (cur > 80 && ficha.vecinos.prevId) router.replace(`/clientes/${ficha.vecinos.prevId}`);
     setDx(0);
   };
+
+  const histRows: { dDisplay: string; hora: string | null; today: boolean }[] = [
+    ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true }] : []),
+    ...ficha.historial,
+  ];
 
   return (
     <div>
       <AppBar
         onBack={() => router.push("/clientes")}
-        center={`#${String(c.id).padStart(3, "0")} · CLIENTE`}
+        center="CLIENTE"
         trailing={
           <button
             onClick={() => forgeToast({ tone: "info", title: "Próximamente", body: "Editar cliente llega en la siguiente entrega." })}
@@ -124,10 +113,10 @@ export function ClienteDetalle({ id }: { id: number }) {
               <H1 size={24} style={{ letterSpacing: -0.3, lineHeight: 1.05 }}>{c.nombre}</H1>
               <div className="flex flex-wrap items-center" style={{ gap: 8, marginTop: 8, fontSize: 11.5, color: "var(--muted)" }}>
                 <Badge state={c.estado} />
-                {asistHoy && (
+                {present && (
                   <span className="inline-flex items-center uppercase font-extrabold" style={{ gap: 5, padding: "4px 8px", background: "var(--green)", color: "var(--canvas)", fontSize: 9.5, letterSpacing: 1.1 }}>
                     <Icon name="check" size={11} color="var(--canvas)" strokeWidth={2.6} />
-                    ASISTIÓ HOY · <Tnum style={{ fontWeight: 800 }}>{asistHoy}</Tnum>
+                    ASISTIÓ HOY{horaHoy ? " · " : ""}{horaHoy && <Tnum style={{ fontWeight: 800 }}>{horaHoy}</Tnum>}
                   </span>
                 )}
                 <Tnum>{c.tel}</Tnum>
@@ -141,7 +130,7 @@ export function ClienteDetalle({ id }: { id: number }) {
           <div className="flex items-start justify-between">
             <Eyebrow>PAQUETE ACTIVO</Eyebrow>
             <Eyebrow color="var(--muted)">
-              VENCE <span style={{ color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.vence.toUpperCase()}</span>
+              VENCE <span style={{ color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.venceDisplay.toUpperCase()}</span>
             </Eyebrow>
           </div>
           <H1 size={22} style={{ marginTop: 8 }}>{c.paquete}</H1>
@@ -150,8 +139,8 @@ export function ClienteDetalle({ id }: { id: number }) {
             <div className="flex-1">
               <Eyebrow style={{ fontSize: 10 }}>CLASES RESTANTES</Eyebrow>
               <div className="flex items-baseline" style={{ gap: 4, marginTop: 4 }}>
-                <Tnum className="font-extrabold" style={{ fontSize: 32, lineHeight: 1 }}>{c.clasesRest}</Tnum>
-                {c.clasesRest !== "∞" && <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {c.totalClases}</span>}
+                <Tnum className="font-extrabold" style={{ fontSize: 32, lineHeight: 1 }}>{c.clasesRestLabel}</Tnum>
+                {!ilimitado && ficha.totalClases !== null && <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {ficha.totalClases}</span>}
               </div>
               <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
                 <div style={{ width: `${restRatio * 100}%`, height: "100%", background: "var(--yellow)", transition: "width 600ms cubic-bezier(.32,.72,0,1)" }} />
@@ -161,7 +150,7 @@ export function ClienteDetalle({ id }: { id: number }) {
               <Eyebrow style={{ fontSize: 10 }}>DÍAS RESTANTES</Eyebrow>
               <div className="flex items-baseline" style={{ gap: 4, marginTop: 4 }}>
                 <Tnum className="font-extrabold" style={{ fontSize: 32, lineHeight: 1, color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.diasRest}</Tnum>
-                <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {dayDenom}</span>
+                <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {ficha.dayDenom}</span>
               </div>
               <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
                 <div style={{ width: `${dayRatio * 100}%`, height: "100%", background: c.diasRest <= 5 ? "var(--yellow)" : "var(--green)", transition: "width 600ms cubic-bezier(.32,.72,0,1)" }} />
@@ -169,14 +158,14 @@ export function ClienteDetalle({ id }: { id: number }) {
             </div>
           </div>
           <div className="flex justify-between" style={{ marginTop: 16, fontSize: 11.5, color: "var(--muted)" }}>
-            <span>COMPRADO <Tnum style={{ color: "var(--fg)" }}>13 MAY</Tnum></span>
-            <span>ALTA <Tnum style={{ color: "var(--fg)" }}>14 ABR</Tnum></span>
+            <span>COMPRADO <Tnum style={{ color: "var(--fg)" }}>{ficha.compradoDisplay.toUpperCase()}</Tnum></span>
+            <span>ALTA <Tnum style={{ color: "var(--fg)" }}>{ficha.altaDisplay.toUpperCase()}</Tnum></span>
           </div>
         </Card>
 
         {/* Attendance control = today indicator */}
         <div style={{ padding: "14px 16px 0" }}>
-          {asistHoy ? (
+          {present ? (
             <>
               <div className="flex items-center" style={{ gap: 12, padding: "11px 12px 11px 14px", background: "var(--green-soft)", border: "1px solid var(--green)" }}>
                 <div className="flex shrink-0 items-center justify-center" style={{ width: 34, height: 34, background: "var(--green)" }}>
@@ -185,10 +174,10 @@ export function ClienteDetalle({ id }: { id: number }) {
                 <div className="min-w-0 flex-1">
                   <div className="uppercase font-extrabold" style={{ fontSize: 13, color: "var(--fg)", letterSpacing: 0.5 }}>Asistencia de hoy</div>
                   <div style={{ fontSize: 11, color: "var(--green)", marginTop: 2, letterSpacing: 0.3 }}>
-                    Registrada a las <Tnum style={{ fontWeight: 700 }}>{asistHoy}</Tnum>
+                    {horaHoy ? <>Registrada a las <Tnum style={{ fontWeight: 700 }}>{horaHoy}</Tnum></> : "Registrada"}
                   </div>
                 </div>
-                <button onClick={quitar} className="flex shrink-0 items-center uppercase font-extrabold" style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--muted)", fontSize: 10.5, letterSpacing: 1, gap: 5, padding: "6px 4px" }}>
+                <button onClick={toggleAsistencia} disabled={busy} className="flex shrink-0 items-center uppercase font-extrabold" style={{ background: "transparent", border: "none", cursor: busy ? "default" : "pointer", color: "var(--muted)", fontSize: 10.5, letterSpacing: 1, gap: 5, padding: "6px 4px" }}>
                   <Icon name="close" size={13} color="var(--muted)" />
                   Deshacer
                 </button>
@@ -199,7 +188,7 @@ export function ClienteDetalle({ id }: { id: number }) {
             </>
           ) : (
             <div className="flex" style={{ gap: 8 }}>
-              <Button variant="primary" full icon="check" onClick={marcar}>ASISTENCIA</Button>
+              <Button variant="primary" full icon="check" disabled={busy} onClick={toggleAsistencia}>ASISTENCIA</Button>
               <Button variant="secondary" full onClick={() => router.push("/vender")}>RENOVAR</Button>
             </div>
           )}
@@ -215,31 +204,37 @@ export function ClienteDetalle({ id }: { id: number }) {
         </div>
 
         {/* Historial */}
-        <SectionHeader trailing={`${c.asistEsteMes + (asistHoy ? 1 : 0)} ASIST.`}>HISTORIAL · MAYO</SectionHeader>
-        {[...(asistHoy ? [{ d: "HOY", t: asistHoy, tag: "Funcional", today: true }] : []), ...HISTORIAL.map((h) => ({ ...h, today: false }))].map((row, i) => (
+        <SectionHeader trailing={`${asistCount} ASIST.`}>HISTORIAL · {mesLabel}</SectionHeader>
+        {histRows.length === 0 && (
+          <div style={{ padding: "20px 22px", fontSize: 12, color: "var(--muted)" }}>Sin asistencias este mes.</div>
+        )}
+        {histRows.map((row, i) => (
           <div
             key={i}
             className="grid items-center"
-            style={{ gridTemplateColumns: "8px 70px 1fr auto", gap: 14, padding: "12px 22px", borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)", background: row.today ? "var(--green-soft)" : "transparent" }}
+            style={{ gridTemplateColumns: "8px 80px 1fr auto", gap: 14, padding: "12px 22px", borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)", background: row.today ? "var(--green-soft)" : "transparent" }}
           >
             <span style={{ width: 6, height: 6, borderRadius: 999, background: row.today ? "var(--green)" : "var(--yellow)" }} />
-            <Tnum className="uppercase" style={{ fontWeight: row.today ? 800 : 600, fontSize: 13, color: row.today ? "var(--green)" : "var(--fg)", letterSpacing: 0.4 }}>{row.d}</Tnum>
-            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>{row.tag}</span>
-            <Tnum style={{ fontSize: 12, color: row.today ? "var(--green)" : "var(--muted)" }}>{row.t}</Tnum>
+            <Tnum className="uppercase" style={{ fontWeight: row.today ? 800 : 600, fontSize: 13, color: row.today ? "var(--green)" : "var(--fg)", letterSpacing: 0.4 }}>{row.dDisplay}</Tnum>
+            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>Asistencia</span>
+            <Tnum style={{ fontSize: 12, color: row.today ? "var(--green)" : "var(--muted)" }}>{row.hora ?? "—"}</Tnum>
           </div>
         ))}
 
         {/* Pagos */}
-        <SectionHeader trailing="3 VENTAS">HISTORIAL DE PAGOS</SectionHeader>
-        {PAGOS.map((row, i) => (
+        <SectionHeader trailing={`${ficha.ventasCount} ${ficha.ventasCount === 1 ? "VENTA" : "VENTAS"}`}>HISTORIAL DE PAGOS</SectionHeader>
+        {ficha.pagos.length === 0 && (
+          <div style={{ padding: "20px 22px", fontSize: 12, color: "var(--muted)" }}>Sin ventas registradas.</div>
+        )}
+        {ficha.pagos.map((row, i) => (
           <div key={i} className="flex items-center justify-between" style={{ gap: 12, padding: "13px 22px", borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)" }}>
             <div>
-              <div className="uppercase font-semibold" style={{ fontSize: 13, color: "var(--fg)", letterSpacing: 0.3 }}>{row.p}</div>
+              <div className="uppercase font-semibold" style={{ fontSize: 13, color: "var(--fg)", letterSpacing: 0.3 }}>{row.paquete}</div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
-                <Tnum>{row.d}</Tnum> · {row.met}
+                <Tnum>{row.fechaDisplay}</Tnum> · {row.metodo}
               </div>
             </div>
-            <Tnum className="font-extrabold" style={{ fontSize: 16 }}>{row.m}</Tnum>
+            <Tnum className="font-extrabold" style={{ fontSize: 16 }}>{row.montoDisplay}</Tnum>
           </div>
         ))}
 
