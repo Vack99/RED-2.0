@@ -1,6 +1,11 @@
 # Issue 7 — Dashboard + cuenta resumen on real data (calcularResumenMes)
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** AFK · **Labels:** `ready-for-agent`
+>
+> **Status:** ✅ Done @7aaaa8a — gates green; both fresh-eyes gates YES (Elegance + Senior Dev;
+> a dead `{datos_pago}` formatter flagged on round 1 was removed). Note: `{datos_pago}` is
+> *sourced* from the real cobro row and read behind auth; injecting the token into a sent
+> message body lands with the retención editor (renderPlantilla already supports the token).
 
 ## What to build
 
@@ -14,13 +19,13 @@ vigentes, ingresos, sparkline, today's recientes joined to clientes) and the **c
 
 ## Acceptance criteria
 
-- [ ] `calcularResumenMes` added to the domain core and **unit-tested** (fixed ventas/asistencias + fixed `hoy` → asserted ingresosMes/ventasMes/asistMes/hoy-vs-ayer/deltas); `ResumenMes` type added. Prior art: `src/domain/rules.test.ts`.
-- [ ] **inicio** renders asistencias hoy + delta vs ayer, vigentes, ingresos, and a sparkline from a real series; "recientes" = today's asistencia rows joined to clientes, ordered by time.
-- [ ] **cuenta** "Resumen del mes" reflects real ventas + asistencias incl. the prior-period delta; the month label is real.
-- [ ] `cobro` table created with RLS; `{datos_pago}` sourced from the real cobro row; perfil/cobro read behind auth.
-- [ ] The `HOY` seed object + hardcoded sparkline/deltas are removed from the wired screens.
-- [ ] Sub-editors remain "próximamente" but show real data.
-- [ ] `pnpm lint` + `pnpm test` + `pnpm build` green.
+- [x] `calcularResumenMes` added to the domain core and **unit-tested** (8 cases: fixed ventas/asistencias + fixed `hoy` → ingresosMes/ventasMes/asistMes/hoy-vs-ayer/last-7-day/weekly series/prior-month deltas + year-boundary + empty-ledger); `ResumenMes` type added.
+- [x] **inicio** renders asistencias hoy + delta vs ayer, vigentes, ingresos, and a sparkline from a real 7-day series; "recientes" = today's asistencia rows joined to clientes, ordered by time.
+- [x] **cuenta** "Resumen del mes" reflects real ventas + asistencias incl. the prior-period delta; the month label is real (es-MX).
+- [x] `cobro` table created with RLS; `{datos_pago}` sourced from the real cobro row; perfil/cobro read behind auth.
+- [x] The `HOY` seed object + hardcoded sparkline/deltas are removed from the wired screens.
+- [x] Sub-editors remain "próximamente" but show real data.
+- [x] `pnpm lint` + `pnpm test` (45/45) + `pnpm build` green.
 
 ## Blocked by
 

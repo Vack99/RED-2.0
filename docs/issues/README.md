@@ -4,8 +4,8 @@
 > files **are** the issue store; `/to-goal` consumes them directly. Source PRD:
 > `docs/prds/prd-supabase-migration.md`.
 
-> **Progress (2026-05-29):** #1 ✅ · #2 ✅ · #3 ✅ · #4 ✅ (@ `9a597c3`) · #5 ✅ (@ `0b99c0b`) · #6 ✅ (@ `4ada644`).
-> **#7 (dashboard)** remains (unblocked); then **#8** cleanup.
+> **Progress (2026-05-30):** #1 ✅ · #2 ✅ · #3 ✅ · #4 ✅ (@ `9a597c3`) · #5 ✅ (@ `0b99c0b`) · #6 ✅ (@ `4ada644`) · #7 ✅ (@ `7aaaa8a`).
+> **#8 (cleanup)** remains — the last slice; retires the mock seam.
 
 **Labels:** `ready-for-agent` = AFK, eligible for the autonomous `/to-goal` queue ·
 `hitl` = human-gated (`/to-goal` skips it and treats it as a non-closeable blocker).
@@ -20,7 +20,7 @@ Issue number `#N` ↔ file `000N-*.md`. "Blocked by" lines reference `#N`.
 | 4 | ✅ `0004-asistencia-pase-de-lista.md` | Asistencia (pase de lista) **(done @9a597c3)** | AFK | `ready-for-agent` | #3 |
 | 5 | ✅ `0005-clientes-roster-ficha.md` | Clientes roster + ficha (derived-at-read) **(done @0b99c0b)** | AFK | `ready-for-agent` | #3, #4 |
 | 6 | ✅ `0006-retencion-plantillas.md` | Retención: plantillas + converge WA builders **(done @4ada644)** | AFK | `ready-for-agent` | #3, #5 |
-| 7 | `0007-dashboard-cuenta-resumen.md` | Dashboard + cuenta resumen (calcularResumenMes) | AFK | `ready-for-agent` | #3, #4 |
+| 7 | ✅ `0007-dashboard-cuenta-resumen.md` | Dashboard + cuenta resumen (calcularResumenMes) **(done @7aaaa8a)** | AFK | `ready-for-agent` | #3, #4 |
 | 8 | `0008-retire-mock-seam.md` | Retire mock seam + tighten boundary | AFK | `ready-for-agent` | #3, #4, #5, #6, #7 |
 
 ## Execution order
