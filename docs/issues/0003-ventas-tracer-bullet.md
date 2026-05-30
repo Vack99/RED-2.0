@@ -1,6 +1,7 @@
 # Issue 3 — Ventas tracer bullet (first business slice)
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** AFK · **Labels:** `ready-for-agent`
+> **Status:** ✅ Done — branch `feat/supabase-infra-perfil` @ `e26f624` (2026-05-29). Gates green; RLS + folio verified via SQL. Full stacking-sale flow is the operator's in-browser check.
 
 ## What to build
 
