@@ -1,6 +1,7 @@
 # Issue 5 — Clientes roster + ficha (derived-at-read)
 
 > **Source:** docs/prds/prd-supabase-migration.md · **Type:** AFK · **Labels:** `ready-for-agent`
+> **Status:** ✅ Done — branch `feat/supabase-infra-perfil` @ `0b99c0b` (2026-05-29). Pure derivation unit-tested (8 tests); gates green. Roster/ficha display is the operator's in-browser check.
 
 ## What to build
 
