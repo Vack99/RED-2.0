@@ -49,7 +49,7 @@ export function VenderScreen({
 
   const clienteValid =
     mode === "new"
-      ? nuevo.nombre.trim().length >= 3 && nuevo.tel.replace(/\D/g, "").length >= 8
+      ? nuevo.nombre.trim().length >= 3 && nuevo.tel.replace(/\D/g, "").length === 10
       : !!existing;
   const canSubmit = clienteValid && !!sel && !!metodo && !submitting;
 
