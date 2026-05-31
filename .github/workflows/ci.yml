@@ -1,0 +1,41 @@
+name: CI
+
+# The full quality gate for the public showcase: every push/PR to the default
+# branch must pass lint + dependency-boundary, typecheck, unit tests, and a
+# production build. Mirrors the pre-commit hook, plus the build the hook skips.
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Install Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+
+      - run: pnpm typecheck
+
+      - run: pnpm test
+
+      # Build reads Supabase env only at request time, not at build, but Next
+      # warns if the public vars are absent — supply harmless placeholders so a
+      # red build always means a real failure, never a missing-env false alarm.
+      - run: pnpm build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ci-placeholder-publishable-key
