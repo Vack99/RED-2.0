@@ -6,19 +6,21 @@ type and a file, so a rename surfaces drift. Distilled from the client brief
 
 | Término | Significado | Dónde vive en el código |
 |---|---|---|
-| **cliente** | A gym member. | `Cliente` — `src/lib/data/types.ts` (→ `src/domain/types.ts` at migration) |
+| **cliente** | A gym member. | stored `ClienteFacts` → derived `ClienteDerivado` — `src/lib/data/derive.ts` (per-screen DTOs in `src/lib/data/clientes.ts`) |
 | **ficha** | A client's detail/profile screen. | `src/app/(app)/clientes/[id]/` |
-| **paquete** | A class package: 8 clases / 12 clases / Ilimitado. | `Paquete` — `src/lib/data/types.ts` |
+| **paquete** | A class package: 8 clases / 12 clases / Ilimitado. | `PaqueteDTO` — `src/lib/data/paquetes.ts`; the contributed `CompraPaquete` — `src/domain/types.ts` |
 | **vigencia** | A package's validity window (días, or the calendar month for Ilimitado). | `Vigencia` + `calcVigenciaEnd` — `src/domain/` |
 | **asistencia** / **pase de lista** | Recording that a client attended. | `src/app/(app)/asistencia/` |
 | **venta** | Selling/renewing a package. | `src/app/(app)/vender/` |
 | **recibo** | The sale receipt. | `src/app/(app)/vender/_components/` |
 | **estado** | Derived lifecycle: `activo` / `por_vencer` / `sin_clases`. Never stored. | `EstadoCliente` + `derivarEstado` — `src/domain/` |
+| **urgencia** / **por renovar** | Derived retention urgency (`critico`/`urgente`/`pronto`/`ok`) from whichever of clases\|días lapses first; drives the directory's "por renovar" list + sort. | `Urgencia` / `NivelUrgencia` + `urgenciaCliente` — `src/domain/` |
 | **clases restantes** | Classes left (a number, or `ilimitado`). | `Clases` (`Saldo.clases`) — `src/domain/types.ts` |
-| **stacking** | Buying a package early ADDS its classes + days onto the current one. | `stackPaquete` — `src/domain/rules.ts` |
+| **stacking** | Buying a package early ADDS its classes + days onto the current one. | `stackPaquete` (+ `baseParaStack`, the still-valid base) — `src/domain/rules.ts` |
 | **forfeit** | Remaining classes are lost when the vigencia expires. | `forfeit` — `src/domain/rules.ts` |
 | **plantilla** | A WhatsApp message template with `{token}` placeholders. | `renderPlantilla` — `src/domain/rules.ts` |
-| **cobro** | Payment/bank details for transfers (titular, banco, CLABE). | `Cobro` — `src/lib/data/types.ts` |
+| **cobro** | Payment/bank details for transfers (titular, banco, CLABE). | `CobroDTO` — `src/lib/data/cobro.ts` |
+| **perfil** | The single operator's profile + brand (`negocio` = "FORGE", coach, ciudad). | `PerfilDTO` — `src/lib/data/perfil.ts` |
 | **por pagar** / **pendiente** | An optional unpaid sale. | `MetodoPago` `"pendiente"` — `src/domain/types.ts` |
 
 **Flagged tension:** the brief marks phone *optional* (Q4), but WhatsApp retention is the app's reason to exist, so phone is treated as *required* in practice. Email and birthday are optional stored fields (brief Q4). Brand name is **"FORGE"** (Q10) — not "Forge Bootcamp" (a mock string to be removed).

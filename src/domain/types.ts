@@ -3,9 +3,9 @@
 // operate on. Pure data shapes: NO React, NO Supabase, NO imports
 // from src/components or src/app (enforced by .dependency-cruiser.cjs).
 //
-// These are the canonical domain types. The mock screens still use the
-// legacy shapes in src/lib/data/types.ts; those converge onto these
-// during the Supabase migration cycle (see docs/MIGRATION.md).
+// These are the canonical domain types — the single source of truth for the
+// gym's vocabulary. The DAL (src/lib/data) maps DB rows to DTOs and calls the
+// rules in rules.ts; nothing here imports React, Supabase, or a screen.
 // ──────────────────────────────────────────────────────────────
 
 /** A class count. Ilimitado packages have no numeric limit. */

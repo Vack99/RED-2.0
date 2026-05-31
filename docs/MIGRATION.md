@@ -1,5 +1,11 @@
 # Forge — Mock → Real Migration Backlog
 
+> **STATUS: COMPLETE (2026-05-31).** All slices below shipped — Forge runs on
+> real Supabase. Kept as the historical migration record. The live architecture
+> map is `ARCHITECTURE.md` and the glossary is `CONTEXT.md`; references below
+> describe the mock era and may name modules since deleted (e.g.
+> `src/lib/data/types.ts`, `seed.ts`).
+
 The sequenced work to make Forge functional on Supabase. Feeds `/to-prd →
 /to-issues → /to-goal`. Dependency order: **domain core first** (done — it is
 pure and tested), then per sector. Wiring the tested `src/domain` rules into
