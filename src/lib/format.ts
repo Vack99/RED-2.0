@@ -21,12 +21,6 @@ export function iniciales(nombre: string): string {
   );
 }
 
-/** Classes-remaining label that handles the ∞ (ilimitado) sentinel. */
-export function clasesLabel(clasesRest: number | "∞"): string {
-  if (clasesRest === "∞") return "clases ilimitadas";
-  return `${clasesRest} clase${clasesRest === 1 ? "" : "s"}`;
-}
-
 export function diasLabel(diasRest: number): string {
   return `${diasRest} día${diasRest === 1 ? "" : "s"}`;
 }

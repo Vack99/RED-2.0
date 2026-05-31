@@ -6,7 +6,7 @@
 
 > **Progress (2026-05-30): ALL 8 SLICES SHIPPED ✅** — #1 · #2 · #3 · #4 (@ `9a597c3`) · #5 (@ `0b99c0b`) ·
 > #6 (@ `4ada644`) · #7 (@ `7aaaa8a`) · #8 (@ `48f4de9`). The mock → Supabase migration is **complete**
-> on `feat/supabase-infra-perfil`; pending operator in-browser verification before merge.
+> on `feat/supabase-infra-perfil`, then verified in-browser and merged into `master` (2026-05-31; phone auto-advance bug fixed @7181773).
 
 **Labels:** `ready-for-agent` = AFK, eligible for the autonomous `/to-goal` queue ·
 `hitl` = human-gated (`/to-goal` skips it and treats it as a non-closeable blocker).
