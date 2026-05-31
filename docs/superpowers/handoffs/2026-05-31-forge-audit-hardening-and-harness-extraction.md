@@ -1,37 +1,56 @@
-# Handoff — Forge audit-hardening done (HIGH clusters) · atomic-writes half-applied · harness extraction is the remaining GOAL
+# Handoff — Forge audit-hardening done (HIGH clusters) · atomic-writes half-applied · TWO sessions planned
 
 **Date:** 2026-05-31 · **Repo:** `forge-1.0` · **Branch:** `master`
-(migration branch already merged; **no remote yet**) @ `9925f52` · working tree clean
-except `.mcp.json` (untracked, keep local, never commit).
-**For:** a FRESH session. Two jobs: (1) resolve a live-DB↔repo drift + finish the one
-half-done fix, then (2) the real prize — **extract the back-half "shipping" skill to
-complete the harness**. Read the referenced artifacts; don't re-derive.
+(migration branch already merged; **no remote yet**) @ `2c5a544` · working tree clean
+(`.mcp.json` is now gitignored).
+
+## Plan: TWO explicit sessions (Aaron's decision, 2026-05-31)
+
+- **SESSION N+1 = FINISH FORGE (this handoff is for it).** Resolve the atomic-writes
+  drift by **wiring it (Option A)** — RPCs + DAL + ADR-0005 — then the remaining MEDIUM/LOW
+  audit items, so Forge is genuinely done. Aaron may add scope of his own. **Capture every
+  learning** into the ledger (see below) — the more feedback, the stronger the skill.
+- **SESSION N+2 = CREATE THE SKILL.** The real prize: extract the back-half "shipping" skill,
+  built from the audit doc **and the full learnings ledger**. Kept separate so it runs in a
+  clean context. Not this session.
+
+Read the referenced artifacts; don't re-derive.
 
 ---
 
-## ⚠️ DO THIS FIRST — live DB is AHEAD of the repo (the drift the audit warned about)
+## 📓 LEARNINGS LEDGER — append to it every session (the mechanism for GOAL B)
+
+**`docs/superpowers/harness-learnings.md`** is the durable, running capture of every lesson
+that should shape the back-half skill. **Every session (especially N+1) MUST append a dated
+entry at the end** — triplets of *What happened · Why it matters · Skill implication*. The
+skill-creation session (N+2) reads this ledger top-to-bottom as the primary input to
+`write-a-skill`. This is how "finish Forge first, take as much feedback as possible" turns into
+a better skill: the lessons are reinforced on disk, not lost with the session. Seeded already
+with this session's process + operational lessons; the audit's 7 structural implications are
+referenced from it.
+
+---
+
+## ⚠️ SESSION N+1, STEP 1 — resolve the live-DB↔repo drift by WIRING it (Option A)
 
 Last session deployed two atomic-write RPCs to the **live Supabase DB** (project
 `hjppxawglmukfvsgmcog`, migration **`20260531211105_atomic_write_rpcs`**, visible via
 `list_migrations`) but **did NOT**: mirror the SQL to `supabase/migrations/`, commit
 anything, or write the regenerated types into `src/lib/supabase/database.types.ts` (its
 `Functions` block is still empty in the repo). **The functions are deployed but the app
-does not call them** — they're inert (`SECURITY INVOKER`, RLS applies, zero callers).
+does not call them** — they're inert (`SECURITY INVOKER`, RLS applies, zero callers). This is
+exactly the "repo is a follower of the live DB" failure from the audit (finding #7), lived in
+real time.
 
-This is exactly the "repo is a follower of the live DB" failure from the audit. **Decide
-first**, before anything else:
+**Aaron chose Option A — finish wiring** (not rollback): keep the RPCs, mirror + commit the
+migration, regen + commit types, then wire the DAL. Full steps in "Atomic writes — how to
+finish" below. (Option B / rollback — `drop function ...` via a new migration — is the fallback
+only if wiring proves unexpectedly costly; prefer A.)
 
-- **Option A — finish wiring (recommended).** Keep the RPCs, mirror + commit the migration,
-  regen + commit types, then wire the DAL (see "Atomic writes — how to finish" below).
-- **Option B — roll back.** `drop function public.registrar_venta(...) ; drop function
-  public.toggle_pase(...)` via a new migration, so DB == repo with zero unused objects, and
-  defer the whole atomic-writes item to its own session.
-
-Do NOT leave it half-applied past the next session. The RPCs as deployed are the **thin**
-shape (good): they do only the transaction (UPDATE clientes + INSERT venta / guarded ±1);
-the stacking math stays in the tested TS domain. They were smoke-tested in a rolled-back
-`authenticated` transaction (toggle ON decremented, OFF restored, venta set saldo + inserted;
-all assertions passed; nothing persisted).
+The RPCs as deployed are the **thin** shape (good, and consistent with the audit): they do only
+the transaction (UPDATE clientes + INSERT venta / guarded ±1); the stacking math stays in the
+tested TS domain. They were smoke-tested in a rolled-back `authenticated` transaction (toggle ON
+decremented, OFF restored, venta set saldo + inserted; all assertions passed; nothing persisted).
 
 **The wiring snag (why it was deferred):** Supabase generates RPC params as non-nullable
 (`p_clases_restantes: number`), but ilimitado clients pass `null` and `mes` packages pass
@@ -61,9 +80,10 @@ This whole project has always had a meta-goal beyond the app:
     `docs/prompts/resume-forge-migration.md`, the two prior handoffs, and the audit doc.
 
 **Aaron's explicit sequencing (2026-05-31):** *validate the output before codifying the
-process*, and *fix the output first, extract second*. The HIGH fixes are done, so the bar to
-start extraction is met — but he wants extraction to run in **its own clean session** for the
-best output. Treat GOAL B as the headline of the next (or next-next) session.
+process*, and *fix the output first, extract second* — and do it across **two explicit
+sessions**: finish Forge entirely in **N+1**, then build the skill in a clean **N+2**, fed by
+the learnings ledger. Do NOT start GOAL B (skill creation) in N+1 — N+1 is finishing Forge +
+capturing learnings only.
 
 ---
 
@@ -168,14 +188,21 @@ p_monto, p_metodo) returns (folio, cliente_id)` and `toggle_pase(p_cliente_id, p
 
 ---
 
-## Suggested skills for the next session
-- For the drift + atomic writes: plain edits + the per-step verify discipline above; `superpowers:systematic-debugging` if the RPC wiring misbehaves.
-- For **GOAL B**: `superpowers:brainstorming` (shape the skill first — there was an unanswered
-  framing question: is the back-half a gate-layer ON `to-goal`, a standalone twin of `sector-map`,
-  or an enhancement of `to-goal` itself?), then `write-a-skill`. Compose with the audit's 7
-  implications as the skill's gates.
-- `verify` / `superpowers:finishing-a-development-branch` as needed.
+## Suggested skills
+**Session N+1 (finish Forge):**
+- For the drift + atomic writes: plain edits + the per-step verify discipline above;
+  `superpowers:systematic-debugging` if the RPC wiring misbehaves; `verify` (or `! pnpm dev`) to
+  re-check the sale + attendance flows in the browser (money path).
+- Append the session's lessons to `docs/superpowers/harness-learnings.md` before wrapping.
 
-**First actions next session:** (1) `list_migrations` + read this handoff; (2) resolve the
-atomic-writes drift (Option A or B); (3) then start GOAL B in a clean context. Do NOT publish or
-toggle auth — those are Aaron's HITL calls.
+**Session N+2 (create the skill) — for reference, NOT for N+1:**
+- `superpowers:brainstorming` to shape the skill first. **Open framing question to resolve:** is
+  the back-half a gate-layer ON `to-goal`, a standalone twin of `sector-map`, or an enhancement of
+  `to-goal` itself? Then `write-a-skill`, composing the audit's 7 implications + the full learnings
+  ledger as the skill's gates.
+
+**First actions for SESSION N+1:** (1) `list_migrations` + read this handoff; (2) resolve the
+atomic-writes drift by **wiring it (Option A)** — see "Atomic writes — how to finish"; (3) work the
+remaining MEDIUM/LOW audit items as time allows; (4) **append learnings to the ledger** before
+ending. Do NOT start skill creation (that's N+2). Do NOT publish or toggle auth — those are Aaron's
+HITL calls.
