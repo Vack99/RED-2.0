@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, stackPaquete } from "./rules";
+import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete", () => {
@@ -116,6 +116,55 @@ describe("forfeit", () => {
   });
   it("leaves ilimitado untouched", () => {
     expect(forfeit("ilimitado", -1)).toBe("ilimitado");
+  });
+});
+
+describe("baseParaStack", () => {
+  it("keeps a still-valid package's saldo", () => {
+    expect(baseParaStack({ clases: 5, dias: 3 })).toEqual({ clases: 5, dias: 3 });
+  });
+  it("forfeits an expired package entirely (dias < 0)", () => {
+    expect(baseParaStack({ clases: 5, dias: -1 })).toEqual({ clases: 0, dias: 0 });
+  });
+  it("forfeits on the expiry day itself (dias === 0)", () => {
+    expect(baseParaStack({ clases: 5, dias: 0 })).toEqual({ clases: 0, dias: 0 });
+  });
+  it("drops a lapsed ilimitado — a renewal does NOT carry unlimited forward", () => {
+    expect(baseParaStack({ clases: "ilimitado", dias: -1 })).toEqual({ clases: 0, dias: 0 });
+  });
+  it("keeps a still-valid ilimitado", () => {
+    expect(baseParaStack({ clases: "ilimitado", dias: 5 })).toEqual({ clases: "ilimitado", dias: 5 });
+  });
+  it("stacking onto an expired package does not carry its classes (the renewal bug guard)", () => {
+    expect(stackPaquete(baseParaStack({ clases: 5, dias: -1 }), { clases: 8, dias: 20 })).toEqual({
+      clases: 8,
+      dias: 20,
+    });
+  });
+});
+
+describe("urgenciaCliente", () => {
+  it("is ok with classes and time to spare", () => {
+    expect(urgenciaCliente({ clases: 8, dias: 20 }).nivel).toBe("ok");
+    expect(urgenciaCliente({ clases: "ilimitado", dias: 20 }).nivel).toBe("ok");
+  });
+  it("is critico at <= 3 days OR <= 1 class", () => {
+    expect(urgenciaCliente({ clases: 8, dias: 3 }).nivel).toBe("critico");
+    expect(urgenciaCliente({ clases: 1, dias: 20 }).nivel).toBe("critico");
+    expect(urgenciaCliente({ clases: "ilimitado", dias: 3 }).nivel).toBe("critico"); // días bind ilimitado
+  });
+  it("is urgente at <= 7 days OR <= 3 classes (above critico)", () => {
+    expect(urgenciaCliente({ clases: 8, dias: 7 }).nivel).toBe("urgente");
+    expect(urgenciaCliente({ clases: 2, dias: 20 }).nivel).toBe("urgente");
+  });
+  it("is pronto at <= 14 days OR <= 5 classes (above urgente)", () => {
+    expect(urgenciaCliente({ clases: 8, dias: 14 }).nivel).toBe("pronto");
+    expect(urgenciaCliente({ clases: 5, dias: 20 }).nivel).toBe("pronto");
+  });
+  it("binds on whichever dimension lapses first", () => {
+    expect(urgenciaCliente({ clases: 1, dias: 20 }).vinculante).toBe("clases");
+    expect(urgenciaCliente({ clases: 8, dias: 2 }).vinculante).toBe("dias");
+    expect(urgenciaCliente({ clases: "ilimitado", dias: 2 }).vinculante).toBe("dias");
   });
 });
 

@@ -14,6 +14,20 @@ export type Clases = number | "ilimitado";
 /** A client's lifecycle state — DERIVED, never stored (ADR-0002). */
 export type EstadoCliente = "activo" | "por_vencer" | "sin_clases";
 
+/** Retention urgency level — DERIVED from saldo. Finer-grained than
+ *  EstadoCliente's por_vencer; drives the directory's "por renovar" model. */
+export type NivelUrgencia = "critico" | "urgente" | "pronto" | "ok";
+
+/** A client's retention urgency: level + which dimension binds + a sort score.
+ *  The single shape the roster/ficha consume so "running out" lives in one home. */
+export interface Urgencia {
+  nivel: NivelUrgencia;
+  /** Whichever of clases|días lapses first. */
+  vinculante: "clases" | "dias";
+  /** Normalized distance to lapse (lower = sooner); drives the urgency sort. */
+  score: number;
+}
+
 /** Payment method. "pendiente" == "por pagar" (optional, brief Q7). */
 export type MetodoPago = "efectivo" | "transferencia" | "tarjeta" | "pendiente";
 

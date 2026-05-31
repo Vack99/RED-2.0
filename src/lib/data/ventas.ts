@@ -2,8 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
-import { calcVigenciaEnd, diasRestantes, renderPlantilla, stackPaquete } from "@/domain/rules";
-import type { Clases, CompraPaquete, Saldo } from "@/domain/types";
+import { baseParaStack, calcVigenciaEnd, diasRestantes, renderPlantilla, stackPaquete } from "@/domain/rules";
+import type { Clases, CompraPaquete } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales } from "@/lib/format";
@@ -115,12 +115,11 @@ export async function crearVenta(raw: unknown): Promise<VentaResult> {
     isNew = true;
   }
 
-  // Only a still-valid package contributes to the stack (forfeit on expiry, Q2).
+  // Only a still-valid package contributes to the stack; an expired one is
+  // forfeited entirely (brief Q2) via the domain's baseParaStack — never
+  // re-derived here.
   const diasRest = cliente.vence ? diasRestantes(parseDay(cliente.vence), hoy) : 0;
-  const saldoActual: Saldo =
-    diasRest > 0
-      ? { clases: clasesFromDb(cliente.clases_restantes), dias: diasRest }
-      : { clases: 0, dias: 0 };
+  const saldoActual = baseParaStack({ clases: clasesFromDb(cliente.clases_restantes), dias: diasRest });
 
   const nuevoSaldo = stackPaquete(saldoActual, compra);
   const nuevoVence = addDays(hoy, nuevoSaldo.dias);

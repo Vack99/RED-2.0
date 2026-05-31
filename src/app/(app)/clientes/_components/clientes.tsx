@@ -4,37 +4,22 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/forge/icon";
 import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
+import { urgenciaCliente } from "@/domain/rules";
+import type { NivelUrgencia } from "@/domain/types";
 import type { ClienteDerivado } from "@/lib/data/derive";
 
-// Thresholds tuned for 8/12-class, 20–30 day memberships.
-const CL_DAYS = { hot: 3, warm: 7, soft: 14 };
-const CL_CLS = { hot: 1, warm: 3, soft: 5 };
-
-type Level = "critico" | "urgente" | "pronto" | "ok";
 type Sort = "dias" | "nombre" | "asist";
 
-/**
- * Unified running-out model: a client is as urgent as their WORST
- * dimension. `binding` is whichever (clases|días) lapses first; `score`
- * (lower = sooner) drives the urgency sort.
- */
-function clientUrgency(c: ClienteDerivado) {
-  const days = c.diasRest;
-  const cls = c.clasesRest === "ilimitado" ? Infinity : c.clasesRest;
-  let level: Level = "ok";
-  if (days <= CL_DAYS.hot || cls <= CL_CLS.hot) level = "critico";
-  else if (days <= CL_DAYS.warm || cls <= CL_CLS.warm) level = "urgente";
-  else if (days <= CL_DAYS.soft || cls <= CL_CLS.soft) level = "pronto";
-  const dayN = days / CL_DAYS.soft;
-  const clsN = cls / CL_CLS.soft;
-  const binding: "clases" | "dias" = clsN < dayN ? "clases" : "dias";
-  return { level, binding, score: Math.min(dayN, clsN), days, cls };
+/** The numeric classes a client has left ("ilimitado" → no ceiling). */
+function clasesNum(c: ClienteDerivado): number {
+  return c.clasesRest === "ilimitado" ? Infinity : c.clasesRest;
 }
 
-function urgencyColor(level: Level) {
-  return level === "critico" ? "var(--red)"
-    : level === "urgente" ? "var(--gold)"
-    : level === "pronto" ? "var(--fg)"
+/** Map an urgency level to its accent color (pure presentation). */
+function urgencyColor(nivel: NivelUrgencia) {
+  return nivel === "critico" ? "var(--red)"
+    : nivel === "urgente" ? "var(--gold)"
+    : nivel === "pronto" ? "var(--fg)"
     : "var(--muted)";
 }
 
@@ -47,14 +32,14 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const [clasesMax, setClasesMax] = React.useState<number | null>(null);
   const [sort, setSort] = React.useState<Sort>("dias");
 
-  const withU = clientes.map((c) => ({ c, u: clientUrgency(c) }));
-  const renovarCount = withU.filter((x) => x.u.level === "critico" || x.u.level === "urgente").length;
+  const withU = clientes.map((c) => ({ c, u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }) }));
+  const renovarCount = withU.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente").length;
   const vigentes = withU.filter((x) => x.c.estado === "activo").length;
 
   let list = withU;
-  if (renovar) list = list.filter((x) => x.u.level === "critico" || x.u.level === "urgente");
+  if (renovar) list = list.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente");
   if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
-  if (clasesMax != null) list = list.filter((x) => x.u.cls <= clasesMax);
+  if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
   if (query) {
     const q = query.toLowerCase();
     list = list.filter((x) => x.c.nombre.toLowerCase().includes(q) || x.c.tel.includes(query));
@@ -183,10 +168,10 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
           </div>
         )}
         {list.map(({ c, u }) => {
-          const col = urgencyColor(u.level);
-          const showBar = u.level === "critico" || u.level === "urgente";
+          const col = urgencyColor(u.nivel);
+          const showBar = u.nivel === "critico" || u.nivel === "urgente";
           const clsLabel = c.clasesRestLabel;
-          const bindingIsDias = u.binding === "dias";
+          const bindingIsDias = u.vinculante === "dias";
           return (
             <button
               key={c.id}

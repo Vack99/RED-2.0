@@ -10,9 +10,11 @@ import type {
   Clases,
   CompraPaquete,
   EstadoCliente,
+  NivelUrgencia,
   PlantillaContext,
   ResumenMes,
   Saldo,
+  Urgencia,
   VentaResumen,
   Vigencia,
 } from "./types";
@@ -78,6 +80,35 @@ export function derivarEstado(saldo: Saldo): EstadoCliente {
   return "activo";
 }
 
+// Retention-urgency thresholds, tuned for 8/12-class, 20–30 day memberships.
+// The single home for "running out": the directory roster, its sort, and any
+// future ficha treatment consume urgenciaCliente, never re-coin these numbers.
+const URGENCIA_DIAS = { critico: 3, urgente: 7, pronto: 14 };
+const URGENCIA_CLASES = { critico: 1, urgente: 3, pronto: 5 };
+
+/**
+ * A client's retention urgency from what's left: as urgent as their WORST
+ * dimension (clases | días). `vinculante` is whichever lapses first; `score`
+ * (lower = sooner) drives the urgency sort. Ilimitado has no class pressure,
+ * so only días can make it urgent. Replaces the threshold engine that was
+ * copy-pasted into the clientes screen (invisible to the dependency boundary).
+ * derivarEstado's coarser por_vencer is the lifecycle projection of the same idea.
+ */
+export function urgenciaCliente(saldo: Saldo): Urgencia {
+  const dias = saldo.dias;
+  const clases = saldo.clases === "ilimitado" ? Infinity : saldo.clases;
+
+  let nivel: NivelUrgencia = "ok";
+  if (dias <= URGENCIA_DIAS.critico || clases <= URGENCIA_CLASES.critico) nivel = "critico";
+  else if (dias <= URGENCIA_DIAS.urgente || clases <= URGENCIA_CLASES.urgente) nivel = "urgente";
+  else if (dias <= URGENCIA_DIAS.pronto || clases <= URGENCIA_CLASES.pronto) nivel = "pronto";
+
+  const diasN = dias / URGENCIA_DIAS.pronto;
+  const clasesN = clases / URGENCIA_CLASES.pronto;
+  const vinculante: "clases" | "dias" = clasesN < diasN ? "clases" : "dias";
+  return { nivel, vinculante, score: Math.min(diasN, clasesN) };
+}
+
 /**
  * Consume one class for an attendance. Same-day duplicate attendance is
  * allowed and each still consumes a class (brief Q6). Ilimitado is never
@@ -95,6 +126,19 @@ export function consumirClase(clases: Clases): Clases {
 export function forfeit(clases: Clases, dias: number): Clases {
   if (clases === "ilimitado") return "ilimitado";
   return dias <= 0 ? 0 : clases;
+}
+
+/**
+ * The base a NEW purchase stacks onto (brief Q2 + Q5). A still-valid package
+ * (dias > 0) contributes its full saldo; an expired one is forfeited ENTIRELY
+ * so a renewal starts clean. Note this differs from read-time `forfeit`: a
+ * lapsed *ilimitado* does NOT carry forward as unlimited here — buying a
+ * limited package after an unlimited month ended gives the limited count, not
+ * perpetual ∞. The single home for "what stacking builds on"; the write path
+ * MUST call this instead of re-deriving the expiry check inline.
+ */
+export function baseParaStack(saldo: Saldo): Saldo {
+  return saldo.dias > 0 ? saldo : { clases: 0, dias: 0 };
 }
 
 // ── Date helpers for the resumen (local-field comparisons only; the caller
