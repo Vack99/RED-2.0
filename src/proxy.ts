@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
+import { decideRedirect } from '@/lib/auth'
 import type { Database } from '@/lib/supabase/database.types'
 
 /**
@@ -8,7 +9,8 @@ import type { Database } from '@/lib/supabase/database.types'
  * name). Runs on the Node.js runtime before rendering. It:
  *   1. refreshes the Supabase auth session and writes rotated cookies back onto
  *      the response so Server Components see a valid session, and
- *   2. gates routes — unauthenticated requests are sent to `/login`.
+ *   2. gates routes — the redirect decision is the pure `decideRedirect`
+ *      (tested in src/lib/auth.test.ts); this function only wires it to Next.
  *
  * Authorization uses `getClaims()` (verified), never `getSession()`.
  */
@@ -44,19 +46,10 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getClaims()
   const authed = Boolean(data?.claims)
 
-  const { pathname } = request.nextUrl
-  const isLogin = pathname === '/login'
-
-  // Unauthenticated requests to app routes go to /login; an already-authenticated
-  // visit to /login bounces to the dashboard.
-  if (!authed && !isLogin) {
+  const dest = decideRedirect(authed, request.nextUrl.pathname)
+  if (dest) {
     const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
-  if (authed && isLogin) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/inicio'
+    url.pathname = dest
     return NextResponse.redirect(url)
   }
 
