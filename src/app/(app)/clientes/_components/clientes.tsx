@@ -4,7 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/forge/icon";
 import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
-import { urgenciaCliente } from "@/domain/rules";
+import { resumirRoster, urgenciaCliente } from "@/domain/rules";
 import type { NivelUrgencia } from "@/domain/types";
 import type { ClienteDerivado } from "@/lib/data/derive";
 
@@ -34,7 +34,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
 
   const withU = clientes.map((c) => ({ c, u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }) }));
   const renovarCount = withU.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente").length;
-  const vigentes = withU.filter((x) => x.c.estado === "activo").length;
+  const { vigentes } = resumirRoster(clientes.map((c) => c.estado));
 
   let list = withU;
   if (renovar) list = list.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente");

@@ -2,6 +2,8 @@ import "server-only";
 
 import { cache } from "react";
 
+import { resumirRoster } from "@/domain/rules";
+import type { ResumenRoster } from "@/domain/types";
 import { hoyChihuahua, toIsoDay } from "@/lib/fecha";
 import { iniciales } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
@@ -97,6 +99,27 @@ export const getClientesRoster = cache(
     for (const a of asistRes.data ?? []) counts[a.cliente_id] = (counts[a.cliente_id] ?? 0) + 1;
 
     return clientes.map((c) => derivarCliente(c, hoy, counts[c.id] ?? 0));
+  },
+);
+
+/** The two roster headline counts (vigentes / totalActivos) for the dashboard,
+ *  derived-at-read (ADR-0002). The full getClientesRoster is for the directory —
+ *  it needs every cliente + asistEsteMes, so it fires a whole-month asistencias
+ *  query. The dashboard reads only the two counts, and `estado` never reads
+ *  asistencias, so this slim read skips that join and the `.order` entirely. */
+export const getRosterResumen = cache(
+  async (client?: SupabaseServer): Promise<ResumenRoster> => {
+    const supabase = client ?? (await createClient());
+    const hoy = hoyChihuahua();
+
+    const { data } = await supabase
+      .from("clientes")
+      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence");
+
+    if (!data) return { vigentes: 0, totalActivos: 0 };
+
+    const estados = data.map((c) => derivarCliente(c, hoy, 0).estado);
+    return resumirRoster(estados);
   },
 );
 

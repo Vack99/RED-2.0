@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, stackPaquete, urgenciaCliente } from "./rules";
+import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete", () => {
@@ -88,6 +88,18 @@ describe("derivarEstado", () => {
   it("is sin_clases when expired", () => {
     expect(derivarEstado({ clases: 5, dias: 0 })).toBe("sin_clases");
     expect(derivarEstado({ clases: 5, dias: -2 })).toBe("sin_clases");
+  });
+});
+
+describe("resumirRoster", () => {
+  it("is all-zero for an empty roster", () => {
+    expect(resumirRoster([])).toEqual({ vigentes: 0, totalActivos: 0 });
+  });
+  it("counts vigentes (activo) and totalActivos (not sin_clases)", () => {
+    expect(resumirRoster(["activo", "activo", "por_vencer", "sin_clases"])).toEqual({
+      vigentes: 2,
+      totalActivos: 3,
+    });
   });
 });
 

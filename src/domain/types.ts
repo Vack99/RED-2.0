@@ -28,6 +28,16 @@ export interface Urgencia {
   score: number;
 }
 
+/** Roster lifecycle summary — counts derived from each cliente's estado (ADR-0002).
+ *  The single shape the dashboard + directory consume so "who counts as vigente /
+ *  as an active member" lives in one home (resumirRoster), never an inline filter. */
+export interface ResumenRoster {
+  /** Clientes whose package is fully active (estado === "activo"). */
+  vigentes: number;
+  /** Clientes who still count as members (estado !== "sin_clases") — the "/ N" denominator. */
+  totalActivos: number;
+}
+
 /** Payment method. "pendiente" == "por pagar" (optional, brief Q7). */
 export type MetodoPago = "efectivo" | "transferencia" | "tarjeta" | "pendiente";
 

@@ -13,6 +13,7 @@ import type {
   NivelUrgencia,
   PlantillaContext,
   ResumenMes,
+  ResumenRoster,
   Saldo,
   Urgencia,
   VentaResumen,
@@ -78,6 +79,23 @@ export function derivarEstado(saldo: Saldo): EstadoCliente {
   if (pocosDias || pocasClases) return "por_vencer";
 
   return "activo";
+}
+
+/**
+ * Summarize a roster of derived estados into the two counts the dashboard +
+ * directory headline (ADR-0002). The single home for "who counts as a vigente /
+ * as an active member": `vigentes` are fully-active packages (estado "activo");
+ * `totalActivos` are everyone who still counts as a member (estado !== "sin_clases")
+ * — the "/ N" denominator. Screens call this, never an inline `.filter(...).length`.
+ */
+export function resumirRoster(estados: EstadoCliente[]): ResumenRoster {
+  let vigentes = 0;
+  let totalActivos = 0;
+  for (const estado of estados) {
+    if (estado === "activo") vigentes += 1;
+    if (estado !== "sin_clases") totalActivos += 1;
+  }
+  return { vigentes, totalActivos };
 }
 
 // Retention-urgency thresholds, tuned for 8/12-class, 20–30 day memberships.

@@ -15,6 +15,7 @@ type and a file, so a rename surfaces drift. Distilled from the client brief
 | **recibo** | The sale receipt. | `src/app/(app)/vender/_components/` |
 | **estado** | Derived lifecycle: `activo` / `por_vencer` / `sin_clases`. Never stored. | `EstadoCliente` + `derivarEstado` — `src/domain/` |
 | **urgencia** / **por renovar** | Derived retention urgency (`critico`/`urgente`/`pronto`/`ok`) from whichever of clases\|días lapses first; drives the directory's "por renovar" list + sort. | `Urgencia` / `NivelUrgencia` + `urgenciaCliente` — `src/domain/` |
+| **vigentes** / **resumen del roster** | Count of clientes with estado `activo`; `totalActivos` = those not `sin_clases` (the "/ N" denominator). | `resumirRoster` + `ResumenRoster` — `src/domain/` |
 | **clases restantes** | Classes left (a number, or `ilimitado`). | `Clases` (`Saldo.clases`) — `src/domain/types.ts` |
 | **stacking** | Buying a package early ADDS its classes + days onto the current one. | `stackPaquete` (+ `baseParaStack`, the still-valid base) — `src/domain/rules.ts` |
 | **forfeit** | Remaining classes are lost when the vigencia expires. | `forfeit` — `src/domain/rules.ts` |
