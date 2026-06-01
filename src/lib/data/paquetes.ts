@@ -6,7 +6,7 @@ import { calcVigenciaEnd } from "@/domain/rules";
 import type { Vigencia } from "@/domain/types";
 import { fmtShort } from "@/lib/date";
 import { hoyChihuahua } from "@/lib/fecha";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 export interface PaqueteDTO {
   id: string;
@@ -20,25 +20,27 @@ export interface PaqueteDTO {
 }
 
 /** The operator's package catalog, ordered for display. */
-export const getPaquetes = cache(async (): Promise<PaqueteDTO[]> => {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("paquetes")
-    .select("id, nombre, vigencia_tipo, vigencia_dias, precio, popular, orden")
-    .order("orden");
+export const getPaquetes = cache(
+  async (client?: SupabaseServer): Promise<PaqueteDTO[]> => {
+    const supabase = client ?? (await createClient());
+    const { data } = await supabase
+      .from("paquetes")
+      .select("id, nombre, vigencia_tipo, vigencia_dias, precio, popular, orden")
+      .order("orden");
 
-  if (!data) return [];
+    if (!data) return [];
 
-  const hoy = hoyChihuahua();
-  return data.map((p) => {
-    const vigencia: Vigencia = p.vigencia_tipo === "mes" ? "mes" : (p.vigencia_dias ?? 0);
-    return {
-      id: p.id,
-      nombre: p.nombre,
-      vigencia: p.vigencia_tipo === "mes" ? "todo el mes" : `${p.vigencia_dias} días`,
-      hasta: fmtShort(calcVigenciaEnd(hoy, vigencia)),
-      precio: p.precio,
-      popular: p.popular,
-    };
-  });
-});
+    const hoy = hoyChihuahua();
+    return data.map((p) => {
+      const vigencia: Vigencia = p.vigencia_tipo === "mes" ? "mes" : (p.vigencia_dias ?? 0);
+      return {
+        id: p.id,
+        nombre: p.nombre,
+        vigencia: p.vigencia_tipo === "mes" ? "todo el mes" : `${p.vigencia_dias} días`,
+        hasta: fmtShort(calcVigenciaEnd(hoy, vigencia)),
+        precio: p.precio,
+        popular: p.popular,
+      };
+    });
+  },
+);

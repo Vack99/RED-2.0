@@ -7,8 +7,9 @@ import type { Clases, CompraPaquete, Saldo } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales, isTelValido } from "@/lib/format";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
+import { requireOperator } from "./_auth";
 import { getPlantilla } from "./plantillas";
 
 export type Metodo = "efectivo" | "transferencia" | "tarjeta" | "pendiente";
@@ -68,12 +69,13 @@ function vigenciaDisplay(tipo: string, dias: number | null): string {
  * the write. Optional RPC args are omitted (not passed null) so the function's
  * DEFAULT NULL applies — keeps the generated types honest, no `as any`.
  */
-export async function crearVenta(raw: unknown): Promise<VentaResult> {
+export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise<VentaResult> {
   const input = crearVentaSchema.parse(raw);
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
-  const { data: claims } = await supabase.auth.getClaims();
-  if (!claims?.claims?.sub) throw new Error("No autenticado");
+  // Presence check only — the RPC stamps the operator server-side (SECURITY
+  // INVOKER), so the sub is discarded here (matches prior behavior).
+  await requireOperator(supabase);
 
   // Package facts come from the DB, never the client.
   const { data: paq, error: paqErr } = await supabase
@@ -145,7 +147,7 @@ export async function crearVenta(raw: unknown): Promise<VentaResult> {
 
   const [{ data: perfil }, reciboBody] = await Promise.all([
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
-    getPlantilla("recibo"),
+    getPlantilla("recibo", supabase),
   ]);
   const negocio = perfil?.negocio?.trim() || "FORGE";
   const coach = perfil?.coach?.trim() || "COACH";

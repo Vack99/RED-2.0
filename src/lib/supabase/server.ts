@@ -42,3 +42,11 @@ export const createClient = cache(async () => {
     },
   )
 })
+
+/**
+ * The per-request server client type — `Awaited` because `createClient` is async.
+ * The DAL takes this as an injectable trailing param (default: the real client)
+ * so the row→DTO mapping + write orchestration are testable with a fake (ADR-0001,
+ * audit cluster 4). Defined once here; every DAL signature derives from it.
+ */
+export type SupabaseServer = Awaited<ReturnType<typeof createClient>>

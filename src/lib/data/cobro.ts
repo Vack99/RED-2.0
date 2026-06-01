@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 /** Safe cobro DTO for the cuenta "Datos de cobro" section — no id / user_id.
  *  The cobro row is the source for the {datos_pago} plantilla token (token
@@ -22,24 +22,26 @@ export interface CobroDTO {
  * (select auth.uid()); returns null until the cobro row is seeded. Memoized
  * per request.
  */
-export const getCobro = cache(async (): Promise<CobroDTO | null> => {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("cobro")
-    .select(
-      "titular, banco, clabe, tarjeta, acepta_efectivo, acepta_transferencia, acepta_tarjeta",
-    )
-    .maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
+export const getCobro = cache(
+  async (client?: SupabaseServer): Promise<CobroDTO | null> => {
+    const supabase = client ?? (await createClient());
+    const { data, error } = await supabase
+      .from("cobro")
+      .select(
+        "titular, banco, clabe, tarjeta, acepta_efectivo, acepta_transferencia, acepta_tarjeta",
+      )
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
 
-  return {
-    titular: data.titular,
-    banco: data.banco,
-    clabe: data.clabe,
-    tarjeta: data.tarjeta,
-    aceptaEfectivo: data.acepta_efectivo,
-    aceptaTransferencia: data.acepta_transferencia,
-    aceptaTarjeta: data.acepta_tarjeta,
-  };
-});
+    return {
+      titular: data.titular,
+      banco: data.banco,
+      clabe: data.clabe,
+      tarjeta: data.tarjeta,
+      aceptaEfectivo: data.acepta_efectivo,
+      aceptaTransferencia: data.acepta_transferencia,
+      aceptaTarjeta: data.acepta_tarjeta,
+    };
+  },
+);

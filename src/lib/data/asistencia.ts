@@ -5,27 +5,31 @@ import { z } from "zod";
 
 import { hoyChihuahua, toIsoDay } from "@/lib/fecha";
 import { iniciales } from "@/lib/format";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+
+import { requireOperator } from "./_auth";
 
 /**
  * Active attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
  * Chihuahua date (ADR-0003) — the offset grid is gone.
  */
-export const getMarcadas = cache(async (): Promise<Record<string, string[]>> => {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("asistencias")
-    .select("fecha, cliente_id")
-    .is("deleted_at", null);
+export const getMarcadas = cache(
+  async (client?: SupabaseServer): Promise<Record<string, string[]>> => {
+    const supabase = client ?? (await createClient());
+    const { data } = await supabase
+      .from("asistencias")
+      .select("fecha, cliente_id")
+      .is("deleted_at", null);
 
-  if (!data) return {};
+    if (!data) return {};
 
-  const map: Record<string, string[]> = {};
-  for (const row of data) {
-    (map[row.fecha] ??= []).push(row.cliente_id);
-  }
-  return map;
-});
+    const map: Record<string, string[]> = {};
+    for (const row of data) {
+      (map[row.fecha] ??= []).push(row.cliente_id);
+    }
+    return map;
+  },
+);
 
 export const togglePaseSchema = z.object({
   clienteId: z.string().min(1),
@@ -48,12 +52,16 @@ export interface TogglePaseResult {
  * stamps the Chihuahua-local check-in time server-side. RLS scopes every row to
  * the operator (SECURITY INVOKER).
  */
-export async function togglePase(raw: unknown): Promise<TogglePaseResult> {
+export async function togglePase(
+  raw: unknown,
+  client?: SupabaseServer,
+): Promise<TogglePaseResult> {
   const input = togglePaseSchema.parse(raw);
-  const supabase = await createClient();
+  const supabase = client ?? (await createClient());
 
-  const { data: claims } = await supabase.auth.getClaims();
-  if (!claims?.claims?.sub) throw new Error("No autenticado");
+  // Presence check only — the RPC stamps the operator server-side (SECURITY
+  // INVOKER), so the sub is discarded here (matches prior behavior).
+  await requireOperator(supabase);
 
   const { data, error } = await supabase
     .rpc("toggle_pase", { p_cliente_id: input.clienteId, p_fecha: input.fecha })
@@ -77,8 +85,8 @@ export interface AsistenciaHoy {
  * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
  * returns DTOs only (no raw rows cross the boundary, ADR-0001).
  */
-export async function getAsistenciasHoy(): Promise<AsistenciaHoy[]> {
-  const supabase = await createClient();
+export async function getAsistenciasHoy(client?: SupabaseServer): Promise<AsistenciaHoy[]> {
+  const supabase = client ?? (await createClient());
   const hoyIso = toIsoDay(hoyChihuahua());
 
   const { data: asis, error } = await supabase

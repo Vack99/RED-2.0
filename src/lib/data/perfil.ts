@@ -2,7 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, type SupabaseServer } from '@/lib/supabase/server'
 
 /**
  * The single operator's profile, as a safe DTO (no `id`/`user_id` leak).
@@ -20,20 +20,22 @@ export interface PerfilDTO {
  * `(select auth.uid())`, so no explicit owner filter is needed. Returns `null`
  * until the perfil row is seeded (issue #2). Memoized per request.
  */
-export const getPerfil = cache(async (): Promise<PerfilDTO | null> => {
-  const supabase = await createClient()
+export const getPerfil = cache(
+  async (client?: SupabaseServer): Promise<PerfilDTO | null> => {
+    const supabase = client ?? (await createClient())
 
-  const { data } = await supabase
-    .from('perfil')
-    .select('negocio, coach, tel, ciudad')
-    .maybeSingle()
+    const { data } = await supabase
+      .from('perfil')
+      .select('negocio, coach, tel, ciudad')
+      .maybeSingle()
 
-  if (!data) return null
+    if (!data) return null
 
-  return {
-    negocio: data.negocio,
-    coach: data.coach,
-    tel: data.tel,
-    ciudad: data.ciudad,
-  }
-})
+    return {
+      negocio: data.negocio,
+      coach: data.coach,
+      tel: data.tel,
+      ciudad: data.ciudad,
+    }
+  },
+)
