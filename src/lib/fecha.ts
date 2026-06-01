@@ -3,9 +3,12 @@
 // them must carry the Chihuahua calendar Y/M/D in its local fields. These helpers
 // bridge the wall clock + Postgres `date` strings into that shape.
 //
-// src/lib/date.ts holds pure calendar helpers (labels + local-component date
-// math); its DEMO_TODAY offset scaffolding was retired in the cleanup slice.
-// This module is the source of "today" — the Chihuahua-tz wall clock.
+// src/lib/date.ts holds the pure local-component calendar math (labels + isoDay);
+// this module adds the Chihuahua-tz wall clock + Postgres `date` parsing on top.
+// `toIsoDay` is date.isoDay re-exported so the local-field serialization lives in
+// exactly one place (callers in the DAL import it from here, screens from date).
+
+import { isoDay } from "./date";
 
 export const TZ = "America/Chihuahua";
 
@@ -27,13 +30,9 @@ export function parseDay(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
-/** Serialize a Date to a Postgres `date` literal ("YYYY-MM-DD") using local fields. */
-export function toIsoDay(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+/** Serialize a Date to a Postgres `date` literal ("YYYY-MM-DD") using local fields.
+ *  Single-sourced from date.isoDay — same local-component serialization, one home. */
+export const toIsoDay = isoDay;
 
 /** Today's iso day in America/Chihuahua ("YYYY-MM-DD"). */
 export function hoyIsoChihuahua(): string {
@@ -50,16 +49,4 @@ export function fechaChihuahua(isoTimestamp: string): Date {
   }).formatToParts(new Date(isoTimestamp));
   const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
   return new Date(get("year"), get("month") - 1, get("day"));
-}
-
-/** Current wall-clock time in America/Chihuahua as "HH:MM" (24h). */
-export function horaChihuahua(): string {
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: TZ,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(new Date());
-  const get = (t: string) => parts.find((p) => p.type === t)!.value;
-  return `${get("hour")}:${get("minute")}`;
 }

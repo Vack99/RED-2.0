@@ -21,10 +21,6 @@ export function iniciales(nombre: string): string {
   );
 }
 
-export function diasLabel(diasRest: number): string {
-  return `${diasRest} día${diasRest === 1 ? "" : "s"}`;
-}
-
 /** Build a wa.me deep link (defaults to the Mexico country code, 52). */
 export function waLink(tel: string, text: string): string {
   const digits = (tel || "").replace(/\D/g, "");

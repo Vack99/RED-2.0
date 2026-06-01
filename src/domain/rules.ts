@@ -113,6 +113,11 @@ export function urgenciaCliente(saldo: Saldo): Urgencia {
  * Consume one class for an attendance. Same-day duplicate attendance is
  * allowed and each still consumes a class (brief Q6). Ilimitado is never
  * decremented; a limited count never goes below 0.
+ *
+ * This is the canonical statement of the consume rule. The LIVE attendance path
+ * runs it transactionally inside the `toggle_pase` RPC (ADR-0005), whose guarded
+ * `clases_restantes - 1 where clases_restantes > 0` mirrors this exactly; keep
+ * the two in lockstep if either changes.
  */
 export function consumirClase(clases: Clases): Clases {
   if (clases === "ilimitado") return "ilimitado";

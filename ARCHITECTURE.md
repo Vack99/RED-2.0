@@ -7,7 +7,7 @@ folders below scream the domain; this page is the map.
 1. `CONTEXT.md` — the vocabulary.
 2. `src/domain/` — the business rules (pure, tested). How the gym works.
 3. `src/app/(app)/` — the screens, one folder per sector.
-4. `src/lib/data/` — the data seam (mock today, Supabase later).
+4. `src/lib/data/` — the data seam (Supabase via a `server-only` DAL; ADR-0001).
 5. `docs/adr/` — why the structure is the way it is.
 
 ## Sectors
@@ -19,8 +19,8 @@ folders below scream the domain; this page is the map.
 | vender | `src/app/(app)/vender` | Venta + recibo (sell/renew) | domain, lib, components |
 | cuenta | `src/app/(app)/cuenta` | Perfil + ajustes | domain, lib, components |
 | **domain core** | `src/domain` | Business rules (pure) | **nothing in `src/`** |
-| data seam | `src/lib/data` | Persistence (mock → Supabase) | domain |
-| shared utils | `src/lib/{date,format,utils}` | Helpers | — |
+| data seam | `src/lib/data` | Persistence (`server-only` Supabase DAL; atomic writes via RPC, ADR-0005) | domain |
+| shared utils | `src/lib/{date,fecha,format,utils}` | Helpers (`date`=pure local-component calendar; `fecha`=Chihuahua-tz wall clock + Postgres `date` bridge) | — |
 | UI kit | `src/components/forge` | Visual primitives | lib/utils |
 
 ## The dependency arrow (enforced)
