@@ -10,7 +10,7 @@ import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui"
 import type { ClienteLiteDTO } from "@/lib/data/clientes";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { Metodo as MetodoEnum, VentaResult } from "@/lib/data/ventas";
-import { waLink } from "@/lib/format";
+import { isTelValido, waLink } from "@/lib/format";
 import { crearVentaAction } from "../actions";
 
 type Mode = "new" | "existing";
@@ -49,7 +49,7 @@ export function VenderScreen({
 
   const clienteValid =
     mode === "new"
-      ? nuevo.nombre.trim().length >= 3 && nuevo.tel.replace(/\D/g, "").length === 10
+      ? nuevo.nombre.trim().length >= 3 && isTelValido(nuevo.tel)
       : !!existing;
   const canSubmit = clienteValid && !!sel && !!metodo && !submitting;
 

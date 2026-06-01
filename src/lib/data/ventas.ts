@@ -6,7 +6,7 @@ import { baseParaStack, calcVigenciaEnd, diasRestantes, renderPlantilla, stackPa
 import type { Clases, CompraPaquete, Saldo } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
-import { firstName, iniciales } from "@/lib/format";
+import { firstName, iniciales, isTelValido } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
 import { getPlantilla } from "./plantillas";
@@ -26,8 +26,7 @@ export const crearVentaSchema = z
     (v) =>
       v.mode === "existing"
         ? !!v.clienteId
-        : (v.nuevoNombre ?? "").trim().length >= 3 &&
-          (v.nuevoTel ?? "").replace(/\D/g, "").length >= 8,
+        : (v.nuevoNombre ?? "").trim().length >= 3 && isTelValido(v.nuevoTel ?? ""),
     { message: "Datos del cliente incompletos" },
   );
 
