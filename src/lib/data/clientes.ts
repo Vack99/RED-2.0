@@ -10,6 +10,7 @@ import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 import { derivarCliente, type ClienteDerivado } from "./derive";
 import { getPlantilla } from "./plantillas";
+import { getVecinos } from "./roster-nav";
 
 export interface ClienteLiteDTO {
   id: string;
@@ -162,7 +163,7 @@ export const getClienteFicha = cache(
       .maybeSingle();
     if (!c) return null;
 
-    const [asistRes, ventasRes, idsRes, perfilRes, recordatorioBody] = await Promise.all([
+    const [asistRes, ventasRes, vecinos, perfilRes, recordatorioBody] = await Promise.all([
       supabase
         .from("asistencias")
         .select("fecha, hora")
@@ -175,7 +176,7 @@ export const getClienteFicha = cache(
         .select("fecha, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
         .eq("cliente_id", id)
         .order("fecha", { ascending: false }),
-      supabase.from("clientes").select("id").order("nombre"),
+      getVecinos(id, supabase),
       supabase.from("perfil").select("negocio").maybeSingle(),
       getPlantilla("recordatorio", supabase),
     ]);
@@ -223,13 +224,6 @@ export const getClienteFicha = cache(
       vence: derivado.venceDisplay,
       negocio,
     });
-
-    const order = (idsRes.data ?? []).map((x) => x.id);
-    const idx = order.indexOf(id);
-    const vecinos = {
-      prevId: idx > 0 ? order[idx - 1] : null,
-      nextId: idx >= 0 && idx < order.length - 1 ? order[idx + 1] : null,
-    };
 
     return {
       cliente: derivado,
