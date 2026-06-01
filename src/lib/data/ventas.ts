@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { baseParaStack, calcVigenciaEnd, diasRestantes, renderPlantilla, stackPaquete } from "@/domain/rules";
-import type { Clases, CompraPaquete, Saldo } from "@/domain/types";
+import type { Clases, CompraPaquete, MetodoPago, Saldo } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales, isTelValido } from "@/lib/format";
@@ -12,7 +12,14 @@ import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 import { requireOperator } from "./_auth";
 import { getPlantilla } from "./plantillas";
 
-export type Metodo = "efectivo" | "transferencia" | "tarjeta" | "pendiente";
+/** The venta write seam's payment method — an alias for the canonical domain
+ *  MetodoPago (vender imports this as MetodoEnum; recibo display-casing is its
+ *  own concern at the render site). */
+export type Metodo = MetodoPago;
+
+// Zod values DERIVED from MetodoPago: `satisfies` makes a value drifting from
+// the canonical type a compile error, not a silent runtime divergence.
+const METODOS = ["efectivo", "transferencia", "tarjeta", "pendiente"] as const satisfies readonly MetodoPago[];
 
 export const crearVentaSchema = z
   .object({
@@ -21,7 +28,7 @@ export const crearVentaSchema = z
     nuevoTel: z.string().optional(),
     clienteId: z.string().optional(),
     paqueteId: z.string().min(1),
-    metodo: z.enum(["efectivo", "transferencia", "tarjeta", "pendiente"]),
+    metodo: z.enum(METODOS),
   })
   .refine(
     (v) =>
