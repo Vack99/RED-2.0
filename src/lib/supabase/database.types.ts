@@ -284,7 +284,32 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
-      [_ in never]: never
+      registrar_venta: {
+        Args: {
+          p_nombre: string
+          p_tel: string
+          p_paquete_nombre: string
+          p_vigencia_tipo: string
+          p_monto: number
+          p_metodo: string
+          p_cliente_id?: string
+          p_clases_restantes?: number
+          p_vence?: string
+          p_clases?: number
+          p_vigencia_dias?: number
+        }
+        Returns: {
+          folio: number
+          cliente_id: string
+        }[]
+      }
+      toggle_pase: {
+        Args: { p_cliente_id: string; p_fecha: string }
+        Returns: {
+          present: boolean
+          hora: string
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

@@ -3,11 +3,10 @@ import "server-only";
 import { z } from "zod";
 
 import { baseParaStack, calcVigenciaEnd, diasRestantes, renderPlantilla, stackPaquete } from "@/domain/rules";
-import type { Clases, CompraPaquete } from "@/domain/types";
+import type { Clases, CompraPaquete, Saldo } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales } from "@/lib/format";
-import type { Database } from "@/lib/supabase/database.types";
 import { createClient } from "@/lib/supabase/server";
 
 import { getPlantilla } from "./plantillas";
@@ -49,11 +48,6 @@ export interface VentaResult {
   waText: string;
 }
 
-type ClienteSaldoRow = Pick<
-  Database["public"]["Tables"]["clientes"]["Row"],
-  "id" | "nombre" | "tel" | "clases_restantes" | "vence"
->;
-
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
 const clasesToDb = (c: Clases): number | null => (c === "ilimitado" ? null : c);
 
@@ -69,14 +63,18 @@ function vigenciaDisplay(tipo: string, dias: number | null): string {
  * Auth is checked here (DAL); RLS is the hard boundary. All business math is
  * delegated to src/domain — never reimplemented. `hoy` is the Chihuahua-local
  * calendar day so the domain's local-midnight math is correct (ADR-0003).
+ *
+ * The mutate-saldo + insert-venta pair is one atomic transaction via the
+ * `registrar_venta` RPC (ADR-0005): the math stays here in TS, the DB does only
+ * the write. Optional RPC args are omitted (not passed null) so the function's
+ * DEFAULT NULL applies — keeps the generated types honest, no `as any`.
  */
 export async function crearVenta(raw: unknown): Promise<VentaResult> {
   const input = crearVentaSchema.parse(raw);
   const supabase = await createClient();
 
   const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims?.sub;
-  if (!userId) throw new Error("No autenticado");
+  if (!claims?.claims?.sub) throw new Error("No autenticado");
 
   // Package facts come from the DB, never the client.
   const { data: paq, error: paqErr } = await supabase
@@ -93,62 +91,58 @@ export async function crearVenta(raw: unknown): Promise<VentaResult> {
       : (paq.vigencia_dias ?? 0);
   const compra: CompraPaquete = { clases: clasesFromDb(paq.clases), dias: compraDias };
 
-  // Resolve or create the cliente.
-  let cliente: ClienteSaldoRow;
-  let isNew = false;
+  // Resolve the carried-forward base. An existing client's still-valid balance
+  // carries (an expired one is forfeited, brief Q2); a brand-new client starts
+  // from an EMPTY saldo — the purchase is their first balance (slice #3 spec).
+  // Note: a new client's null DB columns must NOT be read as "ilimitado" — that
+  // conflation is the bug this wiring fixes.
+  let saldoActual: Saldo;
+  let nombre: string;
+  let tel: string;
+  const isNew = input.mode === "new";
+
   if (input.mode === "existing") {
-    const { data, error } = await supabase
+    const { data: cli, error } = await supabase
       .from("clientes")
       .select("id, nombre, tel, clases_restantes, vence")
       .eq("id", input.clienteId!)
       .single();
-    if (error || !data) throw new Error("Cliente no encontrado");
-    cliente = data;
+    if (error || !cli) throw new Error("Cliente no encontrado");
+    nombre = cli.nombre;
+    tel = cli.tel;
+    const diasRest = cli.vence ? diasRestantes(parseDay(cli.vence), hoy) : 0;
+    saldoActual = baseParaStack({ clases: clasesFromDb(cli.clases_restantes), dias: diasRest });
   } else {
-    const { data, error } = await supabase
-      .from("clientes")
-      .insert({ user_id: userId, nombre: input.nuevoNombre!.trim(), tel: input.nuevoTel!.trim() })
-      .select("id, nombre, tel, clases_restantes, vence")
-      .single();
-    if (error || !data) throw new Error("No se pudo crear el cliente");
-    cliente = data;
-    isNew = true;
+    nombre = input.nuevoNombre!.trim();
+    tel = input.nuevoTel!.trim();
+    saldoActual = { clases: 0, dias: 0 };
   }
-
-  // Only a still-valid package contributes to the stack; an expired one is
-  // forfeited entirely (brief Q2) via the domain's baseParaStack — never
-  // re-derived here.
-  const diasRest = cliente.vence ? diasRestantes(parseDay(cliente.vence), hoy) : 0;
-  const saldoActual = baseParaStack({ clases: clasesFromDb(cliente.clases_restantes), dias: diasRest });
 
   const nuevoSaldo = stackPaquete(saldoActual, compra);
   const nuevoVence = addDays(hoy, nuevoSaldo.dias);
+  const nuevoClases = clasesToDb(nuevoSaldo.clases);
 
-  const { error: updErr } = await supabase
-    .from("clientes")
-    .update({
-      clases_restantes: clasesToDb(nuevoSaldo.clases),
-      vence: toIsoDay(nuevoVence),
-      paquete_nombre: paq.nombre,
+  // One atomic write: upsert the cliente's saldo + insert the venta (folio from
+  // the DB sequence), in a single transaction. RLS scopes both writes to the
+  // operator (SECURITY INVOKER). Optional args are spread in only when non-null
+  // so the RPC's DEFAULT NULL handles ilimitado saldo / mes-package nulls / the
+  // new-client id without passing `null` into a `number?` param.
+  const { data: result, error: rpcErr } = await supabase
+    .rpc("registrar_venta", {
+      p_nombre: nombre,
+      p_tel: tel,
+      p_paquete_nombre: paq.nombre,
+      p_vigencia_tipo: paq.vigencia_tipo,
+      p_monto: paq.precio,
+      p_metodo: input.metodo,
+      p_vence: toIsoDay(nuevoVence),
+      ...(input.mode === "existing" && { p_cliente_id: input.clienteId! }),
+      ...(nuevoClases !== null && { p_clases_restantes: nuevoClases }),
+      ...(paq.clases !== null && { p_clases: paq.clases }),
+      ...(paq.vigencia_dias !== null && { p_vigencia_dias: paq.vigencia_dias }),
     })
-    .eq("id", cliente.id);
-  if (updErr) throw new Error("No se pudo actualizar el saldo del cliente");
-
-  const { data: venta, error: ventaErr } = await supabase
-    .from("ventas")
-    .insert({
-      user_id: userId,
-      cliente_id: cliente.id,
-      paquete_nombre: paq.nombre,
-      clases: paq.clases,
-      vigencia_tipo: paq.vigencia_tipo,
-      vigencia_dias: paq.vigencia_dias,
-      monto: paq.precio,
-      metodo: input.metodo,
-    })
-    .select("folio")
     .single();
-  if (ventaErr || !venta) throw new Error("No se pudo registrar la venta");
+  if (rpcErr || !result) throw new Error("No se pudo registrar la venta");
 
   const [{ data: perfil }, reciboBody] = await Promise.all([
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
@@ -166,22 +160,22 @@ export async function crearVenta(raw: unknown): Promise<VentaResult> {
   // the single home for message rendering, and the brand comes from the operator's
   // perfil via the {negocio} token — never a hard-coded "Forge Bootcamp".
   const waText = renderPlantilla(reciboBody, {
-    nombre: firstName(cliente.nombre),
+    nombre: firstName(nombre),
     paquete: paq.nombre,
     vence: venceDisplay,
     negocio,
   });
 
   return {
-    folio: venta.folio,
+    folio: result.folio,
     fechaDisplay,
     compradoDisplay: fechaDisplay,
     venceDisplay,
     cliente: {
-      id: cliente.id,
-      nombre: cliente.nombre,
-      tel: cliente.tel,
-      inicial: iniciales(cliente.nombre),
+      id: result.cliente_id,
+      nombre,
+      tel,
+      inicial: iniciales(nombre),
       isNew,
     },
     paquete: {

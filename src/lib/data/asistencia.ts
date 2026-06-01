@@ -3,9 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { consumirClase } from "@/domain/rules";
-import type { Clases } from "@/domain/types";
-import { horaChihuahua, hoyChihuahua, hoyIsoChihuahua, toIsoDay } from "@/lib/fecha";
+import { hoyChihuahua, toIsoDay } from "@/lib/fecha";
 import { iniciales } from "@/lib/format";
 import { createClient } from "@/lib/supabase/server";
 
@@ -44,73 +42,25 @@ export interface TogglePaseResult {
  * inserts a row and consumes a class (Ilimitado untouched; brief Q6 — same-day
  * duplicates each consume); unmarking soft-deletes the active row and restores a
  * class ONLY if one was actually consumed. Back-dated days are allowed (no time).
+ *
+ * The read-then-write toggle is one atomic transaction via the `toggle_pase`
+ * RPC (ADR-0005): it makes the on/off decision, the guarded ±1 decrement, and
+ * stamps the Chihuahua-local check-in time server-side. RLS scopes every row to
+ * the operator (SECURITY INVOKER).
  */
 export async function togglePase(raw: unknown): Promise<TogglePaseResult> {
   const input = togglePaseSchema.parse(raw);
   const supabase = await createClient();
 
   const { data: claims } = await supabase.auth.getClaims();
-  const userId = claims?.claims?.sub;
-  if (!userId) throw new Error("No autenticado");
+  if (!claims?.claims?.sub) throw new Error("No autenticado");
 
-  const { data: cliente, error: cErr } = await supabase
-    .from("clientes")
-    .select("id, clases_restantes")
-    .eq("id", input.clienteId)
+  const { data, error } = await supabase
+    .rpc("toggle_pase", { p_cliente_id: input.clienteId, p_fecha: input.fecha })
     .single();
-  if (cErr || !cliente) throw new Error("Cliente no encontrado");
+  if (error || !data) throw new Error("No se pudo registrar la asistencia");
 
-  const { data: activa } = await supabase
-    .from("asistencias")
-    .select("id, consumio")
-    .eq("cliente_id", input.clienteId)
-    .eq("fecha", input.fecha)
-    .is("deleted_at", null)
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (activa) {
-    // Toggle OFF: soft-delete + restore a class iff this attendance took one.
-    const { error: delErr } = await supabase
-      .from("asistencias")
-      .update({ deleted_at: new Date().toISOString() })
-      .eq("id", activa.id);
-    if (delErr) throw new Error("No se pudo deshacer la asistencia");
-
-    if (activa.consumio && cliente.clases_restantes !== null) {
-      await supabase
-        .from("clientes")
-        .update({ clases_restantes: cliente.clases_restantes + 1 })
-        .eq("id", cliente.id);
-    }
-    return { present: false, hora: null };
-  }
-
-  // Toggle ON: consume a class (domain) + insert the attendance row.
-  const saldo: Clases = cliente.clases_restantes === null ? "ilimitado" : cliente.clases_restantes;
-  const consumido = consumirClase(saldo);
-  const consumio = saldo !== "ilimitado" && saldo > 0; // a class actually came off
-  const esHoy = input.fecha === hoyIsoChihuahua();
-  const hora = esHoy ? horaChihuahua() : null;
-
-  const { error: insErr } = await supabase.from("asistencias").insert({
-    user_id: userId,
-    cliente_id: cliente.id,
-    fecha: input.fecha,
-    hora,
-    consumio,
-  });
-  if (insErr) throw new Error("No se pudo registrar la asistencia");
-
-  if (consumio && consumido !== "ilimitado") {
-    await supabase
-      .from("clientes")
-      .update({ clases_restantes: consumido })
-      .eq("id", cliente.id);
-  }
-
-  return { present: true, hora };
+  return { present: data.present, hora: data.hora };
 }
 
 export interface AsistenciaHoy {
