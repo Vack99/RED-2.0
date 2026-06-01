@@ -268,4 +268,37 @@ advisory note. Lessons, as triplets:
   must respect the test seam — home the pure rule and let each I/O caller apply it; don't collapse I/O onto
   one cached read just for DRY.
 
+## 2026-06-01 (cont.) — back-filled: two learnings that lived only in the handoffs (registry gap-fill)
+
+The 3rd-pass registry sweep (`docs/superpowers/shipping-skill-registry.md`, "Gaps found") flagged two
+load-bearing lessons captured in earlier handoffs but never promoted into this ledger as triplets.
+Registered here so the write-a-skill input is complete; provenance cited.
+
+**Front-half "archaeology" — load-bearing for the back half too (front-half origin):**
+- **What happened:** the mock targets this repo's VENDORED Next 16 / `@supabase/ssr`, whose APIs differ
+  from training data (`proxy.ts` not `middleware.ts`, `await cookies()`, 2-arg `revalidateTag(tag,'max')`,
+  `getClaims()` not `getSession()`); and the cloned mock hid 3 pre-existing react-hooks eslint errors.
+  Both bit early — handoffs `2026-05-29-next-cycle` + `-05-30`; the rule is encoded in `AGENTS.md`.
+- **Why it matters:** a shipping slice writes real code against those exact API shapes — guessing from
+  training data produces code that won't build, and inherited lint errors masquerade as the slice's own.
+- **Skill implication:** the back-half slice template must OPEN with an archaeology step — read the
+  relevant guide in `node_modules/<framework>/dist/docs/` before writing against an API, heed deprecation
+  notices, and run `eslint .` (the lint + boundary gate) on the untouched mock FIRST to baseline
+  pre-existing errors. A front-half lesson that gates every back-half slice.
+
+**Three self-inflicted orchestration mistakes (migration "Operational notes", `2026-05-30`):**
+- **What happened:** (a) re-running only ONE fresh-eyes gate after a fix let a regression through (fixing
+  one dimension can regress the other); (b) running my own inline edits on files a dispatched subagent
+  also owned created duplicate `types.ts` declarations (TS merged them, the build passed; only a
+  duplicate-identifier grep caught it); (c) guessing a migration `version`/commit sha before it existed
+  produced wrong values (#6/#7 filenames, #8 sha).
+- **Why it matters:** each is a silent failure green gates do NOT catch — a regressed gate, a
+  build-passing duplicate, a wrong-but-plausible version string.
+- **Skill implication:** bake three rules into the orchestration loop — (a) after ANY fix, re-dispatch
+  BOTH fresh-eyes gates, never only the one that failed; (b) ONE subagent owns its files end-to-end — the
+  orchestrator never inline-edits a file an agent is mid-edit on (reinforced this 3rd pass by delegating
+  the whole determined batch to a single sequential agent); (c) read back the assigned migration
+  `version` / real sha AFTER the operation, never write either before it exists. ((c) and
+  review-the-agent's-diff were already in the 2026-06-01 entries; (a) and (b) are the new promotions.)
+
 <!-- Append the next session's entry below this line. -->
