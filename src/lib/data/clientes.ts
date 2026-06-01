@@ -16,6 +16,7 @@ import {
   type FichaDerivada,
   type PaseClienteDTO,
 } from "./derive";
+import { resolverIdentidad } from "./perfil";
 import { getPlantilla } from "./plantillas";
 import { getVecinos, type Vecinos } from "./roster-nav";
 
@@ -163,7 +164,11 @@ export const getClienteFicha = cache(
       getPlantilla("recordatorio", supabase),
     ]);
 
-    const negocio = perfilRes.data?.negocio?.trim() || "FORGE";
+    const negocio = resolverIdentidad({
+      negocio: perfilRes.data?.negocio ?? null,
+      coach: null,
+      ciudad: null,
+    }).negocio;
     const ficha = shapeFicha(
       c,
       asistRes.data ?? [],

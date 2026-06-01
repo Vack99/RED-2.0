@@ -10,6 +10,7 @@ import { firstName, iniciales, isTelValido } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 import { requireOperator } from "./_auth";
+import { resolverIdentidad } from "./perfil";
 import { getPlantilla } from "./plantillas";
 
 /** The venta write seam's payment method — an alias for the canonical domain
@@ -156,9 +157,13 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
     getPlantilla("recibo", supabase),
   ]);
-  const negocio = perfil?.negocio?.trim() || "FORGE";
-  const coach = perfil?.coach?.trim() || "COACH";
-  const ciudad = perfil?.ciudad?.trim() || "";
+  // Resolve the identity defaults in one place (kept off getPerfil — it's
+  // cache()-wrapped and would break the injected-fake test). The recibo omits a
+  // blank ciudad, so this consumer keeps the empty-string behavior.
+  const id = resolverIdentidad(perfil ?? { negocio: null, coach: null, ciudad: null });
+  const negocio = id.negocio;
+  const coach = id.coach;
+  const ciudad = id.ciudad ?? "";
 
   const venceDisplay = fmtShort(nuevoVence);
   const fechaDisplay = fmtShort(hoy);

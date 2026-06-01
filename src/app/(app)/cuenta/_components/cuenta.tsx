@@ -67,7 +67,9 @@ export function CuentaScreen({
   plantillasCount,
   mesLabel,
 }: CuentaScreenProps) {
-  const coach = perfil?.coach?.trim() || "Coach";
+  // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
+  // a null-perfil guard (the perfil row may not be seeded yet).
+  const coach = perfil?.coach ?? "Coach";
   const inicial =
     coach
       .split(/\s+/)
@@ -75,7 +77,7 @@ export function CuentaScreen({
       .slice(0, 2)
       .join("")
       .toUpperCase() || "C";
-  const negocio = perfil?.negocio?.trim() || "FORGE";
+  const negocio = perfil?.negocio ?? "FORGE";
 
   const { ingresosMes, ventasMes, asistMes, ingresosMesPrev, ventasMesPrev, asistMesPrev } =
     resumen;
@@ -115,7 +117,7 @@ export function CuentaScreen({
           <Tnum style={{ display: "block", marginTop: 6, fontSize: 11.5, color: "var(--muted)" }}>{perfil?.tel ?? ""}</Tnum>
           <div style={{ marginTop: 6 }}>
             <Badge state="success">
-              {`${negocio} · ${perfil?.ciudad?.trim() || "—"}`.toUpperCase()}
+              {`${negocio} · ${perfil?.ciudad ?? "—"}`.toUpperCase()}
             </Badge>
           </div>
         </div>
