@@ -27,6 +27,20 @@ durable learnings get distilled into the project's real findings infra
 (`harness-learnings.md` ledger + `shipping-skill-registry.md`) for GOAL B — the back-half
 shipping skill is authored in a *later* session, not here.
 
+**Remediation status (2026-06-01):** all actionable findings below were applied to Forge in
+commit `489efa7` (`perf(web): apply Vercel-skills benchmark findings`) — behavior/visual/UX-
+identical, no PRD/issues warranted (a quality pass, not a feature slice). Tier A (Intl/regex
+hoist, `toSorted`, GPU `transform` animations), Tier B (`useMemo` collection derivations,
+`React.memo`+stable-callbacks for the pase rows), Tier C (vender accordion effects→events),
+Tier D (`crearVenta` paquete+cliente `Promise.all`; documented the deliberate ficha waterfall).
+Implemented via 5 parallel Opus subagents over disjoint files; full gate green
+(lint + typecheck + test 93/93 + build). Two items intentionally NOT changed: `crearVenta`'s
+post-RPC perfil/plantilla reads (D1(b) — left after the atomic money-write), and the
+`getClienteFicha` waterfall (justified — comment only). Out of scope (separate Gate 3.1
+concept-duplication item, not a Vercel finding): `cuenta.tsx` re-implements `iniciales()` inline.
+**Caveat:** the GPU-animation swaps (`scaleX`/`scaleY`) are CSS equivalences the gate can't see —
+recommend a quick visual smoke before treating them as verified.
+
 ---
 
 ## Skill 1 — `vercel-react-best-practices` (72 rules / 8 categories)
