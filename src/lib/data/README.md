@@ -16,7 +16,11 @@ rules — screens read DTOs, never raw rows.
 ## The flow (ADR-0001)
 1. Supabase clients live in `src/lib/supabase/{client,server}.ts` (`@supabase/ssr`).
 2. Reads happen in Server Components calling the DAL; writes go through Server
-   Actions (re-auth + Zod + `revalidateTag`).
+   Actions that re-auth + Zod-validate + delegate to the DAL. No cache
+   invalidation: (app) reads are dynamic (cookie-bound through the Supabase
+   server client), so there's no cached page to bust. (If a read ever opts into
+   `'use cache'` + `cacheTag(...)`, add the matching `revalidateTag` to the
+   write that touches it.)
 3. DTOs are the contract: screens depend on DTO shapes, not on the schema.
 
 **Rule:** nothing in this folder may import from `src/components` or `src/app`
