@@ -7,6 +7,7 @@ import { Icon, type IconName } from "@/components/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@/components/forge/ui";
 import type { ResumenMes } from "@/domain/types";
 import type { AsistenciaHoy } from "@/lib/data/asistencia";
+import { pesos } from "@/lib/format";
 
 interface InicioScreenProps {
   resumen: ResumenMes;
@@ -83,11 +84,16 @@ export function InicioScreen({
         {/* sparkline — real last-7-days series, oldest→newest ending today */}
         <div className="flex items-end" style={{ gap: 4, marginTop: 16, height: 30 }}>
           {asistenciasSemana.map((v, i) => (
+            // GPU-composited: scaleY from the bottom (transform, not animated
+            // height) so the bars grow identically without triggering layout.
             <div
               key={i}
-              className="flex-1 transition-all"
+              className="flex-1"
               style={{
-                height: `${Math.max(6, (v / maxSpark) * 100)}%`,
+                height: "100%",
+                transform: `scaleY(${Math.max(0.06, v / maxSpark)})`,
+                transformOrigin: "bottom",
+                transition: "transform 300ms ease",
                 background: i === asistenciasSemana.length - 1 ? "var(--yellow)" : "var(--muted-soft)",
               }}
             />
@@ -111,7 +117,7 @@ export function InicioScreen({
         <Card style={{ padding: "14px 16px" }}>
           <Eyebrow>SEMANA · INGRESOS</Eyebrow>
           <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1, letterSpacing: -0.4 }}>
-            ${ingresosSemana.toLocaleString("es-MX")}
+            {pesos(ingresosSemana)}
           </Tnum>
         </Card>
       </div>

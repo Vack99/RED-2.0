@@ -10,7 +10,7 @@ import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui"
 import type { ClienteLiteDTO } from "@/lib/data/clientes";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { Metodo as MetodoEnum, VentaResult } from "@/lib/data/ventas";
-import { isTelValido, waLink } from "@/lib/format";
+import { isTelValido, pesos, waLink } from "@/lib/format";
 import { crearVentaAction } from "../actions";
 
 type Mode = "new" | "existing";
@@ -61,31 +61,51 @@ export function VenderScreen({
     }
     return existing ? `${existing.nombre} · ${existing.tel}` : null;
   })();
-  const paqueteSummary = paq ? `${paq.nombre.toUpperCase()} · $${paq.precio.toLocaleString("es-MX")}` : null;
+  const paqueteSummary = paq ? `${paq.nombre.toUpperCase()} · ${pesos(paq.precio)}` : null;
   const pagoSummary = metodo ? (metodo === "Por pagar" ? "POR PAGAR" : metodo.toUpperCase()) : null;
 
   const toggle = (k: string) => setOpenSection((s) => (s === k ? null : k));
 
-  // Auto-advance once per section as it first completes.
-  const advanced = React.useRef({ cliente: false, paquete: false, metodo: false });
-  React.useEffect(() => {
-    if (clienteValid && !advanced.current.cliente && openSection === "cliente") {
-      advanced.current.cliente = true;
-      setTimeout(() => setOpenSection((s) => (s === "cliente" ? "paquete" : s)), 320);
-    }
-  }, [clienteValid, openSection]);
-  React.useEffect(() => {
-    if (sel && !advanced.current.paquete && openSection === "paquete") {
-      advanced.current.paquete = true;
-      setTimeout(() => setOpenSection((s) => (s === "paquete" ? "metodo" : s)), 320);
-    }
-  }, [sel, openSection]);
-  React.useEffect(() => {
-    if (metodo && !advanced.current.metodo && openSection === "metodo") {
-      advanced.current.metodo = true;
-      setTimeout(() => setOpenSection((s) => (s === "metodo" ? null : s)), 320);
-    }
-  }, [metodo, openSection]);
+  // Auto-advance once per section as it first completes. Fired from the events
+  // that cause completion (not effects): a guarded 320ms timeout that only
+  // advances if the just-completed section is still the open one.
+  const advanced = React.useRef<{ cliente: boolean; paquete: boolean; metodo: boolean }>({
+    cliente: false,
+    paquete: false,
+    metodo: false,
+  });
+  const advanceFrom = (section: "cliente" | "paquete" | "metodo", nextSection: string | null) => {
+    if (advanced.current[section]) return;
+    advanced.current[section] = true;
+    setTimeout(() => setOpenSection((s) => (s === section ? nextSection : s)), 320);
+  };
+
+  // "cliente" validity derives from multiple inputs (new: nombre len>=3 AND a
+  // valid tel; existing: a picked client). Each event that can flip it computes
+  // the would-be-valid state and, if newly valid while still on "cliente",
+  // schedules the advance.
+  const maybeAdvanceCliente = (wouldBeValid: boolean) => {
+    if (wouldBeValid && openSection === "cliente") advanceFrom("cliente", "paquete");
+  };
+
+  // Tab switch (new↔existing) can flip validity: e.g. switching to "existing"
+  // with a client already picked, or back to "new" with valid fields.
+  const handleSetMode = (m: Mode) => {
+    setMode(m);
+    const wouldBeValid =
+      m === "new" ? nuevo.nombre.trim().length >= 3 && isTelValido(nuevo.tel) : !!existing;
+    maybeAdvanceCliente(wouldBeValid);
+  };
+
+  const selectPaquete = (id: string) => {
+    setSel(id);
+    if (openSection === "paquete") advanceFrom("paquete", "metodo");
+  };
+
+  const selectMetodo = (m: Metodo) => {
+    setMetodo(m);
+    if (openSection === "metodo") advanceFrom("metodo", null);
+  };
 
   const finish = async () => {
     if (!canSubmit || !sel || !metodo) return;
@@ -158,15 +178,15 @@ export function VenderScreen({
       {/* Accordion */}
       <div className="forge-scroll flex-1 overflow-auto">
         <AccordionSection label="CLIENTE" summary={clienteSummary} emptyHint="Agregar cliente" complete={clienteValid} open={openSection === "cliente"} onToggle={() => toggle("cliente")}>
-          <ClienteEditor mode={mode} setMode={setMode} nuevo={nuevo} setNuevo={setNuevo} existing={existing} openPicker={() => setPickerOpen(true)} />
+          <ClienteEditor mode={mode} setMode={handleSetMode} nuevo={nuevo} setNuevo={setNuevo} existing={existing} openPicker={() => setPickerOpen(true)} onMaybeValid={maybeAdvanceCliente} />
         </AccordionSection>
 
         <AccordionSection label="PAQUETE" summary={paqueteSummary} emptyHint="Elegir paquete" complete={!!sel} open={openSection === "paquete"} onToggle={() => toggle("paquete")}>
-          <PaqueteEditor paquetes={paquetes} sel={sel} setSel={setSel} vigenciaEnd={vigenciaEnd} />
+          <PaqueteEditor paquetes={paquetes} sel={sel} setSel={selectPaquete} vigenciaEnd={vigenciaEnd} />
         </AccordionSection>
 
         <AccordionSection label="MÉTODO" summary={pagoSummary} emptyHint="Elegir método" complete={!!metodo} open={openSection === "metodo"} onToggle={() => toggle("metodo")} last>
-          <MetodoEditor metodo={metodo} setMetodo={setMetodo} />
+          <MetodoEditor metodo={metodo} setMetodo={selectMetodo} />
         </AccordionSection>
 
         <div style={{ height: 28 }} />
@@ -177,12 +197,12 @@ export function VenderScreen({
         <div className="flex items-baseline justify-between" style={{ marginBottom: 14 }}>
           <Eyebrow>TOTAL</Eyebrow>
           <Tnum className="font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
-            {paq ? `$${paq.precio.toLocaleString("es-MX")}` : <>$<span style={{ opacity: 0.6 }}>—</span></>}
+            {paq ? pesos(paq.precio) : <>$<span style={{ opacity: 0.6 }}>—</span></>}
             <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 6, fontWeight: 600 }}>MXN</span>
           </Tnum>
         </div>
         <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={finish}>
-          {submitting ? "PROCESANDO…" : paq ? `COBRAR $${paq.precio.toLocaleString("es-MX")}` : "CONFIRMAR VENTA"}
+          {submitting ? "PROCESANDO…" : paq ? `COBRAR ${pesos(paq.precio)}` : "CONFIRMAR VENTA"}
         </Button>
         {missing.length > 0 && (
           <div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)", letterSpacing: 0.4, textAlign: "center" }}>
@@ -212,7 +232,7 @@ export function VenderScreen({
           {filteredClients.map((cc) => (
             <button
               key={cc.id}
-              onClick={() => { setClientId(cc.id); setMode("existing"); setPickerOpen(false); setPickerQuery(""); }}
+              onClick={() => { setClientId(cc.id); setMode("existing"); setPickerOpen(false); setPickerQuery(""); maybeAdvanceCliente(true); }}
               className="flex w-full items-center text-left"
               style={{ gap: 12, padding: "14px 22px", background: cc.id === clientId ? "var(--surface)" : "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }}
             >
@@ -283,6 +303,7 @@ function ClienteEditor({
   setNuevo,
   existing,
   openPicker,
+  onMaybeValid,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -290,6 +311,7 @@ function ClienteEditor({
   setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string }>>;
   existing: ClienteLiteDTO | null;
   openPicker: () => void;
+  onMaybeValid: (wouldBeValid: boolean) => void;
 }) {
   return (
     <>
@@ -311,8 +333,8 @@ function ClienteEditor({
 
       {mode === "new" && (
         <div className="flex flex-col" style={{ gap: 12 }}>
-          <Input placeholder="Nombre completo" value={nuevo.nombre} onChange={(v) => setNuevo((n) => ({ ...n, nombre: v }))} autoFocus />
-          <Input icon="phone" placeholder="614 000 0000" value={nuevo.tel} onChange={(v) => setNuevo((n) => ({ ...n, tel: v }))} suffix="MX" inputMode="tel" />
+          <Input placeholder="Nombre completo" value={nuevo.nombre} onChange={(v) => { setNuevo((n) => ({ ...n, nombre: v })); onMaybeValid(v.trim().length >= 3 && isTelValido(nuevo.tel)); }} autoFocus />
+          <Input icon="phone" placeholder="614 000 0000" value={nuevo.tel} onChange={(v) => { setNuevo((n) => ({ ...n, tel: v })); onMaybeValid(nuevo.nombre.trim().length >= 3 && isTelValido(v)); }} suffix="MX" inputMode="tel" />
         </div>
       )}
 
@@ -362,7 +384,7 @@ function PaqueteEditor({
               <div className="uppercase font-bold" style={{ fontSize: 16, letterSpacing: -0.1 }}>{p.nombre}</div>
               <div className="uppercase" style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.8 }}>{on && vigenciaEnd ? `Hasta ${vigenciaEnd}` : p.vigencia}</div>
             </div>
-            <Tnum className="font-extrabold" style={{ fontSize: 22, color: on ? "var(--yellow)" : "var(--fg)", letterSpacing: -0.4 }}>${p.precio.toLocaleString("es-MX")}</Tnum>
+            <Tnum className="font-extrabold" style={{ fontSize: 22, color: on ? "var(--yellow)" : "var(--fg)", letterSpacing: -0.4 }}>{pesos(p.precio)}</Tnum>
           </button>
         );
       })}
@@ -487,7 +509,7 @@ function Recibo({
             <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>CONCEPTO</div>
             <div className="flex justify-between" style={{ marginTop: 6, fontSize: 14 }}>
               <span>{p.nombre}</span>
-              <Tnum style={{ fontWeight: 700 }}>${p.precio.toLocaleString("es-MX")}.00</Tnum>
+              <Tnum style={{ fontWeight: 700 }}>{pesos(p.precio)}.00</Tnum>
             </div>
             <div style={{ marginTop: 6, fontSize: 11.5, color: "#7a5a26" }}>Vigencia · {p.vigencia}</div>
 
@@ -508,7 +530,7 @@ function Recibo({
             <div className="flex items-baseline justify-between" style={{ marginTop: 14, padding: "14px 0 4px", borderTop: "2px solid #1c1917" }}>
               <span className="uppercase font-extrabold" style={{ fontSize: 14, letterSpacing: 0.4 }}>TOTAL</span>
               <Tnum className="font-extrabold" style={{ fontSize: 28, letterSpacing: -0.6 }}>
-                ${p.precio.toLocaleString("es-MX")}
+                {pesos(p.precio)}
                 <span style={{ fontSize: 11, color: "#7a5a26", marginLeft: 6, letterSpacing: 1, fontWeight: 700 }}>MXN</span>
               </Tnum>
             </div>

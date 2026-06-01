@@ -43,26 +43,31 @@ export function AsistenciaScreen({
     c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
-  async function toggle(c: PaseClienteDTO) {
-    try {
-      const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
-      setMarcadas((m) => {
-        const cur = new Set(m[selIso] ?? []);
-        if (res.present) cur.add(c.id);
-        else cur.delete(c.id);
-        return { ...m, [selIso]: [...cur] };
-      });
-      if (res.present) {
-        forgeToast({
-          tone: "success",
-          title: "Asistencia registrada",
-          body: `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
+  const toggle = React.useCallback(
+    async (c: PaseClienteDTO) => {
+      try {
+        const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
+        setMarcadas((m) => {
+          const cur = new Set(m[selIso] ?? []);
+          if (res.present) cur.add(c.id);
+          else cur.delete(c.id);
+          return { ...m, [selIso]: [...cur] };
         });
+        if (res.present) {
+          forgeToast({
+            tone: "success",
+            title: "Asistencia registrada",
+            body: `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
+          });
+        }
+      } catch {
+        forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
       }
-    } catch {
-      forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
-    }
-  }
+    },
+    [selIso],
+  );
+
+  const openCliente = React.useCallback((id: string) => router.push(`/clientes/${id}`), [router]);
 
   return (
     <div>
@@ -106,7 +111,7 @@ export function AsistenciaScreen({
           <Tnum className="font-extrabold" style={{ fontSize: 26, color: "var(--muted)" }}>/ {total}</Tnum>
         </div>
         <div style={{ marginTop: 14, height: 3, background: "var(--line)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: `${pct}%`, background: "var(--yellow)", transition: "width 380ms cubic-bezier(.32,.72,0,1)" }} />
+          <div style={{ height: "100%", width: "100%", background: "var(--yellow)", transform: `scaleX(${pct / 100})`, transformOrigin: "left", transition: "transform 380ms cubic-bezier(.32,.72,0,1)" }} />
         </div>
       </Card>
 
@@ -131,8 +136,8 @@ export function AsistenciaScreen({
             cliente={c}
             present={presentes.includes(c.id)}
             first={i === 0}
-            onToggle={() => toggle(c)}
-            onOpen={() => router.push(`/clientes/${c.id}`)}
+            onToggle={toggle}
+            onOpen={openCliente}
           />
         ))}
         {filtered.length === 0 && (
@@ -243,7 +248,7 @@ function DayStrip({
   );
 }
 
-function PaseRow({
+const PaseRow = React.memo(function PaseRow({
   cliente,
   present,
   first,
@@ -253,13 +258,13 @@ function PaseRow({
   cliente: PaseClienteDTO;
   present: boolean;
   first: boolean;
-  onToggle: () => void;
-  onOpen: () => void;
+  onToggle: (c: PaseClienteDTO) => void;
+  onOpen: (id: string) => void;
 }) {
   const c = cliente;
   return (
     <div
-      onClick={onToggle}
+      onClick={() => onToggle(c)}
       className="flex w-full items-center select-none"
       style={{
         gap: 14,
@@ -274,7 +279,7 @@ function PaseRow({
       <button
         onClick={(e) => {
           e.stopPropagation();
-          onOpen();
+          onOpen(c.id);
         }}
         className="min-w-0 flex-1 text-left"
         style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--fg)" }}
@@ -300,7 +305,7 @@ function PaseRow({
       </div>
     </div>
   );
-}
+});
 
 function PaseCalendar({
   hoy,

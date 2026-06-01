@@ -17,6 +17,7 @@ import type { ResumenMes } from "@/domain/types";
 import type { CobroDTO } from "@/lib/data/cobro";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";
+import { pesos } from "@/lib/format";
 
 interface CuentaScreenProps {
   perfil: PerfilDTO | null;
@@ -130,7 +131,7 @@ export function CuentaScreen({
           <div>
             <Eyebrow style={{ fontSize: 9.5 }}>INGRESOS</Eyebrow>
             <Tnum className="font-extrabold" style={{ display: "block", marginTop: 4, fontSize: 22, lineHeight: 1, letterSpacing: -0.4 }}>
-              ${ingresosMes.toLocaleString("es-MX")}
+              {pesos(ingresosMes)}
             </Tnum>
             <DeltaCaption actual={ingresosMes} prev={ingresosMesPrev} />
           </div>
@@ -187,7 +188,7 @@ export function CuentaScreen({
               </div>
             </div>
             <div className="flex shrink-0 items-center" style={{ gap: 12 }}>
-              <Tnum className="font-extrabold" style={{ fontSize: 18 }}>${p.precio.toLocaleString("es-MX")}</Tnum>
+              <Tnum className="font-extrabold" style={{ fontSize: 18 }}>{pesos(p.precio)}</Tnum>
               <Icon name="chev" size={14} color="var(--muted)" />
             </div>
           </button>

@@ -139,6 +139,10 @@ export const getClienteFicha = cache(
     const hoy = hoyChihuahua();
     const hoyIso = toIsoDay(hoy);
 
+    // Deliberate waterfall: await the cliente FIRST so a not-found id returns
+    // early without firing the 5 downstream reads. Folding all 6 into one
+    // Promise.all would waste 5 queries on every 404; one extra round trip on
+    // the happy path is the accepted cost.
     const { data: c } = await supabase
       .from("clientes")
       .select("id, nombre, tel, paquete_nombre, clases_restantes, vence, created_at")

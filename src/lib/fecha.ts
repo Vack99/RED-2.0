@@ -12,14 +12,18 @@ import { isoDay } from "./date";
 
 export const TZ = "America/Chihuahua";
 
+// Hoisted once — Intl.DateTimeFormat construction is the cost, so a single
+// reused formatter beats building it fresh per call (js-hoist-intl).
+const CHIHUAHUA_YMD = new Intl.DateTimeFormat("en-CA", {
+  timeZone: TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+
 /** Today in America/Chihuahua, as a Date whose local Y/M/D = the Chihuahua date. */
 export function hoyChihuahua(): Date {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date());
+  const parts = CHIHUAHUA_YMD.formatToParts(new Date());
   const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
   return new Date(get("year"), get("month") - 1, get("day"));
 }
@@ -41,12 +45,7 @@ export function hoyIsoChihuahua(): string {
 
 /** The Chihuahua-local calendar Date for a timestamptz string (handles tz drift). */
 export function fechaChihuahua(isoTimestamp: string): Date {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: TZ,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).formatToParts(new Date(isoTimestamp));
+  const parts = CHIHUAHUA_YMD.formatToParts(new Date(isoTimestamp));
   const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
   return new Date(get("year"), get("month") - 1, get("day"));
 }

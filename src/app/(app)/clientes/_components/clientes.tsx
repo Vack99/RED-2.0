@@ -32,24 +32,29 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const [clasesMax, setClasesMax] = React.useState<number | null>(null);
   const [sort, setSort] = React.useState<Sort>("dias");
 
-  const withU = clientes.map((c) => ({ c, u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }) }));
+  const withU = React.useMemo(
+    () => clientes.map((c) => ({ c, u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }) })),
+    [clientes],
+  );
   const renovarCount = withU.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente").length;
   const { vigentes } = resumirRoster(clientes.map((c) => c.estado));
 
-  let list = withU;
-  if (renovar) list = list.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente");
-  if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
-  if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
-  if (query) {
-    const q = query.toLowerCase();
-    list = list.filter((x) => x.c.nombre.toLowerCase().includes(q) || x.c.tel.includes(query));
-  }
-  const sorters: Record<Sort, (a: typeof withU[0], b: typeof withU[0]) => number> = {
-    dias: (a, b) => a.c.diasRest - b.c.diasRest,
-    nombre: (a, b) => a.c.nombre.localeCompare(b.c.nombre),
-    asist: (a, b) => b.c.asistEsteMes - a.c.asistEsteMes,
-  };
-  list = [...list].sort(sorters[sort]);
+  const list = React.useMemo(() => {
+    let list = withU;
+    if (renovar) list = list.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente");
+    if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
+    if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
+    if (query) {
+      const q = query.toLowerCase();
+      list = list.filter((x) => x.c.nombre.toLowerCase().includes(q) || x.c.tel.includes(query));
+    }
+    const sorters: Record<Sort, (a: typeof withU[0], b: typeof withU[0]) => number> = {
+      dias: (a, b) => a.c.diasRest - b.c.diasRest,
+      nombre: (a, b) => a.c.nombre.localeCompare(b.c.nombre),
+      asist: (a, b) => b.c.asistEsteMes - a.c.asistEsteMes,
+    };
+    return list.toSorted(sorters[sort]);
+  }, [withU, renovar, diasMax, clasesMax, query, sort]);
 
   const activeCount = (renovar ? 1 : 0) + (diasMax != null ? 1 : 0) + (clasesMax != null ? 1 : 0);
   const anyFilter = activeCount > 0 || !!query;

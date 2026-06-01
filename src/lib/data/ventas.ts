@@ -85,12 +85,27 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // INVOKER), so the sub is discarded here (matches prior behavior).
   await requireOperator(supabase);
 
-  // Package facts come from the DB, never the client.
-  const { data: paq, error: paqErr } = await supabase
-    .from("paquetes")
-    .select("nombre, clases, vigencia_tipo, vigencia_dias, precio")
-    .eq("id", input.paqueteId)
-    .single();
+  // Package facts come from the DB, never the client. The paquete read and (in
+  // existing mode) the cliente read are independent, so fire them concurrently;
+  // NEW mode has no cliente row to fetch, so its slot resolves to null. The
+  // not-found checks below preserve the exact per-row error messages.
+  const isNew = input.mode === "new";
+  const [paqRes, cliRes] = await Promise.all([
+    supabase
+      .from("paquetes")
+      .select("nombre, clases, vigencia_tipo, vigencia_dias, precio")
+      .eq("id", input.paqueteId)
+      .single(),
+    input.mode === "existing"
+      ? supabase
+          .from("clientes")
+          .select("id, nombre, tel, clases_restantes, vence")
+          .eq("id", input.clienteId!)
+          .single()
+      : Promise.resolve(null),
+  ]);
+
+  const { data: paq, error: paqErr } = paqRes;
   if (paqErr || !paq) throw new Error("Paquete no encontrado");
 
   const hoy = hoyChihuahua();
@@ -108,14 +123,9 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   let saldoActual: Saldo;
   let nombre: string;
   let tel: string;
-  const isNew = input.mode === "new";
 
   if (input.mode === "existing") {
-    const { data: cli, error } = await supabase
-      .from("clientes")
-      .select("id, nombre, tel, clases_restantes, vence")
-      .eq("id", input.clienteId!)
-      .single();
+    const { data: cli, error } = cliRes!;
     if (error || !cli) throw new Error("Cliente no encontrado");
     nombre = cli.nombre;
     tel = cli.tel;

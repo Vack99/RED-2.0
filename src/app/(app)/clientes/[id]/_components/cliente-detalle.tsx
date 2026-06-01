@@ -143,7 +143,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
                 {!ilimitado && ficha.totalClases !== null && <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {ficha.totalClases}</span>}
               </div>
               <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
-                <div style={{ width: `${restRatio * 100}%`, height: "100%", background: "var(--yellow)", transition: "width 600ms cubic-bezier(.32,.72,0,1)" }} />
+                <div style={{ width: "100%", height: "100%", background: "var(--yellow)", transform: `scaleX(${restRatio})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
               </div>
             </div>
             <div className="flex-1">
@@ -153,7 +153,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
                 <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {ficha.dayDenom}</span>
               </div>
               <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
-                <div style={{ width: `${dayRatio * 100}%`, height: "100%", background: c.diasRest <= 5 ? "var(--yellow)" : "var(--green)", transition: "width 600ms cubic-bezier(.32,.72,0,1)" }} />
+                <div style={{ width: "100%", height: "100%", background: c.diasRest <= 5 ? "var(--yellow)" : "var(--green)", transform: `scaleX(${dayRatio})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
               </div>
             </div>
           </div>
