@@ -63,3 +63,40 @@ export function derivarCliente(
     asistEsteMes,
   };
 }
+
+export interface PaseClienteDTO {
+  id: string;
+  nombre: string;
+  inicial: string;
+  paquete: string;
+  /** Remaining-classes label, e.g. "Ilimitado", "5 clases", "Sin paquete". */
+  clasesLabel: string;
+  diasRest: number;
+  /** Active package expiring soon. Derived through derivarEstado (ADR-0002), so it
+   *  tracks por_vencer's BOTH dimensions (días <= 5 OR clases <= 2) — never a
+   *  hand-inlined day threshold that silently drops the clases dimension. */
+  porVencer: boolean;
+}
+
+/**
+ * The pase de lista's slim per-client projection. Derives through derivarCliente
+ * so `porVencer` is exactly derivarEstado's `por_vencer`; the pase shares the
+ * directory's single definition of "expiring" instead of re-coining a `<= 5`.
+ */
+export function derivarPaseCliente(c: ClienteFacts, hoy: Date): PaseClienteDTO {
+  const d = derivarCliente(c, hoy, 0);
+  const clasesLabel = !c.paquete_nombre
+    ? "Sin paquete"
+    : c.clases_restantes === null
+      ? "Ilimitado"
+      : `${c.clases_restantes} clase${c.clases_restantes === 1 ? "" : "s"}`;
+  return {
+    id: d.id,
+    nombre: d.nombre,
+    inicial: d.inicial,
+    paquete: d.paquete,
+    clasesLabel,
+    diasRest: d.diasRest,
+    porVencer: d.estado === "por_vencer",
+  };
+}

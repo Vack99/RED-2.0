@@ -2,15 +2,22 @@ import "server-only";
 
 import { cache } from "react";
 
-import { diasRestantes, renderPlantilla } from "@/domain/rules";
+import { renderPlantilla } from "@/domain/rules";
 import { DOW, fmtShort } from "@/lib/date";
 import { fechaChihuahua, hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales, pesos } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
-import { derivarCliente, type ClienteDerivado } from "./derive";
+import {
+  derivarCliente,
+  derivarPaseCliente,
+  type ClienteDerivado,
+  type PaseClienteDTO,
+} from "./derive";
 import { getPlantilla } from "./plantillas";
 import { getVecinos } from "./roster-nav";
+
+export type { PaseClienteDTO } from "./derive";
 
 export interface ClienteLiteDTO {
   id: string;
@@ -42,47 +49,22 @@ export const getClientesLite = cache(
   },
 );
 
-export interface PaseClienteDTO {
-  id: string;
-  nombre: string;
-  inicial: string;
-  paquete: string;
-  /** Remaining-classes label, e.g. "Ilimitado", "5 clases", "Sin paquete". */
-  clasesLabel: string;
-  diasRest: number;
-  /** Active package expiring soon (derived, ADR-0002). */
-  porVencer: boolean;
-}
-
-/** Roster for the pase de lista, with derived saldo display (ADR-0002). */
+/** Roster for the pase de lista, derived-at-read (ADR-0002): a thin fetch that
+ *  defers each row to the pure, tested derivarPaseCliente. `porVencer` is the
+ *  domain's por_vencer (días OR clases), shared with the directory — not an
+ *  inline `<= 5` that drops the clases dimension. */
 export const getClientesParaPase = cache(
   async (client?: SupabaseServer): Promise<PaseClienteDTO[]> => {
     const supabase = client ?? (await createClient());
     const { data } = await supabase
       .from("clientes")
-      .select("id, nombre, paquete_nombre, clases_restantes, vence")
+      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence")
       .order("nombre");
 
     if (!data) return [];
 
     const hoy = hoyChihuahua();
-    return data.map((c) => {
-      const diasRest = c.vence ? diasRestantes(parseDay(c.vence), hoy) : 0;
-      const clasesLabel = !c.paquete_nombre
-        ? "Sin paquete"
-        : c.clases_restantes === null
-          ? "Ilimitado"
-          : `${c.clases_restantes} clase${c.clases_restantes === 1 ? "" : "s"}`;
-      return {
-        id: c.id,
-        nombre: c.nombre,
-        inicial: iniciales(c.nombre),
-        paquete: c.paquete_nombre ?? "Sin paquete",
-        clasesLabel,
-        diasRest,
-        porVencer: !!c.paquete_nombre && diasRest > 0 && diasRest <= 5,
-      };
-    });
+    return data.map((c) => derivarPaseCliente(c, hoy));
   },
 );
 

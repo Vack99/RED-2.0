@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { derivarCliente, type ClienteFacts } from "./derive";
+import { derivarCliente, derivarPaseCliente, type ClienteFacts } from "./derive";
 
 // Fixed "today" so the derivation is deterministic (months are 0-based).
 const HOY = new Date(2026, 4, 27); // 27 May 2026
@@ -85,5 +85,51 @@ describe("derivarCliente", () => {
     expect(d.diasRest).toBe(0);
     expect(d.venceDisplay).toBe("—");
     expect(d.paquete).toBe("Sin paquete");
+  });
+});
+
+describe("derivarPaseCliente", () => {
+  it("flags porVencer on the CLASES dimension even with days to spare (the lossy-pase bug)", () => {
+    // 1 class left, 24 days left: por_vencer fires on clases <= 2. The old inline
+    // `diasRest > 0 && diasRest <= 5` dropped this case and showed no warning.
+    const p = derivarPaseCliente(facts({ clases_restantes: 1, vence: "2026-06-20" }), HOY);
+    expect(p.diasRest).toBe(24);
+    expect(p.porVencer).toBe(true);
+    expect(p.clasesLabel).toBe("1 clase");
+  });
+
+  it("flags porVencer on the DÍAS dimension", () => {
+    const p = derivarPaseCliente(facts({ clases_restantes: 8, vence: "2026-05-30" }), HOY);
+    expect(p.diasRest).toBe(3);
+    expect(p.porVencer).toBe(true);
+  });
+
+  it("is not porVencer when both dimensions are healthy", () => {
+    const p = derivarPaseCliente(facts({ clases_restantes: 8, vence: "2026-06-20" }), HOY);
+    expect(p.porVencer).toBe(false);
+    expect(p.clasesLabel).toBe("8 clases");
+  });
+
+  it("is not porVencer once expired (sin_clases, not por_vencer)", () => {
+    const p = derivarPaseCliente(facts({ clases_restantes: 5, vence: "2026-05-25" }), HOY);
+    expect(p.porVencer).toBe(false);
+  });
+
+  it("labels ilimitado and never flags it on clases", () => {
+    const p = derivarPaseCliente(
+      facts({ clases_restantes: null, paquete_nombre: "Ilimitado", vence: "2026-06-20" }),
+      HOY,
+    );
+    expect(p.clasesLabel).toBe("Ilimitado");
+    expect(p.porVencer).toBe(false);
+  });
+
+  it("handles a client with no package", () => {
+    const p = derivarPaseCliente(
+      facts({ paquete_nombre: null, clases_restantes: null, vence: null }),
+      HOY,
+    );
+    expect(p.clasesLabel).toBe("Sin paquete");
+    expect(p.porVencer).toBe(false);
   });
 });
