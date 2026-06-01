@@ -30,11 +30,16 @@ Forge has always had a meta-goal beyond the app: a **repeatable harness that tak
 
 ## START HERE — read in this order (the payload, do not re-derive)
 
+0. **The consolidated index — `docs/superpowers/shipping-skill-registry.md`.** READ THIS FIRST. It
+   is the deduplicated, authoritative synthesis of the whole corpus below, organized as the skill's
+   proposed GATES/sections, each learning mapped to the Forge artifact that proves it + its source
+   citation. It is self-contained enough to read top-to-bottom as the write-a-skill input; the
+   sources below are the canonical detail it points at. (Added 2026-06-01, after the 3rd pass.)
 1. **The learnings ledger — `docs/superpowers/harness-learnings.md`.** THE primary input. Read it
-   top-to-bottom. Three dated sections (2026-05-31, 2026-06-01, 2026-06-01-cont) of
-   *What happened · Why it matters · Skill implication* triplets — process, operational, and
-   architecture lessons, each written to become a skill gate. This is the accumulated, reinforced
-   record the whole "finish Forge first" plan existed to produce.
+   top-to-bottom. **FOUR** dated sections now (2026-05-31, 2026-06-01, 2026-06-01-cont [2nd pass],
+   and the newest 2026-06-01-cont [3rd pass]) of *What happened · Why it matters · Skill implication*
+   triplets — process, operational, and architecture lessons, each written to become a skill gate.
+   This is the accumulated, reinforced record the whole "finish Forge first" plan existed to produce.
 2. **The architecture audit — `docs/superpowers/audits/2026-05-31-forge-architecture-audit-learnings.md`.**
    Its **7 harness implications** are the structural spine of the skill (per-slice concept-duplication
    gate; docs-as-assertions; slice-done = typecheck+test+build in CI; keep the DAL seam injectable;
@@ -61,10 +66,20 @@ GOAL A is now **fully complete and hardened twice**. Since `2c5a544`:
   verified → fixed by dispatched agents. Phone rule single-homed; **injectable DAL seam restored**
   (the audit's last open structural finding); ADR-0005 honesty fix + `toggle_pase_rules.sql`;
   roster-nav extracted to a tested seam. Tests 60→76. (Detail in ledger 2026-06-01-cont.)
+- **3rd `improve-codebase-architecture` pass** (`da0aa3b`→`dafe3e2`, on branch
+  **`arch/third-deepening-pass`** — NOT pushed, NOT merged to master): an adversarial *workflow*
+  (9 lens finders → per-finding skeptic verify → completeness critic → a NEW holistic Opus
+  validation gate over the whole survivor set) → triage determined-vs-fork → fix. 9 findings shipped;
+  tests **76→93**. Net-new lessons: re-audit-after-every-hardening-pass (the headline
+  concept-duplication class resurfaced at NEW sites — incl. a REAL operator-visible bug, the pase
+  `porVencer` dropping the `clases<=2` dimension); validate-the-validators (the holistic gate caught
+  a per-finding verifier's own would-be-regression); orchestrate-as-one-sequential-agent-when-files-collide;
+  pure-core-extraction-makes-latent-bugs-assertable. (Detail in ledger 2026-06-01-cont, 3rd section.)
 
 The point for THIS session: the ledger's newest triplets (orchestrate-don't-over-checkpoint,
-review-the-agent's-diff, testability-as-interface-depth, don't-home-a-rule-where-no-caller-runs-it)
-are fresh skill fodder — fold them in.
+review-the-agent's-diff, testability-as-interface-depth, don't-home-a-rule-where-no-caller-runs-it,
+plus the 3rd-pass four above) are fresh skill fodder — fold them in. The
+`shipping-skill-registry.md` (START HERE §0) already does the folding.
 
 ---
 
