@@ -209,4 +209,63 @@ still only leaked-password. Lessons, as triplets:
   WHERE THE LIVE PATH RUNS IT — homing a rule in a layer no caller exercises is duplication wearing a
   tidiness costume. ([[forge-harness-audit-lessons]])
 
+## 2026-06-01 (cont.) — THIRD improve-codebase-architecture pass: deepening + a validation-gate-before-design discipline
+
+Ran the skill a third time on the post-2nd-pass code. Shape: an adversarial **workflow** (9 lens
+finders → per-finding skeptic verify → completeness critic; 38 agents, 28 findings, 22 survived as
+genuinely-new) → then, at Aaron's instruction, a **second holistic Opus validation gate** over the
+whole survivor set → triage determined-vs-fork → fix. 9 commits on `arch/third-deepening-pass`
+(`da0aa3b`→`dafe3e2`); tests **76→93**; gates green throughout (typecheck · lint 76 modules · build 10
+pages). NOT pushed, NOT merged to master. Findings shipped: #1 pase `porVencer` (a real bug — see
+below), #2 `shapeFicha` extraction, #3 `MetodoPago` single-home, #4 slim dashboard read + `resumirRoster`,
+#5 hard-coded-year fix, #7d `resolverIdentidad`, #7f dead `Urgencia.score` removal, #7g README, #6 cobro
+advisory note. Lessons, as triplets:
+
+**Audit / depth lessons:**
+- **A re-audit after two hardening passes STILL surfaced the headline failure class — at NEW sites.**
+  Prior pass #3 unified the urgency *numbers* into the domain, but the `por_vencer` *projection* was
+  still re-coined: `getClientesParaPase` inlined `diasRest <= 5` and **silently dropped the `clases <= 2`
+  half**, so a low-clases/high-días cliente got no VENCE warning on the pase while the directorio flagged
+  them por_vencer — two screens disagreeing, a real operator-visible bug the boundary + tests never saw.
+  *Skill implication:* the concept-duplication gate must reconcile a named rule against **every** read
+  path, not just the one a prior fix touched; "single-home a rule" isn't done until each sibling
+  read/screen consumes the same derivation. ([[forge-harness-audit-lessons]])
+- **The two bug fixes both lived in untestable places** (a `cache()` DAL closure; a client-component
+  string literal `... 2026`). Extracting the pure cores (`derivarPaseCliente`, `shapeFicha`, `fmtEyebrow`)
+  made each bug assertable. *Skill implication:* the testability lens pays off as bug-prevention, not just
+  tidiness — pure-core extraction is how a latent bug becomes a failing test.
+
+**Validation / process lessons (the headline this session):**
+- **Validate the validators before investing design effort — a holistic second gate caught a per-finding
+  verifier's own mistake.** The workflow's #1 verifier conflated the *correct* ficha días-color
+  (`diasRest <= 5`, legitimately days-specific) with the *lossy* pase flag, and its proposed
+  `estado === "por_vencer"` fix would have been a **regression** (por_vencer is a días-OR-clases union →
+  would paint the días tile yellow on a clases-only shortage). A single Opus reviewer reading the whole
+  survivor set together caught it; per-finding verifiers can't see cross-finding errors. *Skill
+  implication:* after the per-finding adversarial pass, run ONE holistic validation over the full set
+  before any code changes; treat verifier verdicts as claims to re-check, not ground truth.
+  ([[forge-validate-before-codify]])
+
+**Orchestration lessons:**
+- **"Orchestrate to subagents" can mean ONE well-specced sequential agent, not N parallel.** The remaining
+  6 findings all collided on shared files (`types.ts`/`ventas.ts`/`clientes.ts`/`clientes.tsx`/`rules.ts`/
+  `inicio/page.tsx`) and git commits serialize regardless — so parallel fan-out buys nothing and risks
+  clobbering. Handed the determined batch to a single background **Opus** agent with a precise per-finding
+  spec (incl. the validated regressions-to-avoid) that gated + committed each; main session reviewed every
+  diff after. *Skill implication:* when findings overlap files, the context-saving orchestration move is one
+  sequential agent that offloads the editing, reserving parallel fan-out for file-disjoint work.
+  ([[forge-orchestrate-dont-over-checkpoint]])
+- **Triage determined-vs-fork; only ONE finding (#6 cobro) was a genuine product fork.** Gating venta
+  intake on `cobro.acepta_*` is new money-path behavior, not a refactor — surfaced as Aaron's call (shipped
+  only an advisory docstring), everything else was dictated by ADR/precedent/the audit and dispatched
+  without a checkpoint.
+
+**Technical gotcha (bake into the skill):**
+- **A `cache()`-wrapped DAL read can't be unit-tested through React's cache outside a request, and routing
+  a money-path writer through one would break the injected-fake test.** #7d single-homed the operator-identity
+  defaults as a PURE `resolverIdentidad` applied at each read site (getPerfil, ventas, ficha) rather than
+  forcing all reads through the `cache()`-wrapped `getPerfil`. *Skill implication:* "single-home a rule"
+  must respect the test seam — home the pure rule and let each I/O caller apply it; don't collapse I/O onto
+  one cached read just for DRY.
+
 <!-- Append the next session's entry below this line. -->
