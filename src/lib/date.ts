@@ -52,3 +52,13 @@ export function fmtFull(d: Date): string {
 export function fmtShort(d: Date): string {
   return `${d.getDate()} ${MON[d.getMonth()].toLowerCase()}`;
 }
+
+/** "MIÉ · 27 MAY 2026" — the dashboard greeting eyebrow (carries the year). */
+export function fmtEyebrow(d: Date): string {
+  return `${DOW[d.getDay()]} · ${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/** "MAYO 2026" — the cuenta "resumen del mes" header. */
+export function fmtMesAnio(d: Date): string {
+  return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`.toUpperCase();
+}

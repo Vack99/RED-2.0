@@ -1,6 +1,7 @@
 import { getAsistenciasHoy } from "@/lib/data/asistencia";
 import { getRosterResumen } from "@/lib/data/clientes";
 import { getResumenMes } from "@/lib/data/resumen";
+import { fmtEyebrow } from "@/lib/date";
 import { hoyChihuahua } from "@/lib/fecha";
 
 import { InicioScreen } from "./_components/inicio";
@@ -12,7 +13,7 @@ export default async function Page() {
     getAsistenciasHoy(),
   ]);
 
-  const hoy = hoyChihuahua();
+  const eyebrow = fmtEyebrow(hoyChihuahua());
 
   return (
     <InicioScreen
@@ -20,7 +21,7 @@ export default async function Page() {
       vigentes={roster.vigentes}
       totalActivos={roster.totalActivos}
       recientes={recientes}
-      hoy={{ dow: hoy.getDay(), date: hoy.getDate(), month: hoy.getMonth() }}
+      eyebrow={eyebrow}
     />
   );
 }

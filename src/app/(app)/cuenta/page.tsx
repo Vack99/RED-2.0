@@ -3,7 +3,7 @@ import { getPaquetes } from "@/lib/data/paquetes";
 import { getPerfil } from "@/lib/data/perfil";
 import { getPlantillas } from "@/lib/data/plantillas";
 import { getResumenMes } from "@/lib/data/resumen";
-import { MONTHS_FULL } from "@/lib/date";
+import { fmtMesAnio } from "@/lib/date";
 import { hoyChihuahua } from "@/lib/fecha";
 
 import { CuentaScreen } from "./_components/cuenta";
@@ -17,8 +17,7 @@ export default async function Page() {
     getPlantillas(),
   ]);
 
-  const hoy = hoyChihuahua();
-  const mesLabel = `${MONTHS_FULL[hoy.getMonth()]} ${hoy.getFullYear()}`.toUpperCase();
+  const mesLabel = fmtMesAnio(hoyChihuahua());
   const plantillasCount = Object.keys(plantillas).length;
 
   return (

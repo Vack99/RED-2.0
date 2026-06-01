@@ -7,15 +7,14 @@ import { Icon, type IconName } from "@/components/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@/components/forge/ui";
 import type { ResumenMes } from "@/domain/types";
 import type { AsistenciaHoy } from "@/lib/data/asistencia";
-import { DOW, MON } from "@/lib/date";
 
 interface InicioScreenProps {
   resumen: ResumenMes;
   vigentes: number;
   totalActivos: number;
   recientes: AsistenciaHoy[];
-  /** Chihuahua-local "today" components, resolved server-side. */
-  hoy: { dow: number; date: number; month: number };
+  /** Pre-formatted greeting eyebrow (carries the year), built server-side via fmtEyebrow. */
+  eyebrow: string;
 }
 
 export function InicioScreen({
@@ -23,7 +22,7 @@ export function InicioScreen({
   vigentes,
   totalActivos,
   recientes,
-  hoy,
+  eyebrow,
 }: InicioScreenProps) {
   const router = useRouter();
 
@@ -40,7 +39,6 @@ export function InicioScreen({
   const deltaColor = deltaAyer < 0 ? "var(--gold)" : "var(--green)";
 
   const maxSpark = Math.max(1, ...asistenciasSemana);
-  const eyebrow = `${DOW[hoy.dow]} · ${hoy.date} ${MON[hoy.month]} 2026`;
 
   return (
     <div>
