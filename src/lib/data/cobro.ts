@@ -6,7 +6,12 @@ import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 /** Safe cobro DTO for the cuenta "Datos de cobro" section — no id / user_id.
  *  The cobro row is the source for the {datos_pago} plantilla token (token
- *  injection into a message body lands with the retención editor). */
+ *  injection into a message body lands with the retención editor).
+ *
+ *  NOTE: the `acepta*` flags are ADVISORY, not enforced. They are NOT applied at
+ *  the venta intake — vender offers every payment method regardless. Today they
+ *  drive only the cuenta "métodos" summary count. Gating the intake by accepted
+ *  method is a future product decision, not current behavior. */
 export interface CobroDTO {
   titular: string | null;
   banco: string | null;
