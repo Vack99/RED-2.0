@@ -14,8 +14,9 @@ more than one gate is stated once in its best home and cross-referenced. The clo
 coda flags anything that lived only in a transient doc.
 
 **The canonical sources (do not re-derive — read these alongside this registry):**
-- Ledger (FOUR dated sections): `docs/superpowers/harness-learnings.md`
+- Ledger (SIX dated sections): `docs/superpowers/harness-learnings.md`
 - Audit (7 implications + "got right" + shortlist): `docs/superpowers/audits/2026-05-31-forge-architecture-audit-learnings.md`
+- External-benchmark audit (3 Vercel skills vs Forge `src/`; 0 bugs, 0 HIGH, 1 convergent hygiene theme): `docs/superpowers/audits/2026-06-01-vercel-skills-benchmark.md`
 - Orchestration skeleton: `docs/prompts/goal-forge-supabase-finish.md`, `docs/prompts/resume-forge-migration.md`
 - Handoffs (the arc): `docs/superpowers/handoffs/2026-05-29-*`, `-05-30-*`, `-05-31-*`, `2026-06-01-extract-back-half-shipping-skill.md`
 - Front-half template to MIRROR (structure/voice/progressive-disclosure): `~/.claude/skills/sector-map/{SKILL,PHASES,TEMPLATES}.md`
@@ -241,6 +242,21 @@ behind a hand-typed "45/45." Every gate below is a companion the cruiser structu
 - **Source:** audit Cluster 6. *(Note: a second forbidden client→DAL rule was downgraded to medium
   on Forge because all current client→DAL edges are type-only, resting on the `server-only` package
   throwing at build — but the skill should still ship the rule for projects where they aren't.)*
+- **Extended (2026-06-01, external Vercel-skills benchmark — see that audit doc):** the stack-aware
+  rule set gains a **client re-render hygiene lens** — the one gap that two of three Vercel skills
+  independently found (`vercel-react-best-practices` Re-render + `vercel-react-native-skills` List
+  Performance): list-item components over a collection get `React.memo` + stable callbacks + stable
+  style refs; per-collection derivations get `useMemo`; interaction logic lives in event handlers,
+  not effects. **Advisory + scale-triggered** (calibrate to dataset size), never blocking — Forge's
+  small rosters make it hygiene, not a defect. Two micro-mechanics ride along: hoist `Intl`
+  formatters (`js-hoist-intl`; `fecha.ts:17,44`, `format.ts:4`), and animate `transform` not
+  `width`/layout props (`animation-gpu-properties`; `asistencia.tsx:109`). **New companion process
+  rule:** *gate rule-pack applicability by the project's platform/stack before auditing* — an
+  RN/Expo pack against a web app is ~90% N/A noise. Composition-patterns enters as a fresh-eyes
+  **review vocabulary** (Section 4 Elegance gate, e.g. cite `architecture-avoid-boolean-props` when
+  a slice grows boolean modes), not a standing gate. The CRITICAL/HIGH web categories (waterfalls,
+  bundle, server, composition) **passed by construction** — external corroboration of Section 2's
+  "got right" list. *Proving artifact:* `docs/superpowers/audits/2026-06-01-vercel-skills-benchmark.md`.
 
 ### 3.7 Migrations = canonical provisioner + definer/grant audit
 

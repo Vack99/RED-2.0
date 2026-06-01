@@ -301,4 +301,60 @@ Registered here so the write-a-skill input is complete; provenance cited.
   `version` / real sha AFTER the operation, never write either before it exists. ((c) and
   review-the-agent's-diff were already in the 2026-06-01 entries; (a) and (b) are the new promotions.)
 
+## 2026-06-01 (cont.) — external-benchmark harness: 3 Vercel skills audited against Forge src
+
+A new harness shape: spin up three vendored Vercel reference skills in a row *in the main
+session* (skills can't load inside dispatched subagents) and audit Forge's actual `src/`
+against every applicable rule — using an **external** rule set as the audit lens instead of our
+own architectural lenses. Skills: `vercel-react-best-practices` (72 rules), `vercel-composition-patterns`
+(7), `vercel-react-native-skills` (~30). Full per-rule findings at real `file:line` live in
+`docs/superpowers/audits/2026-06-01-vercel-skills-benchmark.md` (reference, don't duplicate).
+Result across 110+ rules: **0 correctness bugs, 0 HIGH findings** — all hygiene, converging on
+ONE theme. Lessons, as triplets:
+
+**Audit / harness lessons:**
+- **An external, vetted rule pack works as an audit lens — and independently corroborated both
+  what the harness got right AND its one blind spot.** The three CRITICAL/HIGH web categories
+  (waterfalls, bundle, server-perf, composition) **passed by construction** — the RSC-first +
+  `server-only` DAL + `Promise.all` + `cache()` shape makes them structurally true, and the
+  client-data-fetching family is entirely N/A. This is outside corroboration of the audit's
+  "got right" list. *Skill implication:* the back-half skill can ADOPT vetted external rule packs
+  (e.g. Vercel's) as ready-made audit lenses; the "audit the output before codifying the process"
+  discipline (§1) extends cleanly to external lenses, not just our own. ([[forge-validate-before-codify]])
+- **Client re-render hygiene is Forge's one uniform gap — found by 2 of the 3 skills.** Tree-wide
+  there is **1 `useMemo`, 0 `useCallback`, 0 `React.memo`**; per-collection derivations recompute on
+  unrelated state (`clientes.tsx`), list items aren't memoized so all rows re-render on any change
+  (`asistencia.tsx` `PaseRow`), one case puts interaction logic in effects not handlers (`vender.tsx`
+  accordion auto-advance), and inline `style={{}}` objects on rows would defeat any future `memo`.
+  The enforced boundary + RSC discipline never *exercises* client-render performance, so it stayed
+  invisible across three prior architecture passes. *Skill implication:* add a **scale-triggered
+  "client re-render hygiene" lens** to Gate 3.6's stack-aware rule set — *list-item components over a
+  roster get `React.memo` + stable callbacks + stable style refs; per-collection derivations get
+  `useMemo`; interaction logic lives in handlers, not effects.* Advisory, calibrated to dataset size
+  (good-enough), NOT blocking. ([[forge-harness-audit-lessons]], [[forge-good-enough-not-perfectionist]])
+- **Gate rule-pack applicability by platform BEFORE auditing.** Running an RN/Expo skill against a
+  Next.js *web* app produced ~20 N/A rows for 3 real (web-analogue) findings — the platform majority
+  (FlashList, expo-image, Reanimated, native navigators/modules, monorepo) simply cannot apply.
+  *Skill implication:* a stack-aware harness must **select which rule packs apply to the project's
+  platform/stack** before running them; an inapplicable pack is ~90% noise. (Honest non-applicability
+  is a finding, not something to stretch rules around.)
+
+**Composition lesson (positive exemplar):**
+- **Forge already sits on the right side of every composition rule** — it reaches for the patterns
+  the skill prescribes as *fixes* (string-union `variant`/`size`/`state` props, `children` + ReactNode
+  slots, lifted state) rather than the anti-patterns (boolean-mode proliferation, render-props,
+  `forwardRef`, monolithic-parent state). It deliberately stops short of compound components / context-DI,
+  and that restraint is correct for its size. *Skill implication:* frame the HIGH/MEDIUM composition
+  patterns as **scale-triggered levers and a fresh-eyes review vocabulary** (Elegance gate can cite
+  `architecture-avoid-boolean-props` by name when a slice grows boolean modes), NOT always-on gates —
+  else the skill mandates premature abstraction. ([[forge-good-enough-not-perfectionist]])
+
+**Two micro-mechanics (bake into "execution mechanics"):**
+- **Hoist `Intl` formatters.** `fecha.ts:17,44` create `new Intl.DateTimeFormat(...)` fresh per call
+  (server-side, per request); `.toLocaleString("es-MX")` is called inline in render at 8 sites. Hoist a
+  module-level `Intl.NumberFormat`/`DateTimeFormat` const and reuse (`js-hoist-intl`).
+- **Animate `transform`, not layout props.** The pase progress bar animates `width`
+  (`asistencia.tsx:109`) — triggers layout/paint; prefer `transform: scaleX()` off a fixed track
+  (`animation-gpu-properties`). Both LOW, both advisory.
+
 <!-- Append the next session's entry below this line. -->
