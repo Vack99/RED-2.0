@@ -2,22 +2,22 @@ import "server-only";
 
 import { cache } from "react";
 
-import { renderPlantilla } from "@/domain/rules";
-import { DOW, fmtShort } from "@/lib/date";
-import { fechaChihuahua, hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
-import { firstName, iniciales, pesos } from "@/lib/format";
+import { hoyChihuahua, toIsoDay } from "@/lib/fecha";
+import { iniciales } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 import {
   derivarCliente,
   derivarPaseCliente,
+  shapeFicha,
   type ClienteDerivado,
+  type FichaDerivada,
   type PaseClienteDTO,
 } from "./derive";
 import { getPlantilla } from "./plantillas";
-import { getVecinos } from "./roster-nav";
+import { getVecinos, type Vecinos } from "./roster-nav";
 
-export type { PaseClienteDTO } from "./derive";
+export type { PaseClienteDTO, FichaAsistencia, FichaPago } from "./derive";
 
 export interface ClienteLiteDTO {
   id: string;
@@ -100,38 +100,15 @@ export const getClientesRoster = cache(
   },
 );
 
-function metodoLabel(m: string): string {
-  return m === "pendiente" ? "Por pagar" : m.charAt(0).toUpperCase() + m.slice(1);
-}
-
-export interface FichaAsistencia {
-  dDisplay: string;
-  hora: string | null;
-  today: boolean;
-}
-export interface FichaPago {
-  fechaDisplay: string;
-  paquete: string;
-  montoDisplay: string;
-  metodo: string;
-}
-export interface ClienteFichaDTO {
-  cliente: ClienteDerivado;
-  totalClases: number | null;
-  dayDenom: number;
-  compradoDisplay: string;
-  altaDisplay: string;
-  presentHoy: boolean;
-  horaHoy: string | null;
-  historial: FichaAsistencia[];
-  pagos: FichaPago[];
-  ventasCount: number;
-  waText: string;
+/** Everything the ficha (client detail) renders: the pure derivation (FichaDerivada,
+ *  shaped + tested in derive.ts) plus the I/O-sourced today + swipe neighbors. */
+export type ClienteFichaDTO = FichaDerivada & {
   hoyIso: string;
-  vecinos: { prevId: string | null; nextId: string | null };
-}
+  vecinos: Vecinos;
+};
 
-/** Everything the ficha (client detail) renders, derived-at-read. */
+/** The ficha, derived-at-read (ADR-0002): a thin fetch that defers all shaping to
+ *  the pure, tested shapeFicha; the wrapper owns only I/O + assembling hoyIso/vecinos. */
 export const getClienteFicha = cache(
   async (id: string, client?: SupabaseServer): Promise<ClienteFichaDTO | null> => {
     const supabase = client ?? (await createClient());
@@ -163,64 +140,17 @@ export const getClienteFicha = cache(
       getPlantilla("recordatorio", supabase),
     ]);
 
-    const asistMes = asistRes.data ?? [];
-    const historial: FichaAsistencia[] = asistMes
-      .filter((a) => a.fecha !== hoyIso)
-      .map((a) => {
-        const d = parseDay(a.fecha);
-        return {
-          dDisplay: `${DOW[d.getDay()].toLowerCase()} ${d.getDate()}`,
-          hora: a.hora ? a.hora.slice(0, 5) : null,
-          today: false,
-        };
-      });
-    const presentHoy = asistMes.some((a) => a.fecha === hoyIso);
-    const horaHoy = asistMes.find((a) => a.fecha === hoyIso)?.hora?.slice(0, 5) ?? null;
-
-    const ventas = ventasRes.data ?? [];
-    const pagos: FichaPago[] = ventas.map((v) => ({
-      fechaDisplay: fmtShort(fechaChihuahua(v.fecha)),
-      paquete: v.paquete_nombre,
-      montoDisplay: pesos(v.monto),
-      metodo: metodoLabel(v.metodo),
-    }));
-
-    const latest = ventas[0];
-    const totalClases = latest?.clases ?? null;
-    const dayDenom = latest
-      ? latest.vigencia_tipo === "mes"
-        ? 30
-        : (latest.vigencia_dias ?? 30)
-      : 30;
-    const compradoDisplay = latest ? fmtShort(fechaChihuahua(latest.fecha)) : "—";
-    const altaDisplay = fmtShort(fechaChihuahua(c.created_at));
-
-    const derivado = derivarCliente(c, hoy, asistMes.length);
-
     const negocio = perfilRes.data?.negocio?.trim() || "FORGE";
-    const waText = renderPlantilla(recordatorioBody, {
-      nombre: firstName(c.nombre),
-      clases:
-        derivado.clasesRest === "ilimitado" ? "clases ilimitadas" : `${derivado.clasesRest} clases`,
-      paquete: derivado.paquete,
-      vence: derivado.venceDisplay,
-      negocio,
-    });
-
-    return {
-      cliente: derivado,
-      totalClases,
-      dayDenom,
-      compradoDisplay,
-      altaDisplay,
-      presentHoy,
-      horaHoy,
-      historial,
-      pagos,
-      ventasCount: ventas.length,
-      waText,
+    const ficha = shapeFicha(
+      c,
+      asistRes.data ?? [],
+      ventasRes.data ?? [],
+      hoy,
       hoyIso,
-      vecinos,
-    };
+      recordatorioBody,
+      negocio,
+    );
+
+    return { ...ficha, hoyIso, vecinos };
   },
 );

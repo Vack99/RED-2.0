@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { derivarCliente, derivarPaseCliente, type ClienteFacts } from "./derive";
+import {
+  derivarCliente,
+  derivarPaseCliente,
+  shapeFicha,
+  type ClienteFacts,
+  type FichaClienteRow,
+  type FichaVentaRow,
+} from "./derive";
 
 // Fixed "today" so the derivation is deterministic (months are 0-based).
 const HOY = new Date(2026, 4, 27); // 27 May 2026
@@ -131,5 +138,76 @@ describe("derivarPaseCliente", () => {
     );
     expect(p.clasesLabel).toBe("Sin paquete");
     expect(p.porVencer).toBe(false);
+  });
+});
+
+describe("shapeFicha", () => {
+  const HOY_ISO = "2026-05-27";
+  // Mid-day UTC so the Chihuahua-local calendar day is unambiguous for either -6/-7.
+  const clienteRow: FichaClienteRow = {
+    id: "c1",
+    nombre: "Andrea Castro",
+    tel: "614 218 3401",
+    paquete_nombre: "8 clases",
+    clases_restantes: 5,
+    vence: "2026-06-16",
+    created_at: "2026-04-10T18:00:00Z",
+  };
+  const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
+    fecha: "2026-05-20T18:00:00Z",
+    paquete_nombre: "8 clases",
+    monto: 800,
+    metodo: "efectivo",
+    clases: 8,
+    vigencia_tipo: "dias",
+    vigencia_dias: 30,
+    ...over,
+  });
+
+  it("excludes today from historial and reports presentHoy/horaHoy", () => {
+    const asist = [
+      { fecha: "2026-05-27", hora: "07:30:00" }, // today
+      { fecha: "2026-05-25", hora: "08:15:00" },
+      { fecha: "2026-05-20", hora: null }, // back-entry, no time
+    ];
+    const f = shapeFicha(clienteRow, asist, [], HOY, HOY_ISO, "", "FORGE");
+    expect(f.presentHoy).toBe(true);
+    expect(f.horaHoy).toBe("07:30");
+    expect(f.historial).toHaveLength(2); // today excluded
+    expect(f.historial.every((h) => !h.today)).toBe(true);
+    expect(f.historial[0].dDisplay).toContain("25");
+    expect(f.historial[0].hora).toBe("08:15");
+    expect(f.historial[1].hora).toBeNull();
+  });
+
+  it("maps pagos with pesos + metodo label (pendiente -> Por pagar) and reads the active package", () => {
+    const ventas = [
+      venta(),
+      venta({ paquete_nombre: "Ilimitado", monto: 1200, metodo: "pendiente", clases: null, vigencia_tipo: "mes", vigencia_dias: null }),
+    ];
+    const f = shapeFicha(clienteRow, [], ventas, HOY, HOY_ISO, "", "FORGE");
+    expect(f.pagos[0]).toEqual({ fechaDisplay: "20 may", paquete: "8 clases", montoDisplay: "$800", metodo: "Efectivo" });
+    expect(f.pagos[1].metodo).toBe("Por pagar");
+    expect(f.ventasCount).toBe(2);
+    expect(f.totalClases).toBe(8); // latest = ventas[0]
+    expect(f.dayDenom).toBe(30);
+    expect(f.compradoDisplay).toBe("20 may");
+  });
+
+  it("dayDenom falls back to 30 for mes packages, no ventas, AND a 0 vigencia_dias (divide-by-zero guard)", () => {
+    expect(shapeFicha(clienteRow, [], [], HOY, HOY_ISO, "", "FORGE").dayDenom).toBe(30);
+    expect(
+      shapeFicha(clienteRow, [], [venta({ vigencia_tipo: "mes", vigencia_dias: null })], HOY, HOY_ISO, "", "FORGE").dayDenom,
+    ).toBe(30);
+    expect(
+      shapeFicha(clienteRow, [], [venta({ vigencia_dias: 0 })], HOY, HOY_ISO, "", "FORGE").dayDenom,
+    ).toBe(30); // the `|| 30` guard, not `?? 30`
+  });
+
+  it("renders the recordatorio waText from the derived saldo + negocio", () => {
+    const body = "Hola {nombre}, te quedan {clases} de tu {paquete} (vence {vence}). — {negocio}";
+    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, body, "FORGE GYM");
+    expect(f.waText).toBe("Hola Andrea, te quedan 5 clases de tu 8 clases (vence 16 jun). — FORGE GYM");
+    expect(f.cliente.estado).toBe("activo");
   });
 });
