@@ -142,4 +142,71 @@ Session N+1's STEP 1: resolve the live-DB↔repo drift by wiring the two atomic-
 protection in the Supabase dashboard. **N+2 remains the skill-extraction session** — this ledger is
 its input.
 
+## 2026-06-01 (cont.) — second improve-codebase-architecture pass: deepening the post-wiring seams
+
+After the atomic-writes wiring, ran `improve-codebase-architecture` again (4 Explore agents → 1
+adversarial Opus verifier → synthesis) on the NOW-current code, then fixed all surfaced findings.
+6 findings, all adversarially CONFIRMED against committed code (verifier re-read every cited
+file:line + checked findings 2/3 against the LIVE function bodies). 4 commits on `master`
+(`3f8d8f9` → `5e5337c`); tests 60→76; one DB CHECK applied+mirrored (`20260601022323`); advisors
+still only leaked-password. Lessons, as triplets:
+
+**Orchestration / process lessons (the headline this session):**
+- **Grilling is theatre when there's no genuine design fork — orchestrate the determined work
+  instead of checkpointing it.** I over-asked the human: confirmation questions on findings whose
+  shape was already fixed by an in-repo precedent (phone → mirror the `metodo` single-home) or by the
+  audit's own prescribed remediation (DAL seam → default-arg client). Aaron pushed back hard:
+  *"stop doing so many interruptions/human checkpoints when they are not necessary… if the work can
+  easily be assigned to an agent you should clearly do so as an orchestrator."* *Skill implication:*
+  the back-half skill needs an explicit **fork test** before any human checkpoint — "is there a
+  decision the user's answer changes, that I can't resolve from the repo, a precedent, or the
+  audit?" If no → dispatch a fix agent, review, gate, commit, move on. Reserve checkpoints for
+  genuine forks, and even then lead with a senior recommendation, not a blank question.
+  ([[forge-orchestrate-dont-over-checkpoint]])
+- **Triage findings into "determined" vs "fork" up front, then batch the determined ones by
+  file-overlap.** #1+#6+#3 were one coherent seam-deepening move on the same files → ONE agent, not
+  three parallel (parallel edits to `ventas.ts`/`asistencia.ts` would collide). #2 (ADR + SQL test)
+  and #5 (clientes.ts + new module) were file-disjoint → ran in parallel. *Skill implication:* the
+  orchestration step should compute a file-overlap graph and serialize colliding work, parallelize
+  disjoint work — never fan out agents that write the same file.
+- **Adversarial verification before committing design effort is cheap insurance.** One Opus verifier
+  (told to REFUTE, default-skeptic) re-checked all 6 findings against real code + live DB before any
+  fix ran; it confirmed all 6 but sharpened #2 (ADR-0005 already honestly excuses rule (a), so the
+  gap is only (b)/(c)) — which changed how the fix was scoped. *Skill implication:* keep the
+  find → adversarially-verify → fix pipeline; the verifier's job is to catch overstated findings and
+  wrong citations, and it paid off by narrowing one.
+
+**Review-the-agent's-work lessons:**
+- **Always read the agent's diff, don't just trust its green gates.** The DAL-seam agent left an
+  orphaned JSDoc: it inserted the new `SupabaseServer` type BETWEEN `createClient`'s doc-comment and
+  `createClient`, so the doc now described the type. Gates were green (it's cosmetic) — only reading
+  the diff caught it. Also vetted a scary 335-line `clientes.ts` diff and confirmed it was pure
+  re-indentation (arrow body shifted when `cache(async () =>` became `cache(\n async (client?) =>`),
+  not logic churn. *Skill implication:* "agent reports green" is necessary, not sufficient — the
+  orchestrator must diff-review every agent change for doc-locality, gratuitous reformatting, and
+  scope creep before committing.
+- **Re-run committed test artifacts verbatim against the live system yourself.** The fix agents
+  reported their SQL tests passed; I still re-ran `toggle_pase_rules.sql`'s bytes through
+  `execute_sql` against live before committing (got "toggle_pase rules: OK"). Same discipline as last
+  session's RLS artifact. *Skill implication:* an executable test artifact is only "done" once the
+  orchestrator has watched its literal committed form pass on the real target.
+
+**Architecture / depth lessons (feed the skill's quality bar):**
+- **A second architecture pass on a freshly-hardened codebase still finds real depth gaps — the
+  audit's fixes don't exhaust them.** The first audit fixed import-direction + duplication + atomicity;
+  this pass found the orthogonal axis the boundary still can't see: **testability-as-interface-depth**
+  (the DAL was untestable by construction because the client was inlined, not injected) and
+  **contract-honesty in seams we'd JUST built** (ADR-0005 over-claimed "math in tested TS" the moment
+  the attendance rules moved to SQL). *Skill implication:* re-audit AFTER each hardening pass, not
+  once; and add two standing lenses to the back-half skill — "can every module be tested through its
+  interface (is the seam injectable)?" and "does every doc/ADR claim still match the code it
+  describes after this change?"
+- **Don't reclaim a rule into TS if the live path won't call it — that just re-creates the
+  TS↔SQL twin.** Tempting fix for #2 was to lift the attendance rules into tested domain functions;
+  but `togglePase` only calls the RPC, so any TS rule would be a dead orphan exactly like
+  `consumirClase` already is. The honest move was to OWN them in the RPC + give them a committed SQL
+  test, and fix the ADR's over-claim. *Skill implication:* the "single-home a rule" gate must check
+  WHERE THE LIVE PATH RUNS IT — homing a rule in a layer no caller exercises is duplication wearing a
+  tidiness costume. ([[forge-harness-audit-lessons]])
+
 <!-- Append the next session's entry below this line. -->
