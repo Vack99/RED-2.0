@@ -18,14 +18,12 @@ export type EstadoCliente = "activo" | "por_vencer" | "sin_clases";
  *  EstadoCliente's por_vencer; drives the directory's "por renovar" model. */
 export type NivelUrgencia = "critico" | "urgente" | "pronto" | "ok";
 
-/** A client's retention urgency: level + which dimension binds + a sort score.
+/** A client's retention urgency: level + which dimension binds.
  *  The single shape the roster/ficha consume so "running out" lives in one home. */
 export interface Urgencia {
   nivel: NivelUrgencia;
   /** Whichever of clases|días lapses first. */
   vinculante: "clases" | "dias";
-  /** Normalized distance to lapse (lower = sooner); drives the urgency sort. */
-  score: number;
 }
 
 /** Roster lifecycle summary — counts derived from each cliente's estado (ADR-0002).
