@@ -40,8 +40,7 @@ persisted through the same RLS-bounded, RPC-based write seam the rest of the app
   → actualizarCliente(raw)              // DAL: zod validate + requireOperator()
   → supabase.rpc("actualizar_cliente",  // SECURITY INVOKER → RLS = boundary
       { p_cliente_id, p_nombre, p_tel })
-  → revalidatePath(profile, roster)
-  → toast success + close Sheet + router.refresh()
+  → (client) toast success + close Sheet + router.refresh()
 ```
 
 The enforced sector boundary is respected: schema/DAL live in `src/lib/data`, the server action in
@@ -55,24 +54,28 @@ import is introduced.
 **Migration** `supabase/migrations/<timestamp>_actualizar_cliente_rpc.sql`:
 
 ```sql
-create or replace function public.actualizar_cliente(
-  p_cliente_id uuid,
-  p_nombre text,
-  p_tel text
-) returns void
-language plpgsql
-security invoker
-set search_path to ''
-as $$
+create or replace function public.actualizar_cliente(p_cliente_id uuid, p_nombre text, p_tel text)
+ returns void
+ language plpgsql
+ set search_path to ''
+as $function$
+declare
+  v_uid uuid := (select auth.uid());
 begin
+  if v_uid is null then
+    raise exception 'No autenticado';
+  end if;
   update public.clientes
      set nombre = p_nombre,
          tel    = p_tel
-   where id = p_cliente_id;
+   where id = p_cliente_id;          -- RLS scopes this to the owner
+  if not found then
+    raise exception 'Cliente no encontrado';
+  end if;
 end;
-$$;
+$function$;
 
-revoke execute on function public.actualizar_cliente(uuid, text, text) from anon, public;
+revoke execute on function public.actualizar_cliente(uuid, text, text) from public;
 grant  execute on function public.actualizar_cliente(uuid, text, text) to authenticated;
 ```
 
@@ -93,7 +96,7 @@ grant  execute on function public.actualizar_cliente(uuid, text, text) to authen
 {
   clienteId: z.string().uuid(),
   nombre: z.string().trim().min(3),
-  tel: z.string().refine(isTelValido),   // reuse the existing helper used by crearVentaSchema
+  tel: z.string().trim().refine(isTelValido),   // reuse the existing helper used by crearVentaSchema
 }
 ```
 
@@ -101,37 +104,41 @@ grant  execute on function public.actualizar_cliente(uuid, text, text) to authen
 structure of `crearVenta`:
 
 1. `const input = actualizarClienteSchema.parse(raw)`
-2. `await requireOperator()` (existing auth seam)
+2. `await requireOperator(supabase)` (existing auth seam; presence check)
 3. `await supabase.rpc("actualizar_cliente", { p_cliente_id: input.clienteId, p_nombre: input.nombre, p_tel: input.tel })`
-4. return a small typed result (e.g. `{ ok: true }`) or surface the error.
+4. returns `Promise<void>`; throws `Error("No se pudo actualizar el cliente")` on RPC error (the client catches and toasts).
 
 **Types**: regenerate Supabase TypeScript types after the migration so the RPC call is fully typed
 (no `as any`), consistent with ADR-0005's type-bridge discipline.
 
 ### 2. Server action
 
-`actualizarClienteAction(raw: unknown)` added to `src/app/(app)/clientes/[id]/actions.ts` next to the
-existing `togglePaseAction`:
+`actualizarClienteAction(raw: unknown): Promise<void>` added to `src/app/(app)/clientes/[id]/actions.ts`
+next to the existing `togglePaseAction`:
 
-- delegates to `actualizarCliente(raw)`,
-- on success `revalidatePath` the profile (`/clientes/[id]`) and the roster (`/clientes`) so the name
-  and phone update everywhere they appear,
-- returns `{ ok: true }` or a typed error result (no throw across the boundary; the client renders a
-  warning toast on `ok: false`).
+- a thin wrapper that delegates to `actualizarCliente(raw)`,
+- **no `revalidatePath`** — the `(app)` reads are dynamic (cookie-bound), so the client calls
+  `router.refresh()` after a successful save and the next read is fresh (this is exactly the rationale
+  documented on `togglePaseAction`; the roster picks up the new name on its next dynamic read too),
+- throws on failure; the client's `try/catch` renders a warning toast.
 
 ### 3. UI (built via the frontend-design skill)
 
-In `cliente-detalle.tsx`:
+The edit form is **extracted into its own component**, `EditarClienteSheet`, at
+`src/app/(app)/clientes/[id]/_components/editar-cliente-sheet.tsx` — keeping the already-large
+`cliente-detalle.tsx` focused (one responsibility per file).
 
-- add `editOpen` and `saving` state; the existing edit button sets `editOpen = true` (replacing the
-  "Próximamente" toast),
-- render a new `<Sheet open={editOpen} onClose={...}>` containing two `Input`s (prefilled from
-  `ficha`: name, phone) reusing the existing kit (`Input`, `Button`, `forgeToast`),
+- `EditarClienteSheet({ open, onClose, cliente: { id, nombre, tel } })` owns its own form state
+  (`nombre`, `tel`, `saving`), re-seeded to the current values when it opens, and renders a `Sheet`
+  with two `Input`s reusing the kit (`Input`, `Button`, `H1`, `forgeToast`),
 - **Save** is enabled only when: `nombre.trim().length >= 3` **and** `isTelValido(tel)` **and** the
   values differ from the current ones (no-op guard) **and** `!saving`,
 - on submit: set `saving`, call `actualizarClienteAction`, then on success close the Sheet, fire a
   success toast, and `router.refresh()`; on failure fire a warning toast, keep the Sheet open, and
   re-enable Save.
+- `cliente-detalle.tsx` changes are minimal: add `editOpen` state, point the existing button's
+  `onClick` at `setEditOpen(true)` (replacing the "Próximamente" toast), and render
+  `<EditarClienteSheet open={editOpen} ... cliente={{ id: c.id, nombre: c.nombre, tel: c.tel }} />`.
 
 Visual polish (layout, header, footer button arrangement) is produced through the **frontend-design**
 skill at build time.
@@ -141,8 +148,8 @@ skill at build time.
 | Case | Behavior |
 | --- | --- |
 | Invalid name/phone (client-side) | Save disabled; no submit. |
-| Invalid input reaching the DAL | `schema.parse` throws → action returns error → warning toast. |
-| Unauthorized / wrong owner | RLS yields no row updated / error → warning toast; nothing changes. |
+| Invalid input reaching the DAL | `schema.parse` throws → action throws → client catch → warning toast. |
+| Unauthorized / wrong owner | RLS-scoped UPDATE matches 0 rows → RPC raises `Cliente no encontrado` → warning toast; nothing changes. |
 | Unchanged values | Save disabled (no-op guard); no request. |
 | RPC / network failure | Warning toast, Sheet stays open, Save re-enabled. |
 
