@@ -251,54 +251,11 @@ export function Button({
   );
 }
 
-export function Input({
-  icon,
-  placeholder,
-  value,
-  onChange,
-  suffix,
-  type = "text",
-  autoFocus,
-  inputMode,
-  className,
-  style,
-}: {
-  icon?: IconName;
-  placeholder?: string;
-  value?: string;
-  onChange?: (v: string) => void;
-  suffix?: string;
-  type?: string;
-  autoFocus?: boolean;
-  inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
-  className?: string;
-  style?: React.CSSProperties;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 items-center border border-line bg-surface transition-colors focus-within:border-yellow",
-        className,
-      )}
-      style={{ gap: 10, padding: "14px 16px", ...style }}
-    >
-      {icon && <Icon name={icon} size={18} color="var(--muted)" />}
-      <input
-        type={type}
-        inputMode={inputMode}
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        value={value ?? ""}
-        onChange={(e) => onChange?.(e.target.value)}
-        className="min-w-0 flex-1 border-none bg-transparent font-medium outline-none"
-        style={{ color: "var(--fg)", fontSize: 15 }}
-      />
-      {suffix && (
-        <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 1 }}>{suffix}</span>
-      )}
-    </div>
-  );
-}
+// `Input` is the one interactive primitive (it owns focus + change handling),
+// so it lives in its own `"use client"` file while the rest of this module
+// stays server-renderable. Re-exported here so callers keep importing it from
+// `@/components/forge/ui` unchanged.
+export { Input } from "./input";
 
 export function SectionHeader({
   children,

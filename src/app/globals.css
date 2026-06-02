@@ -138,10 +138,13 @@ body {
   font-feature-settings: "tnum", "ss01";
 }
 
-/* Hide scrollbars inside the app (matches the prototype's phone chrome). */
+/* Hide scrollbars inside the app (matches the prototype's phone chrome).
+   `overscroll-behavior: contain` keeps a scroll area's overscroll from chaining
+   to its parent (no iOS rubber-band of the page behind an open sheet). */
 .forge-scroll {
   scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .forge-scroll::-webkit-scrollbar {
   display: none;

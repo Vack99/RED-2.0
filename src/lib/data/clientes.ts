@@ -1,14 +1,16 @@
 import "server-only";
 
 import { cache } from "react";
+import { z } from "zod";
 
 import { resumirRoster } from "@/domain/rules";
 import type { ResumenRoster } from "@/domain/types";
 import { addDays } from "@/lib/date";
 import { fechaChihuahua, hoyChihuahua, toIsoDay } from "@/lib/fecha";
-import { iniciales } from "@/lib/format";
+import { iniciales, isTelValido } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
+import { requireOperator } from "./_auth";
 import {
   derivarCliente,
   derivarPaseCliente,
@@ -226,3 +228,30 @@ export const getClienteFicha = cache(
     return { ...ficha, hoyIso, vecinos };
   },
 );
+
+/** Identity-edit input (nombre + tel). Trims like crearVenta; tel validity is the canonical
+ *  10-digit MX rule (isTelValido), the same rule the DB CHECK (clientes_tel_10_digits_ck) enforces. */
+export const actualizarClienteSchema = z.object({
+  clienteId: z.string().uuid(),
+  nombre: z.string().trim().min(3),
+  tel: z.string().trim().refine(isTelValido, { message: "Teléfono inválido" }),
+});
+
+export type ActualizarClienteInput = z.infer<typeof actualizarClienteSchema>;
+
+/** Edit a client's identity (nombre + tel). Injectable client (ADR-0001). The actualizar_cliente
+ *  RPC re-checks auth.uid() and RLS scopes the UPDATE to the owner (SECURITY INVOKER), so the sub
+ *  from the presence check is discarded here (matches crearVenta). */
+export async function actualizarCliente(raw: unknown, client?: SupabaseServer): Promise<void> {
+  const input = actualizarClienteSchema.parse(raw);
+  const supabase = client ?? (await createClient());
+
+  await requireOperator(supabase);
+
+  const { error } = await supabase.rpc("actualizar_cliente", {
+    p_cliente_id: input.clienteId,
+    p_nombre: input.nombre,
+    p_tel: input.tel,
+  });
+  if (error) throw new Error("No se pudo actualizar el cliente");
+}
