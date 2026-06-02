@@ -16,8 +16,6 @@ import {
   Tnum,
 } from "@/components/forge/ui";
 import type { ClienteFichaDTO } from "@/lib/data/clientes";
-import { MON } from "@/lib/date";
-import { parseDay } from "@/lib/fecha";
 import { firstName, waLink } from "@/lib/format";
 import { togglePaseAction } from "../actions";
 
@@ -31,15 +29,6 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const [dx, setDx] = React.useState(0);
   const swipe = React.useRef({ x: 0, dx: 0, on: false });
 
-  const mesLabel = MON[parseDay(ficha.hoyIso).getMonth()];
-  const ilimitado = c.clasesRest === "ilimitado";
-  const restRatio =
-    c.clasesRest === "ilimitado"
-      ? 1
-      : ficha.totalClases
-        ? Math.max(0.06, c.clasesRest / ficha.totalClases)
-        : 0.06;
-  const dayRatio = Math.max(0.04, c.diasRest / ficha.dayDenom);
   const asistCount = ficha.historial.length + (present ? 1 : 0);
 
   const toggleAsistencia = async () => {
@@ -125,35 +114,43 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
           </div>
         </div>
 
-        {/* Paquete activo */}
+        {/* Paquete activo — both gauges deplete from the moment of the last
+            purchase: clases by attendance, días by calendar time (ADR-0002).
+            A stacked balance has no single-package denominator, so the gauge is
+            "how much of your current run is left," not "X of one package." */}
         <Card style={{ margin: "8px 16px 0" }}>
-          <div className="flex items-start justify-between">
-            <Eyebrow>PAQUETE ACTIVO</Eyebrow>
-            <Eyebrow color="var(--muted)">
-              VENCE <span style={{ color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.venceDisplay.toUpperCase()}</span>
-            </Eyebrow>
-          </div>
+          <Eyebrow>PAQUETE ACTIVO</Eyebrow>
           <H1 size={22} style={{ marginTop: 8 }}>{c.paquete}</H1>
 
           <div className="flex" style={{ gap: 18, marginTop: 18 }}>
             <div className="flex-1">
               <Eyebrow style={{ fontSize: 10 }}>CLASES RESTANTES</Eyebrow>
-              <div className="flex items-baseline" style={{ gap: 4, marginTop: 4 }}>
-                <Tnum className="font-extrabold" style={{ fontSize: 32, lineHeight: 1 }}>{c.clasesRestLabel}</Tnum>
-                {!ilimitado && ficha.totalClases !== null && <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {ficha.totalClases}</span>}
-              </div>
-              <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
-                <div style={{ width: "100%", height: "100%", background: "var(--yellow)", transform: `scaleX(${restRatio})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
+              <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4 }}>{c.clasesRestLabel}</Tnum>
+              {ficha.clasesGauge && (
+                <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
+                  <div style={{ width: "100%", height: "100%", background: "var(--yellow)", transform: `scaleX(${ficha.clasesGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
+                </div>
+              )}
+              <div className="uppercase" style={{ marginTop: ficha.clasesGauge ? 6 : 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
+                {ficha.clasesGauge ? (
+                  <>Usadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.clasesGauge.usadas}</Tnum></>
+                ) : c.clasesRest === "ilimitado" ? (
+                  "Ilimitado"
+                ) : (
+                  "—"
+                )}
               </div>
             </div>
             <div className="flex-1">
               <Eyebrow style={{ fontSize: 10 }}>DÍAS RESTANTES</Eyebrow>
-              <div className="flex items-baseline" style={{ gap: 4, marginTop: 4 }}>
-                <Tnum className="font-extrabold" style={{ fontSize: 32, lineHeight: 1, color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.diasRest}</Tnum>
-                <span style={{ fontSize: 13, color: "var(--muted)" }}>/ {ficha.dayDenom}</span>
-              </div>
-              <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
-                <div style={{ width: "100%", height: "100%", background: c.diasRest <= 5 ? "var(--yellow)" : "var(--green)", transform: `scaleX(${dayRatio})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
+              <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4, color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.diasRest}</Tnum>
+              {ficha.diasGauge && (
+                <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
+                  <div style={{ width: "100%", height: "100%", background: c.diasRest <= 5 ? "var(--yellow)" : "var(--green)", transform: `scaleX(${ficha.diasGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
+                </div>
+              )}
+              <div className="uppercase" style={{ marginTop: ficha.diasGauge ? 6 : 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
+                Vence <Tnum style={{ color: c.diasRest <= 5 ? "var(--gold)" : "var(--fg)", fontWeight: 700 }}>{c.venceDisplay.toUpperCase()}</Tnum>
               </div>
             </div>
           </div>
@@ -204,9 +201,9 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         </div>
 
         {/* Historial */}
-        <SectionHeader trailing={`${asistCount} ASIST.`}>HISTORIAL · {mesLabel}</SectionHeader>
+        <SectionHeader trailing={`${asistCount} ASIST.`}>HISTORIAL · ÚLTIMOS 30 DÍAS</SectionHeader>
         {histRows.length === 0 && (
-          <div style={{ padding: "20px 22px", fontSize: 12, color: "var(--muted)" }}>Sin asistencias este mes.</div>
+          <div style={{ padding: "20px 22px", fontSize: 12, color: "var(--muted)" }}>Sin asistencias en los últimos 30 días.</div>
         )}
         {histRows.map((row, i) => (
           <div

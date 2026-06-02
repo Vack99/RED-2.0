@@ -112,6 +112,30 @@ function metodoLabel(m: string): string {
   return m === "pendiente" ? "Por pagar" : m.charAt(0).toUpperCase() + m.slice(1);
 }
 
+// ── Saldo-gauge math (pure, unit-tested) ───────────────────────────
+// The ficha's saldo bars are depletion gauges anchored to the last purchase:
+// "full" at the moment they last bought, draining until the next purchase. The
+// .tsx only renders the fill ratio + caption — all the math lives here.
+
+/** Gauge fill ratio, clamped to [0, 1]. A non-positive denominator (no anchor /
+ *  divide-by-zero) yields 0 — an empty bar — never NaN, Infinity, or a ratio > 1. */
+export function gaugeFill(remaining: number, denom: number): number {
+  if (denom <= 0) return 0;
+  return Math.min(1, Math.max(0, remaining / denom));
+}
+
+/** Clases-bar denominator: the balance granted at the last purchase = what's left
+ *  now plus every class consumed since that purchase (`consumio` attendances). */
+export function clasesDenom(clasesRest: number, attendedSincePurchase: number): number {
+  return clasesRest + attendedSincePurchase;
+}
+
+/** Días-bar denominator: the full validity window granted at the last purchase =
+ *  days from that purchase to `vence` (drains by calendar time). */
+export function diasDenom(vence: Date, lastPurchaseDate: Date): number {
+  return diasRestantes(vence, lastPurchaseDate);
+}
+
 export interface FichaAsistencia {
   dDisplay: string;
   hora: string | null;
@@ -128,10 +152,13 @@ export interface FichaPago {
 export interface FichaClienteRow extends ClienteFacts {
   created_at: string;
 }
-/** This-month asistencia rows the ficha renders (absolute date + check-in time). */
+/** Asistencia rows the ficha renders (absolute date + check-in time). The window
+ *  is the rolling last 30 days, widened back to the last purchase when older, so
+ *  the same rows feed both the historial and `attendedSincePurchase` (`consumio`). */
 export interface FichaAsistRow {
   fecha: string;
   hora: string | null;
+  consumio: boolean;
 }
 /** A venta row reduced to what the ficha's pagos list + saldo gauges need. */
 export interface FichaVentaRow {
@@ -144,11 +171,28 @@ export interface FichaVentaRow {
   vigencia_dias: number | null;
 }
 
+/** A saldo depletion gauge: the fill ratio (0–1) the bar renders. The clases gauge
+ *  also carries `usadas` (the "usadas X" caption); the días caption is `venceDisplay`. */
+export interface ClasesGauge {
+  fill: number;
+  usadas: number;
+}
+export interface DiasGauge {
+  fill: number;
+}
+
 /** Everything the ficha derives at read, minus the I/O-sourced hoyIso + vecinos. */
 export interface FichaDerivada {
   cliente: ClienteDerivado;
+  /** @deprecated superseded by `clasesGauge` (depletion bar, no N/M fraction). */
   totalClases: number | null;
+  /** @deprecated superseded by `diasGauge`. */
   dayDenom: number;
+  /** Clases depletion bar, anchored to the last purchase. null = hide the bar
+   *  (no ventas, or ilimitado clases — both render just the número). */
+  clasesGauge: ClasesGauge | null;
+  /** Días depletion bar, anchored to the last purchase. null = hide (no ventas). */
+  diasGauge: DiasGauge | null;
   compradoDisplay: string;
   altaDisplay: string;
   presentHoy: boolean;
@@ -162,8 +206,11 @@ export interface FichaDerivada {
 /**
  * Shape the ficha from already-fetched rows. PURE — `hoy`/`hoyIso` are passed
  * in (Chihuahua-local), the recordatorio body + negocio are pre-fetched; no I/O.
- * `asistencias` is this month's rows (most-recent first); `ventas` is the full
- * history (most-recent first), so `ventas[0]` is the active package.
+ * `asistencias` is the rolling 30-day window (widened to the last purchase when
+ * older), most-recent first; `ventas` is the full history (most-recent first),
+ * so `ventas[0]` is the active package / saldo anchor. `attendedSincePurchase`
+ * is the exact count of consumed classes since that purchase, computed by the DAL
+ * (which alone knows whether the windowed rows already cover the anchor date).
  */
 export function shapeFicha(
   c: FichaClienteRow,
@@ -173,6 +220,7 @@ export function shapeFicha(
   hoyIso: string,
   recordatorioBody: string,
   negocio: string,
+  attendedSincePurchase: number,
 ): FichaDerivada {
   const historial: FichaAsistencia[] = asistencias
     // Today is rendered separately (the leaf re-prepends a HOY row); excluding it
@@ -206,6 +254,28 @@ export function shapeFicha(
 
   const cliente = derivarCliente(c, hoy, asistencias.length);
 
+  // Saldo depletion gauges, anchored to the last purchase (`ventas[0]`). No ventas
+  // → no anchor → both null (UI renders just the números). Ilimitado clases → the
+  // clases bar is meaningless (no decrement ever happens) → its gauge is null too.
+  const lastPurchaseDate = latest ? fechaChihuahua(latest.fecha) : null;
+  const venceDate = c.vence ? parseDay(c.vence) : null;
+
+  const clasesGauge: ClasesGauge | null =
+    lastPurchaseDate && cliente.clasesRest !== "ilimitado"
+      ? {
+          fill: gaugeFill(
+            cliente.clasesRest,
+            clasesDenom(cliente.clasesRest, attendedSincePurchase),
+          ),
+          usadas: attendedSincePurchase,
+        }
+      : null;
+
+  const diasGauge: DiasGauge | null =
+    lastPurchaseDate && venceDate
+      ? { fill: gaugeFill(cliente.diasRest, diasDenom(venceDate, lastPurchaseDate)) }
+      : null;
+
   const waText = renderPlantilla(recordatorioBody, {
     nombre: firstName(c.nombre),
     clases: cliente.clasesRest === "ilimitado" ? "clases ilimitadas" : `${cliente.clasesRest} clases`,
@@ -218,6 +288,8 @@ export function shapeFicha(
     cliente,
     totalClases,
     dayDenom,
+    clasesGauge,
+    diasGauge,
     compradoDisplay,
     altaDisplay,
     presentHoy,

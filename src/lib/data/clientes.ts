@@ -4,7 +4,8 @@ import { cache } from "react";
 
 import { resumirRoster } from "@/domain/rules";
 import type { ResumenRoster } from "@/domain/types";
-import { hoyChihuahua, toIsoDay } from "@/lib/fecha";
+import { addDays } from "@/lib/date";
+import { fechaChihuahua, hoyChihuahua, toIsoDay } from "@/lib/fecha";
 import { iniciales } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
@@ -74,6 +75,10 @@ export const getClientesParaPase = cache(
 function monthStartIso(hoy: Date): string {
   return toIsoDay(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
 }
+
+/** The ficha's rolling attendance window length, in days (ADR/spec 2026-06-01).
+ *  One constant, easy to retune; the directory keeps its own this-month count. */
+const FICHA_VENTANA_DIAS = 30;
 
 /** Full roster, derived-at-read with this month's attendance count per client. */
 export const getClientesRoster = cache(
@@ -150,13 +155,18 @@ export const getClienteFicha = cache(
       .maybeSingle();
     if (!c) return null;
 
+    // Rolling 30-day window (Part A). The lower bound is fixed at today−30d here so
+    // this read stays independent of ventasRes inside the Promise.all; an old last
+    // purchase (predating the window) is reconciled by the exact count below (Part B).
+    const ventanaIso = toIsoDay(addDays(hoy, -FICHA_VENTANA_DIAS));
+
     const [asistRes, ventasRes, vecinos, perfilRes, recordatorioBody] = await Promise.all([
       supabase
         .from("asistencias")
-        .select("fecha, hora")
+        .select("fecha, hora, consumio")
         .eq("cliente_id", id)
         .is("deleted_at", null)
-        .gte("fecha", monthStartIso(hoy))
+        .gte("fecha", ventanaIso)
         .order("fecha", { ascending: false }),
       supabase
         .from("ventas")
@@ -173,14 +183,44 @@ export const getClienteFicha = cache(
       coach: null,
       ciudad: null,
     }).negocio;
+
+    // Classes consumed since the last purchase (Part B clases-gauge denominator):
+    // count `consumio` rows with fecha >= the purchase date. The purchase is the
+    // saldo anchor `ventas[0]` (newest-first). lastPurchaseIso is the Chihuahua-local
+    // calendar day of that timestamptz, matched against asistencias' `date` column.
+    const ventas = ventasRes.data ?? [];
+    const lastPurchaseIso = ventas[0] ? toIsoDay(fechaChihuahua(ventas[0].fecha)) : null;
+    let attendedSincePurchase = 0;
+    if (lastPurchaseIso) {
+      if (lastPurchaseIso >= ventanaIso) {
+        // Common case: the purchase is inside the 30-day window we already fetched,
+        // so count the rows in hand — no extra round trip.
+        attendedSincePurchase = (asistRes.data ?? []).filter(
+          (a) => a.consumio && a.fecha >= lastPurchaseIso,
+        ).length;
+      } else {
+        // Old purchase predating the window: a tiny exact head-count keeps the
+        // gauge denominator correct without widening the historial fetch.
+        const { count } = await supabase
+          .from("asistencias")
+          .select("id", { count: "exact", head: true })
+          .eq("cliente_id", id)
+          .eq("consumio", true)
+          .is("deleted_at", null)
+          .gte("fecha", lastPurchaseIso);
+        attendedSincePurchase = count ?? 0;
+      }
+    }
+
     const ficha = shapeFicha(
       c,
       asistRes.data ?? [],
-      ventasRes.data ?? [],
+      ventas,
       hoy,
       hoyIso,
       recordatorioBody,
       negocio,
+      attendedSincePurchase,
     );
 
     return { ...ficha, hoyIso, vecinos };
