@@ -124,12 +124,6 @@ export function gaugeFill(remaining: number, denom: number): number {
   return Math.min(1, Math.max(0, remaining / denom));
 }
 
-/** Clases-bar denominator: the balance granted at the last purchase = what's left
- *  now plus every class consumed since that purchase (`consumio` attendances). */
-export function clasesDenom(clasesRest: number, attendedSincePurchase: number): number {
-  return clasesRest + attendedSincePurchase;
-}
-
 /** Días-bar denominator: the full validity window granted at the last purchase =
  *  days from that purchase to `vence` (drains by calendar time). */
 export function diasDenom(vence: Date, lastPurchaseDate: Date): number {
@@ -171,12 +165,8 @@ export interface FichaVentaRow {
   vigencia_dias: number | null;
 }
 
-/** A saldo depletion gauge: the fill ratio (0–1) the bar renders. The clases gauge
- *  also carries `usadas` (the "usadas X" caption); the días caption is `venceDisplay`. */
-export interface ClasesGauge {
-  fill: number;
-  usadas: number;
-}
+/** A saldo depletion gauge: the fill ratio (0–1) the bar renders. The días caption
+ *  is `venceDisplay`; the clases column shows only its número + the usadas caption. */
 export interface DiasGauge {
   fill: number;
 }
@@ -184,13 +174,9 @@ export interface DiasGauge {
 /** Everything the ficha derives at read, minus the I/O-sourced hoyIso + vecinos. */
 export interface FichaDerivada {
   cliente: ClienteDerivado;
-  /** @deprecated superseded by `clasesGauge` (depletion bar, no N/M fraction). */
-  totalClases: number | null;
-  /** @deprecated superseded by `diasGauge`. */
-  dayDenom: number;
-  /** Clases depletion bar, anchored to the last purchase. null = hide the bar
-   *  (no ventas, or ilimitado clases — both render just the número). */
-  clasesGauge: ClasesGauge | null;
+  /** Classes consumed since the last purchase — the "Usadas X" caption under the
+   *  clases número. null = hide the caption (no ventas, or ilimitado clases). */
+  usadasDesdeCompra: number | null;
   /** Días depletion bar, anchored to the last purchase. null = hide (no ventas). */
   diasGauge: DiasGauge | null;
   compradoDisplay: string;
@@ -245,31 +231,22 @@ export function shapeFicha(
   }));
 
   const latest = ventas[0];
-  const totalClases = latest?.clases ?? null;
-  // `|| 30` (not `?? 30`): a stored vigencia_dias of 0 must also fall back, else
-  // the days ring divides by zero (cliente-detalle.tsx renders diasRest / dayDenom).
-  const dayDenom = latest ? (latest.vigencia_tipo === "mes" ? 30 : latest.vigencia_dias || 30) : 30;
   const compradoDisplay = latest ? fmtShort(fechaChihuahua(latest.fecha)) : "—";
   const altaDisplay = fmtShort(fechaChihuahua(c.created_at));
 
   const cliente = derivarCliente(c, hoy, asistencias.length);
 
-  // Saldo depletion gauges, anchored to the last purchase (`ventas[0]`). No ventas
-  // → no anchor → both null (UI renders just the números). Ilimitado clases → the
-  // clases bar is meaningless (no decrement ever happens) → its gauge is null too.
+  // Días depletion gauge, anchored to the last purchase (`ventas[0]`). No ventas →
+  // no anchor → null (UI renders just the número). Time has a natural full point
+  // (purchase → vence), so this bar is sound; the clases bar was dropped (a stacked
+  // carry-forward balance has no stable "full", senior review 2026-06).
   const lastPurchaseDate = latest ? fechaChihuahua(latest.fecha) : null;
   const venceDate = c.vence ? parseDay(c.vence) : null;
 
-  const clasesGauge: ClasesGauge | null =
-    lastPurchaseDate && cliente.clasesRest !== "ilimitado"
-      ? {
-          fill: gaugeFill(
-            cliente.clasesRest,
-            clasesDenom(cliente.clasesRest, attendedSincePurchase),
-          ),
-          usadas: attendedSincePurchase,
-        }
-      : null;
+  // Usadas caption: classes consumed since the last purchase. null = hide it (no
+  // ventas → no anchor, or ilimitado clases → no decrement ever happens).
+  const usadasDesdeCompra: number | null =
+    lastPurchaseDate && cliente.clasesRest !== "ilimitado" ? attendedSincePurchase : null;
 
   const diasGauge: DiasGauge | null =
     lastPurchaseDate && venceDate
@@ -286,9 +263,7 @@ export function shapeFicha(
 
   return {
     cliente,
-    totalClases,
-    dayDenom,
-    clasesGauge,
+    usadasDesdeCompra,
     diasGauge,
     compradoDisplay,
     altaDisplay,

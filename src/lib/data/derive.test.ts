@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clasesDenom,
   derivarCliente,
   derivarPaseCliente,
   diasDenom,
@@ -193,19 +192,7 @@ describe("shapeFicha", () => {
     expect(f.pagos[0]).toEqual({ fechaDisplay: "20 may", paquete: "8 clases", montoDisplay: "$800", metodo: "Efectivo" });
     expect(f.pagos[1].metodo).toBe("Por pagar");
     expect(f.ventasCount).toBe(2);
-    expect(f.totalClases).toBe(8); // latest = ventas[0]
-    expect(f.dayDenom).toBe(30);
-    expect(f.compradoDisplay).toBe("20 may");
-  });
-
-  it("dayDenom falls back to 30 for mes packages, no ventas, AND a 0 vigencia_dias (divide-by-zero guard)", () => {
-    expect(shapeFicha(clienteRow, [], [], HOY, HOY_ISO, "", "FORGE", 0).dayDenom).toBe(30);
-    expect(
-      shapeFicha(clienteRow, [], [venta({ vigencia_tipo: "mes", vigencia_dias: null })], HOY, HOY_ISO, "", "FORGE", 0).dayDenom,
-    ).toBe(30);
-    expect(
-      shapeFicha(clienteRow, [], [venta({ vigencia_dias: 0 })], HOY, HOY_ISO, "", "FORGE", 0).dayDenom,
-    ).toBe(30); // the `|| 30` guard, not `?? 30`
+    expect(f.compradoDisplay).toBe("20 may"); // latest = ventas[0]
   });
 
   it("renders the recordatorio waText from the derived saldo + negocio", () => {
@@ -237,12 +224,6 @@ describe("gauge helpers (pure)", () => {
     expect(gaugeFill(-2, 20)).toBe(0);
   });
 
-  it("clasesDenom = clasesRest + attendedSincePurchase (the granted balance)", () => {
-    expect(clasesDenom(23, 1)).toBe(24);
-    expect(clasesDenom(8, 0)).toBe(8); // just purchased, none used
-    expect(clasesDenom(0, 8)).toBe(8); // fully drained
-  });
-
   it("diasDenom = days from the last purchase to vence", () => {
     expect(diasDenom(new Date(2026, 5, 16), new Date(2026, 4, 17))).toBe(30);
     expect(diasDenom(new Date(2026, 5, 16), new Date(2026, 5, 16))).toBe(0); // same day
@@ -271,36 +252,25 @@ describe("shapeFicha gauges", () => {
     ...over,
   });
 
-  it("stacks the clases balance: clasesRest 23 + usadas 1 → fill 23/24, usadas 1", () => {
+  it("reports usadasDesdeCompra even with a stacked carry-forward balance", () => {
     const row = { ...clienteRow, clases_restantes: 23 };
     const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, "", "FORGE", 1);
-    expect(f.clasesGauge).not.toBeNull();
-    expect(f.clasesGauge!.usadas).toBe(1);
-    expect(f.clasesGauge!.fill).toBeCloseTo(23 / 24);
+    expect(f.usadasDesdeCompra).toBe(1);
   });
 
-  it("just-purchased reads ≈ full (nothing used yet)", () => {
+  it("just-purchased reads 0 usadas (nothing used yet)", () => {
     const row = { ...clienteRow, clases_restantes: 8 };
     const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, "", "FORGE", 0);
-    expect(f.clasesGauge!.fill).toBe(1);
-    expect(f.clasesGauge!.usadas).toBe(0);
+    expect(f.usadasDesdeCompra).toBe(0);
   });
 
-  it("partially drained: clasesRest 3 + usadas 5 → fill 3/8", () => {
-    const row = { ...clienteRow, clases_restantes: 3 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, "", "FORGE", 5);
-    expect(f.clasesGauge!.fill).toBeCloseTo(3 / 8);
-    expect(f.clasesGauge!.usadas).toBe(5);
-  });
-
-  it("expired/forfeited (clasesRest 0) → empty clases bar, usadas reflects real count", () => {
+  it("expired/forfeited (clasesRest 0) still reports the real usadas count", () => {
     const row = { ...clienteRow, clases_restantes: 0 };
     const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, "", "FORGE", 8);
-    expect(f.clasesGauge!.fill).toBe(0);
-    expect(f.clasesGauge!.usadas).toBe(8);
+    expect(f.usadasDesdeCompra).toBe(8);
   });
 
-  it("ilimitado clases → clasesGauge null (no decrement, bar meaningless); días still shows", () => {
+  it("ilimitado clases → usadasDesdeCompra null (no decrement); días still shows", () => {
     const row = {
       ...clienteRow,
       paquete_nombre: "Ilimitado",
@@ -316,13 +286,13 @@ describe("shapeFicha gauges", () => {
       "FORGE",
       0,
     );
-    expect(f.clasesGauge).toBeNull();
+    expect(f.usadasDesdeCompra).toBeNull();
     expect(f.diasGauge).not.toBeNull();
   });
 
-  it("no ventas → both gauges null (no anchor)", () => {
+  it("no ventas → usadasDesdeCompra null + días gauge null (no anchor)", () => {
     const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, "", "FORGE", 0);
-    expect(f.clasesGauge).toBeNull();
+    expect(f.usadasDesdeCompra).toBeNull();
     expect(f.diasGauge).toBeNull();
   });
 

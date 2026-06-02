@@ -114,10 +114,11 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
           </div>
         </div>
 
-        {/* Paquete activo — both gauges deplete from the moment of the last
-            purchase: clases by attendance, días by calendar time (ADR-0002).
-            A stacked balance has no single-package denominator, so the gauge is
-            "how much of your current run is left," not "X of one package." */}
+        {/* Paquete activo — the días gauge depletes from the last purchase by
+            calendar time (purchase → vence is a natural "full" point, ADR-0002).
+            The clases column shows the número + a "usadas desde la última compra"
+            caption only: a stacked carry-forward balance has no stable "full", so
+            it has no sound depletion bar (senior review 2026-06). */}
         <Card style={{ margin: "8px 16px 0" }}>
           <Eyebrow>PAQUETE ACTIVO</Eyebrow>
           <H1 size={22} style={{ marginTop: 8 }}>{c.paquete}</H1>
@@ -126,14 +127,9 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             <div className="flex-1">
               <Eyebrow style={{ fontSize: 10 }}>CLASES RESTANTES</Eyebrow>
               <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4 }}>{c.clasesRestLabel}</Tnum>
-              {ficha.clasesGauge && (
-                <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
-                  <div style={{ width: "100%", height: "100%", background: "var(--yellow)", transform: `scaleX(${ficha.clasesGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
-                </div>
-              )}
-              <div className="uppercase" style={{ marginTop: ficha.clasesGauge ? 6 : 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
-                {ficha.clasesGauge ? (
-                  <>Usadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.clasesGauge.usadas}</Tnum></>
+              <div className="uppercase" style={{ marginTop: 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
+                {ficha.usadasDesdeCompra !== null ? (
+                  <>Usadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.usadasDesdeCompra}</Tnum> · desde la última compra</>
                 ) : c.clasesRest === "ilimitado" ? (
                   "Ilimitado"
                 ) : (
