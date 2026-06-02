@@ -8,7 +8,7 @@ import { TabBar } from "@/components/forge/tab-bar";
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-dvh w-full justify-center bg-backdrop">
-      <div className="relative flex h-dvh w-full max-w-[440px] flex-col overflow-hidden bg-canvas sm:shadow-2xl">
+      <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-canvas sm:max-w-[440px] sm:shadow-2xl">
         <main className="forge-scroll relative flex-1 overflow-y-auto">{children}</main>
         <TabBar />
       </div>
