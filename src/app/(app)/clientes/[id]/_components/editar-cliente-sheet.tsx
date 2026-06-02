@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
 import { Avatar, Button, Eyebrow, H1, Input } from "@/components/forge/ui";
-import { isTelValido } from "@/lib/format";
+import { iniciales, isTelValido } from "@/lib/format";
 import { actualizarClienteAction } from "../actions";
 
 export function EditarClienteSheet({
@@ -49,7 +49,8 @@ export function EditarClienteSheet({
     }
   };
 
-  const inicial = (cliente.nombre.trim()[0] ?? "?").toUpperCase();
+  // Same canonical derivation as the profile avatar (iniciales → up to 2 letters), so the two match.
+  const inicial = iniciales(cliente.nombre);
 
   return (
     <Sheet open={open} onClose={onClose}>
