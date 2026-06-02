@@ -6,12 +6,18 @@ import type { SupabaseServer } from "@/lib/supabase/server";
 /**
  * The seam this exercises: `getRespaldoData` takes an injectable client (ADR-0001),
  * so the gather ORCHESTRATION — the four reads, the FULL-history (no date filter)
- * guarantee, the asistencias soft-delete `.is("deleted_at", null)` filter, and the
- * created_at → alta mapping — is testable with a hand-rolled fake. No Supabase, no DB.
+ * guarantee, the asistencias soft-delete `.is("deleted_at", null)` filter, the
+ * created_at → alta mapping, and the PAGINATION of the two full-history ledgers
+ * (ventas, asistencias) — is testable with a hand-rolled fake. No Supabase, no DB.
  *
  * The fake is a per-table thenable query builder (mirrors ventas.test.ts) that
- * resolves to `{ data, error }` and RECORDS its `.is()` calls so the test can assert
- * the soft-delete filter is applied at the query (build-spec §0/§5).
+ * resolves to `{ data, error }` and RECORDS its `.is()`/`.gte()`/`.range()` calls so
+ * the test can assert the soft-delete filter, the absence of a date filter, and the
+ * pagination windows applied at the query (build-spec §0/§5).
+ *
+ * `.range(from, to)` returns the requested slice of the seeded list, so the
+ * paginator's "loop until a short page returns" termination is exercised for real —
+ * a single seeded read of `[from, to]` resolves to exactly that window.
  */
 
 interface FakeRows {
@@ -27,16 +33,26 @@ interface FakeClient {
   isCalls: Record<string, [string, unknown][]>;
   /** Per-table record of `.gte(col, val)` calls — proves NO date filter is applied. */
   gteCalls: Record<string, [string, unknown][]>;
+  /** Per-table record of `.range(from, to)` calls — the pagination-window assertion target. */
+  rangeCalls: Record<string, [number, number][]>;
 }
 
 function makeFake(rows: FakeRows, opts: { error?: { table: string; err: unknown } } = {}): FakeClient {
   const isCalls: Record<string, [string, unknown][]> = {};
   const gteCalls: Record<string, [string, unknown][]> = {};
+  const rangeCalls: Record<string, [number, number][]> = {};
 
   const builder = (table: string, list: unknown[]) => {
-    isCalls[table] = [];
-    gteCalls[table] = [];
+    // A paginating read calls `.from(table)` once PER page, each returning a fresh
+    // builder (mirrors the real client). The call records must ACCUMULATE across those
+    // builders, so initialize each table's record once — not on every `.from()`.
+    isCalls[table] ??= [];
+    gteCalls[table] ??= [];
+    rangeCalls[table] ??= [];
     const err = opts.error?.table === table ? opts.error.err : null;
+    // The window this builder will resolve. `undefined` = no `.range()` was applied
+    // (clientes/paquetes single reads) → resolve the whole list.
+    let window: [number, number] | undefined;
     const b: Record<string, unknown> = {
       select: () => b,
       eq: () => b,
@@ -48,10 +64,20 @@ function makeFake(rows: FakeRows, opts: { error?: { table: string; err: unknown 
         gteCalls[table].push([col, val]);
         return b;
       },
+      range: (from: number, to: number) => {
+        rangeCalls[table].push([from, to]);
+        window = [from, to];
+        return b;
+      },
       order: () => b,
-      // Awaited directly: `await supabase.from(t).select(...)...` resolves here.
-      then: (resolve: (v: { data: unknown[] | null; error: unknown }) => unknown) =>
-        resolve({ data: err ? null : list, error: err }),
+      // Awaited directly: `await supabase.from(t).select(...)...` resolves here. A
+      // ranged read returns the inclusive `[from, to]` slice (PostgREST semantics) so
+      // the paginator concatenates pages and stops on the first short page.
+      then: (resolve: (v: { data: unknown[] | null; error: unknown }) => unknown) => {
+        if (err) return resolve({ data: null, error: err });
+        const page = window ? list.slice(window[0], window[1] + 1) : list;
+        return resolve({ data: page, error: null });
+      },
     };
     return b;
   };
@@ -60,7 +86,7 @@ function makeFake(rows: FakeRows, opts: { error?: { table: string; err: unknown 
     from: (table: string) => builder(table, (rows as Record<string, unknown[]>)[table] ?? []),
   };
 
-  return { client: client as unknown as SupabaseServer, isCalls, gteCalls };
+  return { client: client as unknown as SupabaseServer, isCalls, gteCalls, rangeCalls };
 }
 
 // ── Inline fixtures (DB-row shape) with spread overrides (house style) ──
@@ -200,5 +226,76 @@ describe("getRespaldoData — full-history RLS-scoped gather (injected fake)", (
     );
 
     await expect(getRespaldoData(client)).rejects.toThrow("boom");
+  });
+
+  it("paginates ventas past the PostgREST cap — returns ALL > PAGE rows, no truncation", async () => {
+    // Seed 1001 ventas — one past the PAGE (1000) cap. A single unpaginated read
+    // would silently drop the 1001st (the oldest, since order is `fecha DESC`).
+    const ventas = Array.from({ length: 1001 }, (_, i) => venta({ folio: i }));
+
+    const { client, rangeCalls } = makeFake({
+      clientes: [cliente()],
+      ventas,
+      asistencias: [asistencia()],
+      paquetes: [paquete()],
+    });
+
+    const data = await getRespaldoData(client);
+
+    // (a) ALL 1001 survive — pagination concatenates the two windows correctly.
+    expect(data.ventas).toHaveLength(1001);
+    expect(data.ventas.map((v) => v.folio)).toEqual(ventas.map((v) => v.folio));
+
+    // (b) `.range` was called for each window: a full first page [0, 999] then the
+    // short second page [1000, 1999] (1 row → loop terminates).
+    expect(rangeCalls["ventas"]).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+  });
+
+  it("paginates asistencias past the PostgREST cap — returns ALL > PAGE rows, no truncation", async () => {
+    const asistencias = Array.from({ length: 1001 }, (_, i) =>
+      asistencia({ cliente_id: `cli-${i}` }),
+    );
+
+    const { client, rangeCalls, isCalls } = makeFake({
+      clientes: [cliente()],
+      ventas: [venta()],
+      asistencias,
+      paquetes: [paquete()],
+    });
+
+    const data = await getRespaldoData(client);
+
+    // ALL 1001 survive across the two pagination windows — no oldest-history loss.
+    expect(data.asistencias).toHaveLength(1001);
+    expect(data.asistencias.map((a) => a.cliente_id)).toEqual(asistencias.map((a) => a.cliente_id));
+
+    // `.range` called for each window: full [0, 999] then short [1000, 1999].
+    expect(rangeCalls["asistencias"]).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
+
+    // Soft-delete filter still applied on every paginated asistencias page.
+    expect(isCalls["asistencias"]).toContainEqual(["deleted_at", null]);
+  });
+
+  it("stops at a single page when a ledger has exactly PAGE rows (short-page on the 2nd read)", async () => {
+    // Exactly PAGE (1000) rows: the first window [0, 999] is FULL (== PAGE), so the
+    // paginator must make a second read [1000, 1999] which returns 0 rows (short) to
+    // confirm there's no more — proving the loop's termination is length-based.
+    const ventas = Array.from({ length: 1000 }, (_, i) => venta({ folio: i }));
+
+    const { client, rangeCalls } = makeFake({ ventas });
+
+    const data = await getRespaldoData(client);
+
+    expect(data.ventas).toHaveLength(1000);
+    expect(rangeCalls["ventas"]).toEqual([
+      [0, 999],
+      [1000, 1999],
+    ]);
   });
 });
