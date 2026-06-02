@@ -148,6 +148,50 @@ export function CuentaScreen({
         </div>
       </Card>
 
+      {/* Respaldo — descargable Excel del registro completo del gimnasio */}
+      <SectionHeader
+        trailing={
+          // Real download anchor: a plain GET to the route handler, whose
+          // Content-Disposition fires the browser save dialog. No fetch/blob
+          // dance needed. Styled to mirror the gold inline action above.
+          <a
+            href="/cuenta/respaldo"
+            download
+            className="inline-flex items-center uppercase font-extrabold"
+            style={{ gap: 5, textDecoration: "none", fontSize: 10.5, letterSpacing: 1.2, color: "var(--gold)" }}
+          >
+            <Icon name="arrow" size={12} color="var(--gold)" />
+            DESCARGAR
+          </a>
+        }
+      >
+        RESPALDO
+      </SectionHeader>
+      <div style={{ margin: "0 16px" }}>
+        <a
+          href="/cuenta/respaldo"
+          download
+          className="flex w-full items-center border border-line bg-surface text-left transition-transform active:scale-[0.992]"
+          style={{ gap: 14, padding: "14px 16px", cursor: "pointer", color: "var(--fg)" }}
+        >
+          <div
+            className="flex shrink-0 items-center justify-center border border-line"
+            style={{ width: 32, height: 32, background: "var(--canvas)" }}
+          >
+            <Icon name="receipt" size={15} color="var(--gold)" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold" style={{ fontSize: 12.5, letterSpacing: 0.6 }}>
+              DESCARGAR RESPALDO
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+              Excel del registro — clientes, ventas y asistencias
+            </div>
+          </div>
+          <Icon name="arrow" size={14} color="var(--muted)" />
+        </a>
+      </div>
+
       {/* Paquetes y precios — real catalog (read-only) */}
       <SectionHeader
         trailing={
