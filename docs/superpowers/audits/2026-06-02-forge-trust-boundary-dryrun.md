@@ -11,8 +11,8 @@ The lens, applied to every rule: **"Is this rule enforced *in the database* — 
 
 ## Validation gate (the point of this dry-run)
 
-- **Lands on the named residual risks?** ✅ — non-negative money CHECK (F1), the unguarded double-active attendance (F2), the RPC-is-not-the-only-write-door observation (F3), leaked-password protection (F4), unindexed FKs (F5), and the missing CI/drift gate (F6) are exactly the risks the design anticipated.
-- **Re-litigates zero ADRs?** ✅ — nothing flags `clientes.clases_restantes`/`vence` (ADR-0004 stored balance), `paquete_nombre`/`ventas` value-snapshots, the SQL-only attendance rules in `toggle_pase` (ADR-0005), the no-ORM/RLS-primary stance (ADR-0001), or absolute-date attendance (ADR-0003); no multi-writer locking concern is raised (single-operator). F3 explicitly respects ADR-0005 (it does not demand moving math to TS).
+- **Lands on the named residual risks?** ✅ — non-negative money CHECK (F1), the RPC-is-not-the-only-write-door observation (F3), leaked-password protection (F4), unindexed FKs (F5), and the missing CI/drift gate (F6) are exactly the risks the design anticipated. (F2 was an over-claim — see its corrected note below.)
+- **Re-litigates zero ADRs?** ⚠ **Corrected in Phase C.** The dry-run's **F2 re-litigated ADR-0003**: it proposed a uniqueness constraint that ADR-0003's "same-day duplicates allowed; each attendance consumes a class" explicitly forbids. The Phase-C skilled agent caught this via the skill's Phase-0 do-not-flag discipline; F2 is reframed below as a grill point, not a gap. The other findings (F1, F3–F6) re-litigate zero ADRs; F3 respects ADR-0005 (it does not demand moving math to TS), and nothing flags `clientes.clases_restantes`/`vence` (ADR-0004), `paquete_nombre`/`ventas` value-snapshots, the SQL-only attendance rules (ADR-0005), the no-ORM/RLS-primary stance (ADR-0001), or absolute-date attendance (ADR-0003); no multi-writer locking concern is raised (single-operator).
 - **File-structure decision (§7.1):** no finding's best fix is a *structural remodel* (they are a CHECK, a partial-unique index, a config toggle, indexes, and CI). Therefore the skill ships **3 files** (`SKILL.md` + `BOUNDARY-LANGUAGE.md` + `MOVE-THE-BOUNDARY.md`); `REMODEL-TWICE.md` is **not** created, and its link is dropped from `SKILL.md`.
 
 **Verdict: the lens is sound.** Proceed to codify.
@@ -31,15 +31,12 @@ The lens, applied to every rule: **"Is this rule enforced *in the database* — 
 - **Watching test:** pgTAP `throws_ok` on a negative-amount insert; the constraint appears in the CHECK inventory as `convalidated = true`.
 - **ADR note:** clean gap. Integer-MXN is locked, but a non-negative CHECK is *not* a currency/decimal-type redesign — it is in-scope.
 
-### F2 — Two "present" rows can exist for the same client and day · *uniqueness invariant in the app, not the DB*
+### F2 — *(corrected in Phase C)* At-most-one-active attendance per `(cliente_id, fecha)` is **an ADR-0003 grill point, not a clean gap**
 
-- **Rule:** at most one active (`deleted_at IS NULL`) attendance per `(cliente_id, fecha)`.
-- **Current boundary:** app only — `toggle_pase` reads `order by created_at desc limit 1`. **Nothing at the DB.**
-- **Tables/indexes:** `asistencias`; the existing `asistencias_cliente_fecha_idx` on `(cliente_id, fecha) WHERE deleted_at IS NULL` is **non-unique**.
-- **Evidence:** guarded probe inserted two active rows for the same `(cliente_id, fecha)`: *"GAP: 2 active asistencias for same (cliente,fecha) — no partial-unique guard."* Live duplicate count is currently 0 (latent gap).
-- **Proposed boundary move:** make the partial index **unique** — `CREATE UNIQUE INDEX CONCURRENTLY asistencias_cliente_fecha_active_uq ON asistencias (cliente_id, fecha) WHERE deleted_at IS NULL;` (own migration, outside a transaction), then drop the redundant non-unique index.
-- **Watching test:** pgTAP `throws_ok` on a second active insert for the same key.
-- **ADR note:** respects ADR-0005 — this enforces an invariant `toggle_pase` *already assumes*; it does not move any attendance math to TS. Grill point: confirm the invariant is per-`(cliente, fecha)` across back-dated entries too.
+- **What the dry-run first claimed:** that `asistencias` should have at most one active (`deleted_at IS NULL`) row per `(cliente_id, fecha)`, that the existing `asistencias_cliente_fecha_idx` being **non-unique** was a clean enforcement gap, and that a guarded probe inserting two active rows (*"GAP: 2 active asistencias…"*) proved it.
+- **Why that was an over-claim:** **ADR-0003 explicitly permits same-day duplicate attendances** — *"Same-day duplicates (Q6): allowed; each attendance consumes a class"*, stored as *"one row per attendance."* A partial-unique on `(cliente_id, fecha) WHERE deleted_at IS NULL` would forbid a state the ADR sanctions, so proposing it **re-litigates ADR-0003**. The two-active-rows probe demonstrated *allowed* behavior, not a gap.
+- **The honest finding:** a *tension* worth grilling, not a gap to close. `toggle_pase` maintains at most one active row per day **procedurally** (`select … order by created_at desc limit 1`), yet ADR-0003 allows multiple same-day attendances. The grill question before any constraint: does the domain permit two *simultaneously active* attendances for one `(cliente, fecha)`? If yes (the ADR's reading), **no constraint is appropriate**; if the toggle's one-active invariant is the real intent, that needs an ADR-0003 amendment first. **Do not propose a unique index without resolving this against ADR-0003.**
+- **How it was caught:** the Phase-C skilled agent, following the skill's Phase-0 *do-not-flag* discipline, read ADR-0003 and declined to flag this — surfacing that the orchestrator's hand-audit had over-claimed. The skill's ADR discipline was more correct than the hand pass; this correction is the validate-before-codify loop working as intended.
 
 ### F3 — The atomic RPC is not the only write door to `saldo` · *atomicity convention in the app, not the DB* (ADR-0005-adjacent, defense-in-depth)
 
