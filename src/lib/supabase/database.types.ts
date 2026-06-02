@@ -284,30 +284,34 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      actualizar_cliente: {
+        Args: { p_cliente_id: string; p_nombre: string; p_tel: string }
+        Returns: undefined
+      }
       registrar_venta: {
         Args: {
-          p_nombre: string
-          p_tel: string
-          p_paquete_nombre: string
-          p_vigencia_tipo: string
-          p_monto: number
-          p_metodo: string
-          p_cliente_id?: string
-          p_clases_restantes?: number
-          p_vence?: string
           p_clases?: number
+          p_clases_restantes?: number
+          p_cliente_id?: string
+          p_metodo: string
+          p_monto: number
+          p_nombre: string
+          p_paquete_nombre: string
+          p_tel: string
+          p_vence?: string
           p_vigencia_dias?: number
+          p_vigencia_tipo: string
         }
         Returns: {
-          folio: number
           cliente_id: string
+          folio: number
         }[]
       }
       toggle_pase: {
         Args: { p_cliente_id: string; p_fecha: string }
         Returns: {
-          present: boolean
           hora: string
+          present: boolean
         }[]
       }
     }
