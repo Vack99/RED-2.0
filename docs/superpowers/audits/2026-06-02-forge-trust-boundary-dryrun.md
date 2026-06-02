@@ -11,9 +11,9 @@ The lens, applied to every rule: **"Is this rule enforced *in the database* — 
 
 ## Validation gate (the point of this dry-run)
 
-- **Lands on the named residual risks?** ✅ — non-negative money CHECK (F1), the RPC-is-not-the-only-write-door observation (F3), leaked-password protection (F4), unindexed FKs (F5), and the missing CI/drift gate (F6) are exactly the risks the design anticipated. (F2 was an over-claim — see its corrected note below.)
+- **Lands on the named residual risks?** ✅ — non-negative money CHECK (F1), the RPC-is-not-the-only-write-door observation (F3), and the missing CI/drift gate (F6) are exactly the risks the design anticipated. Two more came from the shared **advisor floor** (#9), not the design's named-risk list, and are reported honestly as floor items rather than dressed up as anticipated: leaked-password protection (F4) and unindexed FKs (F5). The env-coupled cross-tenant test (F7) is a minor operability note outside the named-risk set. (F2 was an over-claim — see its corrected note below.)
 - **Re-litigates zero ADRs?** ⚠ **Corrected in Phase C.** The dry-run's **F2 re-litigated ADR-0003**: it proposed a uniqueness constraint that ADR-0003's "same-day duplicates allowed; each attendance consumes a class" explicitly forbids. The Phase-C skilled agent caught this via the skill's Phase-0 do-not-flag discipline; F2 is reframed below as a grill point, not a gap. The other findings (F1, F3–F6) re-litigate zero ADRs; F3 respects ADR-0005 (it does not demand moving math to TS), and nothing flags `clientes.clases_restantes`/`vence` (ADR-0004), `paquete_nombre`/`ventas` value-snapshots, the SQL-only attendance rules (ADR-0005), the no-ORM/RLS-primary stance (ADR-0001), or absolute-date attendance (ADR-0003); no multi-writer locking concern is raised (single-operator).
-- **File-structure decision (§7.1):** no finding's best fix is a *structural remodel* (they are a CHECK, a partial-unique index, a config toggle, indexes, and CI). Therefore the skill ships **3 files** (`SKILL.md` + `BOUNDARY-LANGUAGE.md` + `MOVE-THE-BOUNDARY.md`); `REMODEL-TWICE.md` is **not** created, and its link is dropped from `SKILL.md`.
+- **File-structure decision (§7.1):** no finding's best fix is a *structural remodel* (they are a CHECK, a config toggle, indexes, and CI; F2's attendance-uniqueness is a grill point, not a constraint). Therefore the skill ships **3 files** (`SKILL.md` + `BOUNDARY-LANGUAGE.md` + `MOVE-THE-BOUNDARY.md`); `REMODEL-TWICE.md` is **not** created, and its link is dropped from `SKILL.md`.
 
 **Verdict: the lens is sound.** Proceed to codify.
 
@@ -26,7 +26,7 @@ The lens, applied to every rule: **"Is this rule enforced *in the database* — 
 - **Rule:** a sale's `monto` and a package's `precio` are non-negative whole MXN.
 - **Current boundary:** app only (form + Zod). **Nothing at the DB.**
 - **Tables/columns:** `ventas.monto`, `paquetes.precio` (both `integer`).
-- **Evidence:** the CHECK inventory holds only `tel`, `metodo`, and the two `vigencia` rules — no sign constraint on either money column. Guarded probe inserted `precio = -100` cleanly: *"GAP: negative precio -100 inserted with no CHECK."*
+- **Evidence:** the CHECK inventory holds only `tel`, `metodo`, and the two `vigencia` rules — **no sign constraint on either money column** (`ventas.monto` *or* `paquetes.precio`). The representative guarded probe inserted `precio = -100` cleanly: *"GAP: negative precio -100 inserted with no CHECK."* The identical gap on `ventas.monto` (the plan's flagship probe target) rests on the same CHECK-inventory absence — both columns are equally unguarded.
 - **Proposed boundary move:** `ALTER TABLE … ADD CONSTRAINT … CHECK (monto >= 0) NOT VALID;` then `VALIDATE CONSTRAINT …` (live data already conforms — 0 violators — so validation is non-blocking). Same for `precio`.
 - **Watching test:** pgTAP `throws_ok` on a negative-amount insert; the constraint appears in the CHECK inventory as `convalidated = true`.
 - **ADR note:** clean gap. Integer-MXN is locked, but a non-negative CHECK is *not* a currency/decimal-type redesign — it is in-scope.

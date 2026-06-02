@@ -61,4 +61,8 @@ Run 2's finding #5 proposed `NOT NULL` on `clientes.user_id` — but that column
 | Unsafe bare DDL | `NOT VALID`+`VALIDATE`, `CONCURRENTLY`; refused to apply under pressure |
 | No watching tests | pgTAP / advisor test named per finding |
 
-**Verdict: ship.**
+### Scope & limits of this validation
+
+Both runs were conducted on the **schema-as-text** (deterministic, never touched prod), **not** on a live `create_branch` branch as the plan's Phases RED/C prescribe. That kept the test hermetic, but it means the skill's **flagship live-probe** (`#1`: attempt the violating write via `execute_sql`) and its **advisor floor** (`#9`: `get_advisors` empty) were exercised by *reasoning*, not against a real engine — and Run 2's `NOT NULL` proposal on an already-`NOT NULL` column is a direct artifact of the text brief omitting catalog facts. The orchestrator separately confirmed the live catalog **read-only** (RLS `WITH CHECK` on every write policy, `ventas` append-only, DEFINER/INVOKER hygiene, the single `auth_leaked_password_protection` advisor), so the *factual* findings hold. **Outstanding (Stream C): an end-to-end run on a live branch that actually fires the bypass-insert probe and the advisor floor.**
+
+**Verdict: ship the skill — validated by reasoning + live read-only catalog checks; end-to-end branch exercise of the flagship probe remains outstanding (Stream C).**
