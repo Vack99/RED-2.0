@@ -85,33 +85,35 @@ No commit (captured into A4).
 `mcp__supabase__execute_sql`:
 
 ```sql
-select c.relname as tbl, a.attname as col
+select c.relname as tbl, a.attname as col,
+       coalesce(
+         (select string_agg(pg_get_constraintdef(k.oid), ' | ')
+          from pg_constraint k
+          where k.conrelid = c.oid and k.contype = 'c'
+            and pg_get_constraintdef(k.oid) ~* ('\m' || a.attname || '\M')),
+         '(no CHECK references this column)'
+       ) as check_defs_touching_col
 from pg_attribute a
 join pg_class c on c.oid = a.attrelid
 join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
-where a.attname in ('monto','precio') and a.attnum > 0 and not a.attisdropped
-  and not exists (
-    select 1 from pg_constraint k
-    where k.conrelid = c.oid and k.contype = 'c'
-      and pg_get_constraintdef(k.oid) ~* (a.attname || '\s*>=\s*0')
-  );
+where a.attname in ('monto','precio') and a.attnum > 0 and not a.attisdropped;
 ```
-Expected: rows for `ventas.monto` / `paquetes.precio` ⇒ no non-negative `CHECK` (a correctness boundary that lives only in the app). Record.
+Expected: each money column with the text of any `CHECK` that references it (or `(no CHECK references this column)`). **Read the def** — a column whose `check_defs_touching_col` carries no non-negative guard *in any spelling* (operands may be reversed `0 <= monto`, casted, or written `NOT (monto < 0)`) ⇒ the rule lives only in the app. Inspect the actual definition; don't pattern-match the operator. Record.
 
 - [ ] **Step 2: RLS write-gate inventory (predicts write-side IDOR, test #4)**
 
 ```sql
 select c.relname as tbl, p.polname,
-       case p.polcmd when 'r' then 'SELECT' when 'a' then 'INSERT'
-                     when 'w' then 'UPDATE' when 'd' then 'DELETE' else 'ALL' end as cmd,
+       case p.polcmd when 'a' then 'INSERT' when 'w' then 'UPDATE' else 'ALL' end as cmd,
        pg_get_expr(p.polqual,      p.polrelid) as using_expr,
        pg_get_expr(p.polwithcheck, p.polrelid) as with_check_expr
 from pg_policy p
 join pg_class c on c.oid = p.polrelid
 join pg_namespace n on n.oid = c.relnamespace and n.nspname = 'public'
+where p.polcmd in ('a','w','*')   -- write-bearing only; SELECT/DELETE carry no WITH CHECK to evaluate
 order by c.relname, cmd;
 ```
-Expected: any `INSERT`/`UPDATE`/`ALL` policy whose `with_check_expr` is null/weaker than `using_expr` is a write-side-IDOR candidate. Note specifically whether `clientes`/`asistencias` expose direct `INSERT`/`UPDATE` policies that bypass the RPC seam (a known residual risk — record as a candidate, **not** as an ADR-0005 violation).
+Expected: an `INSERT`/`UPDATE` policy whose `with_check_expr` is null or weaker than its `using_expr` is a write-side-IDOR candidate. **A `FOR ALL` (`*`) policy with a null `with_check_expr` is *not* a gap** — Postgres applies the `USING` expression as the write check when `WITH CHECK` is omitted. Note specifically whether `clientes`/`asistencias` expose direct `INSERT`/`UPDATE` policies that bypass the RPC seam (a known residual risk — record as a candidate, **not** as an ADR-0005 violation).
 
 - [ ] **Step 3: SECURITY DEFINER hardening (test #6)**
 
@@ -137,7 +139,7 @@ Expected: there is **no** partial `unique` index on `(cliente_id, fecha) where d
 select 'ventas.monto < 0'        as invariant, count(*) from public.ventas    where monto < 0
 union all
 select 'clientes.tel not 10 dig', count(*) from public.clientes
-  where char_length(regexp_replace(tel, '\D', '', 'g')) <> 10;
+  where tel is null or char_length(regexp_replace(tel, '\D', '', 'g')) <> 10;
 ```
 Expected: both `0` (the `clientes_tel_10_digits_ck` constraint already guards tel; `monto` has no guard but no bad data yet — proving the *gap* exists before bad data does). Record.
 
@@ -151,14 +153,16 @@ No commit (captured into A4).
 
 ```sql
 begin;
-  set local role authenticated;
-  -- resolve a real operator at runtime (do NOT hardcode a uuid)
+  -- resolve a real operator ONCE at runtime (deterministic; do NOT hardcode a uuid)
+  select set_config('app.op',
+    (select user_id::text from public.perfil order by created_at limit 1), true);
   select set_config('request.jwt.claims',
-    json_build_object('sub', (select user_id from public.perfil limit 1),
+    json_build_object('sub', current_setting('app.op', true),
                       'role', 'authenticated')::text, true);
+  set local role authenticated;
   -- bypass the app: a negative-amount sale
   insert into public.ventas (user_id, monto, metodo)
-  values ((select user_id from public.perfil limit 1), -500, 'efectivo')
+  values (current_setting('app.op', true)::uuid, -500, 'efectivo')
   returning id, monto;
 rollback;
 ```
@@ -168,14 +172,16 @@ Expected: a row is **returned** (insert succeeded) ⇒ the "amount ≥ 0" rule i
 
 ```sql
 begin;
-  set local role authenticated;
+  select set_config('app.op',
+    (select user_id::text from public.perfil order by created_at limit 1), true);
   select set_config('request.jwt.claims',
-    json_build_object('sub', (select user_id from public.perfil limit 1),
+    json_build_object('sub', current_setting('app.op', true),
                       'role', 'authenticated')::text, true);
+  set local role authenticated;
   -- attempt to re-home one of the operator's own rows to a foreign uuid
   update public.clientes
      set user_id = '00000000-0000-0000-0000-000000000000'
-   where user_id = (select user_id from public.perfil limit 1)
+   where user_id = current_setting('app.op', true)::uuid
   returning id;
 rollback;
 ```
