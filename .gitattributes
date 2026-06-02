@@ -1,0 +1,4 @@
+# Tool-read config files must stay LF so line endings are deterministic across
+# OSes — a Windows checkout would otherwise rewrite them to CRLF and churn diffs.
+pnpm-lock.yaml text eol=lf
+.nvmrc text eol=lf
