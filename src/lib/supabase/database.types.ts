@@ -205,23 +205,26 @@ export type Database = {
       plantillas: {
         Row: {
           body: string
-          clave: string
+          clave: string | null
           created_at: string
           id: string
+          nombre: string
           user_id: string
         }
         Insert: {
           body: string
-          clave: string
+          clave?: string | null
           created_at?: string
           id?: string
+          nombre: string
           user_id: string
         }
         Update: {
           body?: string
-          clave?: string
+          clave?: string | null
           created_at?: string
           id?: string
+          nombre?: string
           user_id?: string
         }
         Relationships: []
@@ -288,6 +291,15 @@ export type Database = {
         Args: { p_cliente_id: string; p_nombre: string; p_tel: string }
         Returns: undefined
       }
+      actualizar_plantilla: {
+        Args: { p_body: string; p_id: string; p_nombre: string }
+        Returns: undefined
+      }
+      crear_plantilla: {
+        Args: { p_body: string; p_nombre: string }
+        Returns: string
+      }
+      eliminar_plantilla: { Args: { p_id: string }; Returns: undefined }
       registrar_venta: {
         Args: {
           p_clases?: number
@@ -307,6 +319,7 @@ export type Database = {
           folio: number
         }[]
       }
+      sembrar_plantillas_default: { Args: never; Returns: undefined }
       toggle_pase: {
         Args: { p_cliente_id: string; p_fecha: string }
         Returns: {

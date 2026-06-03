@@ -19,7 +19,7 @@ export const getPlantillas = cache(
     const { data } = await supabase.from("plantillas").select("clave, body");
 
     const map: Record<string, string> = {};
-    for (const p of data ?? []) map[p.clave] = p.body;
+    for (const p of data ?? []) if (p.clave) map[p.clave] = p.body;
     return map;
   },
 );

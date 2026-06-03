@@ -433,7 +433,8 @@ describe("plantillas DAL — write orchestration (injected fake)", () => {
   it("sembrarPlantillasDefault calls the seed RPC", async () => {
     const fake = makeFake();
     await sembrarPlantillasDefault(fake.client);
-    expect(fake.rpcCalls).toEqual([{ name: "sembrar_plantillas_default", args: {} }]);
+    expect(fake.rpcCalls).toHaveLength(1);
+    expect(fake.rpcCalls[0].name).toBe("sembrar_plantillas_default");
   });
 
   it("rejects an empty nombre (zod) before any write", async () => {
@@ -552,7 +553,8 @@ export async function eliminarPlantilla(raw: unknown, client?: SupabaseServer): 
 export async function sembrarPlantillasDefault(client?: SupabaseServer): Promise<void> {
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
-  const { error } = await supabase.rpc("sembrar_plantillas_default", {});
+  // sembrar_plantillas_default takes no args (Args: never) — call without a payload.
+  const { error } = await supabase.rpc("sembrar_plantillas_default");
   if (error) throw new Error("No se pudieron crear las plantillas predeterminadas");
 }
 ```
