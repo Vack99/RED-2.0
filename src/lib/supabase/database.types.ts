@@ -205,7 +205,6 @@ export type Database = {
       plantillas: {
         Row: {
           body: string
-          clave: string | null
           created_at: string
           id: string
           nombre: string
@@ -213,7 +212,6 @@ export type Database = {
         }
         Insert: {
           body: string
-          clave?: string | null
           created_at?: string
           id?: string
           nombre: string
@@ -221,7 +219,6 @@ export type Database = {
         }
         Update: {
           body?: string
-          clave?: string | null
           created_at?: string
           id?: string
           nombre?: string

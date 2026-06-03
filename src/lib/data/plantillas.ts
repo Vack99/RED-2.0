@@ -21,30 +21,12 @@ export interface MensajeDTO {
   texto: string;
 }
 
-/** WhatsApp template keys — LEGACY, removed in the contract migration once readers are gone. */
-export type PlantillaClave = "recibo" | "recordatorio" | "renovar" | "ultima";
-
 /** The operator's templates, in creation order (oldest first). RLS scopes rows to (select auth.uid()). Memoized per request. */
 export const listarPlantillas = cache(async (client?: SupabaseServer): Promise<PlantillaDTO[]> => {
   const supabase = client ?? (await createClient());
   const { data } = await supabase.from("plantillas").select("id, nombre, body").order("created_at");
   return (data ?? []).map((p) => ({ id: p.id, nombre: p.nombre, body: p.body }));
 });
-
-/** LEGACY reader (kept until the contract task). Bodies keyed by clave. */
-export const getPlantillas = cache(async (client?: SupabaseServer): Promise<Record<string, string>> => {
-  const supabase = client ?? (await createClient());
-  const { data } = await supabase.from("plantillas").select("clave, body");
-  const map: Record<string, string> = {};
-  for (const p of data ?? []) if (p.clave) map[p.clave] = p.body;
-  return map;
-});
-
-/** LEGACY reader (kept until the contract task). */
-export async function getPlantilla(clave: PlantillaClave, client?: SupabaseServer): Promise<string> {
-  const all = await getPlantillas(client);
-  return all[clave] ?? "";
-}
 
 const nombreSchema = z.string().trim().min(1).max(40);
 const bodySchema = z.string().trim().min(1).max(1000);
