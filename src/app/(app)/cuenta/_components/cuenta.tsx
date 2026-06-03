@@ -116,7 +116,7 @@ export function CuentaScreen({
         open={plantillasOpen}
         onClose={() => setPlantillasOpen(false)}
         plantillas={plantillas}
-        negocio={perfil?.negocio ?? ""}
+        negocio={negocio}
       />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
