@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { Icon, type IconName } from "@/components/forge/icon";
 import { ThemeToggle } from "@/components/forge/theme-toggle";
 import { forgeToast } from "@/components/forge/toaster";
@@ -17,14 +18,17 @@ import type { ResumenMes } from "@/domain/types";
 import type { CobroDTO } from "@/lib/data/cobro";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";
+import type { PlantillaDTO } from "@/lib/data/plantillas";
 import { pesos } from "@/lib/format";
+
+import { PlantillasSheet } from "./plantillas-sheet";
 
 interface CuentaScreenProps {
   perfil: PerfilDTO | null;
   resumen: ResumenMes;
   cobro: CobroDTO | null;
   paquetes: PaqueteDTO[];
-  plantillasCount: number;
+  plantillas: PlantillaDTO[];
   /** Real es-MX month label, e.g. "MAYO 2026". */
   mesLabel: string;
 }
@@ -65,9 +69,11 @@ export function CuentaScreen({
   resumen,
   cobro,
   paquetes,
-  plantillasCount,
+  plantillas,
   mesLabel,
 }: CuentaScreenProps) {
+  const [plantillasOpen, setPlantillasOpen] = React.useState(false);
+
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
   // a null-perfil guard (the perfil row may not be seeded yet).
   const coach = perfil?.coach ?? "Coach";
@@ -96,8 +102,8 @@ export function CuentaScreen({
     {
       icon: "wa",
       label: "PLANTILLAS DE WHATSAPP",
-      sub: `${plantillasCount} configurada${plantillasCount === 1 ? "" : "s"}`,
-      onClick: () => proximamente("Plantillas de WhatsApp"),
+      sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`,
+      onClick: () => setPlantillasOpen(true),
     },
     { icon: "bell", label: "NOTIFICACIONES", sub: "Próximamente", onClick: () => proximamente("Notificaciones") },
     { icon: "card", label: "DATOS DE COBRO", sub: cobroSub, onClick: () => proximamente("Datos de cobro") },
@@ -106,6 +112,13 @@ export function CuentaScreen({
 
   return (
     <div>
+      <PlantillasSheet
+        open={plantillasOpen}
+        onClose={() => setPlantillasOpen(false)}
+        plantillas={plantillas}
+        negocio={perfil?.negocio ?? ""}
+      />
+
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 
       {/* Coach identity */}

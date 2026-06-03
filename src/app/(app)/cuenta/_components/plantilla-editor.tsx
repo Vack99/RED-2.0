@@ -1,0 +1,166 @@
+"use client";
+
+import * as React from "react";
+import { useRouter } from "next/navigation";
+import { Icon } from "@/components/forge/icon";
+import { Textarea } from "@/components/forge/input";
+import { forgeToast } from "@/components/forge/toaster";
+import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
+import { renderPlantilla } from "@/domain/rules";
+import type { PlantillaContext } from "@/domain/types";
+import type { PlantillaDTO } from "@/lib/data/plantillas";
+import { actualizarPlantillaAction, crearPlantillaAction } from "../actions";
+
+const TOKENS = ["nombre", "clases", "paquete", "vence", "dias", "precios", "datos_pago", "negocio"] as const;
+
+/** A live-preview sample context so the operator sees how {tokens} resolve. */
+function sampleCtx(negocio: string): PlantillaContext {
+  return {
+    nombre: "Andrea",
+    clases: "5 clases",
+    paquete: "Ilimitado",
+    vence: "16 jun",
+    dias: "3 días",
+    precios: "• 1 mes — $600\n• 8 clases — $450",
+    datos_pago: "BBVA 1234 5678",
+    negocio: negocio || "FORGE",
+  };
+}
+
+export function PlantillaEditor({
+  plantilla,
+  negocio,
+  onDone,
+  onCancel,
+}: {
+  plantilla?: PlantillaDTO;
+  negocio: string;
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const router = useRouter();
+  const isEdit = !!plantilla;
+  const [nombre, setNombre] = React.useState(plantilla?.nombre ?? "");
+  const [body, setBody] = React.useState(plantilla?.body ?? "");
+  const [saving, setSaving] = React.useState(false);
+  const bodyRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  const valido =
+    nombre.trim().length >= 1 && nombre.trim().length <= 40 && body.trim().length >= 1 && body.trim().length <= 1000;
+  const dirty = !isEdit || nombre !== plantilla!.nombre || body !== plantilla!.body;
+  const canSave = valido && dirty && !saving;
+
+  const insertToken = (t: string) => {
+    const tok = `{${t}}`;
+    const el = bodyRef.current;
+    if (!el) {
+      setBody((b) => b + tok);
+      return;
+    }
+    const start = el.selectionStart ?? body.length;
+    const end = el.selectionEnd ?? body.length;
+    setBody(body.slice(0, start) + tok + body.slice(end));
+  };
+
+  const guardar = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      if (isEdit) await actualizarPlantillaAction({ id: plantilla!.id, nombre, body });
+      else await crearPlantillaAction({ nombre, body });
+      forgeToast({ tone: "success", title: isEdit ? "Plantilla actualizada" : "Plantilla creada", body: nombre.trim() });
+      router.refresh();
+      onDone();
+    } catch {
+      forgeToast({ tone: "warning", title: "No se pudo guardar", body: "Intenta de nuevo." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex items-center" style={{ gap: 10, padding: "8px 22px 14px" }}>
+        <button
+          onClick={onCancel}
+          aria-label="Atrás"
+          className="flex items-center justify-center border border-line bg-surface"
+          style={{ width: 34, height: 34, padding: 0, cursor: "pointer" }}
+        >
+          <Icon name="back" size={14} color="var(--muted)" />
+        </button>
+        <div>
+          <Eyebrow color="var(--gold)">{isEdit ? "EDITAR" : "NUEVA"} PLANTILLA</Eyebrow>
+          <H1 size={20} style={{ marginTop: 4 }}>
+            {nombre.trim() || "Sin nombre"}
+          </H1>
+        </div>
+      </div>
+
+      <div className="flex flex-col" style={{ padding: "0 16px", gap: 18 }}>
+        <label className="flex flex-col" style={{ gap: 8 }}>
+          <Eyebrow style={{ paddingLeft: 2 }}>NOMBRE</Eyebrow>
+          <Input placeholder="Ej. Bienvenida" value={nombre} onChange={setNombre} autoFocus />
+        </label>
+
+        <label className="flex flex-col" style={{ gap: 8 }}>
+          <Eyebrow style={{ paddingLeft: 2 }}>MENSAJE</Eyebrow>
+          <Textarea ref={bodyRef} placeholder="Hola {nombre}…" value={body} onChange={setBody} rows={6} />
+        </label>
+
+        <div className="flex flex-col" style={{ gap: 8, marginTop: -8 }}>
+          <Eyebrow style={{ paddingLeft: 2 }}>INSERTAR DATO</Eyebrow>
+          <div className="flex" style={{ flexWrap: "wrap", gap: 6 }}>
+            {TOKENS.map((t) => (
+              <button
+                key={t}
+                onClick={() => insertToken(t)}
+                className="font-semibold transition-colors hover:border-yellow"
+                style={{
+                  padding: "5px 9px",
+                  fontSize: 11,
+                  letterSpacing: 0.3,
+                  border: "1px solid var(--line)",
+                  background: "var(--surface)",
+                  color: "var(--muted)",
+                  cursor: "pointer",
+                }}
+              >
+                <span style={{ color: "var(--gold)" }}>{"{"}</span>
+                {t}
+                <span style={{ color: "var(--gold)" }}>{"}"}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Eyebrow>VISTA PREVIA</Eyebrow>
+          <div
+            style={{
+              marginTop: 8,
+              padding: "12px 14px 12px 16px",
+              background: "var(--surface)",
+              border: "1px solid var(--line)",
+              borderLeft: "3px solid #25d366",
+              whiteSpace: "pre-wrap",
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: "var(--fg)",
+            }}
+          >
+            {renderPlantilla(body, sampleCtx(negocio)) || (
+              <span style={{ color: "var(--muted-soft)" }}>Escribe un mensaje para ver la vista previa…</span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ borderTop: "1px solid var(--line)", margin: "20px 0 0", padding: "20px 16px 4px" }}>
+        <Button variant="primary" size="lg" full icon="check" disabled={!canSave} onClick={guardar}>
+          {saving ? "GUARDANDO…" : isEdit ? "GUARDAR" : "CREAR"}
+        </Button>
+      </div>
+    </div>
+  );
+}
