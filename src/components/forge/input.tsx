@@ -85,3 +85,45 @@ export function Input({
     </div>
   );
 }
+
+export function Textarea({
+  placeholder,
+  value,
+  onChange,
+  rows = 5,
+  autoFocus,
+  className,
+  style,
+}: {
+  placeholder?: string;
+  value?: string;
+  onChange?: (v: string) => void;
+  rows?: number;
+  autoFocus?: boolean;
+  className?: string;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <textarea
+      placeholder={placeholder}
+      value={value ?? ""}
+      onChange={(e) => onChange?.(e.target.value)}
+      rows={rows}
+      autoFocus={autoFocus}
+      className={cn(
+        // Mirrors Input: same surface/line/yellow-focus token trio, same font weight.
+        // `resize-none` intentional — rows prop is the declared height contract.
+        "w-full resize-none border border-line bg-surface font-medium outline-none transition-colors focus:border-yellow",
+        className,
+      )}
+      style={{
+        color: "var(--fg)",
+        padding: "12px 14px",
+        fontSize: 14,
+        lineHeight: 1.6,
+        fontFamily: "inherit",
+        ...style,
+      }}
+    />
+  );
+}
