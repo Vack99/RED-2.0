@@ -182,8 +182,8 @@ export const getClienteFicha = cache(
         getVecinos(id, supabase),
         supabase.from("perfil").select("negocio").maybeSingle(),
         listarPlantillas(supabase),
-        getPaquetes(supabase),
-        getCobro(supabase),
+        getPaquetes(supabase).catch(() => []),
+        getCobro(supabase).catch(() => null),
       ]);
 
     const negocio = resolverIdentidad({

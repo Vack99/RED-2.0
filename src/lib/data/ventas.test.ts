@@ -218,7 +218,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
   it("does not break the recibo when cobro/paquetes are unconfigured ({datos_pago} blank)", async () => {
     fake = makeFake({
       paquetes: FINITO,
-      // no paquetesList, no cobro → fmtPrecios "" + fmtDatosPago("") (null cobro)
+      // no paquetesList, no cobro → fmtPrecios "" + fmtDatosPago(null)
       plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}.{datos_pago}{precios}" }],
     });
 

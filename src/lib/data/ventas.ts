@@ -172,8 +172,8 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const [{ data: perfil }, plantillas, paquetes, cobro] = await Promise.all([
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
     listarPlantillas(supabase),
-    getPaquetes(supabase),
-    getCobro(supabase),
+    getPaquetes(supabase).catch(() => []),
+    getCobro(supabase).catch(() => null),
   ]);
   // Resolve the identity defaults in one place (kept off getPerfil — it's
   // cache()-wrapped and would break the injected-fake test). The recibo omits a
