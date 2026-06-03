@@ -30,8 +30,8 @@ function WhatsappBubble({ children }: { children: React.ReactNode }) {
           position: "relative",
           maxWidth: "85%",
           padding: "7px 9px 5px 11px",
-          background: "#25d366",
-          color: "#0b1f12",
+          background: "var(--wa-bubble)",
+          color: "var(--wa-bubble-fg)",
           borderRadius: "12px 12px 4px 12px",
           boxShadow: "0 1px 1.5px rgba(0,0,0,0.28)",
           fontSize: 13.5,
@@ -49,7 +49,7 @@ function WhatsappBubble({ children }: { children: React.ReactNode }) {
             height: 0,
             borderStyle: "solid",
             borderWidth: "0 0 9px 9px",
-            borderColor: "transparent transparent transparent #25d366",
+            borderColor: "transparent transparent transparent var(--wa-bubble)",
           }}
         />
         <span style={{ whiteSpace: "pre-wrap" }}>{children}</span>
@@ -66,7 +66,7 @@ function WhatsappBubble({ children }: { children: React.ReactNode }) {
             transform: "translateY(3px)",
             fontSize: 10.5,
             lineHeight: 1,
-            color: "rgba(11,31,18,0.55)",
+            color: "var(--wa-bubble-meta)",
             whiteSpace: "nowrap",
           }}
         >
@@ -74,7 +74,7 @@ function WhatsappBubble({ children }: { children: React.ReactNode }) {
           <svg width="15" height="11" viewBox="0 0 18 13" fill="none" aria-hidden>
             <path
               d="M1 7.2 4 10.2 10.6 2.8M7.4 9.4 8.6 10.6 15.2 3.2"
-              stroke="#0a6cff"
+              stroke="#53bdeb"
               strokeWidth="1.6"
               strokeLinecap="round"
               strokeLinejoin="round"
