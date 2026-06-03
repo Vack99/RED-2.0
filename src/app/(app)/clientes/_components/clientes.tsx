@@ -61,7 +61,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const clearAll = () => { setRenovar(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
 
   return (
-    <div className="flex h-full flex-col">
+    <div>
       <AppBar
         center="DIRECTORIO"
         trailing={
@@ -163,8 +163,8 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
         </div>
       </div>
 
-      {/* List */}
-      <div className="forge-scroll flex-1 overflow-auto" style={{ paddingBottom: 12 }}>
+      {/* List — flows into the shell's <main> scroller (no nested scroll container) */}
+      <div style={{ paddingBottom: 12 }}>
         {list.length === 0 && (
           <div style={{ padding: "54px 24px", textAlign: "center" }}>
             <Icon name={renovar ? "check" : "users"} size={28} color="var(--muted-soft)" />

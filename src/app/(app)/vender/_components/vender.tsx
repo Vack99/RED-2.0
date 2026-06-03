@@ -162,7 +162,7 @@ export function VenderScreen({
   if (!metodo) missing.push("método");
 
   return (
-    <div className="flex h-full flex-col bg-canvas">
+    <div className="bg-canvas">
       <div className="flex items-center justify-between" style={{ padding: "14px 22px 4px" }}>
         <Eyebrow>NUEVA VENTA</Eyebrow>
         <div style={{ width: 38 }} />
@@ -175,8 +175,8 @@ export function VenderScreen({
         </H1>
       </div>
 
-      {/* Accordion */}
-      <div className="forge-scroll flex-1 overflow-auto">
+      {/* Accordion — flows into the shell's <main> scroller (no nested scroll container) */}
+      <div>
         <AccordionSection label="CLIENTE" summary={clienteSummary} emptyHint="Agregar cliente" complete={clienteValid} open={openSection === "cliente"} onToggle={() => toggle("cliente")}>
           <ClienteEditor mode={mode} setMode={handleSetMode} nuevo={nuevo} setNuevo={setNuevo} existing={existing} openPicker={() => setPickerOpen(true)} onMaybeValid={maybeAdvanceCliente} />
         </AccordionSection>
@@ -192,8 +192,8 @@ export function VenderScreen({
         <div style={{ height: 28 }} />
       </div>
 
-      {/* Footer */}
-      <div className="bg-canvas" style={{ borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
+      {/* Footer — sticky to the bottom of <main> so COBRAR stays reachable while content scrolls behind it */}
+      <div className="bg-canvas" style={{ position: "sticky", bottom: 0, zIndex: 1, borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
         <div className="flex items-baseline justify-between" style={{ marginBottom: 14 }}>
           <Eyebrow>TOTAL</Eyebrow>
           <Tnum className="font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
