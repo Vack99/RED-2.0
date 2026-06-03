@@ -24,7 +24,7 @@ export interface MensajeDTO {
 /** WhatsApp template keys — LEGACY, removed in the contract migration once readers are gone. */
 export type PlantillaClave = "recibo" | "recordatorio" | "renovar" | "ultima";
 
-/** The operator's templates, newest-first. RLS scopes rows to (select auth.uid()). Memoized per request. */
+/** The operator's templates, in creation order (oldest first). RLS scopes rows to (select auth.uid()). Memoized per request. */
 export const listarPlantillas = cache(async (client?: SupabaseServer): Promise<PlantillaDTO[]> => {
   const supabase = client ?? (await createClient());
   const { data } = await supabase.from("plantillas").select("id, nombre, body").order("created_at");
