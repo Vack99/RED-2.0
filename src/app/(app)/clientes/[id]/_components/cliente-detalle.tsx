@@ -18,6 +18,7 @@ import {
 } from "@/components/forge/ui";
 import type { ClienteFichaDTO } from "@/lib/data/clientes";
 import { firstName, waLink } from "@/lib/format";
+import { idleSwipe, swipeStep, type SwipeState } from "@/lib/swipe";
 import { togglePaseAction } from "../actions";
 import { EditarClienteSheet } from "./editar-cliente-sheet";
 
@@ -31,7 +32,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const [editOpen, setEditOpen] = React.useState(false);
   const [msgOpen, setMsgOpen] = React.useState(false);
   const [dx, setDx] = React.useState(0);
-  const swipe = React.useRef({ x: 0, dx: 0, on: false });
+  const swipe = React.useRef<SwipeState>(idleSwipe());
 
   const asistCount = ficha.historial.length + (present ? 1 : 0);
 
@@ -56,17 +57,43 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
 
   const mensaje = () => setMsgOpen(true);
 
-  const onTouchStart = (e: React.TouchEvent) => (swipe.current = { x: e.touches[0].clientX, dx: 0, on: true });
+  // Swipe-to-prev/next. All the gesture decisions (axis-lock so a vertical
+  // scroll never drags the page sideways, engage threshold, OS-back-gesture
+  // edge gutter, rubber-band at the roster ends, single-touch guard) live in
+  // the pure, tested state machine; this is just the DOM adapter.
+  const swipeCtx = () => ({
+    viewportWidth: typeof window === "undefined" ? 0 : window.innerWidth,
+    hasPrev: !!ficha.vecinos.prevId,
+    hasNext: !!ficha.vecinos.nextId,
+  });
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    swipe.current = swipeStep(
+      swipe.current,
+      { kind: "start", x: t?.clientX ?? 0, y: t?.clientY ?? 0, touchCount: e.touches.length },
+      swipeCtx(),
+    ).state;
+  };
   const onTouchMove = (e: React.TouchEvent) => {
-    if (!swipe.current.on) return;
-    swipe.current.dx = e.touches[0].clientX - swipe.current.x;
-    setDx(swipe.current.dx);
+    if (!swipe.current.active) return;
+    const t = e.touches[0];
+    const { state } = swipeStep(
+      swipe.current,
+      { kind: "move", x: t?.clientX ?? 0, y: t?.clientY ?? 0, touchCount: e.touches.length },
+      swipeCtx(),
+    );
+    swipe.current = state;
+    setDx(state.dx);
   };
   const onTouchEnd = () => {
-    const cur = swipe.current.dx;
-    swipe.current.on = false;
-    if (cur < -80 && ficha.vecinos.nextId) router.replace(`/clientes/${ficha.vecinos.nextId}`);
-    else if (cur > 80 && ficha.vecinos.prevId) router.replace(`/clientes/${ficha.vecinos.prevId}`);
+    const { state, navigate } = swipeStep(swipe.current, { kind: "end" }, swipeCtx());
+    swipe.current = state;
+    setDx(0);
+    if (navigate === "next" && ficha.vecinos.nextId) router.push(`/clientes/${ficha.vecinos.nextId}`);
+    else if (navigate === "prev" && ficha.vecinos.prevId) router.push(`/clientes/${ficha.vecinos.prevId}`);
+  };
+  const onTouchCancel = () => {
+    swipe.current = swipeStep(swipe.current, { kind: "cancel" }, swipeCtx()).state;
     setDx(0);
   };
 
@@ -112,7 +139,8 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
-        style={{ transform: `translateX(${dx}px)`, transition: dx === 0 ? "transform 240ms cubic-bezier(.32,.72,0,1)" : "none" }}
+        onTouchCancel={onTouchCancel}
+        style={{ touchAction: "pan-y", transform: `translateX(${dx}px)`, transition: dx === 0 ? "transform 240ms cubic-bezier(.32,.72,0,1)" : "none" }}
       >
         {/* Identity */}
         <div style={{ padding: "20px 22px 10px" }}>
