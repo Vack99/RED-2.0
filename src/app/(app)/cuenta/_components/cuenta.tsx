@@ -19,6 +19,8 @@ import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";
 import { pesos } from "@/lib/format";
 
+import { LogoutButton } from "./logout-button";
+
 interface CuentaScreenProps {
   perfil: PerfilDTO | null;
   resumen: ResumenMes;
@@ -224,8 +226,17 @@ export function CuentaScreen({
         ))}
       </div>
 
-      <div className="uppercase" style={{ padding: "32px 22px 28px", textAlign: "center", fontSize: 10, color: "var(--muted-soft)", letterSpacing: 1.6 }}>
-        {`${negocio} · v1.0`}
+      <div
+        className="flex flex-col items-center"
+        style={{ padding: "24px 22px 28px", marginTop: 16, borderTop: "1px solid var(--line)", gap: 14 }}
+      >
+        <LogoutButton />
+        <div
+          className="uppercase"
+          style={{ textAlign: "center", fontSize: 10, color: "var(--muted-soft)", letterSpacing: 1.6 }}
+        >
+          {`${negocio} · v1.0`}
+        </div>
       </div>
     </div>
   );
