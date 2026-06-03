@@ -15,7 +15,7 @@ interface FakeRows {
   paquetes?: Record<string, unknown>;
   clientes?: Record<string, unknown>;
   perfil?: Record<string, unknown> | null;
-  plantillas?: { clave: string; body: string }[];
+  plantillas?: { id: string; nombre: string; body: string }[];
 }
 
 interface FakeClient {
@@ -109,7 +109,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
   let fake: FakeClient;
 
   beforeEach(() => {
-    fake = makeFake({ paquetes: ILIMITADO, plantillas: [{ clave: "recibo", body: "Hola {nombre}" }] });
+    fake = makeFake({ paquetes: ILIMITADO, plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }] });
   });
 
   it("omits the DEFAULT-NULL keys for a new ilimitado client (spread-guard, finding #3)", async () => {
@@ -135,7 +135,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     fake = makeFake({
       paquetes: FINITO,
       clientes: { id: "cli-1", nombre: "Andrea", tel: "614 000 0000", clases_restantes: 2, vence: null },
-      plantillas: [{ clave: "recibo", body: "Hola {nombre}" }],
+      plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }],
     });
 
     await crearVenta(input({ mode: "existing", clienteId: "cli-1" }), fake.client);
@@ -149,7 +149,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
   });
 
   it("starts a brand-new finite client from an EMPTY saldo (the wiring bug, locked)", async () => {
-    fake = makeFake({ paquetes: FINITO, plantillas: [{ clave: "recibo", body: "x" }] });
+    fake = makeFake({ paquetes: FINITO, plantillas: [{ id: "t1", nombre: "Recibo", body: "x" }] });
 
     await crearVenta(input({ mode: "new" }), fake.client);
 
