@@ -97,7 +97,7 @@ export function PlantillasSheet({
                 <div
                   key={p.id}
                   className="flex items-center"
-                  style={{ gap: 6, border: "1px solid var(--line)", background: "var(--surface)", padding: "12px 8px 12px 14px" }}
+                  style={{ gap: 12, border: "1px solid var(--line)", background: "var(--surface)", padding: "12px 8px 12px 14px" }}
                 >
                   <button
                     onClick={() => setView({ mode: "edit", plantilla: p })}
@@ -126,7 +126,7 @@ export function PlantillasSheet({
                   <button
                     onClick={() => borrar(p)}
                     aria-label="Eliminar"
-                    className="flex shrink-0 items-center justify-center"
+                    className="forge-hit forge-pressable flex shrink-0 items-center justify-center"
                     style={{ width: 32, height: 32, background: "transparent", border: "none", cursor: "pointer" }}
                   >
                     <Icon name="trash" size={15} color="var(--muted)" />

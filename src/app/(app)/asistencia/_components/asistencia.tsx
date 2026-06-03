@@ -84,7 +84,7 @@ export function AsistenciaScreen({
         <button
           onClick={() => setCalOpen(true)}
           aria-label="Abrir calendario"
-          className="flex shrink-0 items-center justify-center border bg-surface"
+          className="forge-hit forge-pressable flex shrink-0 items-center justify-center border bg-surface"
           style={{
             width: 38,
             height: 38,
@@ -265,7 +265,7 @@ const PaseRow = React.memo(function PaseRow({
   return (
     <div
       onClick={() => onToggle(c)}
-      className="flex w-full items-center select-none"
+      className="forge-pressable flex w-full items-center select-none"
       style={{
         gap: 14,
         padding: "12px 22px",
@@ -341,7 +341,7 @@ function PaseCalendar({
     <div style={{ padding: "8px 18px 6px" }}>
       {/* month nav */}
       <div className="flex items-center justify-between" style={{ padding: "6px 2px 14px" }}>
-        <button onClick={() => stepMonth(-1)} aria-label="Mes anterior" className="flex items-center justify-center border border-line bg-surface" style={{ width: 34, height: 34, cursor: "pointer" }}>
+        <button onClick={() => stepMonth(-1)} aria-label="Mes anterior" className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface" style={{ width: 34, height: 34, cursor: "pointer" }}>
           <Icon name="back" size={16} color="var(--fg)" />
         </button>
         <div className="uppercase font-extrabold" style={{ fontSize: 15, letterSpacing: 1 }}>
@@ -351,7 +351,7 @@ function PaseCalendar({
           onClick={() => stepMonth(1)}
           disabled={atCurrentMonth}
           aria-label="Mes siguiente"
-          className="flex items-center justify-center border border-line bg-surface"
+          className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface"
           style={{ width: 34, height: 34, cursor: atCurrentMonth ? "not-allowed" : "pointer", opacity: atCurrentMonth ? 0.35 : 1 }}
         >
           <Icon name="chev" size={16} color="var(--fg)" />

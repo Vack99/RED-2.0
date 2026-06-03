@@ -233,7 +233,7 @@ export function VenderScreen({
             <button
               key={cc.id}
               onClick={() => { setClientId(cc.id); setMode("existing"); setPickerOpen(false); setPickerQuery(""); maybeAdvanceCliente(true); }}
-              className="flex w-full items-center text-left"
+              className="forge-pressable flex w-full items-center text-left"
               style={{ gap: 12, padding: "14px 22px", background: cc.id === clientId ? "var(--surface)" : "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }}
             >
               <Avatar initial={cc.inicial} size={36} />
@@ -377,7 +377,7 @@ function PaqueteEditor({
           <button
             key={p.id}
             onClick={() => setSel(p.id)}
-            className="flex items-center justify-between text-left"
+            className="forge-pressable flex items-center justify-between text-left"
             style={{ padding: 18, background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: "var(--fg)", cursor: "pointer", transition: "border-color 140ms ease" }}
           >
             <div className="flex flex-col" style={{ gap: 4 }}>
@@ -408,7 +408,7 @@ function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo:
             <button
               key={o.k}
               onClick={() => setMetodo(o.k)}
-              className="flex flex-col items-center"
+              className="forge-pressable flex flex-col items-center"
               style={{ padding: "18px 6px", background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: on ? "var(--yellow)" : "var(--fg)", cursor: "pointer", gap: 8, transition: "border-color 140ms ease" }}
             >
               <Icon name={o.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
@@ -419,11 +419,11 @@ function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo:
       </div>
       <button
         onClick={() => setMetodo(porPagar ? "Efectivo" : "Por pagar")}
-        className="flex items-center uppercase font-bold"
-        style={{ marginTop: 16, padding: 0, background: "transparent", border: "none", color: porPagar ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer", gap: 6 }}
+        className="forge-pressable flex items-center uppercase font-bold"
+        style={{ marginTop: 16, padding: "12px 0", background: "transparent", border: "none", color: porPagar ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer", gap: 8 }}
       >
-        <span className="flex items-center justify-center" style={{ width: 14, height: 14, border: `1.5px solid ${porPagar ? "var(--yellow)" : "var(--line)"}`, background: porPagar ? "var(--yellow)" : "transparent" }}>
-          {porPagar && <Icon name="check" size={9} color="var(--ink)" />}
+        <span className="flex items-center justify-center" style={{ width: 20, height: 20, border: `1.5px solid ${porPagar ? "var(--yellow)" : "var(--line)"}`, background: porPagar ? "var(--yellow)" : "transparent" }}>
+          {porPagar && <Icon name="check" size={12} color="var(--ink)" />}
         </span>
         Registrar como por pagar
       </button>

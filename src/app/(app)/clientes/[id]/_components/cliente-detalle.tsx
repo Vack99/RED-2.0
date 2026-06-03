@@ -222,7 +222,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
                     {horaHoy ? <>Registrada a las <Tnum style={{ fontWeight: 700 }}>{horaHoy}</Tnum></> : "Registrada"}
                   </div>
                 </div>
-                <button onClick={toggleAsistencia} disabled={busy} className="flex shrink-0 items-center uppercase font-extrabold" style={{ background: "transparent", border: "none", cursor: busy ? "default" : "pointer", color: "var(--muted)", fontSize: 10.5, letterSpacing: 1, gap: 5, padding: "6px 4px" }}>
+                <button onClick={toggleAsistencia} disabled={busy} className="forge-pressable flex shrink-0 items-center uppercase font-extrabold" style={{ background: "transparent", border: "none", cursor: busy ? "default" : "pointer", color: "var(--muted)", fontSize: 10.5, letterSpacing: 1, gap: 5, padding: "6px 4px", minHeight: 44 }}>
                   <Icon name="close" size={13} color="var(--muted)" />
                   Deshacer
                 </button>
@@ -241,7 +241,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
 
         {/* WhatsApp */}
         <div style={{ padding: "10px 16px 0" }}>
-          <button onClick={mensaje} className="flex w-full items-center" style={{ padding: "12px 14px", background: "transparent", border: "1px solid var(--silver-dim)", color: "var(--fg)", cursor: "pointer", gap: 10 }}>
+          <button onClick={mensaje} className="forge-pressable flex w-full items-center" style={{ padding: "12px 14px", background: "transparent", border: "1px solid var(--silver-dim)", color: "var(--fg)", cursor: "pointer", gap: 10 }}>
             <Icon name="wa" size={16} color="#25d366" />
             <span className="uppercase font-bold" style={{ fontSize: 12, letterSpacing: 0.8, flex: 1, textAlign: "left" }}>Mandar mensaje</span>
             <Icon name="arrow" size={14} color="var(--muted)" />

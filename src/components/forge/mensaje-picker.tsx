@@ -73,7 +73,7 @@ export function MensajePicker({
                 <button
                   key={m.id}
                   onClick={() => setSelId(m.id)}
-                  className="uppercase font-bold transition-colors"
+                  className="uppercase font-bold transition-colors forge-pressable"
                   style={{
                     textAlign: "left",
                     padding: "11px 14px 11px 16px",
