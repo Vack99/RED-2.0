@@ -1,13 +1,20 @@
 import * as React from "react";
 
 // Forge brand mark + wordmark, ported from the prototype's brand.jsx.
-// Three slanted parallelogram bars (silver / yellow crossbar / silver stub).
+// The F-mark is three slanted bars (silver / gold crossbar / silver stub) whose
+// LEFT edges are collinear on a single "/" diagonal — that shared left margin is
+// the "F" spine. Bars step down in length (~100% / 74% / 40%) and end in a sharp
+// right-leaning point, so the negative space reads as an "F". (Geometry matched
+// to the real Forge Bootcamp logo.)
 
 export function FMark({ size = 28 }: { size?: number }) {
-  const slant = 10;
-  const h = 14;
+  // Both edges lean left at the bottom ("/"): the left edge gently (the shared
+  // spine), the right edge steeper so each bar ends in a sharp forward point.
+  const leftSlant = -3.4;
+  const rightSlant = -6;
+  const h = 12;
   const bar = (xL: number, xR: number, yTop: number) =>
-    `${xL},${yTop} ${xR},${yTop} ${xR + slant},${yTop + h} ${xL + slant},${yTop + h}`;
+    `${xL},${yTop} ${xR},${yTop} ${xR + rightSlant},${yTop + h} ${xL + leftSlant},${yTop + h}`;
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-label="Forge">
       <defs>
@@ -22,9 +29,9 @@ export function FMark({ size = 28 }: { size?: number }) {
           <stop offset="100%" stopColor="var(--yellow)" />
         </linearGradient>
       </defs>
-      <polygon points={bar(8, 80, 18)} fill="url(#fm-silver)" />
-      <polygon points={bar(20, 70, 40)} fill="url(#fm-yellow)" />
-      <polygon points={bar(32, 60, 62)} fill="url(#fm-silver)" />
+      <polygon points={bar(30, 92, 18)} fill="url(#fm-silver)" />
+      <polygon points={bar(23.7, 69.7, 40)} fill="url(#fm-yellow)" />
+      <polygon points={bar(17.4, 42.4, 62)} fill="url(#fm-silver)" />
     </svg>
   );
 }
