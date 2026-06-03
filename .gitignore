@@ -43,6 +43,9 @@ yarn-error.log*
 # superpowers brainstorm scratch (visual companion mockups)
 .superpowers/
 
+# Claude Code scratch + nested git worktrees (each carries its own node_modules + .next build)
+.claude/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
