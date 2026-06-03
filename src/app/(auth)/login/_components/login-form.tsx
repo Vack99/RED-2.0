@@ -350,7 +350,7 @@ export function LoginForm() {
               border: "1px solid var(--line)",
               borderBottom: "2px solid var(--silver)",
               padding: "12px 14px",
-              fontSize: 15,
+              fontSize: 16,
               color: "var(--fg)",
               outline: "none",
             }}
@@ -385,7 +385,7 @@ export function LoginForm() {
               border: "1px solid var(--line)",
               borderBottom: "2px solid var(--silver)",
               padding: "12px 14px",
-              fontSize: 15,
+              fontSize: 16,
               color: "var(--fg)",
               outline: "none",
             }}

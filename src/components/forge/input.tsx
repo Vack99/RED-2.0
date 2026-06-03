@@ -77,7 +77,8 @@ export function Input({
         value={value ?? ""}
         onChange={(e) => onChange?.(e.target.value)}
         className="min-w-0 flex-1 border-none bg-transparent font-medium outline-none"
-        style={{ color: "var(--fg)", fontSize: 15 }}
+        // 16px: anything smaller triggers iOS Safari's auto-zoom on focus.
+        style={{ color: "var(--fg)", fontSize: 16 }}
       />
       {suffix && (
         <span style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 1 }}>{suffix}</span>
@@ -113,7 +114,8 @@ export const Textarea = React.forwardRef<
       style={{
         color: "var(--fg)",
         padding: "12px 14px",
-        fontSize: 14,
+        // 16px: anything smaller triggers iOS Safari's auto-zoom on focus.
+        fontSize: 16,
         lineHeight: 1.6,
         fontFamily: "inherit",
         ...style,
