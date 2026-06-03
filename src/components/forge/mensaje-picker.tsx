@@ -10,6 +10,82 @@ export interface MensajePickerItem {
   texto: string;
 }
 
+/** A faux WhatsApp "sent" bubble: green, self-colored (good in light + dark),
+ *  rounded with a little tail, plus static decorative chrome (a fixed 9:41 time
+ *  and double "read" ticks). The timestamp/ticks are purely cosmetic — a literal
+ *  string, never `new Date()`, to avoid a hydration mismatch. Pure CSS/JSX so
+ *  this file keeps its zero domain/lib import surface. */
+function WhatsappBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        padding: "12px 12px 14px",
+        background: "var(--sunk)",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          maxWidth: "85%",
+          padding: "7px 9px 5px 11px",
+          background: "#25d366",
+          color: "#0b1f12",
+          borderRadius: "12px 12px 4px 12px",
+          boxShadow: "0 1px 1.5px rgba(0,0,0,0.28)",
+          fontSize: 13.5,
+          lineHeight: 1.45,
+        }}
+      >
+        {/* tail on the bottom-right corner */}
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            right: -6,
+            bottom: 0,
+            width: 0,
+            height: 0,
+            borderStyle: "solid",
+            borderWidth: "0 0 9px 9px",
+            borderColor: "transparent transparent transparent #25d366",
+          }}
+        />
+        <span style={{ whiteSpace: "pre-wrap" }}>{children}</span>
+        {/* meta row: static time + double read-ticks */}
+        <span
+          aria-hidden
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            float: "right",
+            marginLeft: 10,
+            marginTop: 4,
+            transform: "translateY(3px)",
+            fontSize: 10.5,
+            lineHeight: 1,
+            color: "rgba(11,31,18,0.55)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          9:41
+          <svg width="15" height="11" viewBox="0 0 18 13" fill="none" aria-hidden>
+            <path
+              d="M1 7.2 4 10.2 10.6 2.8M7.4 9.4 8.6 10.6 15.2 3.2"
+              stroke="#0a6cff"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 /** A send-template picker. The caller owns the actual send (onEnviar) so this stays free of
  *  domain/lib imports (waLink lives in the sector). Lists the operator's templates, previews the
  *  selected one rendered for the current context, and hands the choice back. */
@@ -97,24 +173,24 @@ export function MensajePicker({
           {/* ── Preview ── */}
           <div style={{ padding: "18px 16px 0" }}>
             <Eyebrow style={{ paddingLeft: 2, marginBottom: 8 }}>VISTA PREVIA</Eyebrow>
-            <div
-              style={{
-                padding: "12px 14px",
-                background: "var(--surface)",
-                // Green left stripe = "this is your WhatsApp message" affordance.
-                borderTop: "1px solid var(--line)",
-                borderRight: "1px solid var(--line)",
-                borderBottom: "1px solid var(--line)",
-                borderLeft: "3px solid #25d366",
-                whiteSpace: "pre-wrap",
-                fontSize: 13,
-                lineHeight: 1.6,
-                color: sel ? "var(--fg)" : "var(--muted)",
-                minHeight: 72,
-                fontStyle: sel ? "normal" : "italic",
-              }}
-            >
-              {sel?.texto ?? "Selecciona una plantilla para previsualizar el mensaje."}
+            <div style={{ border: "1px solid var(--line)" }}>
+              {sel ? (
+                <WhatsappBubble>{sel.texto}</WhatsappBubble>
+              ) : (
+                <div
+                  style={{
+                    padding: "18px 16px",
+                    background: "var(--sunk)",
+                    minHeight: 72,
+                    fontSize: 13,
+                    fontStyle: "italic",
+                    color: "var(--muted)",
+                    textAlign: "center",
+                  }}
+                >
+                  Selecciona una plantilla para previsualizar el mensaje.
+                </div>
+              )}
             </div>
           </div>
 

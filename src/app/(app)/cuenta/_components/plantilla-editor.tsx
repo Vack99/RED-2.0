@@ -22,18 +22,96 @@ const TOKENS = [
   "negocio",
 ] as const satisfies ReadonlyArray<keyof PlantillaContext>;
 
-/** A live-preview sample context so the operator sees how {tokens} resolve. */
+/** A coherent, urgency-flavored sample persona so every {token} resolves to
+ *  believable es-MX data. María bought an 8-clase package and has 1 class left
+ *  (por vencer) — so "clases", "paquete", "vence" and "dias" all read together.
+ *  Fixed constant on purpose: this is an EXAMPLE, never live client data. */
 function sampleCtx(negocio: string): PlantillaContext {
   return {
-    nombre: "Andrea",
-    clases: "5 clases",
-    paquete: "Ilimitado",
-    vence: "16 jun",
+    nombre: "María",
+    clases: "1 clase",
+    paquete: "8 clases",
+    vence: "30 may",
     dias: "3 días",
-    precios: "• 1 mes — $600\n• 8 clases — $450",
-    datos_pago: "BBVA 1234 5678",
+    precios: "• 8 clases — $800\n• Ilimitado — $1,200",
+    datos_pago: "Transferencia BBVA\nCLABE 012 320 00…",
     negocio: negocio || "FORGE",
   };
+}
+
+/** A faux WhatsApp "sent" bubble: green, self-colored (good in light + dark),
+ *  rounded with a little tail, plus static decorative chrome (a fixed 9:41 time
+ *  and double "read" ticks). The timestamp/ticks are purely cosmetic — a literal
+ *  string, never `new Date()`, to avoid a hydration mismatch. */
+function WhatsappBubble({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "flex-end",
+        padding: "12px 12px 14px",
+        background: "var(--sunk)",
+      }}
+    >
+      <div
+        style={{
+          position: "relative",
+          maxWidth: "85%",
+          padding: "7px 9px 5px 11px",
+          background: "#25d366",
+          color: "#0b1f12",
+          borderRadius: "12px 12px 4px 12px",
+          boxShadow: "0 1px 1.5px rgba(0,0,0,0.28)",
+          fontSize: 13.5,
+          lineHeight: 1.45,
+        }}
+      >
+        {/* tail on the bottom-right corner */}
+        <span
+          aria-hidden
+          style={{
+            position: "absolute",
+            right: -6,
+            bottom: 0,
+            width: 0,
+            height: 0,
+            borderStyle: "solid",
+            borderWidth: "0 0 9px 9px",
+            borderColor: "transparent transparent transparent #25d366",
+          }}
+        />
+        <span style={{ whiteSpace: "pre-wrap" }}>{children}</span>
+        {/* meta row: static time + double read-ticks */}
+        <span
+          aria-hidden
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 3,
+            float: "right",
+            marginLeft: 10,
+            marginTop: 4,
+            transform: "translateY(3px)",
+            fontSize: 10.5,
+            lineHeight: 1,
+            color: "rgba(11,31,18,0.55)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          9:41
+          <svg width="15" height="11" viewBox="0 0 18 13" fill="none" aria-hidden>
+            <path
+              d="M1 7.2 4 10.2 10.6 2.8M7.4 9.4 8.6 10.6 15.2 3.2"
+              stroke="#0a6cff"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export function PlantillaEditor({
@@ -144,22 +222,23 @@ export function PlantillaEditor({
         </div>
 
         <div>
-          <Eyebrow>VISTA PREVIA</Eyebrow>
-          <div
-            style={{
-              marginTop: 8,
-              padding: "12px 14px 12px 16px",
-              background: "var(--surface)",
-              border: "1px solid var(--line)",
-              borderLeft: "3px solid #25d366",
-              whiteSpace: "pre-wrap",
-              fontSize: 13,
-              lineHeight: 1.5,
-              color: "var(--fg)",
-            }}
-          >
-            {renderPlantilla(body, sampleCtx(negocio)) || (
-              <span style={{ color: "var(--muted-soft)" }}>Escribe un mensaje para ver la vista previa…</span>
+          <Eyebrow>VISTA DE EJEMPLO</Eyebrow>
+          <div style={{ marginTop: 8, border: "1px solid var(--line)" }}>
+            {body.trim() ? (
+              <WhatsappBubble>{renderPlantilla(body, sampleCtx(negocio))}</WhatsappBubble>
+            ) : (
+              <div
+                style={{
+                  padding: "18px 16px",
+                  background: "var(--sunk)",
+                  fontSize: 13,
+                  fontStyle: "italic",
+                  color: "var(--muted)",
+                  textAlign: "center",
+                }}
+              >
+                Escribe un mensaje para ver la vista previa…
+              </div>
             )}
           </div>
         </div>
