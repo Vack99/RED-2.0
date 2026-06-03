@@ -4,6 +4,7 @@ import * as React from "react";
 import { useRouter } from "next/navigation";
 import { ForgeLockup } from "@/components/forge/brand";
 import { Icon, type IconName } from "@/components/forge/icon";
+import { MensajePicker } from "@/components/forge/mensaje-picker";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
 import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
@@ -442,15 +443,16 @@ function Recibo({
   onOtra: () => void;
   onVerCliente: (id: string) => void;
 }) {
-  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, coach, waText } = result;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, coach } = result;
   const isNew = c.isNew;
   const [showCheck, setShowCheck] = React.useState(false);
+  const [msgOpen, setMsgOpen] = React.useState(false);
   React.useEffect(() => {
     const t = setTimeout(() => setShowCheck(true), 80);
     return () => clearTimeout(t);
   }, []);
 
-  const wa = () => window.open(waLink(c.tel, waText), "_blank");
+  const wa = () => setMsgOpen(true);
 
   const perf = "repeating-linear-gradient(to right, var(--canvas) 0 4px, transparent 4px 10px)";
 
@@ -551,6 +553,17 @@ function Recibo({
           </div>
         </div>
       </div>
+
+      <MensajePicker
+        open={msgOpen}
+        onClose={() => setMsgOpen(false)}
+        titulo="ENVIAR RECIBO"
+        mensajes={result.mensajes}
+        onEnviar={(m) => {
+          window.open(waLink(c.tel, m.texto), "_blank");
+          setMsgOpen(false);
+        }}
+      />
     </div>
   );
 }

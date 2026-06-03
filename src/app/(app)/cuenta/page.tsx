@@ -1,7 +1,7 @@
 import { getCobro } from "@/lib/data/cobro";
 import { getPaquetes } from "@/lib/data/paquetes";
 import { getPerfil } from "@/lib/data/perfil";
-import { getPlantillas } from "@/lib/data/plantillas";
+import { listarPlantillas } from "@/lib/data/plantillas";
 import { getResumenMes } from "@/lib/data/resumen";
 import { fmtMesAnio } from "@/lib/date";
 import { hoyChihuahua } from "@/lib/fecha";
@@ -14,11 +14,10 @@ export default async function Page() {
     getResumenMes(),
     getCobro(),
     getPaquetes(),
-    getPlantillas(),
+    listarPlantillas(),
   ]);
 
   const mesLabel = fmtMesAnio(hoyChihuahua());
-  const plantillasCount = Object.keys(plantillas).length;
 
   return (
     <CuentaScreen
@@ -26,7 +25,7 @@ export default async function Page() {
       resumen={resumen}
       cobro={cobro}
       paquetes={paquetes}
-      plantillasCount={plantillasCount}
+      plantillas={plantillas}
       mesLabel={mesLabel}
     />
   );

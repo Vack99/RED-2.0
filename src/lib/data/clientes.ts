@@ -1,14 +1,16 @@
 import "server-only";
 
 import { cache } from "react";
+import { z } from "zod";
 
 import { resumirRoster } from "@/domain/rules";
 import type { ResumenRoster } from "@/domain/types";
 import { addDays } from "@/lib/date";
 import { fechaChihuahua, hoyChihuahua, toIsoDay } from "@/lib/fecha";
-import { iniciales } from "@/lib/format";
+import { iniciales, isTelValido } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
+import { requireOperator } from "./_auth";
 import {
   derivarCliente,
   derivarPaseCliente,
@@ -17,8 +19,11 @@ import {
   type FichaDerivada,
   type PaseClienteDTO,
 } from "./derive";
+import { getCobro } from "./cobro";
+import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
-import { getPlantilla } from "./plantillas";
+import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
+import { listarPlantillas } from "./plantillas";
 import { getVecinos, type Vecinos } from "./roster-nav";
 
 export type { PaseClienteDTO, FichaAsistencia, FichaPago } from "./derive";
@@ -160,23 +165,26 @@ export const getClienteFicha = cache(
     // purchase (predating the window) is reconciled by the exact count below (Part B).
     const ventanaIso = toIsoDay(addDays(hoy, -FICHA_VENTANA_DIAS));
 
-    const [asistRes, ventasRes, vecinos, perfilRes, recordatorioBody] = await Promise.all([
-      supabase
-        .from("asistencias")
-        .select("fecha, hora, consumio")
-        .eq("cliente_id", id)
-        .is("deleted_at", null)
-        .gte("fecha", ventanaIso)
-        .order("fecha", { ascending: false }),
-      supabase
-        .from("ventas")
-        .select("fecha, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
-        .eq("cliente_id", id)
-        .order("fecha", { ascending: false }),
-      getVecinos(id, supabase),
-      supabase.from("perfil").select("negocio").maybeSingle(),
-      getPlantilla("recordatorio", supabase),
-    ]);
+    const [asistRes, ventasRes, vecinos, perfilRes, plantillas, paquetes, cobro] =
+      await Promise.all([
+        supabase
+          .from("asistencias")
+          .select("fecha, hora, consumio")
+          .eq("cliente_id", id)
+          .is("deleted_at", null)
+          .gte("fecha", ventanaIso)
+          .order("fecha", { ascending: false }),
+        supabase
+          .from("ventas")
+          .select("fecha, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
+          .eq("cliente_id", id)
+          .order("fecha", { ascending: false }),
+        getVecinos(id, supabase),
+        supabase.from("perfil").select("negocio").maybeSingle(),
+        listarPlantillas(supabase),
+        getPaquetes(supabase).catch(() => []),
+        getCobro(supabase).catch(() => null),
+      ]);
 
     const negocio = resolverIdentidad({
       negocio: perfilRes.data?.negocio ?? null,
@@ -218,11 +226,39 @@ export const getClienteFicha = cache(
       ventas,
       hoy,
       hoyIso,
-      recordatorioBody,
+      plantillas,
       negocio,
       attendedSincePurchase,
+      { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
     );
 
     return { ...ficha, hoyIso, vecinos };
   },
 );
+
+/** Identity-edit input (nombre + tel). Trims like crearVenta; tel validity is the canonical
+ *  10-digit MX rule (isTelValido), the same rule the DB CHECK (clientes_tel_10_digits_ck) enforces. */
+export const actualizarClienteSchema = z.object({
+  clienteId: z.string().uuid(),
+  nombre: z.string().trim().min(3),
+  tel: z.string().trim().refine(isTelValido, { message: "Teléfono inválido" }),
+});
+
+export type ActualizarClienteInput = z.infer<typeof actualizarClienteSchema>;
+
+/** Edit a client's identity (nombre + tel). Injectable client (ADR-0001). The actualizar_cliente
+ *  RPC re-checks auth.uid() and RLS scopes the UPDATE to the owner (SECURITY INVOKER), so the sub
+ *  from the presence check is discarded here (matches crearVenta). */
+export async function actualizarCliente(raw: unknown, client?: SupabaseServer): Promise<void> {
+  const input = actualizarClienteSchema.parse(raw);
+  const supabase = client ?? (await createClient());
+
+  await requireOperator(supabase);
+
+  const { error } = await supabase.rpc("actualizar_cliente", {
+    p_cliente_id: input.clienteId,
+    p_nombre: input.nombre,
+    p_tel: input.tel,
+  });
+  if (error) throw new Error("No se pudo actualizar el cliente");
+}

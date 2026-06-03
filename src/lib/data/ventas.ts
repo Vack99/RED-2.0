@@ -2,16 +2,19 @@ import "server-only";
 
 import { z } from "zod";
 
-import { baseParaStack, calcVigenciaEnd, diasRestantes, renderPlantilla, stackPaquete } from "@/domain/rules";
-import type { Clases, CompraPaquete, MetodoPago, Saldo } from "@/domain/types";
+import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@/domain/rules";
+import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales, isTelValido } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 import { requireOperator } from "./_auth";
+import { getCobro } from "./cobro";
+import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
-import { getPlantilla } from "./plantillas";
+import { fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
+import { listarPlantillas, type MensajeDTO } from "./plantillas";
 
 /** The venta write seam's payment method — an alias for the canonical domain
  *  MetodoPago (vender imports this as MetodoEnum; recibo display-casing is its
@@ -53,7 +56,7 @@ export interface VentaResult {
   negocio: string;
   ciudad: string;
   coach: string;
-  waText: string;
+  mensajes: MensajeDTO[];
 }
 
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
@@ -163,9 +166,14 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     .single();
   if (rpcErr || !result) throw new Error("No se pudo registrar la venta");
 
-  const [{ data: perfil }, reciboBody] = await Promise.all([
+  // Best-effort message context, read AFTER the sale RPC already committed. A
+  // missing cobro/paquetes only blanks a token (fmt* tolerate null/[]) — it never
+  // fails the sale result.
+  const [{ data: perfil }, plantillas, paquetes, cobro] = await Promise.all([
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
-    getPlantilla("recibo", supabase),
+    listarPlantillas(supabase),
+    getPaquetes(supabase).catch(() => []),
+    getCobro(supabase).catch(() => null),
   ]);
   // Resolve the identity defaults in one place (kept off getPerfil — it's
   // cache()-wrapped and would break the injected-fake test). The recibo omits a
@@ -181,13 +189,20 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
 
   // The recibo confirmation is a stored, editable plantilla; renderPlantilla is
   // the single home for message rendering, and the brand comes from the operator's
-  // perfil via the {negocio} token — never a hard-coded "Forge Bootcamp".
-  const waText = renderPlantilla(reciboBody, {
+  // perfil via the {negocio} token — never a hard-coded "Forge Bootcamp". Every
+  // template is rendered against the sale context so the picker can offer them all.
+  const ctx: PlantillaContext = {
     nombre: firstName(nombre),
+    clases:
+      nuevoSaldo.clases === "ilimitado" ? "clases ilimitadas" : `${nuevoSaldo.clases} clases`,
     paquete: paq.nombre,
     vence: venceDisplay,
+    dias: fmtDias(diasRestantes(nuevoVence, hoy)),
+    precios: fmtPrecios(paquetes),
+    datos_pago: fmtDatosPago(cobro),
     negocio,
-  });
+  };
+  const mensajes: MensajeDTO[] = renderMensajes(plantillas, ctx);
 
   return {
     folio: result.folio,
@@ -211,6 +226,6 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     negocio,
     ciudad,
     coach,
-    waText,
+    mensajes,
   };
 }

@@ -1,5 +1,6 @@
 "use client";
 
+import * as React from "react";
 import { Icon, type IconName } from "@/components/forge/icon";
 import { ThemeToggle } from "@/components/forge/theme-toggle";
 import { forgeToast } from "@/components/forge/toaster";
@@ -17,16 +18,18 @@ import type { ResumenMes } from "@/domain/types";
 import type { CobroDTO } from "@/lib/data/cobro";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";
+import type { PlantillaDTO } from "@/lib/data/plantillas";
 import { pesos } from "@/lib/format";
 
 import { LogoutButton } from "./logout-button";
+import { PlantillasSheet } from "./plantillas-sheet";
 
 interface CuentaScreenProps {
   perfil: PerfilDTO | null;
   resumen: ResumenMes;
   cobro: CobroDTO | null;
   paquetes: PaqueteDTO[];
-  plantillasCount: number;
+  plantillas: PlantillaDTO[];
   /** Real es-MX month label, e.g. "MAYO 2026". */
   mesLabel: string;
 }
@@ -67,9 +70,11 @@ export function CuentaScreen({
   resumen,
   cobro,
   paquetes,
-  plantillasCount,
+  plantillas,
   mesLabel,
 }: CuentaScreenProps) {
+  const [plantillasOpen, setPlantillasOpen] = React.useState(false);
+
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
   // a null-perfil guard (the perfil row may not be seeded yet).
   const coach = perfil?.coach ?? "Coach";
@@ -98,8 +103,8 @@ export function CuentaScreen({
     {
       icon: "wa",
       label: "PLANTILLAS DE WHATSAPP",
-      sub: `${plantillasCount} configurada${plantillasCount === 1 ? "" : "s"}`,
-      onClick: () => proximamente("Plantillas de WhatsApp"),
+      sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`,
+      onClick: () => setPlantillasOpen(true),
     },
     { icon: "bell", label: "NOTIFICACIONES", sub: "Próximamente", onClick: () => proximamente("Notificaciones") },
     { icon: "card", label: "DATOS DE COBRO", sub: cobroSub, onClick: () => proximamente("Datos de cobro") },
@@ -108,6 +113,13 @@ export function CuentaScreen({
 
   return (
     <div>
+      <PlantillasSheet
+        open={plantillasOpen}
+        onClose={() => setPlantillasOpen(false)}
+        plantillas={plantillas}
+        negocio={negocio}
+      />
+
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 
       {/* Coach identity */}
@@ -149,6 +161,50 @@ export function CuentaScreen({
           </div>
         </div>
       </Card>
+
+      {/* Respaldo — descargable Excel del registro completo del gimnasio */}
+      <SectionHeader
+        trailing={
+          // Real download anchor: a plain GET to the route handler, whose
+          // Content-Disposition fires the browser save dialog. No fetch/blob
+          // dance needed. Styled to mirror the gold inline action above.
+          <a
+            href="/cuenta/respaldo"
+            download
+            className="inline-flex items-center uppercase font-extrabold"
+            style={{ gap: 5, textDecoration: "none", fontSize: 10.5, letterSpacing: 1.2, color: "var(--gold)" }}
+          >
+            <Icon name="arrow" size={12} color="var(--gold)" />
+            DESCARGAR
+          </a>
+        }
+      >
+        RESPALDO
+      </SectionHeader>
+      <div style={{ margin: "0 16px" }}>
+        <a
+          href="/cuenta/respaldo"
+          download
+          className="flex w-full items-center border border-line bg-surface text-left transition-transform active:scale-[0.992]"
+          style={{ gap: 14, padding: "14px 16px", cursor: "pointer", color: "var(--fg)" }}
+        >
+          <div
+            className="flex shrink-0 items-center justify-center border border-line"
+            style={{ width: 32, height: 32, background: "var(--canvas)" }}
+          >
+            <Icon name="receipt" size={15} color="var(--gold)" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-bold" style={{ fontSize: 12.5, letterSpacing: 0.6 }}>
+              DESCARGAR RESPALDO
+            </div>
+            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+              Excel del registro — clientes, ventas y asistencias
+            </div>
+          </div>
+          <Icon name="arrow" size={14} color="var(--muted)" />
+        </a>
+      </div>
 
       {/* Paquetes y precios — real catalog (read-only) */}
       <SectionHeader

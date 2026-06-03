@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { Icon } from "@/components/forge/icon";
+import { MensajePicker } from "@/components/forge/mensaje-picker";
 import { forgeToast } from "@/components/forge/toaster";
 import {
   AppBar,
@@ -18,6 +19,7 @@ import {
 import type { ClienteFichaDTO } from "@/lib/data/clientes";
 import { firstName, waLink } from "@/lib/format";
 import { togglePaseAction } from "../actions";
+import { EditarClienteSheet } from "./editar-cliente-sheet";
 
 export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const router = useRouter();
@@ -26,6 +28,8 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const [present, setPresent] = React.useState(ficha.presentHoy);
   const [horaHoy, setHoraHoy] = React.useState<string | null>(ficha.horaHoy);
   const [busy, setBusy] = React.useState(false);
+  const [editOpen, setEditOpen] = React.useState(false);
+  const [msgOpen, setMsgOpen] = React.useState(false);
   const [dx, setDx] = React.useState(0);
   const swipe = React.useRef({ x: 0, dx: 0, on: false });
 
@@ -50,7 +54,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
     }
   };
 
-  const mensaje = () => window.open(waLink(c.tel, ficha.waText), "_blank");
+  const mensaje = () => setMsgOpen(true);
 
   const onTouchStart = (e: React.TouchEvent) => (swipe.current = { x: e.touches[0].clientX, dx: 0, on: true });
   const onTouchMove = (e: React.TouchEvent) => {
@@ -78,7 +82,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         center="CLIENTE"
         trailing={
           <button
-            onClick={() => forgeToast({ tone: "info", title: "Próximamente", body: "Editar cliente llega en la siguiente entrega." })}
+            onClick={() => setEditOpen(true)}
             aria-label="Editar"
             className="flex items-center justify-center border border-line bg-surface"
             style={{ width: 38, height: 38, padding: 0, cursor: "pointer" }}
@@ -86,6 +90,22 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             <Icon name="edit" size={14} color="var(--muted)" />
           </button>
         }
+      />
+
+      <EditarClienteSheet
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        cliente={{ id: c.id, nombre: c.nombre, tel: c.tel }}
+      />
+
+      <MensajePicker
+        open={msgOpen}
+        onClose={() => setMsgOpen(false)}
+        mensajes={ficha.mensajes}
+        onEnviar={(m) => {
+          window.open(waLink(c.tel, m.texto), "_blank");
+          setMsgOpen(false);
+        }}
       />
 
       <div
