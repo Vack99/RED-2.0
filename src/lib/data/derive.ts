@@ -4,10 +4,12 @@
 // fetches rows and the attendance counts, then maps each through here.
 
 import { derivarEstado, diasRestantes, forfeit, renderPlantilla } from "@/domain/rules";
-import type { Clases, EstadoCliente } from "@/domain/types";
+import type { Clases, EstadoCliente, PlantillaContext } from "@/domain/types";
 import { DOW, fmtShort } from "@/lib/date";
 import { fechaChihuahua, parseDay } from "@/lib/fecha";
 import { firstName, iniciales, pesos } from "@/lib/format";
+
+import type { MensajeDTO, PlantillaDTO } from "./plantillas";
 
 export interface ClienteFacts {
   id: string;
@@ -200,7 +202,7 @@ export interface FichaDerivada {
   historial: FichaAsistencia[];
   pagos: FichaPago[];
   ventasCount: number;
-  waText: string;
+  mensajes: MensajeDTO[];
 }
 
 /**
@@ -218,7 +220,7 @@ export function shapeFicha(
   ventas: FichaVentaRow[],
   hoy: Date,
   hoyIso: string,
-  recordatorioBody: string,
+  plantillas: PlantillaDTO[],
   negocio: string,
   attendedSincePurchase: number,
 ): FichaDerivada {
@@ -276,13 +278,18 @@ export function shapeFicha(
       ? { fill: gaugeFill(cliente.diasRest, diasDenom(venceDate, lastPurchaseDate)) }
       : null;
 
-  const waText = renderPlantilla(recordatorioBody, {
+  const ctx: PlantillaContext = {
     nombre: firstName(c.nombre),
     clases: cliente.clasesRest === "ilimitado" ? "clases ilimitadas" : `${cliente.clasesRest} clases`,
     paquete: cliente.paquete,
     vence: cliente.venceDisplay,
     negocio,
-  });
+  };
+  const mensajes: MensajeDTO[] = plantillas.map((p) => ({
+    id: p.id,
+    nombre: p.nombre,
+    texto: renderPlantilla(p.body, ctx),
+  }));
 
   return {
     cliente,
@@ -297,6 +304,6 @@ export function shapeFicha(
     historial,
     pagos,
     ventasCount: ventas.length,
-    waText,
+    mensajes,
   };
 }

@@ -20,7 +20,7 @@ import {
   type PaseClienteDTO,
 } from "./derive";
 import { resolverIdentidad } from "./perfil";
-import { getPlantilla } from "./plantillas";
+import { listarPlantillas } from "./plantillas";
 import { getVecinos, type Vecinos } from "./roster-nav";
 
 export type { PaseClienteDTO, FichaAsistencia, FichaPago } from "./derive";
@@ -162,7 +162,7 @@ export const getClienteFicha = cache(
     // purchase (predating the window) is reconciled by the exact count below (Part B).
     const ventanaIso = toIsoDay(addDays(hoy, -FICHA_VENTANA_DIAS));
 
-    const [asistRes, ventasRes, vecinos, perfilRes, recordatorioBody] = await Promise.all([
+    const [asistRes, ventasRes, vecinos, perfilRes, plantillas] = await Promise.all([
       supabase
         .from("asistencias")
         .select("fecha, hora, consumio")
@@ -177,7 +177,7 @@ export const getClienteFicha = cache(
         .order("fecha", { ascending: false }),
       getVecinos(id, supabase),
       supabase.from("perfil").select("negocio").maybeSingle(),
-      getPlantilla("recordatorio", supabase),
+      listarPlantillas(supabase),
     ]);
 
     const negocio = resolverIdentidad({
@@ -220,7 +220,7 @@ export const getClienteFicha = cache(
       ventas,
       hoy,
       hoyIso,
-      recordatorioBody,
+      plantillas,
       negocio,
       attendedSincePurchase,
     );
