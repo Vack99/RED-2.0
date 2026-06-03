@@ -1,16 +1,9 @@
 import { LoginForm } from "./_components/login-form";
 
-// Sits outside the (app) shell so it has no tab bar and no auth gate beyond the
-// proxy (which lets /login through for unauthenticated visitors).
+// Login sits OUTSIDE the (app) shell: no tab bar, and no auth gate beyond the
+// proxy (which lets /login through for unauthenticated visitors). LoginForm now
+// owns the full-viewport surface (the variant-E build + the real sign-in), so
+// this page simply renders it.
 export default function LoginPage() {
-  return (
-    <div
-      className="flex min-h-dvh w-full items-center justify-center bg-backdrop"
-      style={{ padding: 24 }}
-    >
-      <div className="w-full" style={{ maxWidth: 380 }}>
-        <LoginForm />
-      </div>
-    </div>
-  );
+  return <LoginForm />;
 }
