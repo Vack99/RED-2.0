@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { CobroDTO } from "./cobro";
 import type { PaqueteDTO } from "./paquetes";
-import { fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
+import { fmtClases, fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
 
 const paquete = (over: Partial<PaqueteDTO> = {}): PaqueteDTO => ({
   id: "p1",
@@ -80,6 +80,20 @@ describe("fmtDias", () => {
   it("reports a non-positive count as vencido (expired / no package)", () => {
     expect(fmtDias(0)).toBe("vencido");
     expect(fmtDias(-3)).toBe("vencido");
+  });
+});
+
+describe("fmtClases", () => {
+  it("formats a finite count as '{n} clases'", () => {
+    expect(fmtClases(5)).toBe("5 clases");
+  });
+
+  it("does NOT special-case one (matches today's non-pluralizing ternary)", () => {
+    expect(fmtClases(1)).toBe("1 clases");
+  });
+
+  it("reads ilimitado as 'clases ilimitadas'", () => {
+    expect(fmtClases("ilimitado")).toBe("clases ilimitadas");
   });
 });
 

@@ -26,6 +26,8 @@ export interface CobroDTO {
  * The operator's datos de cobro, as a safe DTO. RLS scopes the row to
  * (select auth.uid()); returns null until the cobro row is seeded. Memoized
  * per request.
+ *
+ * @returns the cobro DTO, or null when no row exists · throws on DB error.
  */
 export const getCobro = cache(
   async (client?: SupabaseServer): Promise<CobroDTO | null> => {

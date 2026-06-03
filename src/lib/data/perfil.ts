@@ -40,6 +40,9 @@ export function resolverIdentidad(p: {
  * Read the authenticated operator's perfil. RLS scopes the row to
  * `(select auth.uid())`, so no explicit owner filter is needed. Returns `null`
  * until the perfil row is seeded (issue #2). Memoized per request.
+ *
+ * @returns the perfil DTO, or `null` when no row exists · best-effort: also
+ * returns `null` on error (error is not destructured).
  */
 export const getPerfil = cache(
   async (client?: SupabaseServer): Promise<PerfilDTO | null> => {

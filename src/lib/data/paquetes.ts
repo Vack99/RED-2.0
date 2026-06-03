@@ -19,7 +19,9 @@ export interface PaqueteDTO {
   popular: boolean;
 }
 
-/** The operator's package catalog, ordered for display. */
+/** The operator's package catalog, ordered for display.
+ *  @returns the package list · best-effort: returns [] on error (error is not
+ *  destructured, so any failure reads as an empty catalog). */
 export const getPaquetes = cache(
   async (client?: SupabaseServer): Promise<PaqueteDTO[]> => {
     const supabase = client ?? (await createClient());

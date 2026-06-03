@@ -27,6 +27,9 @@ const PAGE = 1000;
  * attendance. If check-in volume grows very large, a date-windowed read (only the
  * months the calendar actually browses) is the cost optimization — but that would
  * change the seam's full-history contract, so it's deliberately deferred.
+ *
+ * @returns the date→clienteIds map · best-effort: returns {} on error (error is
+ * not destructured, so any failure reads as "no attendance").
  */
 export const getMarcadas = cache(
   async (client?: SupabaseServer): Promise<Record<string, string[]>> => {
@@ -103,6 +106,8 @@ export interface AsistenciaHoy {
  * Today's asistencia rows joined to clientes, ordered by time (most recent
  * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
  * returns DTOs only (no raw rows cross the boundary, ADR-0001).
+ *
+ * @returns the DTO list (empty when no rows) · throws on DB error.
  */
 export async function getAsistenciasHoy(client?: SupabaseServer): Promise<AsistenciaHoy[]> {
   const supabase = client ?? (await createClient());

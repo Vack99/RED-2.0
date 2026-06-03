@@ -21,7 +21,8 @@ export interface MensajeDTO {
   texto: string;
 }
 
-/** The operator's templates, in creation order (oldest first). RLS scopes rows to (select auth.uid()). Memoized per request. */
+/** The operator's templates, in creation order (oldest first). RLS scopes rows to (select auth.uid()). Memoized per request.
+ *  @returns the template list · best-effort: returns [] on error (error is not destructured). */
 export const listarPlantillas = cache(async (client?: SupabaseServer): Promise<PlantillaDTO[]> => {
   const supabase = client ?? (await createClient());
   const { data } = await supabase.from("plantillas").select("id, nombre, body").order("created_at");

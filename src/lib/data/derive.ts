@@ -9,7 +9,7 @@ import { DOW, fmtShort } from "@/lib/date";
 import { fechaChihuahua, parseDay } from "@/lib/fecha";
 import { firstName, iniciales, pesos } from "@/lib/format";
 
-import { fmtDias, renderMensajes } from "./plantilla-ctx";
+import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
 
 export interface ClienteFacts {
@@ -285,7 +285,7 @@ export function shapeFicha(
 
   const ctx: PlantillaContext = {
     nombre: firstName(c.nombre),
-    clases: cliente.clasesRest === "ilimitado" ? "clases ilimitadas" : `${cliente.clasesRest} clases`,
+    clases: fmtClases(cliente.clasesRest),
     paquete: cliente.paquete,
     vence: cliente.venceDisplay,
     dias: fmtDias(cliente.diasRest),
