@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="Forge">
+  <!--
+    Forge app icon. STATIC F-mark from the single-source geometry in
+    src/components/forge/brand.tsx (FMARK_BARS): three slanted bars,
+    top silver / middle gold / bottom silver.
+
+    The icon renders WITHOUT page CSS, so colors are hardcoded hex read from
+    globals.css (.dark palette, which is tuned to read on a dark backdrop):
+      --silver   #c5c5c5
+      --yellow   #f5c542
+      --backdrop #050505
+    The bar polygons are the exact output of bar(xL,xR,yTop):
+      top    bar(30,92,18)     -> 30,18 92,18 86,30 26.6,30
+      middle bar(23.7,69.7,40) -> 23.7,40 69.7,40 63.7,52 20.3,52
+      bottom bar(17.4,42.4,62) -> 17.4,62 42.4,62 36.4,74 14,74
+    Centered with padding via a transform around the mark's bbox center (53,46).
+  -->
+  <defs>
+    <linearGradient id="icon-silver" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#c5c5c5" />
+      <stop offset="50%" stop-color="#9a9a9a" />
+      <stop offset="100%" stop-color="#c5c5c5" />
+    </linearGradient>
+    <linearGradient id="icon-gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f5c542" />
+      <stop offset="50%" stop-color="#d4a72c" />
+      <stop offset="100%" stop-color="#f5c542" />
+    </linearGradient>
+  </defs>
+  <rect width="100" height="100" fill="#050505" />
+  <g transform="translate(50 50) scale(0.92) translate(-53 -46)">
+    <polygon points="30,18 92,18 86,30 26.6,30" fill="url(#icon-silver)" />
+    <polygon points="23.7,40 69.7,40 63.7,52 20.3,52" fill="url(#icon-gold)" />
+    <polygon points="17.4,62 42.4,62 36.4,74 14,74" fill="url(#icon-silver)" />
+  </g>
+</svg>

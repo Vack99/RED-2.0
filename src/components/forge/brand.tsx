@@ -7,14 +7,52 @@ import * as React from "react";
 // right-leaning point, so the negative space reads as an "F". (Geometry matched
 // to the real Forge Bootcamp logo.)
 
+// ── SINGLE SOURCE OF TRUTH for the F-mark geometry ──────────────────────────
+// Exported so EVERY surface that draws the mark (the static FMark below, the
+// animated login build, the app icon) derives its polygons from this ONE
+// definition and can never drift. This file is in the UI kit and imports only
+// React — keep it free of any app/ or domain/ dependency.
+//
+// Both edges lean left at the bottom ("/"): the left edge gently (the shared
+// spine), the right edge steeper so each bar ends in a sharp forward point.
+export const FMARK_LEFT_SLANT = -3.4;
+export const FMARK_RIGHT_SLANT = -6;
+export const FMARK_BAR_HEIGHT = 12;
+
+/** SVG `points` string for one bar, given its top-left x, top-right x, top y. */
+export function bar(xL: number, xR: number, yTop: number): string {
+  return (
+    `${xL},${yTop} ${xR},${yTop} ` +
+    `${xR + FMARK_RIGHT_SLANT},${yTop + FMARK_BAR_HEIGHT} ` +
+    `${xL + FMARK_LEFT_SLANT},${yTop + FMARK_BAR_HEIGHT}`
+  );
+}
+
+/** Which metal gradient fills a bar (the mark is silver / gold / silver). */
+export type FMarkBarRole = "silver" | "gold";
+
+/** A single bar of the mark: its polygon points and its metal role. */
+export interface FMarkBar {
+  /** Stable identifier (top → middle → bottom). */
+  readonly name: "top" | "middle" | "bottom";
+  /** SVG polygon `points` for this bar. */
+  readonly points: string;
+  /** Which metal gradient fills it. */
+  readonly role: FMarkBarRole;
+}
+
+/**
+ * The three bars in draw order (top → middle → bottom), silver / gold / silver.
+ * THIS is the canonical geometry. FMark, the login animation, and the app icon
+ * all consume this array — there is no second copy of the polygon numbers.
+ */
+export const FMARK_BARS: readonly FMarkBar[] = [
+  { name: "top", points: bar(30, 92, 18), role: "silver" },
+  { name: "middle", points: bar(23.7, 69.7, 40), role: "gold" },
+  { name: "bottom", points: bar(17.4, 42.4, 62), role: "silver" },
+];
+
 export function FMark({ size = 28 }: { size?: number }) {
-  // Both edges lean left at the bottom ("/"): the left edge gently (the shared
-  // spine), the right edge steeper so each bar ends in a sharp forward point.
-  const leftSlant = -3.4;
-  const rightSlant = -6;
-  const h = 12;
-  const bar = (xL: number, xR: number, yTop: number) =>
-    `${xL},${yTop} ${xR},${yTop} ${xR + rightSlant},${yTop + h} ${xL + leftSlant},${yTop + h}`;
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-label="Forge">
       <defs>
@@ -29,9 +67,13 @@ export function FMark({ size = 28 }: { size?: number }) {
           <stop offset="100%" stopColor="var(--yellow)" />
         </linearGradient>
       </defs>
-      <polygon points={bar(30, 92, 18)} fill="url(#fm-silver)" />
-      <polygon points={bar(23.7, 69.7, 40)} fill="url(#fm-yellow)" />
-      <polygon points={bar(17.4, 42.4, 62)} fill="url(#fm-silver)" />
+      {FMARK_BARS.map((b) => (
+        <polygon
+          key={b.name}
+          points={b.points}
+          fill={b.role === "gold" ? "url(#fm-yellow)" : "url(#fm-silver)"}
+        />
+      ))}
     </svg>
   );
 }
