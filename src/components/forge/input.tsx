@@ -85,3 +85,39 @@ export function Input({
     </div>
   );
 }
+
+export const Textarea = React.forwardRef<
+  HTMLTextAreaElement,
+  {
+    placeholder?: string;
+    value?: string;
+    onChange?: (v: string) => void;
+    rows?: number;
+    className?: string;
+    style?: React.CSSProperties;
+  }
+>(function Textarea({ placeholder, value, onChange, rows = 5, className, style }, ref) {
+  return (
+    <textarea
+      ref={ref}
+      placeholder={placeholder}
+      value={value ?? ""}
+      onChange={(e) => onChange?.(e.target.value)}
+      rows={rows}
+      className={cn(
+        // Mirrors Input: same surface/line/yellow-focus token trio, same font weight.
+        // `resize-none` intentional — rows prop is the declared height contract.
+        "w-full resize-none border border-line bg-surface font-medium outline-none transition-colors focus:border-yellow",
+        className,
+      )}
+      style={{
+        color: "var(--fg)",
+        padding: "12px 14px",
+        fontSize: 14,
+        lineHeight: 1.6,
+        fontFamily: "inherit",
+        ...style,
+      }}
+    />
+  );
+});
