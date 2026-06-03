@@ -208,7 +208,7 @@ describe("shapeFicha", () => {
     ).toBe(30); // the `|| 30` guard, not `?? 30`
   });
 
-  it("renders the recordatorio waText from the derived saldo + negocio", () => {
+  it("renders mensajes from the templates for the derived saldo + negocio", () => {
     const body = "Hola {nombre}, te quedan {clases} de tu {paquete} (vence {vence}). — {negocio}";
     const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, [{ id: "t1", nombre: "Recordatorio", body }], "FORGE GYM", 0);
     expect(f.mensajes).toEqual([

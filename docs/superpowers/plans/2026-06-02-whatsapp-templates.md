@@ -1028,6 +1028,13 @@ git commit -m "feat: template picker on the post-sale receipt (mensajes[] + Mens
 
 > The implementing subagent SHOULD invoke the **frontend-design** skill for the visual polish of both new components, preserving the wiring/contract.
 
+> **INTEGRATION UPDATE (post-Task-4):** the editor's body field MUST use the kit `Textarea`
+> (`src/components/forge/input.tsx`) rather than a raw `<textarea>`, so the Task-4 primitive is
+> actually used. Convert `Textarea` to `React.forwardRef<HTMLTextAreaElement, …>` (add
+> `src/components/forge/input.tsx` to this task's files) and render `<Textarea ref={bodyRef} … />`
+> for the cursor-insert token feature. Do NOT set `autoFocus` on the Textarea (it isn't Sheet-focus
+> aware; the NOMBRE `Input` keeps the autoFocus).
+
 - [ ] **Step 1: Switch the page to `listarPlantillas`**
 
 In `src/app/(app)/cuenta/page.tsx`:
