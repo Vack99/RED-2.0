@@ -2,7 +2,7 @@ import "server-only";
 
 import { z } from "zod";
 
-import { baseParaStack, calcVigenciaEnd, diasRestantes, renderPlantilla, stackPaquete } from "@/domain/rules";
+import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@/domain/rules";
 import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
@@ -10,7 +10,10 @@ import { firstName, iniciales, isTelValido } from "@/lib/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 import { requireOperator } from "./_auth";
+import { getCobro } from "./cobro";
+import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
+import { fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
 import { listarPlantillas, type MensajeDTO } from "./plantillas";
 
 /** The venta write seam's payment method — an alias for the canonical domain
@@ -163,9 +166,14 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     .single();
   if (rpcErr || !result) throw new Error("No se pudo registrar la venta");
 
-  const [{ data: perfil }, plantillas] = await Promise.all([
+  // Best-effort message context, read AFTER the sale RPC already committed. A
+  // missing cobro/paquetes only blanks a token (fmt* tolerate null/[]) — it never
+  // fails the sale result.
+  const [{ data: perfil }, plantillas, paquetes, cobro] = await Promise.all([
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
     listarPlantillas(supabase),
+    getPaquetes(supabase),
+    getCobro(supabase),
   ]);
   // Resolve the identity defaults in one place (kept off getPerfil — it's
   // cache()-wrapped and would break the injected-fake test). The recibo omits a
@@ -185,15 +193,16 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // template is rendered against the sale context so the picker can offer them all.
   const ctx: PlantillaContext = {
     nombre: firstName(nombre),
+    clases:
+      nuevoSaldo.clases === "ilimitado" ? "clases ilimitadas" : `${nuevoSaldo.clases} clases`,
     paquete: paq.nombre,
     vence: venceDisplay,
+    dias: fmtDias(diasRestantes(nuevoVence, hoy)),
+    precios: fmtPrecios(paquetes),
+    datos_pago: fmtDatosPago(cobro),
     negocio,
   };
-  const mensajes: MensajeDTO[] = plantillas.map((p) => ({
-    id: p.id,
-    nombre: p.nombre,
-    texto: renderPlantilla(p.body, ctx),
-  }));
+  const mensajes: MensajeDTO[] = renderMensajes(plantillas, ctx);
 
   return {
     folio: result.folio,

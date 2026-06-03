@@ -3,12 +3,13 @@
 // inicial at read. No I/O, no Supabase — unit-tested in derive.test.ts. The DAL
 // fetches rows and the attendance counts, then maps each through here.
 
-import { derivarEstado, diasRestantes, forfeit, renderPlantilla } from "@/domain/rules";
+import { derivarEstado, diasRestantes, forfeit } from "@/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@/domain/types";
 import { DOW, fmtShort } from "@/lib/date";
 import { fechaChihuahua, parseDay } from "@/lib/fecha";
 import { firstName, iniciales, pesos } from "@/lib/format";
 
+import { fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
 
 export interface ClienteFacts {
@@ -223,6 +224,10 @@ export function shapeFicha(
   plantillas: PlantillaDTO[],
   negocio: string,
   attendedSincePurchase: number,
+  /** The two operator-wide tokens the cliente row can't supply — the package
+   *  price list ({precios}) and how-to-pay ({datos_pago}). Optional + LAST so the
+   *  pure unit tests keep their positional call shape; the DAL fills them in. */
+  extras: { precios?: string; datos_pago?: string } = {},
 ): FichaDerivada {
   const historial: FichaAsistencia[] = asistencias
     // Today is rendered separately (the leaf re-prepends a HOY row); excluding it
@@ -283,13 +288,12 @@ export function shapeFicha(
     clases: cliente.clasesRest === "ilimitado" ? "clases ilimitadas" : `${cliente.clasesRest} clases`,
     paquete: cliente.paquete,
     vence: cliente.venceDisplay,
+    dias: fmtDias(cliente.diasRest),
+    precios: extras.precios,
+    datos_pago: extras.datos_pago,
     negocio,
   };
-  const mensajes: MensajeDTO[] = plantillas.map((p) => ({
-    id: p.id,
-    nombre: p.nombre,
-    texto: renderPlantilla(p.body, ctx),
-  }));
+  const mensajes: MensajeDTO[] = renderMensajes(plantillas, ctx);
 
   return {
     cliente,

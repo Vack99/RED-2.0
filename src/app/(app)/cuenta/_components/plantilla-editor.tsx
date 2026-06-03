@@ -11,7 +11,16 @@ import type { PlantillaContext } from "@/domain/types";
 import type { PlantillaDTO } from "@/lib/data/plantillas";
 import { actualizarPlantillaAction, crearPlantillaAction } from "../actions";
 
-const TOKENS = ["nombre", "clases", "paquete", "vence", "dias", "precios", "datos_pago", "negocio"] as const;
+const TOKENS = [
+  "nombre",
+  "clases",
+  "paquete",
+  "vence",
+  "dias",
+  "precios",
+  "datos_pago",
+  "negocio",
+] as const satisfies ReadonlyArray<keyof PlantillaContext>;
 
 /** A live-preview sample context so the operator sees how {tokens} resolve. */
 function sampleCtx(negocio: string): PlantillaContext {

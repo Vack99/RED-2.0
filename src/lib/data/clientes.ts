@@ -19,7 +19,10 @@ import {
   type FichaDerivada,
   type PaseClienteDTO,
 } from "./derive";
+import { getCobro } from "./cobro";
+import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
+import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
 import { listarPlantillas } from "./plantillas";
 import { getVecinos, type Vecinos } from "./roster-nav";
 
@@ -162,23 +165,26 @@ export const getClienteFicha = cache(
     // purchase (predating the window) is reconciled by the exact count below (Part B).
     const ventanaIso = toIsoDay(addDays(hoy, -FICHA_VENTANA_DIAS));
 
-    const [asistRes, ventasRes, vecinos, perfilRes, plantillas] = await Promise.all([
-      supabase
-        .from("asistencias")
-        .select("fecha, hora, consumio")
-        .eq("cliente_id", id)
-        .is("deleted_at", null)
-        .gte("fecha", ventanaIso)
-        .order("fecha", { ascending: false }),
-      supabase
-        .from("ventas")
-        .select("fecha, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
-        .eq("cliente_id", id)
-        .order("fecha", { ascending: false }),
-      getVecinos(id, supabase),
-      supabase.from("perfil").select("negocio").maybeSingle(),
-      listarPlantillas(supabase),
-    ]);
+    const [asistRes, ventasRes, vecinos, perfilRes, plantillas, paquetes, cobro] =
+      await Promise.all([
+        supabase
+          .from("asistencias")
+          .select("fecha, hora, consumio")
+          .eq("cliente_id", id)
+          .is("deleted_at", null)
+          .gte("fecha", ventanaIso)
+          .order("fecha", { ascending: false }),
+        supabase
+          .from("ventas")
+          .select("fecha, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
+          .eq("cliente_id", id)
+          .order("fecha", { ascending: false }),
+        getVecinos(id, supabase),
+        supabase.from("perfil").select("negocio").maybeSingle(),
+        listarPlantillas(supabase),
+        getPaquetes(supabase),
+        getCobro(supabase),
+      ]);
 
     const negocio = resolverIdentidad({
       negocio: perfilRes.data?.negocio ?? null,
@@ -223,6 +229,7 @@ export const getClienteFicha = cache(
       plantillas,
       negocio,
       attendedSincePurchase,
+      { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
     );
 
     return { ...ficha, hoyIso, vecinos };

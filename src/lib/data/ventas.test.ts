@@ -13,8 +13,13 @@ import type { SupabaseServer } from "@/lib/supabase/server";
 
 interface FakeRows {
   paquetes?: Record<string, unknown>;
+  /** The package CATALOG (getPaquetes awaits `.select().order()` → the list);
+   *  distinct from `paquetes`, the single row `crearVenta` reads via `.eq().single()`. */
+  paquetesList?: Record<string, unknown>[];
   clientes?: Record<string, unknown>;
   perfil?: Record<string, unknown> | null;
+  /** The cobro row getCobro reads via `.maybeSingle()` (null when unconfigured). */
+  cobro?: Record<string, unknown> | null;
   plantillas?: { id: string; nombre: string; body: string }[];
 }
 
@@ -57,11 +62,15 @@ function makeFake(rows: FakeRows, opts: { sub?: string | null } = {}): FakeClien
     from: (table: string) => {
       switch (table) {
         case "paquetes":
-          return builder(rows.paquetes ?? null, []);
+          // single (`.eq().single()`) = the package crearVenta is selling;
+          // list (`.order()`, awaited by getPaquetes) = the catalog.
+          return builder(rows.paquetes ?? null, rows.paquetesList ?? []);
         case "clientes":
           return builder(rows.clientes ?? null, []);
         case "perfil":
           return builder(rows.perfil ?? null, []);
+        case "cobro":
+          return builder(rows.cobro ?? null, []);
         case "plantillas":
           return builder(null, rows.plantillas ?? []);
         default:
@@ -164,5 +173,56 @@ describe("crearVenta — write orchestration (injected fake)", () => {
 
     await expect(crearVenta(input(), fake.client)).rejects.toThrow("No autenticado");
     expect(fake.rpcCalls).toHaveLength(0); // never reached the write
+  });
+
+  it("renders the recibo mensajes with the FULL token set resolved (clases/dias/precios/datos_pago)", async () => {
+    fake = makeFake({
+      paquetes: FINITO, // 8 clases, 30 días → new client saldo = 8 clases / 30 días
+      paquetesList: [
+        { id: "p1", nombre: "8 clases", vigencia_tipo: "dias", vigencia_dias: 30, precio: 800, popular: false, orden: 1 },
+        { id: "p2", nombre: "Ilimitado", vigencia_tipo: "mes", vigencia_dias: null, precio: 1200, popular: true, orden: 2 },
+      ],
+      cobro: {
+        titular: "Andrea Castro",
+        banco: "BBVA",
+        clabe: "012180001234567890",
+        tarjeta: null,
+        acepta_efectivo: true,
+        acepta_transferencia: true,
+        acepta_tarjeta: false,
+      },
+      plantillas: [
+        {
+          id: "t1",
+          nombre: "Renovación",
+          body: "Quedan {clases}, vence en {dias}.\nPrecios:\n{precios}\nPago:\n{datos_pago}",
+        },
+      ],
+    });
+
+    const res = await crearVenta(input({ mode: "new" }), fake.client);
+
+    const texto = res.mensajes[0].texto;
+    expect(texto).toContain("Quedan 8 clases");
+    expect(texto).toContain("vence en 30 días");
+    expect(texto).toContain("• 8 clases — $800");
+    expect(texto).toContain("• Ilimitado — $1,200");
+    expect(texto).toContain("BBVA");
+    expect(texto).toContain("012180001234567890");
+    // No literal placeholders survive.
+    for (const tok of ["{clases}", "{dias}", "{precios}", "{datos_pago}"]) {
+      expect(texto).not.toContain(tok);
+    }
+  });
+
+  it("does not break the recibo when cobro/paquetes are unconfigured ({datos_pago} blank)", async () => {
+    fake = makeFake({
+      paquetes: FINITO,
+      // no paquetesList, no cobro → fmtPrecios "" + fmtDatosPago("") (null cobro)
+      plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}.{datos_pago}{precios}" }],
+    });
+
+    const res = await crearVenta(input({ mode: "new" }), fake.client);
+    expect(res.mensajes[0].texto).toBe("Hola Andrea."); // empty tokens render to nothing
   });
 });
