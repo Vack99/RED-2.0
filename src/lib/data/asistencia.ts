@@ -10,22 +10,41 @@ import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 import { requireOperator } from "./_auth";
 
 /**
+ * PostgREST silently caps a single response (commonly ~1000 rows). `getMarcadas`
+ * reads the WHOLE active-attendance ledger — the day-strip + month calendar can
+ * browse ANY past month, so it must be full history, not a date window — so a single
+ * unbounded select would silently truncate once the gym passes ~1000 lifetime
+ * check-ins, dropping attendance with no error. We page through `.range()` to gather
+ * the complete ledger (mirrors respaldo's readAll* loops).
+ */
+const PAGE = 1000;
+
+/**
  * Active attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
  * Chihuahua date (ADR-0003) — the offset grid is gone.
+ *
+ * Paginated (see PAGE above) so PostgREST's per-response cap can't silently drop
+ * attendance. If check-in volume grows very large, a date-windowed read (only the
+ * months the calendar actually browses) is the cost optimization — but that would
+ * change the seam's full-history contract, so it's deliberately deferred.
  */
 export const getMarcadas = cache(
   async (client?: SupabaseServer): Promise<Record<string, string[]>> => {
     const supabase = client ?? (await createClient());
-    const { data } = await supabase
-      .from("asistencias")
-      .select("fecha, cliente_id")
-      .is("deleted_at", null);
-
-    if (!data) return {};
 
     const map: Record<string, string[]> = {};
-    for (const row of data) {
-      (map[row.fecha] ??= []).push(row.cliente_id);
+    for (let from = 0; ; from += PAGE) {
+      const { data } = await supabase
+        .from("asistencias")
+        .select("fecha, cliente_id")
+        .is("deleted_at", null)
+        .order("fecha")
+        .range(from, from + PAGE - 1);
+      const page = data ?? [];
+      for (const row of page) {
+        (map[row.fecha] ??= []).push(row.cliente_id);
+      }
+      if (page.length < PAGE) break;
     }
     return map;
   },
