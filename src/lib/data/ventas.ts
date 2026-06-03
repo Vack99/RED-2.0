@@ -13,7 +13,7 @@ import { requireOperator } from "./_auth";
 import { getCobro } from "./cobro";
 import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
-import { fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
+import { fmtClases, fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
 import { listarPlantillas, type MensajeDTO } from "./plantillas";
 
 /** The venta write seam's payment method — an alias for the canonical domain
@@ -193,8 +193,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // template is rendered against the sale context so the picker can offer them all.
   const ctx: PlantillaContext = {
     nombre: firstName(nombre),
-    clases:
-      nuevoSaldo.clases === "ilimitado" ? "clases ilimitadas" : `${nuevoSaldo.clases} clases`,
+    clases: fmtClases(nuevoSaldo.clases),
     paquete: paq.nombre,
     vence: venceDisplay,
     dias: fmtDias(diasRestantes(nuevoVence, hoy)),

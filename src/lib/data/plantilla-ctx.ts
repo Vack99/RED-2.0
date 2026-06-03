@@ -5,7 +5,7 @@
 // at each call site. Pure: no I/O, no Supabase — unit-tested in plantilla-ctx.test.ts.
 
 import { renderPlantilla } from "@/domain/rules";
-import type { PlantillaContext } from "@/domain/types";
+import type { Clases, PlantillaContext } from "@/domain/types";
 import { pesos } from "@/lib/format";
 
 import type { CobroDTO } from "./cobro";
@@ -23,6 +23,13 @@ export function renderMensajes(plantillas: PlantillaDTO[], ctx: PlantillaContext
 export function fmtDias(diasRest: number): string {
   if (diasRest <= 0) return "vencido";
   return `${diasRest} día${diasRest === 1 ? "" : "s"}`;
+}
+
+/** The {clases} token: classes-remaining as a short es-MX display string. Ilimitado
+ *  reads "clases ilimitadas"; a count always reads "{n} clases" (no singular form,
+ *  so 1 → "1 clases" — matches the prior send-site behavior). */
+export function fmtClases(clases: Clases): string {
+  return clases === "ilimitado" ? "clases ilimitadas" : `${clases} clases`;
 }
 
 /** The {precios} token: the operator's package price list, one bullet per line. */

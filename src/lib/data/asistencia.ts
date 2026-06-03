@@ -12,6 +12,9 @@ import { requireOperator } from "./_auth";
 /**
  * Active attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
  * Chihuahua date (ADR-0003) — the offset grid is gone.
+ *
+ * @returns the date→clienteIds map · best-effort: returns {} on error (error is
+ * not destructured, so any failure reads as "no attendance").
  */
 export const getMarcadas = cache(
   async (client?: SupabaseServer): Promise<Record<string, string[]>> => {
@@ -84,6 +87,8 @@ export interface AsistenciaHoy {
  * Today's asistencia rows joined to clientes, ordered by time (most recent
  * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
  * returns DTOs only (no raw rows cross the boundary, ADR-0001).
+ *
+ * @returns the DTO list (empty when no rows) · throws on DB error.
  */
 export async function getAsistenciasHoy(client?: SupabaseServer): Promise<AsistenciaHoy[]> {
   const supabase = client ?? (await createClient());
