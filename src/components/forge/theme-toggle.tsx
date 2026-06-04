@@ -21,7 +21,7 @@ export function ThemeToggle() {
     <button
       onClick={() => setTheme(isLight ? "dark" : "light")}
       aria-label={isLight ? "Cambiar a tema oscuro" : "Cambiar a tema claro"}
-      className="flex items-center justify-center border border-line bg-surface"
+      className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface"
       style={{ width: 38, height: 38, padding: 0, cursor: "pointer" }}
     >
       {mounted && <Icon name={isLight ? "moon" : "sun"} size={16} color="var(--gold)" />}

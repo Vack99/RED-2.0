@@ -48,7 +48,7 @@ export function InicioScreen({
         <ForgeLockup size={12} />
         <button
           onClick={() => router.push("/cuenta")}
-          className="border border-line bg-surface font-extrabold"
+          className="forge-hit forge-pressable border border-line bg-surface font-extrabold"
           style={{ width: 36, height: 36, padding: 0, color: "var(--silver)", fontSize: 11, letterSpacing: 0.6, cursor: "pointer" }}
         >
           JC
@@ -147,7 +147,7 @@ export function InicioScreen({
           <button
             key={`${row.cliente_id}-${i}`}
             onClick={() => router.push(`/clientes/${row.cliente_id}`)}
-            className="flex w-full items-center text-left"
+            className="forge-pressable flex w-full items-center text-left"
             style={{
               gap: 14,
               padding: "12px 22px",
@@ -200,7 +200,7 @@ function QuickAction({
   return (
     <button
       onClick={onClick}
-      className="flex flex-col border border-line bg-surface text-left"
+      className="forge-pressable flex flex-col border border-line bg-surface text-left"
       style={{ padding: 16, gap: 14, cursor: "pointer", color: "var(--fg)" }}
     >
       <Icon name={icon} size={22} color="var(--gold)" />

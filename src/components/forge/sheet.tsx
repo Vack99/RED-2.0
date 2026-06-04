@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
+import { keyboardInset } from "@/lib/viewport";
 import { SheetFocusContext } from "./sheet-focus-context";
 
 /**
@@ -45,6 +46,10 @@ export function Sheet({
 }) {
   const [mounted, setMounted] = React.useState(open);
   const [shown, setShown] = React.useState(false);
+  // Soft-keyboard inset (px the keyboard covers at the viewport bottom) + the
+  // visual-viewport height, so the panel can sit ABOVE the keyboard and cap its
+  // height to the visible area instead of hiding fields/commit button behind it.
+  const [kb, setKb] = React.useState({ inset: 0, vvHeight: 0 });
   const panelRef = React.useRef<HTMLDivElement | null>(null);
   // The element that had focus when the sheet opened, so we can restore it on close.
   const restoreFocusRef = React.useRef<HTMLElement | null>(null);
@@ -93,6 +98,35 @@ export function Sheet({
       scroller.style.overflow = prevOverflow;
     };
   }, [mounted]);
+
+  // Track the soft keyboard via the visual viewport while open. iOS/Android
+  // shrink the visual (not layout) viewport, so a `bottom: 0` panel would sit
+  // behind the keyboard; we read the overlap and lift the panel above it.
+  // Listeners only — initial inset 0 is correct because the keyboard is down at
+  // open time; it raises on field focus, which fires `resize`.
+  React.useEffect(() => {
+    if (!mounted || !open) return;
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () =>
+      setKb({ inset: keyboardInset(window.innerHeight, { height: vv.height, offsetTop: vv.offsetTop }), vvHeight: vv.height });
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setKb({ inset: 0, vvHeight: 0 });
+    };
+  }, [mounted, open]);
+
+  // When the keyboard is up, bring a newly-focused field into the visible panel
+  // area. Gated on inset>0 so it never fights the open-slide's preventScroll
+  // first-focus (keyboard is still down then).
+  const onFieldFocus = (e: React.FocusEvent) => {
+    if (kb.inset <= 0) return;
+    const el = e.target as HTMLElement;
+    requestAnimationFrame(() => el?.scrollIntoView?.({ block: "center", behavior: "smooth" }));
+  };
 
   // Capture the trigger on open so focus can return to it on close.
   React.useEffect(() => {
@@ -158,8 +192,9 @@ export function Sheet({
         className="absolute inset-0 transition-[background] duration-200"
         style={{ background: shown ? "var(--scrim)" : "transparent" }}
       />
-      {/* Match the app shell: full-bleed on phones, centered 440 column on sm+ (desktop frame). */}
-      <div className="absolute inset-x-0 bottom-0 mx-auto w-full sm:max-w-[440px]">
+      {/* Match the app shell: full-bleed on phones, centered 440 column on sm+ (desktop frame).
+          `bottom` follows the soft keyboard so the panel rides above it. */}
+      <div className="absolute inset-x-0 mx-auto w-full sm:max-w-[440px]" style={{ bottom: kb.inset }}>
         <div
           ref={panelRef}
           role="dialog"
@@ -168,7 +203,8 @@ export function Sheet({
           style={{
             borderTopLeftRadius: 26,
             borderTopRightRadius: 26,
-            maxHeight,
+            // Cap to the space above the keyboard when it's up, so the inner scroll can reach every field + the commit button.
+            maxHeight: kb.inset > 0 ? `${Math.max(160, kb.vvHeight - 8)}px` : maxHeight,
             transform: shown ? "translateY(0)" : "translateY(100%)",
             transition: "transform 320ms cubic-bezier(.32,.72,0,1)",
             paddingBottom: 24,
@@ -181,7 +217,7 @@ export function Sheet({
               `[data-autofocus]` after the slide), so they don't self-focus on
               mount while still below the viewport. */}
           <SheetFocusContext.Provider value={true}>
-            <div className="forge-scroll overflow-auto">{children}</div>
+            <div className="forge-scroll overflow-auto" onFocusCapture={onFieldFocus}>{children}</div>
           </SheetFocusContext.Provider>
         </div>
       </div>

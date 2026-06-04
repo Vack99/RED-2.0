@@ -226,7 +226,7 @@ export function CuentaScreen({
           <button
             key={p.id}
             onClick={() => proximamente("Editor de paquetes")}
-            className="flex w-full items-center justify-between border border-line bg-surface text-left"
+            className="forge-pressable flex w-full items-center justify-between border border-line bg-surface text-left"
             style={{
               gap: 12,
               padding: "14px 16px",
@@ -260,7 +260,7 @@ export function CuentaScreen({
           <button
             key={row.label}
             onClick={row.onClick}
-            className="flex w-full items-center border border-line bg-surface text-left"
+            className="forge-pressable flex w-full items-center border border-line bg-surface text-left"
             style={{
               gap: 14,
               padding: "14px 16px",

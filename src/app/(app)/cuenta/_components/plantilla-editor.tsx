@@ -97,7 +97,7 @@ export function PlantillaEditor({
         <button
           onClick={onCancel}
           aria-label="Atrás"
-          className="flex items-center justify-center border border-line bg-surface"
+          className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface"
           style={{ width: 34, height: 34, padding: 0, cursor: "pointer" }}
         >
           <Icon name="back" size={14} color="var(--muted)" />
@@ -128,9 +128,9 @@ export function PlantillaEditor({
               <button
                 key={t}
                 onClick={() => insertToken(t)}
-                className="font-semibold transition-colors hover:border-yellow"
+                className="forge-pressable font-semibold transition-colors hover:border-yellow"
                 style={{
-                  padding: "5px 9px",
+                  padding: "11px 12px",
                   fontSize: 11,
                   letterSpacing: 0.3,
                   border: "1px solid var(--line)",

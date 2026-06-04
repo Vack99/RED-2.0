@@ -33,14 +33,15 @@ export function Recibo({
   const perf = "repeating-linear-gradient(to right, var(--canvas) 0 4px, transparent 4px 10px)";
 
   return (
-    <div className="flex h-full flex-col bg-canvas">
+    <div className="bg-canvas">
       <div className="flex items-center justify-between" style={{ padding: "14px 16px 8px" }}>
         <div style={{ width: 56 }} />
         <Eyebrow color="var(--gold)">VENTA CONFIRMADA</Eyebrow>
         <button onClick={onClose} className="font-bold" style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer" }}>CERRAR</button>
       </div>
 
-      <div className="forge-scroll flex-1 overflow-auto" style={{ padding: "12px 0 24px" }}>
+      {/* Body — flows into the shell's <main> scroller (no nested scroll container) */}
+      <div style={{ padding: "12px 0 24px" }}>
         <div className="flex justify-center" style={{ padding: "20px 22px 12px" }}>
           <div
             className="flex items-center justify-center"

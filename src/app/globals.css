@@ -160,6 +160,33 @@ body {
   display: none;
 }
 
+/* Touch press feedback for hand-rolled tappables (the Button primitive carries
+   its own active:scale). A subtle compression confirms a tap on touch, where
+   :hover never fires. Reduced-motion users get the instant version below. */
+.forge-pressable {
+  transition: transform 120ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.forge-pressable:active {
+  transform: scale(0.985);
+}
+
+/* Expand a small control's touch target to >=44px WITHOUT changing its visual
+   size: a transparent, centered overlay that captures the tap. Apply to compact
+   icon buttons; on tightly-adjacent buttons widen their spacing too, or the
+   overlapping hit areas steal each other's taps. */
+.forge-hit {
+  position: relative;
+}
+.forge-hit::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max(100%, 44px);
+  height: max(100%, 44px);
+  transform: translate(-50%, -50%);
+}
+
 /* fix textarea font inheritance (WhatsApp bubble composer, later) */
 textarea {
   font-family: inherit;

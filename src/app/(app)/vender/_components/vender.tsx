@@ -162,7 +162,7 @@ export function VenderScreen({
   if (!metodo) missing.push("método");
 
   return (
-    <div className="flex h-full flex-col bg-canvas">
+    <div className="bg-canvas">
       <div className="flex items-center justify-between" style={{ padding: "14px 22px 4px" }}>
         <Eyebrow>NUEVA VENTA</Eyebrow>
         <div style={{ width: 38 }} />
@@ -175,8 +175,8 @@ export function VenderScreen({
         </H1>
       </div>
 
-      {/* Accordion */}
-      <div className="forge-scroll flex-1 overflow-auto">
+      {/* Accordion — flows into the shell's <main> scroller (no nested scroll container) */}
+      <div>
         <AccordionSection label="CLIENTE" summary={clienteSummary} emptyHint="Agregar cliente" complete={clienteValid} open={openSection === "cliente"} onToggle={() => toggle("cliente")}>
           <ClienteEditor mode={mode} setMode={handleSetMode} nuevo={nuevo} setNuevo={setNuevo} existing={existing} openPicker={() => setPickerOpen(true)} onMaybeValid={maybeAdvanceCliente} />
         </AccordionSection>
@@ -192,8 +192,8 @@ export function VenderScreen({
         <div style={{ height: 28 }} />
       </div>
 
-      {/* Footer */}
-      <div className="bg-canvas" style={{ borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
+      {/* Footer — sticky to the bottom of <main> so COBRAR stays reachable while content scrolls behind it */}
+      <div className="bg-canvas" style={{ position: "sticky", bottom: 0, zIndex: 1, borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
         <div className="flex items-baseline justify-between" style={{ marginBottom: 14 }}>
           <Eyebrow>TOTAL</Eyebrow>
           <Tnum className="font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
@@ -233,7 +233,7 @@ export function VenderScreen({
             <button
               key={cc.id}
               onClick={() => { setClientId(cc.id); setMode("existing"); setPickerOpen(false); setPickerQuery(""); maybeAdvanceCliente(true); }}
-              className="flex w-full items-center text-left"
+              className="forge-pressable flex w-full items-center text-left"
               style={{ gap: 12, padding: "14px 22px", background: cc.id === clientId ? "var(--surface)" : "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }}
             >
               <Avatar initial={cc.inicial} size={36} />
@@ -377,7 +377,7 @@ function PaqueteEditor({
           <button
             key={p.id}
             onClick={() => setSel(p.id)}
-            className="flex items-center justify-between text-left"
+            className="forge-pressable flex items-center justify-between text-left"
             style={{ padding: 18, background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: "var(--fg)", cursor: "pointer", transition: "border-color 140ms ease" }}
           >
             <div className="flex flex-col" style={{ gap: 4 }}>
@@ -408,7 +408,7 @@ function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo:
             <button
               key={o.k}
               onClick={() => setMetodo(o.k)}
-              className="flex flex-col items-center"
+              className="forge-pressable flex flex-col items-center"
               style={{ padding: "18px 6px", background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: on ? "var(--yellow)" : "var(--fg)", cursor: "pointer", gap: 8, transition: "border-color 140ms ease" }}
             >
               <Icon name={o.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
@@ -419,11 +419,11 @@ function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo:
       </div>
       <button
         onClick={() => setMetodo(porPagar ? "Efectivo" : "Por pagar")}
-        className="flex items-center uppercase font-bold"
-        style={{ marginTop: 16, padding: 0, background: "transparent", border: "none", color: porPagar ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer", gap: 6 }}
+        className="forge-pressable flex items-center uppercase font-bold"
+        style={{ marginTop: 16, padding: "12px 0", background: "transparent", border: "none", color: porPagar ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer", gap: 8 }}
       >
-        <span className="flex items-center justify-center" style={{ width: 14, height: 14, border: `1.5px solid ${porPagar ? "var(--yellow)" : "var(--line)"}`, background: porPagar ? "var(--yellow)" : "transparent" }}>
-          {porPagar && <Icon name="check" size={9} color="var(--ink)" />}
+        <span className="flex items-center justify-center" style={{ width: 20, height: 20, border: `1.5px solid ${porPagar ? "var(--yellow)" : "var(--line)"}`, background: porPagar ? "var(--yellow)" : "transparent" }}>
+          {porPagar && <Icon name="check" size={12} color="var(--ink)" />}
         </span>
         Registrar como por pagar
       </button>

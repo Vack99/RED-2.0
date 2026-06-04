@@ -20,7 +20,9 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  // No `maximumScale` — pinning it to 1 disables pinch-zoom (WCAG 1.4.4/1.4.10).
+  // Modern mobile browsers no longer impose the legacy double-tap zoom delay, so
+  // there's no reason to suppress user scaling.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#f4f2ed" },
     { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },

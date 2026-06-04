@@ -302,7 +302,7 @@ export function AppBar({
         <button
           onClick={onBack}
           aria-label="Atrás"
-          className="flex items-center justify-center border border-line bg-surface"
+          className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface"
           style={{ width: 38, height: 38, padding: 0, cursor: "pointer", color: "var(--fg)" }}
         >
           <Icon name="back" size={18} color="var(--fg)" />

@@ -61,7 +61,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const clearAll = () => { setRenovar(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
 
   return (
-    <div className="flex h-full flex-col">
+    <div>
       <AppBar
         center="DIRECTORIO"
         trailing={
@@ -144,7 +144,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
         <div className="flex items-center" style={{ gap: 10 }}>
           <Eyebrow style={{ fontSize: 10 }}>{list.length} {list.length === 1 ? "CLIENTE" : "CLIENTES"}</Eyebrow>
           {anyFilter && (
-            <button onClick={clearAll} className="uppercase font-bold" style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0, color: "var(--gold)", fontSize: 10, letterSpacing: 0.8 }}>
+            <button onClick={clearAll} className="forge-pressable uppercase font-bold" style={{ background: "transparent", border: "none", cursor: "pointer", padding: "8px 6px", margin: "-8px -6px", color: "var(--gold)", fontSize: 10, letterSpacing: 0.8 }}>
               Limpiar
             </button>
           )}
@@ -155,16 +155,16 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
             <button
               key={s.k}
               onClick={() => setSort(s.k)}
-              style={{ background: "transparent", border: "none", padding: "4px 6px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, borderBottom: sort === s.k ? "1.5px solid var(--yellow)" : "1.5px solid transparent", marginLeft: i === 0 ? 0 : 4 }}
+              style={{ background: "transparent", border: "none", padding: "10px 8px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, marginLeft: i === 0 ? 0 : 8 }}
             >
-              {s.l}
+              <span style={{ borderBottom: sort === s.k ? "1.5px solid var(--yellow)" : "1.5px solid transparent", paddingBottom: 2 }}>{s.l}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* List */}
-      <div className="forge-scroll flex-1 overflow-auto" style={{ paddingBottom: 12 }}>
+      {/* List — flows into the shell's <main> scroller (no nested scroll container) */}
+      <div style={{ paddingBottom: 12 }}>
         {list.length === 0 && (
           <div style={{ padding: "54px 24px", textAlign: "center" }}>
             <Icon name={renovar ? "check" : "users"} size={28} color="var(--muted-soft)" />
@@ -181,7 +181,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
             <button
               key={c.id}
               onClick={() => router.push(`/clientes/${c.id}`)}
-              className="relative flex w-full items-center text-left"
+              className="forge-pressable relative flex w-full items-center text-left"
               style={{ gap: 14, padding: "14px 22px", background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer" }}
             >
               <span className="absolute" style={{ left: 0, top: 0, bottom: 0, width: 3, background: showBar ? col : "transparent" }} />
@@ -242,8 +242,8 @@ function FacetRow({
             <button
               key={String(o.v)}
               onClick={() => onChange(on && o.v !== null ? null : o.v)}
-              className="flex-1 font-bold"
-              style={{ padding: "8px 4px", background: on ? "var(--fg)" : "transparent", border: `1px solid ${on ? "var(--fg)" : "var(--line)"}`, color: on ? "var(--canvas)" : "var(--fg)", fontSize: 11, letterSpacing: 0.3, cursor: "pointer", whiteSpace: "nowrap" }}
+              className="forge-pressable flex-1 font-bold"
+              style={{ minHeight: 44, padding: "8px 4px", background: on ? "var(--fg)" : "transparent", border: `1px solid ${on ? "var(--fg)" : "var(--line)"}`, color: on ? "var(--canvas)" : "var(--fg)", fontSize: 11, letterSpacing: 0.3, cursor: "pointer", whiteSpace: "nowrap" }}
             >
               {o.l}
             </button>
