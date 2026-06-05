@@ -200,13 +200,20 @@ function DayStrip({
 }) {
   const scroller = React.useRef<HTMLDivElement>(null);
   const selRef = React.useRef<HTMLButtonElement>(null);
+  const centered = React.useRef(false);
 
   const selKey = isoDay(selDate);
-  // Park on / center the selected day (today by default) on mount + change.
-  // Smooth re-center, but instant for reduced-motion users (scrollIntoView's
+  // Center the selected day (today by default). Instant on first mount so
+  // entering the screen doesn't animate a full-width scroll; smooth thereafter
+  // on a user day-pick (always instant for reduced-motion users — scrollIntoView's
   // behavior is JS-driven, so the global CSS reduced-motion block can't reach it).
   React.useEffect(() => {
-    selRef.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: scrollBehavior() });
+    selRef.current?.scrollIntoView({
+      inline: "center",
+      block: "nearest",
+      behavior: centered.current ? scrollBehavior() : "auto",
+    });
+    centered.current = true;
   }, [selKey]);
 
   // Desktop click-drag to pan.
