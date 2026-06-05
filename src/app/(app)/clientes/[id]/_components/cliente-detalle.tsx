@@ -105,7 +105,13 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   return (
     <div>
       <AppBar
-        onBack={() => router.push("/clientes")}
+        onBack={() => {
+          // Back in history when we arrived from within the app (restores the
+          // roster's scroll position and animates as a pop); otherwise — deep
+          // link, refresh — fall back to the roster.
+          if (window.history.length > 1) router.back();
+          else router.push("/clientes");
+        }}
         center="CLIENTE"
         trailing={
           <button

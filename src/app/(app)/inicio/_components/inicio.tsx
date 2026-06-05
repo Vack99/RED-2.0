@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ForgeLockup } from "@/components/forge/brand";
 import { CountUp } from "@/components/forge/count-up";
@@ -144,9 +145,10 @@ export function InicioScreen({
       <SectionHeader trailing="HOY">ÚLTIMAS ASISTENCIAS</SectionHeader>
       <div>
         {recientes.map((row, i) => (
-          <button
+          <Link
             key={`${row.cliente_id}-${i}`}
-            onClick={() => router.push(`/clientes/${row.cliente_id}`)}
+            href={`/clientes/${row.cliente_id}`}
+            prefetch
             className="forge-pressable flex w-full items-center text-left"
             style={{
               gap: 14,
@@ -169,7 +171,7 @@ export function InicioScreen({
             <div className="flex items-center justify-center" style={{ width: 22, height: 22, background: "var(--green-soft)" }}>
               <Icon name="check" size={12} color="var(--green)" />
             </div>
-          </button>
+          </Link>
         ))}
         {recientes.length === 0 && (
           <div

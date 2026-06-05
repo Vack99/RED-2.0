@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "@/components/forge/icon";
 import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
 import { resumirRoster, urgenciaCliente } from "@/domain/rules";
@@ -24,7 +24,6 @@ function urgencyColor(nivel: NivelUrgencia) {
 }
 
 export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
-  const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [showFilters, setShowFilters] = React.useState(false);
   const [renovar, setRenovar] = React.useState(false);
@@ -65,14 +64,15 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
       <AppBar
         center="DIRECTORIO"
         trailing={
-          <button
-            onClick={() => router.push("/vender")}
+          <Link
+            href="/vender"
+            prefetch
             aria-label="Nuevo cliente"
             className="flex items-center justify-center"
             style={{ width: 38, height: 38, background: "var(--yellow)", border: "none", cursor: "pointer", padding: 0 }}
           >
             <Icon name="plus" size={18} color="var(--ink)" />
-          </button>
+          </Link>
         }
       />
 
@@ -178,9 +178,10 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
           const clsLabel = c.clasesRestLabel;
           const bindingIsDias = u.vinculante === "dias";
           return (
-            <button
+            <Link
               key={c.id}
-              onClick={() => router.push(`/clientes/${c.id}`)}
+              href={`/clientes/${c.id}`}
+              prefetch
               className="forge-pressable relative flex w-full items-center text-left"
               style={{ gap: 14, padding: "14px 22px", background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer" }}
             >
@@ -213,7 +214,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
                   </>
                 )}
               </div>
-            </button>
+            </Link>
           );
         })}
       </div>
