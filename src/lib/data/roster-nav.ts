@@ -2,6 +2,9 @@ import "server-only";
 
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
+/** PostgREST silently caps an un-ranged response at ~1000 rows; page through it. */
+const PAGE = 1000;
+
 /**
  * Prev/next neighbors for the ficha's swipe navigation.
  *
@@ -37,10 +40,23 @@ export function vecinosDe(orderedIds: string[], targetId: string): Vecinos {
 
 /**
  * The ficha's swipe neighbors for `targetId`, in the stable browse-all name
- * order. Fetches the ordered id roster (the I/O part) and defers to `vecinosDe`.
+ * order. Pages through the ordered id roster (the I/O part) — like `getMarcadas`,
+ * the `.range()` loop defeats PostgREST's ~1000-row response cap, so neighbors stay
+ * correct past 1000 clients (an un-paginated read silently truncates the roster and
+ * would lose neighbors with no error) — then defers to the pure `vecinosDe`.
  */
 export async function getVecinos(targetId: string, client?: SupabaseServer): Promise<Vecinos> {
   const supabase = client ?? (await createClient());
-  const { data } = await supabase.from("clientes").select("id").order("nombre");
-  return vecinosDe((data ?? []).map((x) => x.id), targetId);
+  const ids: string[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await supabase
+      .from("clientes")
+      .select("id")
+      .order("nombre")
+      .range(from, from + PAGE - 1);
+    const page = data ?? [];
+    ids.push(...page.map((x) => x.id));
+    if (page.length < PAGE) break;
+  }
+  return vecinosDe(ids, targetId);
 }
