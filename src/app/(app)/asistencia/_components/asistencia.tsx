@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Icon } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
@@ -10,10 +10,11 @@ import type { PaseClienteDTO } from "@/lib/data/clientes";
 import { addDays, DOW, fmtFull, isoDay, MON, sameDay } from "@/lib/date";
 import { parseDay } from "@/lib/fecha";
 import { firstName } from "@/lib/format";
+import { scrollBehavior } from "@/lib/motion";
 import { togglePaseAction } from "../actions";
+import { setMarcada, type Marcadas } from "./marcadas";
 
 const DAYS_BACK = 104;
-type Marcadas = Record<string, string[]>;
 
 export function AsistenciaScreen({
   clientes,
@@ -24,7 +25,6 @@ export function AsistenciaScreen({
   marcadas: Marcadas;
   hoyIso: string;
 }) {
-  const router = useRouter();
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
 
   const [marcadas, setMarcadas] = React.useState<Marcadas>(marcadasInicial);
@@ -43,16 +43,26 @@ export function AsistenciaScreen({
     c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
+  // Ids whose toggle is mid-flight, keyed by `${iso}:${id}`. A second tap on the
+  // same row before the server answers is ignored, so the already-applied
+  // optimistic flip stands instead of racing a competing action.
+  const inFlight = React.useRef<Set<string>>(new Set());
+
   const toggle = React.useCallback(
     async (c: PaseClienteDTO) => {
+      const key = `${selIso}:${c.id}`;
+      if (inFlight.current.has(key)) return;
+      inFlight.current.add(key);
+
+      // Flip optimistically on this tick so the bounce, tint, avatar fill and
+      // counts fire instantly; the server result reconciles below.
+      const willBePresent = !(marcadas[selIso] ?? []).includes(c.id);
+      setMarcadas((m) => setMarcada(m, selIso, c.id, willBePresent));
+
       try {
         const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
-        setMarcadas((m) => {
-          const cur = new Set(m[selIso] ?? []);
-          if (res.present) cur.add(c.id);
-          else cur.delete(c.id);
-          return { ...m, [selIso]: [...cur] };
-        });
+        // Reconcile against the authoritative result (usually a no-op).
+        setMarcadas((m) => setMarcada(m, selIso, c.id, res.present));
         if (res.present) {
           forgeToast({
             tone: "success",
@@ -61,13 +71,15 @@ export function AsistenciaScreen({
           });
         }
       } catch {
+        // Roll the optimistic flip back to its pre-tap value.
+        setMarcadas((m) => setMarcada(m, selIso, c.id, !willBePresent));
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
+      } finally {
+        inFlight.current.delete(key);
       }
     },
-    [selIso],
+    [selIso, marcadas],
   );
-
-  const openCliente = React.useCallback((id: string) => router.push(`/clientes/${id}`), [router]);
 
   return (
     <div>
@@ -117,15 +129,16 @@ export function AsistenciaScreen({
 
       {/* Search + add */}
       <div className="flex items-stretch" style={{ padding: "16px 16px 4px", gap: 8 }}>
-        <Input icon="search" placeholder="Buscar cliente…" value={query} onChange={setQuery} style={{ flex: 1 }} />
-        <button
-          onClick={() => router.push("/vender")}
+        <Input icon="search" placeholder="Buscar cliente…" value={query} onChange={setQuery} className="forge-pressable" style={{ flex: 1 }} />
+        <Link
+          href="/vender"
+          prefetch
           aria-label="Registrar nuevo"
-          className="flex shrink-0 items-center justify-center"
+          className="forge-pressable flex shrink-0 items-center justify-center"
           style={{ width: 50, background: "var(--yellow)", color: "var(--ink)", cursor: "pointer" }}
         >
           <Icon name="plus" size={20} color="var(--ink)" />
-        </button>
+        </Link>
       </div>
 
       {/* Client list */}
@@ -137,7 +150,6 @@ export function AsistenciaScreen({
             present={presentes.includes(c.id)}
             first={i === 0}
             onToggle={toggle}
-            onOpen={openCliente}
           />
         ))}
         {filtered.length === 0 && (
@@ -180,8 +192,10 @@ function DayStrip({
 
   const selKey = isoDay(selDate);
   // Park on / center the selected day (today by default) on mount + change.
+  // Smooth re-center, but instant for reduced-motion users (scrollIntoView's
+  // behavior is JS-driven, so the global CSS reduced-motion block can't reach it).
   React.useEffect(() => {
-    selRef.current?.scrollIntoView({ inline: "center", block: "nearest" });
+    selRef.current?.scrollIntoView({ inline: "center", block: "nearest", behavior: scrollBehavior() });
   }, [selKey]);
 
   // Desktop click-drag to pan.
@@ -224,6 +238,7 @@ function DayStrip({
           border: `1px solid ${isSel ? "var(--yellow)" : isToday ? "var(--yellow-edge)" : "var(--line)"}`,
           color: isSel ? "var(--ink)" : "var(--fg)",
           cursor: "pointer",
+          transition: "background-color 150ms cubic-bezier(.32,.72,0,1), border-color 150ms cubic-bezier(.32,.72,0,1)",
         }}
       >
         <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.6, color: isSel ? "var(--ink)" : "var(--muted)" }}>{DOW[d.getDay()]}</span>
@@ -253,13 +268,11 @@ const PaseRow = React.memo(function PaseRow({
   present,
   first,
   onToggle,
-  onOpen,
 }: {
   cliente: PaseClienteDTO;
   present: boolean;
   first: boolean;
   onToggle: (c: PaseClienteDTO) => void;
-  onOpen: (id: string) => void;
 }) {
   const c = cliente;
   return (
@@ -273,14 +286,15 @@ const PaseRow = React.memo(function PaseRow({
         borderBottom: "1px solid var(--line)",
         cursor: "pointer",
         background: present ? "var(--yellow-soft)" : "transparent",
+        transition: "background-color 180ms cubic-bezier(.32,.72,0,1)",
       }}
     >
       <Avatar initial={c.inicial} size={40} accent={present} />
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onOpen(c.id);
-        }}
+      <Link
+        href={`/clientes/${c.id}`}
+        prefetch
+        // Stop the tap bubbling to the row, which would also toggle attendance.
+        onClick={(e) => e.stopPropagation()}
         className="min-w-0 flex-1 text-left"
         style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--fg)" }}
       >
@@ -289,19 +303,32 @@ const PaseRow = React.memo(function PaseRow({
           {c.paquete} · {c.clasesLabel}
           {c.porVencer && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
         </div>
-      </button>
+      </Link>
       <div
-        key={present ? "on" : "off"}
         className="flex shrink-0 items-center justify-center"
         style={{
           width: 28,
           height: 28,
           background: present ? "var(--yellow)" : "transparent",
           border: `1.5px solid ${present ? "var(--yellow)" : "var(--muted-soft)"}`,
-          animation: present ? "forge-pop 280ms cubic-bezier(.32,.72,0,1)" : "none",
+          transition: "background-color 180ms cubic-bezier(.32,.72,0,1), border-color 180ms cubic-bezier(.32,.72,0,1)",
         }}
       >
-        {present && <Icon name="check" size={16} color="var(--ink)" />}
+        {/* Check mark scales/fades both ways so uncheck mirrors check (forge-pop
+            on entry; a symmetric scale-down + fade on exit). */}
+        <span
+          aria-hidden
+          className="flex items-center justify-center"
+          style={{
+            transformOrigin: "center",
+            transform: present ? "scale(1)" : "scale(0.4)",
+            opacity: present ? 1 : 0,
+            animation: present ? "forge-pop 280ms cubic-bezier(.32,.72,0,1)" : "none",
+            transition: "transform 160ms cubic-bezier(.32,.72,0,1), opacity 160ms cubic-bezier(.32,.72,0,1)",
+          }}
+        >
+          <Icon name="check" size={16} color="var(--ink)" />
+        </span>
       </div>
     </div>
   );
@@ -384,6 +411,7 @@ function PaseCalendar({
                 border: `1px solid ${isSel ? "var(--yellow)" : isToday ? "var(--yellow-edge)" : "var(--line)"}`,
                 color: isSel ? "var(--ink)" : future ? "var(--muted-soft)" : "var(--fg)",
                 cursor: future ? "default" : "pointer",
+                transition: "background-color 150ms cubic-bezier(.32,.72,0,1), border-color 150ms cubic-bezier(.32,.72,0,1)",
               }}
             >
               <Tnum style={{ fontSize: 14, fontWeight: 700 }}>{d.getDate()}</Tnum>
@@ -405,7 +433,7 @@ function PaseCalendar({
         </div>
         <button
           onClick={() => onPick(hoy)}
-          className="uppercase font-extrabold"
+          className="forge-pressable uppercase font-extrabold"
           style={{ padding: "10px 16px", background: "var(--yellow)", color: "var(--ink)", fontSize: 12, letterSpacing: 1, cursor: "pointer" }}
         >
           HOY

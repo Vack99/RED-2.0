@@ -161,15 +161,21 @@ export function Avatar({
 }) {
   return (
     <div
-      className={cn("flex items-center justify-center font-extrabold", !accent && "border border-line", className)}
+      className={cn("flex items-center justify-center font-extrabold", className)}
       style={{
         width: size,
         height: size,
         flexShrink: 0,
+        // A constant 1px border (transparent when accented) keeps the box the
+        // same size in both states, so toggling `accent` no longer shifts it by
+        // 1px. Colors ease so the accent fill/text swap isn't a hard cut.
+        border: `1px solid ${accent ? "transparent" : "var(--line)"}`,
         background: accent ? "var(--yellow)" : "var(--surface)",
         color: accent ? "var(--ink)" : "var(--fg)",
         fontSize: size * 0.32,
         letterSpacing: 0.5,
+        transition:
+          "background-color 180ms cubic-bezier(.32,.72,0,1), color 180ms cubic-bezier(.32,.72,0,1), border-color 180ms cubic-bezier(.32,.72,0,1)",
         ...style,
       }}
     >
