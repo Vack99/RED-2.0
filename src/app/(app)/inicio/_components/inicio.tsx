@@ -10,6 +10,7 @@ import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@/compon
 import type { ResumenMes } from "@/domain/types";
 import type { AsistenciaHoy } from "@/lib/data/asistencia";
 import { pesos } from "@/lib/format";
+import { markInAppNav } from "@/lib/nav";
 
 const SPARK_FLOOR = 0.06;
 
@@ -109,7 +110,7 @@ export function InicioScreen({
                 height: "100%",
                 transform: `scaleY(${sparkGrown ? Math.max(SPARK_FLOOR, v / maxSpark) : SPARK_FLOOR})`,
                 transformOrigin: "bottom",
-                transition: "transform 300ms ease",
+                transition: "transform 300ms cubic-bezier(.32,.72,0,1)",
                 background: i === asistenciasSemana.length - 1 ? "var(--yellow)" : "var(--muted-soft)",
               }}
             />
@@ -163,7 +164,10 @@ export function InicioScreen({
           <Link
             key={`${row.cliente_id}-${i}`}
             href={`/clientes/${row.cliente_id}`}
-            prefetch
+            // Arm the in-app breadcrumb so the ficha back returns here (see lib/nav).
+            onClick={markInAppNav}
+            // Default 'auto' prefetch (not explicit full): same ~7-call ficha
+            // route as the roster; loading.tsx covers the swap. (See clientes.tsx.)
             className="forge-pressable flex w-full items-center text-left"
             style={{
               gap: 14,

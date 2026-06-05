@@ -8,6 +8,7 @@ import { useFlip } from "@/components/forge/use-flip";
 import { resumirRoster, urgenciaCliente } from "@/domain/rules";
 import type { NivelUrgencia } from "@/domain/types";
 import type { ClienteDerivado } from "@/lib/data/derive";
+import { markInAppNav } from "@/lib/nav";
 
 type Sort = "dias" | "nombre" | "asist";
 
@@ -61,7 +62,11 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const clearAll = () => { setRenovar(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
 
   // FLIP: animate rows to their new spot when the order/contents change.
-  const flipRow = useFlip([sort, renovar, diasMax, clasesMax, query]);
+  // `showFilters` is included not because it reorders rows, but because toggling
+  // the filter panel shifts every row vertically; without re-measuring on that
+  // commit, the next real reorder would compute deltas from stale pre-panel
+  // rects and slide every row a spurious ~panel-height (FLIP fighting layout).
+  const flipRow = useFlip([sort, renovar, diasMax, clasesMax, query, showFilters]);
 
   return (
     <div>
@@ -199,7 +204,15 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
               key={c.id}
               ref={flipRow(c.id)}
               href={`/clientes/${c.id}`}
-              prefetch
+              // Arm the in-app breadcrumb so the ficha's back button returns here
+              // (restoring scroll) instead of risking a leave-the-app back.
+              onClick={markInAppNav}
+              // No explicit `prefetch`: this roster can be long and `prefetch`
+              // (=== true) opts into a FULL-route prefetch of every in-viewport
+              // row, each running getClienteFicha's ~7-call fan-out. The default
+              // 'auto' partial-prefetch plus loading.tsx already make the tap
+              // feel instant. Explicit prefetch is reserved for the singular
+              // header CTA below.
               className="forge-pressable relative flex w-full items-center text-left"
               style={{ gap: 14, padding: "14px 22px", background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer" }}
             >

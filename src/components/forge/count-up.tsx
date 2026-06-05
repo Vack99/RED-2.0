@@ -18,26 +18,24 @@ export function countUpStep(from: number, to: number, t: number): number {
 /** Animated integer counter (ease-out cubic), used for hero stats. */
 export function CountUp({
   value,
-  from = 0,
   duration = 500,
   className,
   style,
   format = String,
 }: {
   value: number;
-  /** Baseline the FIRST mount counts up from (default 0). */
-  from?: number;
   duration?: number;
   className?: string;
   style?: React.CSSProperties;
   /** Maps the current integer to its display string (e.g. peso formatting). */
   format?: (n: number) => string;
 }) {
-  // Seed the displayed value at the mount baseline so the first paint already
-  // shows `from` and the effect can tween up to `value`. The ref tracks where
-  // the NEXT tween should start (the last value we settled on).
-  const [shown, setShown] = React.useState(from);
-  const fromRef = React.useRef(from);
+  // Seed the FIRST paint at 0 so the mount can tween up — EXCEPT under reduced
+  // motion, where we seed the final value so those users never see a 0→N flash
+  // (the effect would settle to `value` only after the first paint). The ref
+  // tracks where the NEXT tween should start (the last value we settled on).
+  const [shown, setShown] = React.useState(() => (prefersReducedMotion() ? value : 0));
+  const fromRef = React.useRef(shown);
 
   React.useEffect(() => {
     const start = fromRef.current;

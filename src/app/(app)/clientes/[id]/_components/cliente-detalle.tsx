@@ -18,6 +18,7 @@ import {
 } from "@/components/forge/ui";
 import type { ClienteFichaDTO } from "@/lib/data/clientes";
 import { firstName, waLink } from "@/lib/format";
+import { consumeInAppNav, markInAppNav } from "@/lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "@/lib/swipe";
 import { togglePaseAction } from "../actions";
 import { EditarClienteSheet } from "./editar-cliente-sheet";
@@ -89,8 +90,15 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
     const { state, navigate } = swipeStep(swipe.current, { kind: "end" }, swipeCtx());
     swipe.current = state;
     setDx(0);
-    if (navigate === "next" && ficha.vecinos.nextId) router.push(`/clientes/${ficha.vecinos.nextId}`);
-    else if (navigate === "prev" && ficha.vecinos.prevId) router.push(`/clientes/${ficha.vecinos.prevId}`);
+    // Swiping to a neighbor is itself an in-app push, so arm the breadcrumb to
+    // keep the neighbor's back button landing on the roster (not out of the app).
+    if (navigate === "next" && ficha.vecinos.nextId) {
+      markInAppNav();
+      router.push(`/clientes/${ficha.vecinos.nextId}`);
+    } else if (navigate === "prev" && ficha.vecinos.prevId) {
+      markInAppNav();
+      router.push(`/clientes/${ficha.vecinos.prevId}`);
+    }
   };
   const onTouchCancel = () => {
     swipe.current = swipeStep(swipe.current, { kind: "cancel" }, swipeCtx()).state;
@@ -106,10 +114,13 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
     <div>
       <AppBar
         onBack={() => {
-          // Back in history when we arrived from within the app (restores the
-          // roster's scroll position and animates as a pop); otherwise — deep
-          // link, refresh — fall back to the roster.
-          if (window.history.length > 1) router.back();
+          // Go back in history ONLY when we arrived via an in-app push (the
+          // breadcrumb the roster/recientes/asistencia links arm on click) —
+          // that restores the roster's scroll position and plays a pop. On a
+          // deep link / refresh the breadcrumb is absent, so fall back to the
+          // roster rather than risk router.back() leaving the app entirely
+          // (history.length can't distinguish these — see lib/nav.ts).
+          if (consumeInAppNav()) router.back();
           else router.push("/clientes");
         }}
         center="CLIENTE"

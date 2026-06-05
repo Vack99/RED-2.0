@@ -142,10 +142,13 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* Cross-fade the root surface on a light/dark toggle. next-themes sets the
+/* Cross-fade the page backdrop on a light/dark toggle. next-themes sets the
    initial theme via a blocking inline script before first paint, so this only
-   animates on a real sun/moon swap — never the first paint. The page backdrop
-   lives on <html>/<body>; nested app surfaces carry their own token swaps.
+   animates on a real sun/moon swap — never the first paint. This is the root
+   backdrop's share of the swap; chrome that opts into a color/background
+   transition (TabBar, Badge, Avatar, Segmented, DayStrip cells) cross-fades on
+   the same curve, so the toggle reads as one coordinated motion (see
+   providers.tsx — disableTransitionOnChange is deliberately off).
    Neutralized by the reduced-motion block. */
 html,
 body {

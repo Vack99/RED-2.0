@@ -75,14 +75,21 @@ export function useFlip(deps: React.DependencyList) {
   const nodes = React.useRef(new Map<string, HTMLElement>());
   // Positions measured at the END of the previous commit — the "First" rects.
   const prev = React.useRef(new Map<string, Point>());
+  // Per-id ref callbacks, cached so a given row gets the SAME callback identity
+  // across renders. Otherwise React detaches (ref→null) and reattaches every
+  // row's ref on every render, needless churn on a list that can be large.
+  const refs = React.useRef(new Map<string, (node: HTMLElement | null) => void>());
 
-  const setRef = React.useCallback(
-    (id: string) => (node: HTMLElement | null) => {
+  const setRef = React.useCallback((id: string) => {
+    const cached = refs.current.get(id);
+    if (cached) return cached;
+    const fn = (node: HTMLElement | null) => {
       if (node) nodes.current.set(id, node);
       else nodes.current.delete(id);
-    },
-    [],
-  );
+    };
+    refs.current.set(id, fn);
+    return fn;
+  }, []);
 
   React.useLayoutEffect(() => {
     const reduce = prefersReducedMotion();

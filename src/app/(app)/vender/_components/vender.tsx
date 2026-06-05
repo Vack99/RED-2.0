@@ -199,7 +199,10 @@ export function VenderScreen({
           <Eyebrow>TOTAL</Eyebrow>
           <span className="tnum font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
             {paq ? (
-              <CountUp key={paq.id} value={paq.precio} format={pesos} />
+              // No `key`: reuse the one CountUp instance so switching packages
+              // tweens price→price via its fromRef (the continuity the primitive
+              // exists for) instead of remounting and flashing $0→price each time.
+              <CountUp value={paq.precio} format={pesos} />
             ) : (
               <>$<span style={{ opacity: 0.6 }}>—</span></>
             )}

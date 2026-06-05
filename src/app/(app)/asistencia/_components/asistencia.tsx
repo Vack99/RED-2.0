@@ -11,6 +11,7 @@ import { addDays, DOW, fmtFull, isoDay, MON, sameDay } from "@/lib/date";
 import { parseDay } from "@/lib/fecha";
 import { firstName } from "@/lib/format";
 import { scrollBehavior } from "@/lib/motion";
+import { markInAppNav } from "@/lib/nav";
 import { togglePaseAction } from "../actions";
 import { setMarcada, type Marcadas } from "./marcadas";
 
@@ -28,6 +29,14 @@ export function AsistenciaScreen({
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
 
   const [marcadas, setMarcadas] = React.useState<Marcadas>(marcadasInicial);
+  // Mirror of `marcadas` for the toggle callback to read current presence at
+  // call time WITHOUT closing over `marcadas` — that would change the callback
+  // identity on every flip and defeat PaseRow's React.memo (re-rendering the
+  // whole roster per tap). Kept in sync on every commit.
+  const marcadasRef = React.useRef(marcadas);
+  React.useEffect(() => {
+    marcadasRef.current = marcadas;
+  }, [marcadas]);
   const [selDate, setSelDate] = React.useState<Date>(() => parseDay(hoyIso));
   const [query, setQuery] = React.useState("");
   const [calOpen, setCalOpen] = React.useState(false);
@@ -55,8 +64,10 @@ export function AsistenciaScreen({
       inFlight.current.add(key);
 
       // Flip optimistically on this tick so the bounce, tint, avatar fill and
-      // counts fire instantly; the server result reconciles below.
-      const willBePresent = !(marcadas[selIso] ?? []).includes(c.id);
+      // counts fire instantly; the server result reconciles below. Read the
+      // current presence from the ref (not a closed-over `marcadas`) so this
+      // callback stays referentially stable across flips.
+      const willBePresent = !(marcadasRef.current[selIso] ?? []).includes(c.id);
       setMarcadas((m) => setMarcada(m, selIso, c.id, willBePresent));
 
       try {
@@ -78,7 +89,7 @@ export function AsistenciaScreen({
         inFlight.current.delete(key);
       }
     },
-    [selIso, marcadas],
+    [selIso],
   );
 
   return (
@@ -129,7 +140,7 @@ export function AsistenciaScreen({
 
       {/* Search + add */}
       <div className="flex items-stretch" style={{ padding: "16px 16px 4px", gap: 8 }}>
-        <Input icon="search" placeholder="Buscar cliente…" value={query} onChange={setQuery} className="forge-pressable" style={{ flex: 1 }} />
+        <Input icon="search" placeholder="Buscar cliente…" value={query} onChange={setQuery} style={{ flex: 1 }} />
         <Link
           href="/vender"
           prefetch
@@ -292,9 +303,15 @@ const PaseRow = React.memo(function PaseRow({
       <Avatar initial={c.inicial} size={40} accent={present} />
       <Link
         href={`/clientes/${c.id}`}
-        prefetch
-        // Stop the tap bubbling to the row, which would also toggle attendance.
-        onClick={(e) => e.stopPropagation()}
+        // No explicit `prefetch`: one per roster row would FULL-prefetch every
+        // in-viewport client's ~7-call ficha route. Default 'auto' partial
+        // prefetch + loading.tsx keep the tap instant. (Matches clientes.tsx.)
+        // Stop the tap bubbling to the row (which would toggle attendance), and
+        // arm the in-app breadcrumb so the ficha back returns here (see lib/nav).
+        onClick={(e) => {
+          e.stopPropagation();
+          markInAppNav();
+        }}
         className="min-w-0 flex-1 text-left"
         style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--fg)" }}
       >
