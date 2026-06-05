@@ -7,6 +7,7 @@ import { fmtClases, fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./
 const paquete = (over: Partial<PaqueteDTO> = {}): PaqueteDTO => ({
   id: "p1",
   nombre: "8 clases",
+  clases: 8,
   vigencia: "30 días",
   hasta: "16 jun",
   precio: 800,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
+import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, nombrePaquete, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete", () => {
@@ -26,6 +26,19 @@ describe("stackPaquete", () => {
     expect(
       stackPaquete({ clases: "ilimitado", dias: 10 }, { clases: "ilimitado", dias: 20 }),
     ).toEqual({ clases: "ilimitado", dias: 30 });
+  });
+});
+
+describe("nombrePaquete", () => {
+  it("derives 'Ilimitado' for a null grant", () => {
+    expect(nombrePaquete(null)).toBe("Ilimitado");
+  });
+  it("derives the singular '1 clase' for a grant of 1", () => {
+    expect(nombrePaquete(1)).toBe("1 clase");
+  });
+  it("derives the plural '{n} clases' for a grant > 1", () => {
+    expect(nombrePaquete(2)).toBe("2 clases");
+    expect(nombrePaquete(30)).toBe("30 clases");
   });
 });
 
