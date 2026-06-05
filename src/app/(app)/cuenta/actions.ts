@@ -1,5 +1,6 @@
 "use server";
 
+import { actualizarPaquete } from "@/lib/data/paquetes";
 import {
   actualizarPlantilla,
   crearPlantilla,
@@ -23,4 +24,8 @@ export async function eliminarPlantillaAction(raw: unknown): Promise<void> {
 
 export async function sembrarPlantillasDefaultAction(): Promise<void> {
   return sembrarPlantillasDefault();
+}
+
+export async function actualizarPaqueteAction(raw: unknown): Promise<void> {
+  return actualizarPaquete(raw);
 }

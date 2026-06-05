@@ -22,6 +22,7 @@ import type { PlantillaDTO } from "@/lib/data/plantillas";
 import { pesos } from "@/lib/format";
 
 import { LogoutButton } from "./logout-button";
+import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
 
 interface CuentaScreenProps {
@@ -74,6 +75,7 @@ export function CuentaScreen({
   mesLabel,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
+  const [paquetesOpen, setPaquetesOpen] = React.useState(false);
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
   // a null-perfil guard (the perfil row may not be seeded yet).
@@ -119,6 +121,8 @@ export function CuentaScreen({
         plantillas={plantillas}
         negocio={negocio}
       />
+
+      <PaquetesSheet open={paquetesOpen} onClose={() => setPaquetesOpen(false)} paquetes={paquetes} />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 
@@ -210,7 +214,7 @@ export function CuentaScreen({
       <SectionHeader
         trailing={
           <button
-            onClick={() => proximamente("Editor de paquetes")}
+            onClick={() => setPaquetesOpen(true)}
             className="inline-flex items-center uppercase font-extrabold"
             style={{ gap: 5, background: "transparent", border: "none", cursor: "pointer", padding: 0, fontSize: 10.5, letterSpacing: 1.2, color: "var(--gold)" }}
           >
@@ -225,7 +229,7 @@ export function CuentaScreen({
         {paquetes.map((p, i) => (
           <button
             key={p.id}
-            onClick={() => proximamente("Editor de paquetes")}
+            onClick={() => setPaquetesOpen(true)}
             className="forge-pressable flex w-full items-center justify-between border border-line bg-surface text-left"
             style={{
               gap: 12,

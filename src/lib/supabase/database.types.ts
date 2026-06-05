@@ -288,6 +288,10 @@ export type Database = {
         Args: { p_cliente_id: string; p_nombre: string; p_tel: string }
         Returns: undefined
       }
+      actualizar_paquete: {
+        Args: { p_id: string; p_nombre: string; p_popular: boolean; p_precio: number }
+        Returns: undefined
+      }
       actualizar_plantilla: {
         Args: { p_body: string; p_id: string; p_nombre: string }
         Returns: undefined
