@@ -142,6 +142,18 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Cross-fade the root surface on a light/dark toggle. next-themes sets the
+   initial theme via a blocking inline script before first paint, so this only
+   animates on a real sun/moon swap — never the first paint. The page backdrop
+   lives on <html>/<body>; nested app surfaces carry their own token swaps.
+   Neutralized by the reduced-motion block. */
+html,
+body {
+  transition:
+    background-color 220ms cubic-bezier(0.32, 0.72, 0, 1),
+    color 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
 /* Tabular numerals — used pervasively for stats, counts, money. */
 .tnum {
   font-variant-numeric: tabular-nums;

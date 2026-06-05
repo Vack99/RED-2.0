@@ -129,7 +129,7 @@ export function Badge({
   const m = BADGE_MAP[state];
   return (
     <span
-      className="inline-flex items-center uppercase font-bold"
+      className="inline-flex items-center uppercase font-bold transition-colors"
       style={{
         gap: 5,
         padding: "4px 8px",
@@ -140,7 +140,10 @@ export function Badge({
         ...style,
       }}
     >
-      <span style={{ width: 4.5, height: 4.5, borderRadius: 999, background: m.fg }} />
+      <span
+        className="transition-colors"
+        style={{ width: 4.5, height: 4.5, borderRadius: 999, background: m.fg }}
+      />
       {children ?? m.label}
     </span>
   );
@@ -235,7 +238,9 @@ export function Button({
       onClick={onClick}
       disabled={disabled}
       className={cn(
-        "flex items-center justify-center uppercase font-extrabold transition-transform active:scale-[0.985]",
+        // Ease both transform (press) and opacity so a CTA gated by `disabled`
+        // fades in/out instead of hard-cutting its 0.4 dim.
+        "flex items-center justify-center uppercase font-extrabold transition-[transform,opacity] active:scale-[0.985]",
         className,
       )}
       style={{
@@ -379,7 +384,7 @@ export function Segmented<T extends string>({
           <button
             key={t.k}
             onClick={() => onChange?.(t.k)}
-            className="flex flex-1 flex-col items-center"
+            className="flex flex-1 flex-col items-center transition-colors"
             style={{
               padding: "10px 6px",
               gap: 3,
@@ -391,7 +396,9 @@ export function Segmented<T extends string>({
           >
             <span style={{ fontWeight: 800, fontSize: 11, letterSpacing: 1, lineHeight: 1 }}>{t.l}</span>
             {t.n !== undefined && (
-              <Tnum style={{ fontSize: 11, color: on ? "var(--canvas)" : "var(--muted)" }}>{t.n}</Tnum>
+              <Tnum className="transition-colors" style={{ fontSize: 11, color: on ? "var(--canvas)" : "var(--muted)" }}>
+                {t.n}
+              </Tnum>
             )}
           </button>
         );

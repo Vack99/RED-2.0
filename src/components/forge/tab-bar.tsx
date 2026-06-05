@@ -37,7 +37,9 @@ export function TabBar() {
           >
             {it.primary ? (
               <div
-                className="flex items-center justify-center transition-all"
+                // Only background + shadow actually change on activation; transition
+                // just those (not `all`) so unrelated property changes never animate.
+                className="flex items-center justify-center"
                 style={{
                   width: 44,
                   height: 44,
@@ -45,20 +47,27 @@ export function TabBar() {
                   background: on ? "var(--yellow)" : "var(--surface)",
                   border: on ? "none" : "1px solid var(--line)",
                   boxShadow: on ? "0 8px 24px color-mix(in srgb, var(--yellow) 33%, transparent)" : "none",
+                  transition:
+                    "background-color 180ms cubic-bezier(.32,.72,0,1), box-shadow 180ms cubic-bezier(.32,.72,0,1)",
                 }}
               >
                 <Icon name={it.icon} size={22} color={on ? "var(--ink)" : "var(--muted)"} />
               </div>
             ) : (
-              <>
-                <Icon name={it.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
+              // Drive the active swap with one CSS color so both the icon (via
+              // currentColor) and the label ease together with `transition-colors`.
+              <span
+                className="flex flex-col items-center transition-colors"
+                style={{ gap: 4, color: on ? "var(--gold)" : "var(--muted)" }}
+              >
+                <Icon name={it.icon} size={20} color="currentColor" />
                 <span
-                  className="font-bold"
+                  className="font-bold transition-colors"
                   style={{ fontSize: 9.5, letterSpacing: 1.2, color: on ? "var(--yellow)" : "var(--muted)" }}
                 >
                   {it.label}
                 </span>
-              </>
+              </span>
             )}
           </Link>
         );
