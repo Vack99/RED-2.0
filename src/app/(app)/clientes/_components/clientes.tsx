@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { Icon } from "@/components/forge/icon";
 import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
+import { useFlip } from "@/components/forge/use-flip";
 import { resumirRoster, urgenciaCliente } from "@/domain/rules";
 import type { NivelUrgencia } from "@/domain/types";
 import type { ClienteDerivado } from "@/lib/data/derive";
@@ -58,6 +59,9 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
   const activeCount = (renovar ? 1 : 0) + (diasMax != null ? 1 : 0) + (clasesMax != null ? 1 : 0);
   const anyFilter = activeCount > 0 || !!query;
   const clearAll = () => { setRenovar(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
+
+  // FLIP: animate rows to their new spot when the order/contents change.
+  const flipRow = useFlip([sort, renovar, diasMax, clasesMax, query]);
 
   return (
     <div>
@@ -115,29 +119,41 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
         </button>
       </div>
 
-      {/* Collapsible filter panel */}
-      {showFilters && (
-        <div style={{ background: "var(--sunk)", borderBottom: "1px solid var(--line)", padding: "12px 0 14px", marginTop: 12 }}>
-          <div style={{ padding: "0 16px" }}>
-            <button
-              onClick={() => setRenovar((v) => !v)}
-              className="flex w-full items-center text-left"
-              style={{ gap: 12, padding: "11px 13px", cursor: "pointer", background: renovar ? "var(--yellow-soft)" : "var(--surface)", border: `1px solid ${renovar ? "var(--yellow)" : "var(--line)"}` }}
-            >
-              <div className="flex shrink-0 items-center justify-center" style={{ width: 30, height: 30, background: renovar ? "var(--yellow)" : "transparent", border: renovar ? "none" : "1px solid var(--line)" }}>
-                <Icon name="alert" size={15} color={renovar ? "var(--ink)" : "var(--gold)"} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="uppercase font-extrabold" style={{ fontSize: 13, letterSpacing: 0.5, color: "var(--fg)" }}>Por renovar</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>Se les acaban clases o días pronto</div>
-              </div>
-              <Tnum className="font-extrabold" style={{ fontSize: 22, lineHeight: 1, color: renovar ? "var(--gold)" : "var(--fg)" }}>{renovarCount}</Tnum>
-            </button>
+      {/* Collapsible filter panel — animates open/close with a grid-rows
+          0fr↔1fr collapse + fade (~240ms) instead of a hard mount jump. The
+          global reduced-motion block neutralizes the durations, so it snaps
+          open/closed for users who ask for less motion. */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateRows: showFilters ? "1fr" : "0fr",
+          opacity: showFilters ? 1 : 0,
+          transition: "grid-template-rows 240ms cubic-bezier(.32,.72,0,1), opacity 240ms cubic-bezier(.32,.72,0,1)",
+        }}
+      >
+        <div className="min-h-0 overflow-hidden" aria-hidden={!showFilters} inert={!showFilters}>
+          <div style={{ background: "var(--sunk)", borderBottom: "1px solid var(--line)", padding: "12px 0 14px", marginTop: 12 }}>
+            <div style={{ padding: "0 16px" }}>
+              <button
+                onClick={() => setRenovar((v) => !v)}
+                className="flex w-full items-center text-left"
+                style={{ gap: 12, padding: "11px 13px", cursor: "pointer", background: renovar ? "var(--yellow-soft)" : "var(--surface)", border: `1px solid ${renovar ? "var(--yellow)" : "var(--line)"}` }}
+              >
+                <div className="flex shrink-0 items-center justify-center" style={{ width: 30, height: 30, background: renovar ? "var(--yellow)" : "transparent", border: renovar ? "none" : "1px solid var(--line)" }}>
+                  <Icon name="alert" size={15} color={renovar ? "var(--ink)" : "var(--gold)"} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="uppercase font-extrabold" style={{ fontSize: 13, letterSpacing: 0.5, color: "var(--fg)" }}>Por renovar</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>Se les acaban clases o días pronto</div>
+                </div>
+                <Tnum className="font-extrabold" style={{ fontSize: 22, lineHeight: 1, color: renovar ? "var(--gold)" : "var(--fg)" }}>{renovarCount}</Tnum>
+              </button>
+            </div>
+            <FacetRow label="Días" value={diasMax} onChange={setDiasMax} options={[{ v: null, l: "Todos" }, { v: 14, l: "≤14" }, { v: 7, l: "≤7" }, { v: 3, l: "≤3" }]} />
+            <FacetRow label="Clases" value={clasesMax} onChange={setClasesMax} options={[{ v: null, l: "Todas" }, { v: 5, l: "≤5" }, { v: 3, l: "≤3" }, { v: 1, l: "≤1" }]} />
           </div>
-          <FacetRow label="Días" value={diasMax} onChange={setDiasMax} options={[{ v: null, l: "Todos" }, { v: 14, l: "≤14" }, { v: 7, l: "≤7" }, { v: 3, l: "≤3" }]} />
-          <FacetRow label="Clases" value={clasesMax} onChange={setClasesMax} options={[{ v: null, l: "Todas" }, { v: 5, l: "≤5" }, { v: 3, l: "≤3" }, { v: 1, l: "≤1" }]} />
         </div>
-      )}
+      </div>
 
       {/* Count · clear · sort */}
       <div className="flex items-center justify-between" style={{ padding: "14px 22px 6px" }}>
@@ -155,9 +171,10 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
             <button
               key={s.k}
               onClick={() => setSort(s.k)}
-              style={{ background: "transparent", border: "none", padding: "10px 8px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, marginLeft: i === 0 ? 0 : 8 }}
+              className="forge-pressable"
+              style={{ background: "transparent", border: "none", padding: "10px 8px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, marginLeft: i === 0 ? 0 : 8, transition: "color 150ms cubic-bezier(.32,.72,0,1)" }}
             >
-              <span style={{ borderBottom: sort === s.k ? "1.5px solid var(--yellow)" : "1.5px solid transparent", paddingBottom: 2 }}>{s.l}</span>
+              <span style={{ borderBottom: "1.5px solid", borderColor: sort === s.k ? "var(--yellow)" : "transparent", paddingBottom: 2, transition: "border-color 150ms cubic-bezier(.32,.72,0,1)" }}>{s.l}</span>
             </button>
           ))}
         </div>
@@ -180,6 +197,7 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
           return (
             <Link
               key={c.id}
+              ref={flipRow(c.id)}
               href={`/clientes/${c.id}`}
               prefetch
               className="forge-pressable relative flex w-full items-center text-left"
