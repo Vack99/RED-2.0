@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { CountUp } from "@/components/forge/count-up";
 import { Icon, type IconName } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
@@ -196,10 +197,17 @@ export function VenderScreen({
       <div className="bg-canvas" style={{ position: "sticky", bottom: 0, zIndex: 1, borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
         <div className="flex items-baseline justify-between" style={{ marginBottom: 14 }}>
           <Eyebrow>TOTAL</Eyebrow>
-          <Tnum className="font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
-            {paq ? pesos(paq.precio) : <>$<span style={{ opacity: 0.6 }}>—</span></>}
+          <span className="tnum font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
+            {paq ? (
+              // No `key`: reuse the one CountUp instance so switching packages
+              // tweens price→price via its fromRef (the continuity the primitive
+              // exists for) instead of remounting and flashing $0→price each time.
+              <CountUp value={paq.precio} format={pesos} />
+            ) : (
+              <>$<span style={{ opacity: 0.6 }}>—</span></>
+            )}
             <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 6, fontWeight: 600 }}>MXN</span>
-          </Tnum>
+          </span>
         </div>
         <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={finish}>
           {submitting ? "PROCESANDO…" : paq ? `COBRAR ${pesos(paq.precio)}` : "CONFIRMAR VENTA"}

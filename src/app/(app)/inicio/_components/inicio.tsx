@@ -1,5 +1,7 @@
 "use client";
 
+import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ForgeLockup } from "@/components/forge/brand";
 import { CountUp } from "@/components/forge/count-up";
@@ -8,6 +10,9 @@ import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@/compon
 import type { ResumenMes } from "@/domain/types";
 import type { AsistenciaHoy } from "@/lib/data/asistencia";
 import { pesos } from "@/lib/format";
+import { markInAppNav } from "@/lib/nav";
+
+const SPARK_FLOOR = 0.06;
 
 interface InicioScreenProps {
   resumen: ResumenMes;
@@ -40,6 +45,16 @@ export function InicioScreen({
   const deltaColor = deltaAyer < 0 ? "var(--gold)" : "var(--green)";
 
   const maxSpark = Math.max(1, ...asistenciasSemana);
+
+  // Sparkline bars start at the floor and grow to their real height on mount
+  // (the CSS scaleY transition needs a from-state). The flip is deferred a
+  // frame via rAF so the floor paints first; under reduced motion the global
+  // CSS block neutralizes the transition, so the bars simply appear at height.
+  const [sparkGrown, setSparkGrown] = React.useState(false);
+  React.useEffect(() => {
+    const raf = requestAnimationFrame(() => setSparkGrown(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
 
   return (
     <div>
@@ -86,14 +101,16 @@ export function InicioScreen({
           {asistenciasSemana.map((v, i) => (
             // GPU-composited: scaleY from the bottom (transform, not animated
             // height) so the bars grow identically without triggering layout.
+            // Seeded at the floor for one frame, then flipped to the real scale
+            // so the CSS transition animates the growth in.
             <div
               key={i}
               className="flex-1"
               style={{
                 height: "100%",
-                transform: `scaleY(${Math.max(0.06, v / maxSpark)})`,
+                transform: `scaleY(${sparkGrown ? Math.max(SPARK_FLOOR, v / maxSpark) : SPARK_FLOOR})`,
                 transformOrigin: "bottom",
-                transition: "transform 300ms ease",
+                transition: "transform 300ms cubic-bezier(.32,.72,0,1)",
                 background: i === asistenciasSemana.length - 1 ? "var(--yellow)" : "var(--muted-soft)",
               }}
             />
@@ -144,9 +161,13 @@ export function InicioScreen({
       <SectionHeader trailing="HOY">ÚLTIMAS ASISTENCIAS</SectionHeader>
       <div>
         {recientes.map((row, i) => (
-          <button
+          <Link
             key={`${row.cliente_id}-${i}`}
-            onClick={() => router.push(`/clientes/${row.cliente_id}`)}
+            href={`/clientes/${row.cliente_id}`}
+            // Arm the in-app breadcrumb so the ficha back returns here (see lib/nav).
+            onClick={markInAppNav}
+            // Default 'auto' prefetch (not explicit full): same ~7-call ficha
+            // route as the roster; loading.tsx covers the swap. (See clientes.tsx.)
             className="forge-pressable flex w-full items-center text-left"
             style={{
               gap: 14,
@@ -169,7 +190,7 @@ export function InicioScreen({
             <div className="flex items-center justify-center" style={{ width: 22, height: 22, background: "var(--green-soft)" }}>
               <Icon name="check" size={12} color="var(--green)" />
             </div>
-          </button>
+          </Link>
         ))}
         {recientes.length === 0 && (
           <div
