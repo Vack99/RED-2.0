@@ -1,33 +1,57 @@
 "use client";
 
 import * as React from "react";
+import { prefersReducedMotion } from "@/lib/motion";
 import { Tnum } from "./ui";
+
+/**
+ * Eased value at progress `t` (0→1) between `from` and `to`, rounded to an int.
+ * Ease-out cubic — fast then settling, matching the hero stat feel. Pure so it
+ * can be unit-tested without a DOM or rAF.
+ */
+export function countUpStep(from: number, to: number, t: number): number {
+  const clamped = t <= 0 ? 0 : t >= 1 ? 1 : t;
+  const eased = 1 - Math.pow(1 - clamped, 3);
+  return Math.round(from + (to - from) * eased);
+}
 
 /** Animated integer counter (ease-out cubic), used for hero stats. */
 export function CountUp({
   value,
+  from = 0,
   duration = 500,
   className,
   style,
+  format = String,
 }: {
   value: number;
+  /** Baseline the FIRST mount counts up from (default 0). */
+  from?: number;
   duration?: number;
   className?: string;
   style?: React.CSSProperties;
+  /** Maps the current integer to its display string (e.g. peso formatting). */
+  format?: (n: number) => string;
 }) {
-  const [shown, setShown] = React.useState(value);
-  const fromRef = React.useRef(value);
+  // Seed the displayed value at the mount baseline so the first paint already
+  // shows `from` and the effect can tween up to `value`. The ref tracks where
+  // the NEXT tween should start (the last value we settled on).
+  const [shown, setShown] = React.useState(from);
+  const fromRef = React.useRef(from);
 
   React.useEffect(() => {
-    const from = fromRef.current;
+    const start = fromRef.current;
     const to = value;
-    if (from === to) return;
-    const start = performance.now();
+    if (start === to) return;
+
+    // rAF motion is NOT covered by the global reduced-motion CSS block, so a
+    // zero duration makes the first tick land on `to` and settle immediately.
+    const ms = prefersReducedMotion() ? 0 : duration;
+    const t0 = performance.now();
     let raf = 0;
     const tick = (now: number) => {
-      const t = Math.min(1, (now - start) / duration);
-      const eased = 1 - Math.pow(1 - t, 3);
-      setShown(Math.round(from + (to - from) * eased));
+      const t = ms <= 0 ? 1 : (now - t0) / ms;
+      setShown(countUpStep(start, to, t));
       if (t < 1) raf = requestAnimationFrame(tick);
       else fromRef.current = to;
     };
@@ -37,7 +61,7 @@ export function CountUp({
 
   return (
     <Tnum className={className} style={style}>
-      {shown}
+      {format(shown)}
     </Tnum>
   );
 }
