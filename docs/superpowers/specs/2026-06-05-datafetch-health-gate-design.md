@@ -241,3 +241,21 @@ Each repo gets its own branch + commits.
 - Growing a ledgered item past its trigger flips it from ACCEPTED → 🔴 NEEDS-WORK on re-run.
 - Extended shakeout suite is green; new detectors have RED/GREEN fixture pairs.
 - No extra code-scan pass vs. today's `to-map → to-findings`.
+
+---
+
+## 9. Quality gates (standing — applied to every phase)
+
+Before any phase (Part A detectors, Part B gate + ledger, final) is declared done,
+BOTH gates must return **100% yes**. If not, restructure / re-plan and re-ask until they do.
+
+- **Elegance Check** — is every change the most elegant approach overall? (Follows the
+  existing grain of the skill, no foreign machinery, honest scoping, the smallest sound
+  surface; nothing that a cleaner structure would obviate.)
+- **Senior Dev Approval** — would a senior dev approve these changes? (Sound detection
+  logic; **real-code-path correctness, not just green isolated tests**; complete
+  cross-stage contracts; no overclaiming; clean commit history; documented boundaries.)
+
+These are end-gates, run after the per-task objective gate (the shakeout suite) and the
+fresh-context review — they catch what tests can't (elegance, real-path wiring, contract
+completeness).
