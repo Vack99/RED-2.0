@@ -30,11 +30,13 @@ export function CountUp({
   /** Maps the current integer to its display string (e.g. peso formatting). */
   format?: (n: number) => string;
 }) {
-  // Seed the FIRST paint at 0 so the mount can tween up — EXCEPT under reduced
-  // motion, where we seed the final value so those users never see a 0→N flash
-  // (the effect would settle to `value` only after the first paint). The ref
-  // tracks where the NEXT tween should start (the last value we settled on).
-  const [shown, setShown] = React.useState(() => (prefersReducedMotion() ? value : 0));
+  // Seed the first paint at 0 on BOTH server and client so SSR and hydration
+  // agree: prefersReducedMotion() reads matchMedia, which is undefined on the
+  // server, so seeding the initial state from it desyncs the first render (a
+  // React hydration mismatch). The effect tweens up from here; reduced-motion
+  // users get ms=0 below, settling on the final value one frame after paint
+  // instead of crawling. The ref tracks where the NEXT tween should start.
+  const [shown, setShown] = React.useState(0);
   const fromRef = React.useRef(shown);
 
   React.useEffect(() => {
