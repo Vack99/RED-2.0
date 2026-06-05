@@ -230,7 +230,7 @@ describe("calcularResumenMes", () => {
 
   // Worked fixture: spans April (prior) and May (current) 2026.
   // Ventas:
-  //   Apr:  3 abr $500, 28 abr $700           => prev: 2 ventas / $1200
+  //   Apr:  3 abr $500, 28 abr $700  => prev-to-date (day ≤ 27): 1 venta / $500 (28 abr excluded)
   //   May:  1 may $400, 21 may $1000 (last 7d),
   //         26 may $300 (ayer/last 7d), 27 may $250 (hoy/last 7d)
   //                                            => mes: 4 ventas / $1950
@@ -245,7 +245,7 @@ describe("calcularResumenMes", () => {
   ];
 
   // Asistencias:
-  //   Apr: 3 rows (prev month)
+  //   Apr: 3 rows; only 5 & 6 abr (day ≤ 27) count toward prev — 30 abr excluded
   //   May within the 7-day window (21..27 may):
   //     21 may x1, 24 may x1, 26 may x2 (ayer), 27 may x3 (hoy)
   //   plus 2 May rows OUTSIDE the window (2 may, 10 may) — count toward asistMes only
