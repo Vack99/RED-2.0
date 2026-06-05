@@ -46,10 +46,19 @@ function deltaPct(actual: number, prev: number): number | null {
   return Math.round(((actual - prev) / prev) * 100);
 }
 
-/** Compact "+18% VS MES ANT." caption (color-coded), or "—" with no baseline. */
+/** Compact "+18% VS PERIODO ANT." caption (color-coded), or growth/no-baseline indicator. */
 function DeltaCaption({ actual, prev }: { actual: number; prev: number }) {
   const pct = deltaPct(actual, prev);
   if (pct === null) {
+    // prev === 0 → no like-for-like baseline. Distinguish "up from zero"
+    // (real momentum this period) from genuinely-nothing-to-compare.
+    if (actual > 0) {
+      return (
+        <div style={{ fontSize: 10, color: "var(--green)", marginTop: 4, fontWeight: 700 }}>
+          ↑ NUEVO
+        </div>
+      );
+    }
     return (
       <div style={{ fontSize: 10, color: "var(--muted)", marginTop: 4, fontWeight: 600 }}>
         SIN MES ANT.
@@ -60,7 +69,7 @@ function DeltaCaption({ actual, prev }: { actual: number; prev: number }) {
   return (
     <div style={{ fontSize: 10, color, marginTop: 4, fontWeight: 700 }}>
       {pct > 0 ? "+" : ""}
-      {pct}% VS MES ANT.
+      {pct}% VS PERIODO ANT.
     </div>
   );
 }
