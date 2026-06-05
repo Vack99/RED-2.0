@@ -276,10 +276,11 @@ describe("calcularResumenMes", () => {
     expect(r.asistMes).toBe(9);
   });
 
-  it("totals the PRIOR calendar month for period-over-period deltas", () => {
-    expect(r.ingresosMesPrev).toBe(1200);
-    expect(r.ventasMesPrev).toBe(2);
-    expect(r.asistMesPrev).toBe(3);
+  it("totals the prior month through the same day-of-month (prior-month-to-date)", () => {
+    // HOY = 27 May, diaHoy = 27 → April slice is 1..27 abr.
+    expect(r.ingresosMesPrev).toBe(500); // only 3 abr $500; 28 abr (day 28 > 27) excluded
+    expect(r.ventasMesPrev).toBe(1);     // was 2
+    expect(r.asistMesPrev).toBe(2);      // 5 & 6 abr in; 30 abr (day 30 > 27) excluded — was 3
   });
 
   it("counts asistencias hoy vs ayer", () => {
@@ -305,22 +306,41 @@ describe("calcularResumenMes", () => {
     expect(empty.ventasMes).toBe(0);
     expect(empty.asistMes).toBe(0);
     expect(empty.ingresosMesPrev).toBe(0);
+    expect(empty.ventasMesPrev).toBe(0);
+    expect(empty.asistMesPrev).toBe(0);
     expect(empty.asistenciasHoy).toBe(0);
     expect(empty.asistenciasAyer).toBe(0);
     expect(empty.ingresosSemana).toBe(0);
     expect(empty.asistenciasSemana).toEqual([0, 0, 0, 0, 0, 0, 0]);
   });
 
-  it("rolls the prior month across a year boundary (Jan hoy → Dec prev)", () => {
-    const enero = new Date(2026, 0, 15);
+  it("rolls the prior month across a year boundary with the day-of-month cutoff (Jan hoy → Dec prev)", () => {
+    const enero = new Date(2026, 0, 15); // diaHoy = 15
     const rr = calcularResumenMes(
-      [v(2025, 11, 20, 900), v(2026, 0, 10, 100)],
-      [a(2025, 11, 31), a(2026, 0, 5)],
+      [v(2025, 11, 10, 100), v(2025, 11, 20, 900), v(2026, 0, 10, 100)],
+      [a(2025, 11, 10), a(2025, 11, 31), a(2026, 0, 5)],
       enero,
     );
-    expect(rr.ingresosMes).toBe(100);
-    expect(rr.ingresosMesPrev).toBe(900);
-    expect(rr.asistMes).toBe(1);
-    expect(rr.asistMesPrev).toBe(1);
+    expect(rr.ingresosMes).toBe(100);     // 10 ene
+    expect(rr.ingresosMesPrev).toBe(100); // only 10 dic (day 10 ≤ 15); 20 dic excluded
+    expect(rr.asistMes).toBe(1);          // 5 ene
+    expect(rr.asistMesPrev).toBe(1);      // only 10 dic; 31 dic excluded
+  });
+
+  it("on the 1st, compares against the prior month's day-1 slice (no full-month collapse)", () => {
+    const primero = new Date(2026, 5, 1); // 1 Jun 2026, diaHoy = 1
+    const rr = calcularResumenMes(
+      [v(2026, 5, 1, 400), v(2026, 4, 1, 300), v(2026, 4, 20, 900)],
+      [],
+      primero,
+    );
+    expect(rr.ingresosMes).toBe(400);
+    expect(rr.ingresosMesPrev).toBe(300); // only 1 may; 20 may (day 20 > 1) excluded
+  });
+
+  it("includes the whole short prior month at month-end (Mar 31 vs 28-day Feb)", () => {
+    const finMarzo = new Date(2026, 2, 31); // 31 Mar 2026, diaHoy = 31
+    const rr = calcularResumenMes([v(2026, 1, 28, 700)], [], finMarzo); // 28 feb
+    expect(rr.ingresosMesPrev).toBe(700); // 28 ≤ 31 → counted, no clamp
   });
 });

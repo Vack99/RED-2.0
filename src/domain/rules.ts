@@ -196,8 +196,10 @@ function difDias(a: Date, b: Date): number {
  * dates at the boundary) and calls this with `hoyChihuahua()`.
  *
  * Reported windows:
- *  - *Mes / *MesPrev: the current and prior CALENDAR months (prior rolls across
- *    a year boundary, e.g. Jan hoy → Dec prev).
+ *  - *Mes: the current CALENDAR month-to-date.
+ *  - *MesPrev: the prior CALENDAR month THROUGH the same day-of-month as hoy
+ *    (prior-month-to-date — equal elapsed slice, so the delta is like-for-like;
+ *    prior rolls across a year boundary, e.g. Jan hoy → Dec prev).
  *  - hoy / ayer: exact-day asistencia counts.
  *  - semana: the last 7 days INCLUSIVE of hoy. `ingresosSemana` is their venta
  *    total; `asistenciasSemana` is a 7-element daily series, oldest→newest, the
@@ -210,6 +212,7 @@ export function calcularResumenMes(
 ): ResumenMes {
   const mesPrev = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
   const ayer = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1);
+  const diaHoy = hoy.getDate(); // prior-month-to-date cutoff: same elapsed day-of-month
 
   let ingresosMes = 0;
   let ventasMes = 0;
@@ -221,7 +224,7 @@ export function calcularResumenMes(
     if (mismoMes(venta.fecha, hoy)) {
       ingresosMes += venta.monto;
       ventasMes += 1;
-    } else if (mismoMes(venta.fecha, mesPrev)) {
+    } else if (mismoMes(venta.fecha, mesPrev) && venta.fecha.getDate() <= diaHoy) {
       ingresosMesPrev += venta.monto;
       ventasMesPrev += 1;
     }
@@ -238,7 +241,7 @@ export function calcularResumenMes(
 
   for (const asis of asistencias) {
     if (mismoMes(asis.fecha, hoy)) asistMes += 1;
-    else if (mismoMes(asis.fecha, mesPrev)) asistMesPrev += 1;
+    else if (mismoMes(asis.fecha, mesPrev) && asis.fecha.getDate() <= diaHoy) asistMesPrev += 1;
 
     if (mismoDia(asis.fecha, hoy)) asistenciasHoy += 1;
     else if (mismoDia(asis.fecha, ayer)) asistenciasAyer += 1;

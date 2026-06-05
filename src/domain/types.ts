@@ -82,7 +82,9 @@ export interface ResumenMes {
   ventasMes: number;
   /** Count of asistencias in the current calendar month. */
   asistMes: number;
-  /** Same three totals for the PRIOR calendar month (for period-over-period deltas). */
+  /** Same three totals for the prior calendar month THROUGH the same day-of-month
+   *  as hoy (prior-month-to-date) — equal elapsed slice, so the delta compares
+   *  like-for-like from day 1. */
   ingresosMesPrev: number;
   ventasMesPrev: number;
   asistMesPrev: number;
