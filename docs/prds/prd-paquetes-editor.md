@@ -1,3 +1,30 @@
+## Superseded — v2 (2026-06-05): clases is now editable; nombre is derived
+
+> **This PRD describes v1 and is partly STALE. The shipped editor is v2.** The durable decision
+> record is **[ADR-0007 — Operator-editable clases: future-only grant, derived nombre, single
+> favorite](../adr/0007-editable-clases-derived-nombre-single-favorite.md)**, which **consciously
+> reverses** this PRD's load-bearing exclusion of `clases`. Read v2 first; the v1 body below is kept
+> for history with each now-false part annotated inline (look for **[SUPERSEDED v2 / ADR-0007]**).
+>
+> **What changed in v2:**
+> - **`clases` is now editable** via a **1–30 / Ilimitado** picker (`null` = ilimitado). The grant
+>   change applies to **FUTURE sales only**; past sales are snapshotted onto the immutable `ventas`
+>   row (ADR-0004) and never retro-altered. This is the intended operator capability — v1's "clases
+>   out" exclusion is reversed.
+> - **`nombre` is DERIVED from `clases` in-DB** (`null → "Ilimitado"`, `1 → "1 clase"`,
+>   `n → "{n} clases"`), mirroring `nombrePaquete` in `src/domain/rules.ts`. The **free-text NOMBRE
+>   field is removed** — label and grant cannot drift. The edit payload is `{ id, clases, precio,
+>   popular }` (no `nombre`).
+> - **Single favorite: at most one (≤ 1) `popular` package per operator**, enforced by a partial
+>   unique index `paquetes_one_popular`; the RPC **demotes siblings before promoting**. Zero
+>   favorites is allowed.
+> - **The duplicate message is grant-based:** **"Ya tienes un paquete con esa cantidad de clases"**
+>   (was the name-based "Ya tienes un paquete con ese nombre"). Two packages that derive to the same
+>   class count collide on `paquetes_nombre_uq`; the single-favorite index is a separate 23505,
+>   disambiguated by constraint name.
+
+---
+
 > **Tracked locally** — no issue tracker / git remote exists (local-only repo, by decision 2026-05-29). This markdown is the source of record; `/to-issues` and `/to-goal` consume it directly. Intended triage: **ready-for-agent**. If a GitHub/Linear tracker is provisioned later, replace this line with `> Tracked in: <issue-url>`.
 
 # PRD — Editor de paquetes: make the package catalog editable in-app
@@ -12,6 +39,11 @@ CRUD vertical end to end (DB RPC → DAL → Server Action → bottom-sheet UI),
 write path is the proven one: atomic Postgres RPC (ADR-0005), RLS owner-scoping
 (ADR-0001), no new architecture. The load-bearing exclusion — **vigencia** and
 **clases** stay out of the form — is the whole point, and §Risks explains why.
+
+> **[SUPERSEDED v2 / ADR-0007]** The "clases stays out" exclusion is **reversed** in v2:
+> `clases` is editable and applies to future sales only; `nombre` is no longer a free-text
+> field but is **derived from `clases`**. **vigencia** does remain excluded (the 30-day
+> invariant). See [ADR-0007](../adr/0007-editable-clases-derived-nombre-single-favorite.md).
 
 ## Problem Statement
 
@@ -50,14 +82,14 @@ editor is fed from the `getPaquetes()` the **cuenta** page already fetches.
 
 1. As the operator, I want to open a package editor from the **Paquetes y precios** card (its **EDITAR** button or any row), so that maintaining my catalog is one tap from where I already see it.
 2. As the operator, I want a bottom sheet listing my three **paquetes** with name, price, and the **popular** star, so that I can pick the one to edit at a glance.
-3. As the operator, I want to change a package's **nombre** (1–40 characters), so that I can fix wording without a developer.
+3. ~~As the operator, I want to change a package's **nombre** (1–40 characters), so that I can fix wording without a developer.~~ **[SUPERSEDED v2 / ADR-0007]** There is no editable `nombre`; the operator changes the package's **clases** (1–30 / Ilimitado) and the display name is derived from it.
 4. As the operator, I want to change a package's **precio** to a whole-peso amount, so that a price change takes effect immediately for new sales.
 5. As the operator, I want to toggle which package is **popular** (the gold star), so that I can steer attention to the package I'm promoting.
 6. As the operator, I want **Guardar** disabled until I've actually changed something valid, so that I don't fire a pointless write or save an empty name.
 7. As the operator, I want a success toast and the card to reflect my edit immediately (read-your-writes), so that I trust the change landed.
-8. As the operator, I want a clear error if I try to give two packages the same name, so that I understand why the save was rejected.
+8. ~~As the operator, I want a clear error if I try to give two packages the same name, so that I understand why the save was rejected.~~ **[SUPERSEDED v2 / ADR-0007]** The collision is now on the **class count** (two packages deriving to the same name): the error is **"Ya tienes un paquete con esa cantidad de clases"**.
 9. As the operator, I want each edited package to keep its **30-day vigencia** automatically, so that the catalog stays consistent with how the gym actually sells.
-10. As the operator, I do NOT want to accidentally change how many **clases** a package grants or its **vigencia** while editing a price, so that past and future sales math stays correct.
+10. ~~As the operator, I do NOT want to accidentally change how many **clases** a package grants or its **vigencia** while editing a price, so that past and future sales math stays correct.~~ **[SUPERSEDED v2 / ADR-0007]** Changing **clases** is now a deliberate capability that applies to **future** sales only; **past** sales stay correct because they are snapshotted onto the immutable `ventas` row (ADR-0004). `vigencia` is still not user-editable.
 11. As the maintainer, I want the write to flow through one atomic RPC behind RLS (ADR-0005/0001), so that a package edit can never partially apply or touch another operator's catalog.
 12. As the maintainer, I want the DAL write unit-tested via the injected fake Supabase client, so that the validation and error mapping are covered without a live database.
 
@@ -66,7 +98,7 @@ editor is fed from the `getPaquetes()` the **cuenta** page already fetches.
 These are approved and **not open for re-litigation**; the build implements them as written.
 
 1. **Scope = edit existing only.** No add-new, no delete in v1. Both are deferred (§Out of Scope). The sheet shows **no** "Agregar paquete" button and **no** trash/delete chrome.
-2. **Editable fields = `precio`, `nombre`, `popular` only.** `vigencia` and `clases` are **not** in the form and the RPC never reads them from the client.
+2. ~~**Editable fields = `precio`, `nombre`, `popular` only.** `vigencia` and `clases` are **not** in the form and the RPC never reads them from the client.~~ **[SUPERSEDED v2 / ADR-0007]** Editable fields are now **`clases`, `precio`, `popular`**. `clases` IS in the form (1–30 / Ilimitado picker) and IS an RPC param; `nombre` is **removed** as an input and **derived from `clases`** in-DB. `vigencia` is still excluded (hard-normalized to the 30-day invariant by the RPC).
 3. **Vigencia policy = 30 days, an in-DB invariant.** "30 days is the default vigencia for every package." The update RPC hard-normalizes **every edited row** to `vigencia_tipo = 'dias'`, `vigencia_dias = 30`. All three live rows already are; writing it on every edit makes the policy an enforced invariant, not a convention.
 4. **UI pattern = the plantillas bottom-sheet pattern.** `Sheet` + a `{ mode: "list" } | { mode: "edit"; paquete }` view state-machine + `forgeToast` + `router.refresh()` + `forge-pressable` rows. **Not** inline-edit, **not** a sub-route.
 
@@ -106,6 +138,15 @@ success `forgeToast({ tone: "success", ... })`, `router.refresh()` (re-reads
 "list" })`. On failure, a warning toast and the form stays open with its values intact.
 
 ## Data-Layer / RPC Design
+
+> **[SUPERSEDED v2 / ADR-0007]** — the SQL + DAL shown below are the **v1** design (4-arg
+> `actualizar_paquete(p_id, p_nombre, p_precio, p_popular)`, free-text `nombre`). The **shipped v2**
+> RPC is `actualizar_paquete(p_id, p_precio, p_popular, p_clases int default null)`: it takes
+> `clases` (not `nombre`), **derives** `nombre` from `clases` in-DB (mirrors `nombrePaquete`),
+> demotes other favorites before promoting, and maps the duplicate-tier `paquetes_nombre_uq` 23505 to
+> "Ya tienes un paquete con esa cantidad de clases". See
+> `supabase/migrations/20260605130000_paquete_clases_and_single_favorite.sql`,
+> `supabase/tests/actualizar_paquete_rules.sql`, and ADR-0007. The v1 code below is kept for history.
 
 The write vertical mirrors **plantillas** exactly. The display `PaqueteDTO` is **not
 widened**; the editor reuses its existing `id` / `nombre` / `precio` / `popular`
@@ -198,18 +239,31 @@ point both `proximamente("Editor de paquetes")` call sites at `setPaquetesOpen(t
 
 ## Validation Rules
 
+> **[SUPERSEDED v2 / ADR-0007]** The `nombre` row, the name-based uniqueness row, and the
+> name-based duplicate message below are **stale**. The v2 table is:
+>
+> | Field | Rule | Where enforced |
+> | --- | --- | --- |
+> | `clases` | integer 1–30, **or `null`** (Ilimitado) | client picker gate **and** `actualizarPaqueteSchema` (`z.number().int().min(1).max(30).nullable()`) **and** DB `paquetes_clases_ck` |
+> | `precio` | positive **integer** pesos (no decimals) | client parse + gate **and** `z.number().int().positive()` |
+> | `popular` | boolean; **at most one popular** per operator | Zod `z.boolean()`; the ≤ 1 invariant is DB `paquetes_one_popular` (partial unique index), kept satisfiable by the RPC demoting siblings before promoting |
+> | `id` | valid uuid | Zod `z.string().uuid()` |
+> | `nombre` | **derived from `clases`** in-DB — NOT a user input | RPC stores `nombrePaquete(clases)` (`src/domain/rules.ts` is the spec) |
+> | duplicate grant | `(user_id, nombre)` unique → two packages can't derive to the same class count | DB `paquetes_nombre_uq`; surfaced as **"Ya tienes un paquete con esa cantidad de clases"** |
+> | vigencia | always `'dias'` / `30` | hard-written by the RPC (not user input) |
+
 | Field | Rule | Where enforced |
 | --- | --- | --- |
-| `nombre` | `.trim()`, non-empty, ≤ 40 chars | client `valido` gate **and** `actualizarPaqueteSchema` (Zod) |
+| ~~`nombre`~~ | ~~`.trim()`, non-empty, ≤ 40 chars~~ — **removed in v2 (derived)** | ~~client `valido` gate **and** `actualizarPaqueteSchema` (Zod)~~ |
 | `precio` | positive **integer** pesos (no decimals) | client parse + `valido` gate **and** `z.number().int().positive()` |
 | `popular` | boolean | Zod `z.boolean()` |
 | `id` | valid uuid | Zod `z.string().uuid()` |
-| uniqueness | `(user_id, nombre)` unique | DB `paquetes_nombre_uq`; surfaced as "Ya tienes un paquete con ese nombre" |
+| ~~uniqueness~~ | ~~`(user_id, nombre)` unique~~ | ~~DB `paquetes_nombre_uq`; surfaced as "Ya tienes un paquete con ese nombre"~~ — **v2: surfaced as "Ya tienes un paquete con esa cantidad de clases"** |
 | vigencia | always `'dias'` / `30` | hard-written by the RPC (not user input) |
 
-The Zod schema is the trust boundary: even if the client gate is bypassed, an empty
-name, a non-integer/zero/negative price, or a malformed id is rejected before the RPC
-is touched.
+The Zod schema is the trust boundary: even if the client gate is bypassed, an
+~~empty name~~ **out-of-range `clases`** (v2), a non-integer/zero/negative price, or a
+malformed id is rejected before the RPC is touched.
 
 ## Affected / Created Files
 
@@ -295,12 +349,12 @@ is rejected with the friendly message.
 
 1. Tapping **EDITAR** on the **Paquetes y precios** card **or** any package row opens the **PaquetesSheet** — neither fires the `proximamente` toast any longer.
 2. The sheet lists the operator's packages (**nombre**, **precio** in pesos, gold **star** when **popular**) with **no** add button and **no** delete chrome.
-3. Tapping a package opens the editor with header **Eyebrow** "EDITAR PAQUETE" + **H1** = current **nombre**, and **nombre** / **precio** / **popular** prefilled from the row.
-4. **Guardar** is disabled unless `nombre` is 1–40 trimmed chars **and** `precio` is a positive integer **and** at least one field changed vs the loaded row **and** no save is in flight.
-5. Saving calls `actualizarPaqueteAction({ id, nombre, precio, popular })`, shows a success toast, `router.refresh()`es, and returns to the list; the card reflects the new values immediately.
+3. ~~Tapping a package opens the editor with header **Eyebrow** "EDITAR PAQUETE" + **H1** = current **nombre**, and **nombre** / **precio** / **popular** prefilled from the row.~~ **[SUPERSEDED v2 / ADR-0007]** The editor prefills **clases** (1–30 / Ilimitado picker) / **precio** / **popular** from the row; there is no editable `nombre` field (the H1 shows the derived name).
+4. ~~**Guardar** is disabled unless `nombre` is 1–40 trimmed chars **and** `precio` is a positive integer **and** at least one field changed vs the loaded row **and** no save is in flight.~~ **[SUPERSEDED v2 / ADR-0007]** Gating is on **`clases` (1–30 or Ilimitado)** and `precio` (positive integer) being valid, at least one of clases/precio/popular changed, and no save in flight.
+5. ~~Saving calls `actualizarPaqueteAction({ id, nombre, precio, popular })`~~ **[SUPERSEDED v2 / ADR-0007]** Saving calls `actualizarPaqueteAction({ id, clases, precio, popular })` (no `nombre`), shows a success toast, `router.refresh()`es, and returns to the list; the card reflects the new values immediately.
 6. After any edit, the row in `paquetes` has `vigencia_tipo='dias'` and `vigencia_dias=30` (the 30-day invariant), regardless of its prior vigencia.
-7. The edit **never** changes `clases`, and the `actualizar_paquete` RPC has no `clases`/`vigencia` parameter — confirming future-sale grants are untouched.
-8. Editing a package to a name another package already uses is rejected with **"Ya tienes un paquete con ese nombre"** (the duplicate toast), and the form stays open with its values.
+7. ~~The edit **never** changes `clases`, and the `actualizar_paquete` RPC has no `clases`/`vigencia` parameter — confirming future-sale grants are untouched.~~ **[SUPERSEDED v2 / ADR-0007]** The edit **does** change `clases` (an `actualizar_paquete` RPC param), applying to **future** sales only; the RPC derives `nombre` from `clases` and demotes other favorites before promoting. `vigencia` is still not a parameter. Past sales stay untouched via the `ventas` snapshot (ADR-0004).
+8. ~~Editing a package to a name another package already uses is rejected with **"Ya tienes un paquete con ese nombre"** (the duplicate toast), and the form stays open with its values.~~ **[SUPERSEDED v2 / ADR-0007]** Editing a package's `clases` to a count another package already grants (same derived name) is rejected with **"Ya tienes un paquete con esa cantidad de clases"** (the duplicate toast), and the form stays open with its values.
 9. The write is a single SECURITY INVOKER RPC under RLS; a forged/non-owned `id` raises "Paquete no encontrado" and changes nothing.
 10. `PaqueteDTO`, `getPaquetes`, and the **cuenta** page data fetch are unchanged; no add/delete capability exists in v1.
 11. `pnpm lint && pnpm typecheck && pnpm test` pass, including the new `src/lib/data/paquetes.test.ts` (RPC-call shape, error mapping, Zod bounds), and the dependency-cruiser boundary stays green.
@@ -309,7 +363,7 @@ is rejected with the friendly message.
 
 - **Add a new package.** Deferred. A future `crear_paquete` RPC + an "Agregar paquete" affordance, with an `orden` slot and the same vigencia policy. Adds a catalog-cap question (how many packages max?) not decided here.
 - **Delete a package.** Deferred — and riskier than plantillas-delete because **ventas** reference packages by snapshot; a delete policy must define what happens to the catalog ordering and whether a package with sales can be removed at all. Out of v1.
-- **Editing `vigencia` or `clases`.** Excluded by design (§Risks: sale-math coupling). Any future "advanced" editing of these must reckon with changing future-buyer grants and would warrant its own ADR.
+- ~~**Editing `vigencia` or `clases`.** Excluded by design (§Risks: sale-math coupling). Any future "advanced" editing of these must reckon with changing future-buyer grants and would warrant its own ADR.~~ **[SUPERSEDED v2 / ADR-0007]** `clases` editing **is now in scope** (it got its own ADR, exactly as this line anticipated): it changes future-buyer grants on purpose, with past sales safe via the `ventas` snapshot (ADR-0004). **`vigencia`** editing remains out of scope (the 30-day invariant).
 - **Decimal / centavo pricing.** Whole-peso integers only in v1.
 - **Reordering packages** (drag to change `orden`). Not in scope.
 - **Multi-operator / shared catalogs.** Forge is single-operator (ADR-0001).

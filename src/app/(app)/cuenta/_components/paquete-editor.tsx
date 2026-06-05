@@ -2,9 +2,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
+import { ClasesPicker } from "@/components/forge/clases-picker";
 import { Icon } from "@/components/forge/icon";
 import { forgeToast } from "@/components/forge/toaster";
 import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
+import { nombrePaquete } from "@/domain/rules";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import { pesos } from "@/lib/format";
 import { actualizarPaqueteAction } from "../actions";
@@ -26,11 +28,13 @@ export function PaqueteEditor({
   paquete,
   onDone,
 }: {
-  paquete: Pick<PaqueteDTO, "id" | "nombre" | "precio" | "popular">;
+  paquete: Pick<PaqueteDTO, "id" | "precio" | "popular" | "clases">;
   onDone: () => void;
 }) {
   const router = useRouter();
-  const [nombre, setNombre] = React.useState(paquete.nombre);
+  // The real class grant (1..30 or null = ilimitado). The display nombre is
+  // DERIVED from this — there is no free-text name field anymore.
+  const [clases, setClases] = React.useState<number | null>(paquete.clases);
   // Price is held as a string (controlled text) and parsed on validate/save —
   // the column is int, so we never carry decimals through the form.
   const [precioStr, setPrecioStr] = React.useState(String(paquete.precio));
@@ -38,21 +42,21 @@ export function PaqueteEditor({
   const [saving, setSaving] = React.useState(false);
 
   const precio = parsePrecio(precioStr);
-  const valido =
-    nombre.trim().length >= 1 &&
-    nombre.trim().length <= 40 &&
-    Number.isInteger(precio) &&
-    precio > 0;
+  // clases is always valid (it comes from the picker: 1..30 or null), so only
+  // the price needs gating.
+  const valido = Number.isInteger(precio) && precio > 0;
   const dirty =
-    nombre.trim() !== paquete.nombre.trim() || precio !== paquete.precio || popular !== paquete.popular;
+    clases !== paquete.clases || precio !== paquete.precio || popular !== paquete.popular;
   const canSave = valido && dirty && !saving;
+
+  const derivedLabel = nombrePaquete(clases);
 
   const guardar = async () => {
     if (!canSave) return;
     setSaving(true);
     try {
-      await actualizarPaqueteAction({ id: paquete.id, nombre: nombre.trim(), precio, popular });
-      forgeToast({ tone: "success", title: "Paquete actualizado", body: nombre.trim() });
+      await actualizarPaqueteAction({ id: paquete.id, precio, popular, clases });
+      forgeToast({ tone: "success", title: "Paquete actualizado", body: derivedLabel });
       router.refresh();
       onDone();
     } catch (e) {
@@ -80,16 +84,19 @@ export function PaqueteEditor({
         <div className="min-w-0 flex-1">
           <Eyebrow color="var(--gold)">EDITAR PAQUETE</Eyebrow>
           <H1 size={20} style={{ marginTop: 4 }}>
-            {nombre.trim() || "Sin nombre"}
+            {derivedLabel}
           </H1>
         </div>
       </div>
 
       <div className="flex flex-col" style={{ padding: "0 16px", gap: 18 }}>
-        <label className="flex flex-col" style={{ gap: 8 }}>
-          <Eyebrow style={{ paddingLeft: 2 }}>NOMBRE</Eyebrow>
-          <Input placeholder="Ej. 8 clases" value={nombre} onChange={setNombre} autoFocus />
-        </label>
+        <div className="flex flex-col" style={{ gap: 8 }}>
+          <Eyebrow style={{ paddingLeft: 2 }}>CLASES</Eyebrow>
+          <ClasesPicker value={clases} onChange={setClases} />
+          <span style={{ paddingLeft: 2, fontSize: 11, color: "var(--muted)" }}>
+            Se mostrará como “{derivedLabel}”.
+          </span>
+        </div>
 
         <label className="flex flex-col" style={{ gap: 8 }}>
           <Eyebrow style={{ paddingLeft: 2 }}>PRECIO</Eyebrow>
@@ -145,6 +152,9 @@ export function PaqueteEditor({
               {popular && <Icon name="check" size={12} color="var(--ink)" />}
             </span>
           </button>
+          <span style={{ paddingLeft: 2, fontSize: 11, color: "var(--muted)" }}>
+            Como máximo un paquete puede ser el favorito.
+          </span>
         </div>
       </div>
 

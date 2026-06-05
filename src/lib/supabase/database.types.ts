@@ -289,7 +289,7 @@ export type Database = {
         Returns: undefined
       }
       actualizar_paquete: {
-        Args: { p_id: string; p_nombre: string; p_popular: boolean; p_precio: number }
+        Args: { p_clases?: number; p_id: string; p_popular: boolean; p_precio: number }
         Returns: undefined
       }
       actualizar_plantilla: {

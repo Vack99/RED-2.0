@@ -39,7 +39,7 @@ export function PaquetesSheet({
               PRECIOS GUARDADOS
             </H1>
             <div style={{ marginTop: 8, fontSize: 12, lineHeight: 1.5, color: "var(--muted)" }}>
-              Toca un paquete para cambiar su nombre, precio o la estrella de destacado.
+              Toca un paquete para cambiar sus clases, precio o la estrella de destacado.
             </div>
           </div>
 

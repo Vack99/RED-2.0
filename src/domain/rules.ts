@@ -34,6 +34,19 @@ export function stackPaquete(actual: Saldo, nuevo: CompraPaquete): Saldo {
 }
 
 /**
+ * A package's display name is its class grant. The DB RPC actualizar_paquete
+ * mirrors this exact rule in SQL (it stores the derived name); keep them in
+ * lockstep. `clases` is `number | null` because a package represents its grant
+ * that way in the DB/DTO — NOT the Saldo "ilimitado" type. null -> "Ilimitado",
+ * 1 -> "1 clase" (singular), n -> "{n} clases".
+ */
+export function nombrePaquete(clases: number | null): string {
+  if (clases === null) return "Ilimitado";
+  if (clases === 1) return "1 clase";
+  return `${clases} clases`;
+}
+
+/**
  * End date of a package bought on `fechaCompra`. Fixed-day packages add
  * `vigencia` days; Ilimitado ("mes") runs to the last day of the purchase
  * calendar month (brief Q1). Returns a date at local midnight; the caller

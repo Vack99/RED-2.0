@@ -27,7 +27,12 @@ export function fmtDias(diasRest: number): string {
 
 /** The {clases} token: classes-remaining as a short es-MX display string. Ilimitado
  *  reads "clases ilimitadas"; a count always reads "{n} clases" (no singular form,
- *  so 1 → "1 clases" — matches the prior send-site behavior). */
+ *  so 1 → "1 clases" — matches the prior send-site behavior).
+ *
+ *  NOT a package name: this is a DIFFERENT context — a client's REMAINING-balance
+ *  token for WhatsApp messages, not a catalog package label. It INTENTIONALLY
+ *  diverges from src/domain/rules.ts nombrePaquete (which singularizes "1 clase"
+ *  and renders "Ilimitado"); do not converge them. */
 export function fmtClases(clases: Clases): string {
   return clases === "ilimitado" ? "clases ilimitadas" : `${clases} clases`;
 }
