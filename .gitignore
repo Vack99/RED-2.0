@@ -52,3 +52,6 @@ next-env.d.ts
 
 # temp commit-message file (use git commit -F .commitmsg then delete)
 .commitmsg
+
+# session handoff docs (durable scratch, not version-controlled)
+/docs/handoffs/
