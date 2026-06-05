@@ -55,7 +55,7 @@ function DeltaCaption({ actual, prev }: { actual: number; prev: number }) {
     if (actual > 0) {
       return (
         <div style={{ fontSize: 10, color: "var(--green)", marginTop: 4, fontWeight: 700 }}>
-          ↑ NUEVO
+          NUEVO
         </div>
       );
     }
