@@ -66,7 +66,7 @@ export function InicioScreen({
           className="forge-hit forge-pressable border border-line bg-surface font-extrabold"
           style={{ width: 36, height: 36, padding: 0, color: "var(--silver)", fontSize: 11, letterSpacing: 0.6, cursor: "pointer" }}
         >
-          JC
+          D
         </button>
       </div>
 
@@ -76,7 +76,7 @@ export function InicioScreen({
         <H1 size={40} style={{ marginTop: 8 }}>
           BUENOS DÍAS,
           <br />
-          <span style={{ color: "var(--gold)" }}>COACH.</span>
+          <span style={{ color: "var(--gold)" }}>DAVID.</span>
         </H1>
       </div>
 
