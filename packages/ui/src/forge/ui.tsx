@@ -1,5 +1,5 @@
 import * as React from "react";
-import { cn } from "@/lib/utils";
+import { cn } from "../utils";
 import { Icon, type IconName } from "./icon";
 
 // ──────────────────────────────────────────────────────────────
@@ -264,8 +264,8 @@ export function Button({
 
 // `Input` is the one interactive primitive (it owns focus + change handling),
 // so it lives in its own `"use client"` file while the rest of this module
-// stays server-renderable. Re-exported here so callers keep importing it from
-// `@/components/forge/ui` unchanged.
+// stays server-renderable. Re-exported here so callers import it from
+// `@gym/ui/forge/ui` alongside the other primitives.
 export { Input } from "./input";
 
 export function SectionHeader({

@@ -1,9 +1,9 @@
 "use client";
 
 import * as React from "react";
-import { Icon, type IconName } from "@/components/forge/icon";
-import { ThemeToggle } from "@/components/forge/theme-toggle";
-import { forgeToast } from "@/components/forge/toaster";
+import { Icon, type IconName } from "@gym/ui/forge/icon";
+import { ThemeToggle } from "@gym/ui/forge/theme-toggle";
+import { forgeToast } from "@gym/ui/forge/toaster";
 import {
   AppBar,
   Avatar,
@@ -13,7 +13,7 @@ import {
   H1,
   SectionHeader,
   Tnum,
-} from "@/components/forge/ui";
+} from "@gym/ui/forge/ui";
 import type { ResumenMes } from "@gym/domain/types";
 import type { CobroDTO } from "@/lib/data/cobro";
 import type { PaqueteDTO } from "@/lib/data/paquetes";

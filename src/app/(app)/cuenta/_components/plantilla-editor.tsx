@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/forge/icon";
-import { Textarea } from "@/components/forge/input";
-import { forgeToast } from "@/components/forge/toaster";
-import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
-import { WhatsappBubble } from "@/components/forge/whatsapp-bubble";
+import { Icon } from "@gym/ui/forge/icon";
+import { Textarea } from "@gym/ui/forge/input";
+import { forgeToast } from "@gym/ui/forge/toaster";
+import { Button, Eyebrow, H1, Input } from "@gym/ui/forge/ui";
+import { WhatsappBubble } from "@gym/ui/forge/whatsapp-bubble";
 import { renderPlantilla } from "@gym/domain/rules";
 import type { PlantillaContext } from "@gym/domain/types";
 import type { PlantillaDTO } from "@/lib/data/plantillas";

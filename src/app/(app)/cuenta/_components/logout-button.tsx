@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { forgeToast } from "@/components/forge/toaster";
+import { forgeToast } from "@gym/ui/forge/toaster";
 import { createClient } from "@/lib/supabase/client";
 
 /**

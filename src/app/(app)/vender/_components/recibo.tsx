@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { ForgeLockup } from "@/components/forge/brand";
-import { Icon } from "@/components/forge/icon";
-import { MensajePicker } from "@/components/forge/mensaje-picker";
-import { Button, Eyebrow, H1, Tnum } from "@/components/forge/ui";
+import { Icon } from "@gym/ui/forge/icon";
+import { MensajePicker } from "@gym/ui/forge/mensaje-picker";
+import { Button, Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
 import type { VentaResult } from "@/lib/data/ventas";
 import { pesos, waLink } from "@/lib/format";
 

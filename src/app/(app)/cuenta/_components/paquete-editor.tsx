@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { ClasesPicker } from "@/components/forge/clases-picker";
-import { Icon } from "@/components/forge/icon";
-import { forgeToast } from "@/components/forge/toaster";
-import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
+import { ClasesPicker } from "@gym/ui/forge/clases-picker";
+import { Icon } from "@gym/ui/forge/icon";
+import { forgeToast } from "@gym/ui/forge/toaster";
+import { Button, Eyebrow, H1, Input } from "@gym/ui/forge/ui";
 import { nombrePaquete } from "@gym/domain/rules";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import { pesos } from "@/lib/format";

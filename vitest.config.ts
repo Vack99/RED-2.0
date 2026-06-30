@@ -19,6 +19,18 @@ export default defineConfig({
         },
       },
       {
+        // @gym/ui — forge kit + motion/utils/viewport. Tests cover pure logic
+        // (countUpStep, flipDelta, skeletonStyle, keyboardInset, the clases-picker
+        // geometry, prefersReducedMotion via a stubbed matchMedia), so node env is
+        // enough. Internal imports are relative; @gym/domain resolves via the
+        // workspace, so no aliases.
+        test: {
+          name: "ui",
+          environment: "node",
+          include: ["packages/ui/**/*.test.ts"],
+        },
+      },
+      {
         test: {
           name: "admin",
           environment: "node",
