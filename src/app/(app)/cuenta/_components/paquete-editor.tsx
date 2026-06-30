@@ -8,7 +8,7 @@ import { forgeToast } from "@/components/forge/toaster";
 import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
 import { nombrePaquete } from "@/domain/rules";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
-import { pesos } from "@/lib/format";
+import { pesos } from "@gym/format";
 import { actualizarPaqueteAction } from "../actions";
 
 /** Parse the price field to a whole-peso integer (es-MX, no centavos in v1).

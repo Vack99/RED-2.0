@@ -5,9 +5,7 @@ import { z } from "zod";
 
 import { resumirRoster } from "@/domain/rules";
 import type { ResumenRoster } from "@/domain/types";
-import { addDays } from "@/lib/date";
-import { fechaChihuahua, hoyChihuahua, toIsoDay } from "@/lib/fecha";
-import { iniciales, isTelValido } from "@/lib/format";
+import { addDays, fechaChihuahua, hoyChihuahua, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 
 import { requireOperator } from "./_auth";

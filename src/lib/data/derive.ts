@@ -5,9 +5,7 @@
 
 import { derivarEstado, diasRestantes, forfeit } from "@/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@/domain/types";
-import { DOW, fmtShort } from "@/lib/date";
-import { fechaChihuahua, parseDay } from "@/lib/fecha";
-import { firstName, iniciales, pesos } from "@/lib/format";
+import { DOW, fechaChihuahua, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
 
 import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";

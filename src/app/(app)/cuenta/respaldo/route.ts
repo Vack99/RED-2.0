@@ -19,7 +19,7 @@ import { requireOperator } from "@/lib/data/_auth";
 import { getRespaldoData } from "@/lib/data/respaldo";
 import { buildRespaldoRows } from "@/lib/export/rows";
 import { buildRespaldoWorkbook } from "@/lib/export/workbook";
-import { hoyChihuahua, toIsoDay } from "@/lib/fecha";
+import { hoyChihuahua, toIsoDay } from "@gym/format";
 import { createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs"; // ExcelJS needs Node, not edge

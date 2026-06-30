@@ -9,7 +9,7 @@ import { Icon, type IconName } from "@/components/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@/components/forge/ui";
 import type { ResumenMes } from "@/domain/types";
 import type { AsistenciaHoy } from "@/lib/data/asistencia";
-import { pesos } from "@/lib/format";
+import { pesos } from "@gym/format";
 import { markInAppNav } from "@/lib/nav";
 
 const SPARK_FLOOR = 0.06;

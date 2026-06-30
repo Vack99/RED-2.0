@@ -14,8 +14,7 @@
 
 import { derivarCliente } from "@/lib/data/derive";
 import type { ClienteFacts } from "@/lib/data/derive";
-import { fmtShort, isoDay } from "@/lib/date";
-import { fechaChihuahua, parseDay } from "@/lib/fecha";
+import { fechaChihuahua, fmtShort, isoDay, parseDay } from "@gym/format";
 import { urgenciaCliente } from "@/domain/rules";
 import type { EstadoCliente, NivelUrgencia } from "@/domain/types";
 

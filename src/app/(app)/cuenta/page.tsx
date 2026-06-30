@@ -3,8 +3,7 @@ import { getPaquetes } from "@/lib/data/paquetes";
 import { getPerfil } from "@/lib/data/perfil";
 import { listarPlantillas } from "@/lib/data/plantillas";
 import { getResumenMes } from "@/lib/data/resumen";
-import { fmtMesAnio } from "@/lib/date";
-import { hoyChihuahua } from "@/lib/fecha";
+import { fmtMesAnio, hoyChihuahua } from "@gym/format";
 
 import { CuentaScreen } from "./_components/cuenta";
 

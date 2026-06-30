@@ -1,7 +1,7 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
+# dependencies (un-anchored: also covers nested workspace deps under packages/* + apps/*)
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*

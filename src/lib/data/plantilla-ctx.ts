@@ -6,7 +6,7 @@
 
 import { renderPlantilla } from "@/domain/rules";
 import type { Clases, PlantillaContext } from "@/domain/types";
-import { pesos } from "@/lib/format";
+import { pesos } from "@gym/format";
 
 import type { CobroDTO } from "./cobro";
 import type { PaqueteDTO } from "./paquetes";

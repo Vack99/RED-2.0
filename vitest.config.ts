@@ -10,6 +10,15 @@ export default defineConfig({
   test: {
     projects: [
       {
+        // @gym/format — pure leaf (es-MX / Chihuahua-tz formatters). No `@`
+        // alias and no `server-only` stub: it imports nothing internal.
+        test: {
+          name: "format",
+          environment: "node",
+          include: ["packages/format/src/**/*.test.ts"],
+        },
+      },
+      {
         test: {
           name: "admin",
           environment: "node",
