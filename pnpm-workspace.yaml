@@ -1,3 +1,18 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Shared runtime versions pinned once (ADR-0011 §3): the app and every package
+# resolve the SAME react/next/etc. via `catalog:`, so they can never diverge into
+# duplicate-React / hook breakage. Tools (turbo, eslint) stay per-package.
+catalog:
+  react: 19.2.4
+  react-dom: 19.2.4
+  next: 16.2.6
+  typescript: ^5
+  zod: ^4.4.3
+  vitest: ^4.1.7
+
 # pnpm 11 build-script approval. pnpm blocks native postinstall scripts by
 # default and writes this stub; setting each to `true` approves it so
 # `pnpm install` / `pnpm run dev` don't halt on ERR_PNPM_IGNORED_BUILDS.
