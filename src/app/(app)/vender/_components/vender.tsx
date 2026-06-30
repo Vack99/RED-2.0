@@ -2,11 +2,11 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { CountUp } from "@/components/forge/count-up";
-import { Icon, type IconName } from "@/components/forge/icon";
-import { Sheet } from "@/components/forge/sheet";
-import { forgeToast } from "@/components/forge/toaster";
-import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
+import { CountUp } from "@gym/ui/forge/count-up";
+import { Icon, type IconName } from "@gym/ui/forge/icon";
+import { Sheet } from "@gym/ui/forge/sheet";
+import { forgeToast } from "@gym/ui/forge/toaster";
+import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, VentaResult } from "@gym/data/server/ventas";

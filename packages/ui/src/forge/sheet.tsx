@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { createPortal } from "react-dom";
-import { keyboardInset } from "@/lib/viewport";
+import { keyboardInset } from "../viewport";
 import { SheetFocusContext } from "./sheet-focus-context";
 
 /**

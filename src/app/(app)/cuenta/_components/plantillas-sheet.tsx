@@ -2,10 +2,10 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/forge/icon";
-import { Sheet } from "@/components/forge/sheet";
-import { forgeToast } from "@/components/forge/toaster";
-import { Button, Eyebrow, H1 } from "@/components/forge/ui";
+import { Icon } from "@gym/ui/forge/icon";
+import { Sheet } from "@gym/ui/forge/sheet";
+import { forgeToast } from "@gym/ui/forge/toaster";
+import { Button, Eyebrow, H1 } from "@gym/ui/forge/ui";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import { eliminarPlantillaAction, sembrarPlantillasDefaultAction } from "../actions";
 import { PlantillaEditor } from "./plantilla-editor";

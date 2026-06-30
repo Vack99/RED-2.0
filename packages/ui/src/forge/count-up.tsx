@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { prefersReducedMotion } from "@/lib/motion";
+import { prefersReducedMotion } from "../motion";
 import { Tnum } from "./ui";
 
 /**

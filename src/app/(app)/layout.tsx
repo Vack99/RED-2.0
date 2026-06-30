@@ -1,4 +1,4 @@
-import { TabBar } from "@/components/forge/tab-bar";
+import { TabBar } from "@gym/ui/forge/tab-bar";
 
 /**
  * App shell: a full-bleed, mobile-first phone-width column centered on a

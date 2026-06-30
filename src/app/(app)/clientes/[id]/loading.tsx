@@ -1,5 +1,5 @@
-import { Skeleton } from "@/components/forge/skeleton";
-import { AppBar, Card, Eyebrow } from "@/components/forge/ui";
+import { Skeleton } from "@gym/ui/forge/skeleton";
+import { AppBar, Card, Eyebrow } from "@gym/ui/forge/ui";
 
 /**
  * Route loading fallback for the client ficha. Renders inside template.tsx, so

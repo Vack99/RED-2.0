@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Icon } from "@/components/forge/icon";
-import { MensajePicker } from "@/components/forge/mensaje-picker";
-import { forgeToast } from "@/components/forge/toaster";
+import { Icon } from "@gym/ui/forge/icon";
+import { MensajePicker } from "@gym/ui/forge/mensaje-picker";
+import { forgeToast } from "@gym/ui/forge/toaster";
 import {
   AppBar,
   Avatar,
@@ -15,7 +15,7 @@ import {
   H1,
   SectionHeader,
   Tnum,
-} from "@/components/forge/ui";
+} from "@gym/ui/forge/ui";
 import type { ClienteFichaDTO } from "@gym/data/server/clientes";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "@/lib/nav";

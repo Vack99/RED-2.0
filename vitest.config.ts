@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 
 // Root Vitest config (ADR-0011 §7): monorepo runs use `test.projects`, NOT the
 // deprecated vitest.workspace.ts. The tree is split into per-package projects
-// (domain, format, data) plus `admin` for the remaining src/ tree. The
+// (domain, format, data, ui) plus `admin` for the remaining src/ tree. The
 // `server-only`→empty-stub alias lives with the @gym/data project — its ./server
 // DAL keeps the `import 'server-only'` poison-pill, exercised via the supabase-fake.
 export default defineConfig({
@@ -45,6 +45,18 @@ export default defineConfig({
               new URL("./node_modules/server-only/empty.js", import.meta.url),
             ),
           },
+        },
+      },
+      {
+        // @gym/ui — forge kit + motion/utils/viewport. Tests cover pure logic
+        // (countUpStep, flipDelta, skeletonStyle, keyboardInset, the clases-picker
+        // geometry, prefersReducedMotion via a stubbed matchMedia), so node env is
+        // enough. Internal imports are relative; @gym/domain resolves via the
+        // workspace, so no aliases.
+        test: {
+          name: "ui",
+          environment: "node",
+          include: ["packages/ui/**/*.test.ts"],
         },
       },
       {

@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import Link from "next/link";
-import { Icon } from "@/components/forge/icon";
-import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
-import { useFlip } from "@/components/forge/use-flip";
+import { Icon } from "@gym/ui/forge/icon";
+import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
+import { useFlip } from "@gym/ui/forge/use-flip";
 import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteDerivado } from "@gym/data/server/derive";

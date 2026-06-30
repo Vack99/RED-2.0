@@ -21,9 +21,9 @@
     "@gym/data": "workspace:*",
     "@gym/domain": "workspace:*",
     "@gym/format": "workspace:*",
+    "@gym/ui": "workspace:*",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.106.2",
-    "clsx": "^2.1.1",
     "exceljs": "^4.4.0",
     "next": "catalog:",
     "next-themes": "^0.4.6",
@@ -31,7 +31,6 @@
     "react-dom": "catalog:",
     "server-only": "^0.0.1",
     "sonner": "^2.0.7",
-    "tailwind-merge": "^3.6.0",
     "zod": "catalog:"
   },
   "devDependencies": {

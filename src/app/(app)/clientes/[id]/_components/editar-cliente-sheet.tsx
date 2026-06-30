@@ -2,9 +2,9 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Sheet } from "@/components/forge/sheet";
-import { forgeToast } from "@/components/forge/toaster";
-import { Avatar, Button, Eyebrow, H1, Input } from "@/components/forge/ui";
+import { Sheet } from "@gym/ui/forge/sheet";
+import { forgeToast } from "@gym/ui/forge/toaster";
+import { Avatar, Button, Eyebrow, H1, Input } from "@gym/ui/forge/ui";
 import { iniciales, isTelValido } from "@gym/format";
 import { actualizarClienteAction } from "../actions";
 

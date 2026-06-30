@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
-import { ForgeToaster } from "@/components/forge/toaster";
+import { ForgeToaster } from "@gym/ui/forge/toaster";
 
 // Outfit is the prototype's display/body face. Exposed as the CSS var
 // `--font-outfit`, which globals.css wires into `--font-sans` and <body>.
