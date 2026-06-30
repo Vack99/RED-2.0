@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
 import { Avatar, Button, Eyebrow, H1, Input } from "@/components/forge/ui";
-import { iniciales, isTelValido } from "@/lib/format";
+import { iniciales, isTelValido } from "@gym/format";
 import { actualizarClienteAction } from "../actions";
 
 export function EditarClienteSheet({

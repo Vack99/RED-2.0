@@ -6,7 +6,7 @@ import { Icon } from "@/components/forge/icon";
 import { MensajePicker } from "@/components/forge/mensaje-picker";
 import { Button, Eyebrow, H1, Tnum } from "@/components/forge/ui";
 import type { VentaResult } from "@/lib/data/ventas";
-import { pesos, waLink } from "@/lib/format";
+import { pesos, waLink } from "@gym/format";
 
 export function Recibo({
   result,

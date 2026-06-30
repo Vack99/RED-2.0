@@ -17,7 +17,7 @@ import {
   Tnum,
 } from "@/components/forge/ui";
 import type { ClienteFichaDTO } from "@/lib/data/clientes";
-import { firstName, waLink } from "@/lib/format";
+import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "@/lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "@/lib/swipe";
 import { togglePaseAction } from "../actions";

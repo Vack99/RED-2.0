@@ -5,7 +5,7 @@ import { Icon } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { Eyebrow, H1, Tnum } from "@/components/forge/ui";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
-import { pesos } from "@/lib/format";
+import { pesos } from "@gym/format";
 import { PaqueteEditor } from "./paquete-editor";
 
 // Edit existing only — no "new", no delete (locked scope). The view is just

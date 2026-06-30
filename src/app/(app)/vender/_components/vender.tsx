@@ -10,7 +10,7 @@ import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui"
 import type { ClienteLiteDTO } from "@/lib/data/clientes";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { Metodo as MetodoEnum, VentaResult } from "@/lib/data/ventas";
-import { isTelValido, pesos } from "@/lib/format";
+import { isTelValido, pesos } from "@gym/format";
 import { crearVentaAction } from "../actions";
 import { Recibo } from "./recibo";
 

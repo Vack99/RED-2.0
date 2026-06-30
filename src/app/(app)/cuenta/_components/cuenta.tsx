@@ -19,7 +19,7 @@ import type { CobroDTO } from "@/lib/data/cobro";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";
 import type { PlantillaDTO } from "@/lib/data/plantillas";
-import { pesos } from "@/lib/format";
+import { pesos } from "@gym/format";
 
 import { LogoutButton } from "./logout-button";
 import { PaquetesSheet } from "./paquetes-sheet";

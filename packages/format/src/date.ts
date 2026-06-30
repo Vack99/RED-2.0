@@ -2,7 +2,7 @@
 // Pure calendar helpers (es-MX labels + local-component date math).
 // All functions here are pure: they read/produce a Date's LOCAL Y/M/D,
 // never the wall clock. The DEMO_TODAY offset scaffolding was retired in
-// the cleanup slice; "today" now comes from src/lib/fecha.ts (Chihuahua tz).
+// the cleanup slice; "today" now comes from fecha.ts (Chihuahua tz).
 // ──────────────────────────────────────────────────────────────
 
 export const DOW = ["DOM", "LUN", "MAR", "MIÉ", "JUE", "VIE", "SÁB"];

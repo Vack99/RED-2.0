@@ -3,10 +3,10 @@
 // them must carry the Chihuahua calendar Y/M/D in its local fields. These helpers
 // bridge the wall clock + Postgres `date` strings into that shape.
 //
-// src/lib/date.ts holds the pure local-component calendar math (labels + isoDay);
-// this module adds the Chihuahua-tz wall clock + Postgres `date` parsing on top.
+// date.ts holds the pure local-component calendar math (labels + isoDay); this
+// module adds the Chihuahua-tz wall clock + Postgres `date` parsing on top.
 // `toIsoDay` is date.isoDay re-exported so the local-field serialization lives in
-// exactly one place (callers in the DAL import it from here, screens from date).
+// exactly one place.
 
 import { isoDay } from "./date";
 

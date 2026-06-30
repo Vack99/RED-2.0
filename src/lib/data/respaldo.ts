@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { hoyChihuahua } from "@/lib/fecha";
+import { hoyChihuahua } from "@gym/format";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";
 import type {
   RespaldoAsistencia,

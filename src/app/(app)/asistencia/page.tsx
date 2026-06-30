@@ -1,6 +1,6 @@
 import { getMarcadas } from "@/lib/data/asistencia";
 import { getClientesParaPase } from "@/lib/data/clientes";
-import { hoyIsoChihuahua } from "@/lib/fecha";
+import { hoyIsoChihuahua } from "@gym/format";
 
 import { AsistenciaScreen } from "./_components/asistencia";
 

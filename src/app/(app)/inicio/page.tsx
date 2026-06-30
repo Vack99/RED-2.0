@@ -1,8 +1,7 @@
 import { getAsistenciasHoy } from "@/lib/data/asistencia";
 import { getRosterResumen } from "@/lib/data/clientes";
 import { getResumenMes } from "@/lib/data/resumen";
-import { fmtEyebrow } from "@/lib/date";
-import { hoyChihuahua } from "@/lib/fecha";
+import { fmtEyebrow, hoyChihuahua } from "@gym/format";
 
 import { InicioScreen } from "./_components/inicio";
 
