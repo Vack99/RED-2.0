@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { SupabaseServer } from "@/lib/supabase/server";
+import type { SupabaseServer } from "./supabase";
 
 /**
  * The DAL's operator-auth guard. A leading underscore keeps this out of the

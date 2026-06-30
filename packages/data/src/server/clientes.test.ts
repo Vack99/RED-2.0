@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { actualizarCliente } from "./clientes";
-import type { SupabaseServer } from "@/lib/supabase/server";
+import type { SupabaseServer } from "./supabase";
 
 /**
  * The seam: `actualizarCliente` takes an injectable client (ADR-0001), so the write

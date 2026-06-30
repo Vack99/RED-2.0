@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { forgeToast } from "@/components/forge/toaster";
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@gym/data/client";
 
 /**
  * Quiet sign-out utility, mirroring the client-side login pattern

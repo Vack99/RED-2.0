@@ -1,4 +1,4 @@
-import { getClientesRoster } from "@/lib/data/clientes";
+import { getClientesRoster } from "@gym/data/server/clientes";
 
 import { ClientesScreen } from "./_components/clientes";
 

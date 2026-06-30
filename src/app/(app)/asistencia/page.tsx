@@ -1,5 +1,5 @@
-import { getMarcadas } from "@/lib/data/asistencia";
-import { getClientesParaPase } from "@/lib/data/clientes";
+import { getMarcadas } from "@gym/data/server/asistencia";
+import { getClientesParaPase } from "@gym/data/server/clientes";
 import { hoyIsoChihuahua } from "@gym/format";
 
 import { AsistenciaScreen } from "./_components/asistencia";

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { crearVenta, type CrearVentaInput } from "./ventas";
-import type { SupabaseServer } from "@/lib/supabase/server";
+import type { SupabaseServer } from "./supabase";
 
 /**
  * The seam this exercises: `crearVenta` takes an injectable client (ADR-0001,

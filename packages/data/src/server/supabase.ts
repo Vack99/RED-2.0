@@ -4,7 +4,7 @@ import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 
-import type { Database } from './database.types'
+import type { Database } from '../database.types'
 
 /**
  * Per-request Supabase client for Server Components, the DAL, and Server Actions

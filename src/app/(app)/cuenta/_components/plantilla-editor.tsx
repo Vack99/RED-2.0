@@ -9,7 +9,7 @@ import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
 import { WhatsappBubble } from "@/components/forge/whatsapp-bubble";
 import { renderPlantilla } from "@gym/domain/rules";
 import type { PlantillaContext } from "@gym/domain/types";
-import type { PlantillaDTO } from "@/lib/data/plantillas";
+import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import { actualizarPlantillaAction, crearPlantillaAction } from "../actions";
 
 const TOKENS = [

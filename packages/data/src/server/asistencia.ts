@@ -4,7 +4,7 @@ import { cache } from "react";
 import { z } from "zod";
 
 import { hoyChihuahua, iniciales, toIsoDay } from "@gym/format";
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 

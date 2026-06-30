@@ -1,6 +1,6 @@
-import { getAsistenciasHoy } from "@/lib/data/asistencia";
-import { getRosterResumen } from "@/lib/data/clientes";
-import { getResumenMes } from "@/lib/data/resumen";
+import { getAsistenciasHoy } from "@gym/data/server/asistencia";
+import { getRosterResumen } from "@gym/data/server/clientes";
+import { getResumenMes } from "@gym/data/server/resumen";
 import { fmtEyebrow, hoyChihuahua } from "@gym/format";
 
 import { InicioScreen } from "./_components/inicio";

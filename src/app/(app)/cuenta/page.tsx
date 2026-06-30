@@ -1,8 +1,8 @@
-import { getCobro } from "@/lib/data/cobro";
-import { getPaquetes } from "@/lib/data/paquetes";
-import { getPerfil } from "@/lib/data/perfil";
-import { listarPlantillas } from "@/lib/data/plantillas";
-import { getResumenMes } from "@/lib/data/resumen";
+import { getCobro } from "@gym/data/server/cobro";
+import { getPaquetes } from "@gym/data/server/paquetes";
+import { getPerfil } from "@gym/data/server/perfil";
+import { listarPlantillas } from "@gym/data/server/plantillas";
+import { getResumenMes } from "@gym/data/server/resumen";
 import { fmtMesAnio, hoyChihuahua } from "@gym/format";
 
 import { CuentaScreen } from "./_components/cuenta";

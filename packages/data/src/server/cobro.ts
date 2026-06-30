@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 /** Safe cobro DTO for the cuenta "Datos de cobro" section — no id / user_id.
  *  The cobro row is the source for the {datos_pago} plantilla token (token

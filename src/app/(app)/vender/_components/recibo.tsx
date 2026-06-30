@@ -5,7 +5,7 @@ import { ForgeLockup } from "@/components/forge/brand";
 import { Icon } from "@/components/forge/icon";
 import { MensajePicker } from "@/components/forge/mensaje-picker";
 import { Button, Eyebrow, H1, Tnum } from "@/components/forge/ui";
-import type { VentaResult } from "@/lib/data/ventas";
+import type { VentaResult } from "@gym/data/server/ventas";
 import { pesos, waLink } from "@gym/format";
 
 export function Recibo({

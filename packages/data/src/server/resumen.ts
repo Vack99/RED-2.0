@@ -5,7 +5,7 @@ import { cache } from "react";
 import { calcularResumenMes } from "@gym/domain/rules";
 import type { AsistenciaResumen, ResumenMes, VentaResumen } from "@gym/domain/types";
 import { fechaChihuahua, hoyChihuahua, parseDay, toIsoDay } from "@gym/format";
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 /**
  * Monthly resumen for the inicio dashboard + cuenta "Resumen del mes".

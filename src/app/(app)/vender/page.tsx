@@ -1,5 +1,5 @@
-import { getClientesLite } from "@/lib/data/clientes";
-import { getPaquetes } from "@/lib/data/paquetes";
+import { getClientesLite } from "@gym/data/server/clientes";
+import { getPaquetes } from "@gym/data/server/paquetes";
 
 import { VenderScreen } from "./_components/vender";
 

@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
 import { decideRedirect } from '@/lib/auth'
-import type { Database } from '@/lib/supabase/database.types'
+import type { Database } from '@gym/data'
 
 /**
  * Next 16 request proxy (formerly `middleware.ts` — do NOT reintroduce that

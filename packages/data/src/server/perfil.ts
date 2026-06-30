@@ -2,7 +2,7 @@ import 'server-only'
 
 import { cache } from 'react'
 
-import { createClient, type SupabaseServer } from '@/lib/supabase/server'
+import { createClient, type SupabaseServer } from './supabase'
 
 /**
  * The single operator's profile, as a safe DTO (no `id`/`user_id` leak).

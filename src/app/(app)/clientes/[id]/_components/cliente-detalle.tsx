@@ -16,7 +16,7 @@ import {
   SectionHeader,
   Tnum,
 } from "@/components/forge/ui";
-import type { ClienteFichaDTO } from "@/lib/data/clientes";
+import type { ClienteFichaDTO } from "@gym/data/server/clientes";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "@/lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "@/lib/swipe";

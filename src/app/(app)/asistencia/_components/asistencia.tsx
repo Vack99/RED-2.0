@@ -6,7 +6,7 @@ import { Icon } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
 import { Avatar, Card, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
-import type { PaseClienteDTO } from "@/lib/data/clientes";
+import type { PaseClienteDTO } from "@gym/data/server/clientes";
 import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@/lib/motion";
 import { markInAppNav } from "@/lib/nav";

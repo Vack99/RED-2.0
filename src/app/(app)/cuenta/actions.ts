@@ -1,12 +1,12 @@
 "use server";
 
-import { actualizarPaquete } from "@/lib/data/paquetes";
+import { actualizarPaquete } from "@gym/data/server/paquetes";
 import {
   actualizarPlantilla,
   crearPlantilla,
   eliminarPlantilla,
   sembrarPlantillasDefault,
-} from "@/lib/data/plantillas";
+} from "@gym/data/server/plantillas";
 
 /** Thin write seams over the DAL. (app) reads are dynamic (cookie-bound), so the client
  *  router.refresh()es after a successful write — no cache invalidation needed (matches togglePaseAction). */

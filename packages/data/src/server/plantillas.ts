@@ -3,7 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 

@@ -7,7 +7,7 @@ import { Icon } from "@/components/forge/icon";
 import { forgeToast } from "@/components/forge/toaster";
 import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
 import { nombrePaquete } from "@gym/domain/rules";
-import type { PaqueteDTO } from "@/lib/data/paquetes";
+import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import { pesos } from "@gym/format";
 import { actualizarPaqueteAction } from "../actions";
 

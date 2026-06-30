@@ -1,0 +1,27 @@
+{
+  "name": "@gym/data",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/database.types.ts",
+    "./server/*": "./src/server/*.ts",
+    "./client": "./src/client.ts"
+  },
+  "dependencies": {
+    "@gym/domain": "workspace:*",
+    "@gym/format": "workspace:*",
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.2",
+    "exceljs": "^4.4.0",
+    "server-only": "^0.0.1",
+    "zod": "catalog:"
+  },
+  "peerDependencies": {
+    "next": "catalog:",
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "vitest": "catalog:"
+  }
+}

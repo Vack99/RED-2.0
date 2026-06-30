@@ -15,12 +15,12 @@
 // getSession()) throws on a missing operator claim; we wrap it so an auth failure
 // is a clean 401 ("No autenticado"), not a 500.
 
-import { requireOperator } from "@/lib/data/_auth";
-import { getRespaldoData } from "@/lib/data/respaldo";
-import { buildRespaldoRows } from "@/lib/export/rows";
-import { buildRespaldoWorkbook } from "@/lib/export/workbook";
+import { requireOperator } from "@gym/data/server/_auth";
+import { getRespaldoData } from "@gym/data/server/respaldo";
+import { buildRespaldoRows } from "@gym/data/server/export/rows";
+import { buildRespaldoWorkbook } from "@gym/data/server/export/workbook";
 import { hoyChihuahua, toIsoDay } from "@gym/format";
-import { createClient } from "@/lib/supabase/server";
+import { createClient } from "@gym/data/server/supabase";
 
 export const runtime = "nodejs"; // ExcelJS needs Node, not edge
 

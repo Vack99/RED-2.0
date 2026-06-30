@@ -1,6 +1,6 @@
 "use server";
 
-import { crearVenta, type VentaResult } from "@/lib/data/ventas";
+import { crearVenta, type VentaResult } from "@gym/data/server/ventas";
 
 /**
  * Thin write seam (ADR-0001): delegate to the DAL, which Zod-validates,

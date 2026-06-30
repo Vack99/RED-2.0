@@ -1,6 +1,6 @@
 import "server-only";
 
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 /** PostgREST silently caps an un-ranged response at ~1000 rows; page through it. */
 const PAGE = 1000;

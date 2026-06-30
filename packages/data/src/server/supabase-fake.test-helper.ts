@@ -1,4 +1,4 @@
-import type { SupabaseServer } from "@/lib/supabase/server";
+import type { SupabaseServer } from "./supabase";
 
 /**
  * Shared chain-capturing Supabase fake for DAL unit tests (test infra, NOT

@@ -3,14 +3,14 @@ import "server-only";
 import { cache } from "react";
 
 import { hoyChihuahua } from "@gym/format";
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 import type {
   RespaldoAsistencia,
   RespaldoCliente,
   RespaldoData,
   RespaldoPaquete,
   RespaldoVenta,
-} from "@/lib/export/rows";
+} from "./export/rows";
 
 /**
  * PostgREST caps a single response (commonly ~1000 rows). The two FULL-history

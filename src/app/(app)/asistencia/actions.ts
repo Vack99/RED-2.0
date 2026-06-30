@@ -1,6 +1,6 @@
 "use server";
 
-import { togglePase, type TogglePaseResult } from "@/lib/data/asistencia";
+import { togglePase, type TogglePaseResult } from "@gym/data/server/asistencia";
 
 /**
  * Thin write seam (ADR-0001): delegate to the DAL (Zod-validates, re-auths,

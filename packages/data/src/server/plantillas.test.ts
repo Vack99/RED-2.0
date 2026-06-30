@@ -7,7 +7,7 @@ import {
   listarPlantillas,
   sembrarPlantillasDefault,
 } from "./plantillas";
-import type { SupabaseServer } from "@/lib/supabase/server";
+import type { SupabaseServer } from "./supabase";
 
 /**
  * The seam: every plantillas write takes an injectable client (ADR-0001), so the orchestration —

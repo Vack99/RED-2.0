@@ -3,9 +3,10 @@ import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 
 // Root Vitest config (ADR-0011 §7): monorepo runs use `test.projects`, NOT the
-// deprecated vitest.workspace.ts. S1–S5 split the tree into per-package projects;
-// @gym/domain is the first extracted. The `server-only`→empty-stub alias follows
-// the @gym/data project once the DAL is extracted.
+// deprecated vitest.workspace.ts. The tree is split into per-package projects
+// (domain, format, data) plus `admin` for the remaining src/ tree. The
+// `server-only`→empty-stub alias lives with the @gym/data project — its ./server
+// DAL keeps the `import 'server-only'` poison-pill, exercised via the supabase-fake.
 export default defineConfig({
   test: {
     projects: [
@@ -28,6 +29,25 @@ export default defineConfig({
         },
       },
       {
+        // @gym/data — the server-only DAL + export/ + Supabase clients (ADR-0011
+        // §5/§7). Each ./server module keeps `import 'server-only'`; the unit tests
+        // inject the supabase-fake, so stub that runtime guard with the package's
+        // own empty module. No `@` alias — the package uses relative + @gym/*
+        // specifiers only.
+        test: {
+          name: "data",
+          environment: "node",
+          include: ["packages/data/**/*.test.ts"],
+        },
+        resolve: {
+          alias: {
+            "server-only": fileURLToPath(
+              new URL("./node_modules/server-only/empty.js", import.meta.url),
+            ),
+          },
+        },
+      },
+      {
         test: {
           name: "admin",
           environment: "node",
@@ -36,12 +56,6 @@ export default defineConfig({
         resolve: {
           alias: {
             "@": fileURLToPath(new URL("./src", import.meta.url)),
-            // The DAL is `server-only`; in tests it's exercised via the injected
-            // fake client, so stub the runtime guard with the package's own
-            // empty module.
-            "server-only": fileURLToPath(
-              new URL("./node_modules/server-only/empty.js", import.meta.url),
-            ),
           },
         },
       },

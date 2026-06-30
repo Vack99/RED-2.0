@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/client";
+import { createClient } from "@gym/data/client";
 import { FMARK_BARS, FMARK_BAR_HEIGHT } from "@/components/forge/brand";
 
 // === The REAL login — variant E ("Forged") surface + live Supabase auth ======

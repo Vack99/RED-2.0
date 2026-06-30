@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 
-import { getClienteFicha } from "@/lib/data/clientes";
+import { getClienteFicha } from "@gym/data/server/clientes";
 
 import { ClienteDetalle } from "./_components/cliente-detalle";
 

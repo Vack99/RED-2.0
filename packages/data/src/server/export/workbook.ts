@@ -10,7 +10,7 @@
 
 import ExcelJS from "exceljs";
 
-import type { RespaldoRows, RespaldoSheet } from "@/lib/export/rows";
+import type { RespaldoRows, RespaldoSheet } from "./rows";
 
 const MONEY_FMT = "$#,##0.00";
 

@@ -18,6 +18,7 @@
     "prepare": "husky"
   },
   "dependencies": {
+    "@gym/data": "workspace:*",
     "@gym/domain": "workspace:*",
     "@gym/format": "workspace:*",
     "@supabase/ssr": "^0.10.3",

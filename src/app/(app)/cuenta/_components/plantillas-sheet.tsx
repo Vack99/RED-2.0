@@ -6,7 +6,7 @@ import { Icon } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { forgeToast } from "@/components/forge/toaster";
 import { Button, Eyebrow, H1 } from "@/components/forge/ui";
-import type { PlantillaDTO } from "@/lib/data/plantillas";
+import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import { eliminarPlantillaAction, sembrarPlantillasDefaultAction } from "../actions";
 import { PlantillaEditor } from "./plantilla-editor";
 

@@ -6,7 +6,7 @@ import { z } from "zod";
 import { resumirRoster } from "@gym/domain/rules";
 import type { ResumenRoster } from "@gym/domain/types";
 import { addDays, fechaChihuahua, hoyChihuahua, iniciales, isTelValido, toIsoDay } from "@gym/format";
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 import {

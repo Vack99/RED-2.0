@@ -12,8 +12,8 @@
 // Dates are shaped to TEXT here (no Excel timezone footguns): ledger dates that
 // span years are ISO (isoDay), near-future / recurring dates are day-month (fmtShort).
 
-import { derivarCliente } from "@/lib/data/derive";
-import type { ClienteFacts } from "@/lib/data/derive";
+import { derivarCliente } from "../derive";
+import type { ClienteFacts } from "../derive";
 import { fechaChihuahua, fmtShort, isoDay, parseDay } from "@gym/format";
 import { urgenciaCliente } from "@gym/domain/rules";
 import type { EstadoCliente, NivelUrgencia } from "@gym/domain/types";

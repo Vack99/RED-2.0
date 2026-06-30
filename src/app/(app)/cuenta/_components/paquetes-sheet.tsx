@@ -4,7 +4,7 @@ import * as React from "react";
 import { Icon } from "@/components/forge/icon";
 import { Sheet } from "@/components/forge/sheet";
 import { Eyebrow, H1, Tnum } from "@/components/forge/ui";
-import type { PaqueteDTO } from "@/lib/data/paquetes";
+import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import { pesos } from "@gym/format";
 import { PaqueteEditor } from "./paquete-editor";
 

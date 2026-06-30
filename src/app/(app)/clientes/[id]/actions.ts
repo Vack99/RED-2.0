@@ -1,7 +1,7 @@
 "use server";
 
-import { togglePase, type TogglePaseResult } from "@/lib/data/asistencia";
-import { actualizarCliente } from "@/lib/data/clientes";
+import { togglePase, type TogglePaseResult } from "@gym/data/server/asistencia";
+import { actualizarCliente } from "@gym/data/server/clientes";
 
 /** Mark/undo today's attendance from the ficha. Thin write seam over the DAL;
  *  (app) reads are dynamic (cookie-bound), so no cache invalidation is needed. */

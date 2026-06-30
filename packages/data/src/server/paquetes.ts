@@ -6,7 +6,7 @@ import { z } from "zod";
 import { calcVigenciaEnd } from "@gym/domain/rules";
 import type { Vigencia } from "@gym/domain/types";
 import { fmtShort, hoyChihuahua } from "@gym/format";
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 

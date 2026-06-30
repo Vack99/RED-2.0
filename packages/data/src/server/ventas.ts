@@ -5,7 +5,7 @@ import { z } from "zod";
 import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@gym/domain/rules";
 import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@gym/domain/types";
 import { addDays, firstName, fmtShort, hoyChihuahua, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
-import { createClient, type SupabaseServer } from "@/lib/supabase/server";
+import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 import { getCobro } from "./cobro";
