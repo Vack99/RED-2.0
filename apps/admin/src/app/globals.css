@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Register @gym/ui's source with Tailwind v4 (ADR-0011 §7). Tailwind 4 (CSS-first)
+   auto-detects classes only from this Next project's root (apps/admin) and ignores
+   out-of-root files, so the UI kit under packages/ui/src — now outside the app —
+   would have its classes (incl. arbitrary ones like `z-[5]`) silently tree-shaken.
+   `@source` adds that directory to the scan; a v3-style `content` glob no-ops here. */
+@source "../../../../packages/ui/src";
+
 /* Enable class-based dark mode (next-themes toggles `.dark` on <html>). */
 @custom-variant dark (&:is(.dark *));
 

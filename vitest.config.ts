@@ -4,7 +4,7 @@ import { defineConfig } from "vitest/config";
 
 // Root Vitest config (ADR-0011 §7): monorepo runs use `test.projects`, NOT the
 // deprecated vitest.workspace.ts. The tree is split into per-package projects
-// (domain, format, data, ui) plus `admin` for the remaining src/ tree. The
+// (domain, format, data, ui) plus `admin` for the apps/admin/src tree. The
 // `server-only`→empty-stub alias lives with the @gym/data project — its ./server
 // DAL keeps the `import 'server-only'` poison-pill, exercised via the supabase-fake.
 export default defineConfig({
@@ -42,7 +42,10 @@ export default defineConfig({
         resolve: {
           alias: {
             "server-only": fileURLToPath(
-              new URL("./node_modules/server-only/empty.js", import.meta.url),
+              new URL(
+                "./packages/data/node_modules/server-only/empty.js",
+                import.meta.url,
+              ),
             ),
           },
         },
@@ -63,11 +66,11 @@ export default defineConfig({
         test: {
           name: "admin",
           environment: "node",
-          include: ["src/**/*.test.ts"],
+          include: ["apps/admin/src/**/*.test.ts"],
         },
         resolve: {
           alias: {
-            "@": fileURLToPath(new URL("./src", import.meta.url)),
+            "@": fileURLToPath(new URL("./apps/admin/src", import.meta.url)),
           },
         },
       },

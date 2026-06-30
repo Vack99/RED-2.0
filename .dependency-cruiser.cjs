@@ -8,8 +8,8 @@ module.exports = {
         "code. Keeps the domain pure/testable and the data seam swappable " +
         "(ADR-0001/0002). If you hit this, the rule belongs in src/domain, not a screen.",
       severity: "error",
-      from: { path: "^src/(domain|lib)" },
-      to: { path: "^src/(components|app)" },
+      from: { path: "^apps/admin/src/(domain|lib)" },
+      to: { path: "^apps/admin/src/(components|app)" },
     },
     {
       name: "no-circular",
@@ -31,8 +31,8 @@ module.exports = {
         pathNot: [
           "\\.d\\.ts$",
           "\\.(test|spec)\\.[jt]sx?$",
-          "(^|/)src/proxy\\.ts$",
-          "(^|/)src/app/.*(page|layout|template|loading|error|not-found|route|default|global-error)\\.[jt]sx?$",
+          "(^|/)apps/admin/src/proxy\\.ts$",
+          "(^|/)apps/admin/src/app/.*(page|layout|template|loading|error|not-found|route|default|global-error)\\.[jt]sx?$",
           "(^|/)tsconfig",
           "(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$",
           "\\.config\\.[jt]s$",

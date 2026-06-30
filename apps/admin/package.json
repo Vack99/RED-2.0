@@ -1,0 +1,30 @@
+{
+  "name": "@gym/admin",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@gym/data": "workspace:*",
+    "@gym/domain": "workspace:*",
+    "@gym/format": "workspace:*",
+    "@gym/ui": "workspace:*",
+    "@supabase/ssr": "^0.10.3",
+    "next": "catalog:",
+    "next-themes": "^0.4.6",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "sonner": "^2.0.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^24",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "tailwindcss": "^4",
+    "typescript": "catalog:"
+  }
+}
