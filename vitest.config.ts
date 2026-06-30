@@ -63,15 +63,13 @@ export default defineConfig({
         },
       },
       {
+        // apps/admin — app-local utils (auth/nav/swipe). After the @/* alias was
+        // deleted (the boundary cutover), every app import resolves via @gym/*
+        // workspace specifiers or relative paths, so no resolve alias is needed.
         test: {
           name: "admin",
           environment: "node",
           include: ["apps/admin/src/**/*.test.ts"],
-        },
-        resolve: {
-          alias: {
-            "@": fileURLToPath(new URL("./apps/admin/src", import.meta.url)),
-          },
         },
       },
     ],

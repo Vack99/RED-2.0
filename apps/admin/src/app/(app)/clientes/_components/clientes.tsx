@@ -8,7 +8,7 @@ import { useFlip } from "@gym/ui/forge/use-flip";
 import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteDerivado } from "@gym/data/server/derive";
-import { markInAppNav } from "@/lib/nav";
+import { markInAppNav } from "../../../../lib/nav";
 
 type Sort = "dias" | "nombre" | "asist";
 

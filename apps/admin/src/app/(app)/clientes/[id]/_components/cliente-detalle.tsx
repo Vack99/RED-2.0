@@ -18,8 +18,8 @@ import {
 } from "@gym/ui/forge/ui";
 import type { ClienteFichaDTO } from "@gym/data/server/clientes";
 import { firstName, waLink } from "@gym/format";
-import { consumeInAppNav, markInAppNav } from "@/lib/nav";
-import { idleSwipe, swipeStep, type SwipeState } from "@/lib/swipe";
+import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
+import { idleSwipe, swipeStep, type SwipeState } from "../../../../../lib/swipe";
 import { togglePaseAction } from "../actions";
 import { EditarClienteSheet } from "./editar-cliente-sheet";
 

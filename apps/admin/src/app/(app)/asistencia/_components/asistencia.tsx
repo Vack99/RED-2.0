@@ -9,7 +9,7 @@ import { Avatar, Card, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
 import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
-import { markInAppNav } from "@/lib/nav";
+import { markInAppNav } from "../../../../lib/nav";
 import { togglePaseAction } from "../actions";
 import { setMarcada, type Marcadas } from "./marcadas";
 

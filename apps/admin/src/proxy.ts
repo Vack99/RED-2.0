@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 
-import { decideRedirect } from '@/lib/auth'
+import { decideRedirect } from './lib/auth'
 import type { Database } from '@gym/data'
 
 /**

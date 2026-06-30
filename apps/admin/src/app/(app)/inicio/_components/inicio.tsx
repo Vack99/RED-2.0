@@ -3,14 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ForgeLockup } from "@/components/forge/brand";
+import { ForgeLockup } from "../../../../components/forge/brand";
 import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@gym/ui/forge/ui";
 import type { ResumenMes } from "@gym/domain/types";
 import type { AsistenciaHoy } from "@gym/data/server/asistencia";
 import { pesos } from "@gym/format";
-import { markInAppNav } from "@/lib/nav";
+import { markInAppNav } from "../../../../lib/nav";
 
 const SPARK_FLOOR = 0.06;
 

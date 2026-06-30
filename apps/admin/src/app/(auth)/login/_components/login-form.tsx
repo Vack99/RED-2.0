@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@gym/data/client";
-import { FMARK_BARS, FMARK_BAR_HEIGHT } from "@/components/forge/brand";
+import { FMARK_BARS, FMARK_BAR_HEIGHT } from "../../../../components/forge/brand";
 
 // === The REAL login — variant E ("Forged") surface + live Supabase auth ======
 // The visual surface (mark loading-bar build → per-letter FORGE → top-bar shine
