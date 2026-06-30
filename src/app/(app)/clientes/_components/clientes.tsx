@@ -5,8 +5,8 @@ import Link from "next/link";
 import { Icon } from "@/components/forge/icon";
 import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@/components/forge/ui";
 import { useFlip } from "@/components/forge/use-flip";
-import { resumirRoster, urgenciaCliente } from "@/domain/rules";
-import type { NivelUrgencia } from "@/domain/types";
+import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
+import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteDerivado } from "@/lib/data/derive";
 import { markInAppNav } from "@/lib/nav";
 

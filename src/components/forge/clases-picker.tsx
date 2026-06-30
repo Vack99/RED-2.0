@@ -2,7 +2,7 @@
 
 import * as React from "react";
 
-import { nombrePaquete } from "@/domain/rules";
+import { nombrePaquete } from "@gym/domain/rules";
 
 /**
  * Mobile-first vertical scroll-snap picker for a package's class grant.

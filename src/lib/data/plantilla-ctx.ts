@@ -4,8 +4,8 @@
 // MensajeDTO construction live here once instead of being duplicated (and drifting)
 // at each call site. Pure: no I/O, no Supabase — unit-tested in plantilla-ctx.test.ts.
 
-import { renderPlantilla } from "@/domain/rules";
-import type { Clases, PlantillaContext } from "@/domain/types";
+import { renderPlantilla } from "@gym/domain/rules";
+import type { Clases, PlantillaContext } from "@gym/domain/types";
 import { pesos } from "@/lib/format";
 
 import type { CobroDTO } from "./cobro";

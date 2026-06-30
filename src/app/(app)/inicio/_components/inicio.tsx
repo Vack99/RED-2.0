@@ -7,7 +7,7 @@ import { ForgeLockup } from "@/components/forge/brand";
 import { CountUp } from "@/components/forge/count-up";
 import { Icon, type IconName } from "@/components/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@/components/forge/ui";
-import type { ResumenMes } from "@/domain/types";
+import type { ResumenMes } from "@gym/domain/types";
 import type { AsistenciaHoy } from "@/lib/data/asistencia";
 import { pesos } from "@/lib/format";
 import { markInAppNav } from "@/lib/nav";

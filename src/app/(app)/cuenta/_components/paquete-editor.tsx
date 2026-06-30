@@ -6,7 +6,7 @@ import { ClasesPicker } from "@/components/forge/clases-picker";
 import { Icon } from "@/components/forge/icon";
 import { forgeToast } from "@/components/forge/toaster";
 import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
-import { nombrePaquete } from "@/domain/rules";
+import { nombrePaquete } from "@gym/domain/rules";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import { pesos } from "@/lib/format";
 import { actualizarPaqueteAction } from "../actions";

@@ -14,7 +14,7 @@ import {
   SectionHeader,
   Tnum,
 } from "@/components/forge/ui";
-import type { ResumenMes } from "@/domain/types";
+import type { ResumenMes } from "@gym/domain/types";
 import type { CobroDTO } from "@/lib/data/cobro";
 import type { PaqueteDTO } from "@/lib/data/paquetes";
 import type { PerfilDTO } from "@/lib/data/perfil";

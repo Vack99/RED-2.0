@@ -1,0 +1,10 @@
+{
+  "name": "@gym/domain",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./rules": "./src/rules.ts",
+    "./types": "./src/types.ts"
+  }
+}

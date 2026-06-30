@@ -16,8 +16,8 @@ import { derivarCliente } from "@/lib/data/derive";
 import type { ClienteFacts } from "@/lib/data/derive";
 import { fmtShort, isoDay } from "@/lib/date";
 import { fechaChihuahua, parseDay } from "@/lib/fecha";
-import { urgenciaCliente } from "@/domain/rules";
-import type { EstadoCliente, NivelUrgencia } from "@/domain/types";
+import { urgenciaCliente } from "@gym/domain/rules";
+import type { EstadoCliente, NivelUrgencia } from "@gym/domain/types";
 
 // ── The contract — RespaldoData (DAL → shaper) + RespaldoRows (shaper → workbook) ──
 

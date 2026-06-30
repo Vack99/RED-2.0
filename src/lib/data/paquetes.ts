@@ -3,8 +3,8 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { calcVigenciaEnd } from "@/domain/rules";
-import type { Vigencia } from "@/domain/types";
+import { calcVigenciaEnd } from "@gym/domain/rules";
+import type { Vigencia } from "@gym/domain/types";
 import { fmtShort } from "@/lib/date";
 import { hoyChihuahua } from "@/lib/fecha";
 import { createClient, type SupabaseServer } from "@/lib/supabase/server";

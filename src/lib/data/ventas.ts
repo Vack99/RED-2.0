@@ -2,8 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
-import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@/domain/rules";
-import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@/domain/types";
+import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@gym/domain/rules";
+import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@gym/domain/types";
 import { addDays, fmtShort } from "@/lib/date";
 import { hoyChihuahua, parseDay, toIsoDay } from "@/lib/fecha";
 import { firstName, iniciales, isTelValido } from "@/lib/format";

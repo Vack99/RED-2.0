@@ -7,8 +7,8 @@ import { Textarea } from "@/components/forge/input";
 import { forgeToast } from "@/components/forge/toaster";
 import { Button, Eyebrow, H1, Input } from "@/components/forge/ui";
 import { WhatsappBubble } from "@/components/forge/whatsapp-bubble";
-import { renderPlantilla } from "@/domain/rules";
-import type { PlantillaContext } from "@/domain/types";
+import { renderPlantilla } from "@gym/domain/rules";
+import type { PlantillaContext } from "@gym/domain/types";
 import type { PlantillaDTO } from "@/lib/data/plantillas";
 import { actualizarPlantillaAction, crearPlantillaAction } from "../actions";
 
