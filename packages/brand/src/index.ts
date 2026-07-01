@@ -4,5 +4,6 @@
 export type { BrandId } from "./brand-id";
 export { DEFAULT_BRAND } from "./brand-id";
 export { HOST_TO_BRAND } from "./host-map";
+export { resolveBrandId } from "./resolve-brand-id";
 export type { BrandModule } from "./registry";
 export { brands } from "./registry";
