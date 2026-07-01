@@ -1,16 +1,21 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { workspaceDirs } from "./workspaces";
+
 // The ESLint client→server seam rule (eslint.config.mjs, shield S3) scopes to
 // **/_components/** plus the two known top-level client files. This guard keeps
 // that scope EXHAUSTIVE: any new 'use client' file outside it must be added to
 // the ESLint `files` glob (or moved under _components/), else the seam rule
-// silently stops covering it (audit 2026-06-30).
+// silently stops covering it (audit 2026-06-30). It walks every app (apps/*), so
+// a second app (apps/client) is not silently exempt. Packages are NOT walked: the
+// seam guards client→@gym/data/server VALUE imports, and no package may import
+// @gym/data at all (the dependency-cruiser boundary forbids it), so a package's
+// client files are already covered — more strictly — by that boundary.
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-const ADMIN_SRC = join(REPO, "apps/admin/src");
 
 const ALLOWED_OUTSIDE_COMPONENTS = new Set([
   "apps/admin/src/app/providers.tsx",
@@ -18,6 +23,7 @@ const ALLOWED_OUTSIDE_COMPONENTS = new Set([
 ]);
 
 function walk(dir: string): string[] {
+  if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const full = join(dir, entry.name);
@@ -30,8 +36,9 @@ function walk(dir: string): string[] {
 const isClientComponent = (src: string): boolean => /^\s*["']use client["']/m.test(src);
 
 describe("client→server seam scope stays exhaustive", () => {
-  it("every 'use client' file is under _components/ or the ESLint allow-list", () => {
-    const stray = walk(ADMIN_SRC)
+  it("every app 'use client' file is under _components/ or the ESLint allow-list", () => {
+    const stray = workspaceDirs("apps")
+      .flatMap((app) => walk(join(REPO, app, "src")))
       .filter((file) => isClientComponent(readFileSync(file, "utf8")))
       .map((file) => relative(REPO, file).split("\\").join("/"))
       .filter((rel) => !rel.includes("/_components/") && !ALLOWED_OUTSIDE_COMPONENTS.has(rel));

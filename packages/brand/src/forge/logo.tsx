@@ -10,8 +10,8 @@ import * as React from "react";
 // ── SINGLE SOURCE OF TRUTH for the F-mark geometry ──────────────────────────
 // Exported so EVERY surface that draws the mark (the static FMark below, the
 // animated login build, the app icon) derives its polygons from this ONE
-// definition and can never drift. This file is in the UI kit and imports only
-// React — keep it free of any app/ or domain/ dependency.
+// definition and can never drift. This is Forge's brand module in @gym/brand and
+// imports only React — keep it free of any app / @gym/data / @gym/domain dependency.
 //
 // Both edges lean left at the bottom ("/"): the left edge gently (the shared
 // spine), the right edge steeper so each bar ends in a sharp forward point.

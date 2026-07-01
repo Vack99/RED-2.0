@@ -4,11 +4,14 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { workspaceDirs } from "./workspaces";
+
 // Workspace-manifest invariants the audit (2026-06-30, shield S5) turned from
 // convention into a machine check: every internal package is ESM + private, the
 // @gym/data server surface stays an explicit allow-list, every shared runtime/type
 // lib is pinned via the pnpm catalog, and eslint-config-next tracks the catalog
-// `next` version.
+// `next` version. Workspaces are discovered from the filesystem (apps/* + packages/*)
+// so a new one (packages/brand, apps/client) is checked automatically.
 const REPO = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 
 type Manifest = {
@@ -25,8 +28,11 @@ function readManifest(rel: string): Manifest {
   return JSON.parse(readFileSync(join(REPO, rel), "utf8")) as Manifest;
 }
 
-const PACKAGES = ["packages/domain", "packages/format", "packages/data", "packages/ui"];
-const MANIFESTS = ["package.json", "apps/admin/package.json", ...PACKAGES.map((p) => `${p}/package.json`)];
+const PACKAGES = workspaceDirs("packages");
+const MANIFESTS = [
+  "package.json",
+  ...workspaceDirs("apps", "packages").map((w) => `${w}/package.json`),
+];
 
 // Shared runtime/type libs imported by >=2 workspaces — must be `catalog:` so a
 // future manual bump in one manifest can't diverge versions across importers.

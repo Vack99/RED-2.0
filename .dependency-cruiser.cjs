@@ -50,6 +50,19 @@ module.exports = {
       to: { path: "^(packages/data|apps)/" },
     },
     {
+      name: "brand-is-presentation-only",
+      comment:
+        "@gym/brand holds presentation-only brand modules (tokens + logo + at most " +
+        "one bespoke animation). It must NEVER import @gym/data or @gym/domain — the " +
+        "host resolves brand (presentation) but never authz or rules (ADR-0008/0012), " +
+        "so brand carries no data seam or gym rule. It MAY consume the pure @gym/format " +
+        "leaf and be consumed by @gym/ui / apps (ADR-0011 §6). This is the §6 edge that " +
+        "lands with packages/brand.",
+      severity: "error",
+      from: { path: "^packages/brand/" },
+      to: { path: "^packages/(data|domain)/" },
+    },
+    {
       name: "no-undeclared-npm-deps",
       comment:
         "Import only npm packages this workspace declares in its own package.json " +
@@ -72,17 +85,18 @@ module.exports = {
       comment:
         "Every module must have a caller (or be an entry point) — no dead files. " +
         "The pathNot exceptions are genuine entry points the framework loads " +
-        "directly (Next pages/layouts/templates/route handlers + the apps/admin " +
+        "directly (any app's Next pages/layouts/templates/route handlers + its " +
         "proxy), test files (run by vitest), ambient type decls, and root " +
-        "config/dotfiles.",
+        "config/dotfiles. The app-entry patterns match apps/* (not just apps/admin) " +
+        "so a second app (apps/client) is not silently flagged.",
       severity: "error",
       from: {
         orphan: true,
         pathNot: [
           "\\.d\\.ts$",
           "\\.(test|spec)\\.[jt]sx?$",
-          "(^|/)apps/admin/src/proxy\\.ts$",
-          "(^|/)apps/admin/src/app/.*(page|layout|template|loading|error|not-found|route|default|global-error)\\.[jt]sx?$",
+          "(^|/)apps/[^/]+/src/proxy\\.ts$",
+          "(^|/)apps/[^/]+/src/app/.*(page|layout|template|loading|error|not-found|route|default|global-error)\\.[jt]sx?$",
           "(^|/)tsconfig",
           "(^|/)\\.[^/]+\\.(js|cjs|mjs|ts)$",
           "\\.config\\.[jt]s$",

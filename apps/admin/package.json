@@ -8,6 +8,7 @@
     "start": "next start"
   },
   "dependencies": {
+    "@gym/brand": "workspace:*",
     "@gym/data": "workspace:*",
     "@gym/domain": "workspace:*",
     "@gym/format": "workspace:*",

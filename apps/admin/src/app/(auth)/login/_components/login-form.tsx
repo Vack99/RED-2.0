@@ -4,7 +4,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@gym/data/client";
-import { FMARK_BARS, FMARK_BAR_HEIGHT } from "../../../../components/forge/brand";
+import { FMARK_BARS, FMARK_BAR_HEIGHT } from "@gym/brand/forge/logo";
 
 // === The REAL login — variant E ("Forged") surface + live Supabase auth ======
 // The visual surface (mark loading-bar build → per-letter FORGE → top-bar shine
@@ -12,8 +12,8 @@ import { FMARK_BARS, FMARK_BAR_HEIGHT } from "../../../../components/forge/brand
 // single-operator sign-in (createClient + signInWithPassword), unchanged.
 //
 // The F-mark is NOT re-described here: its polygons come from the single source
-// of truth in src/components/forge/brand.tsx (FMARK_BARS). We only add the
-// per-bar loading-bar wipe on top of that shared geometry.
+// of truth in @gym/brand/forge/logo (FMARK_BARS). We only add the per-bar
+// loading-bar wipe on top of that shared geometry.
 
 // --- Per-bar build, derived FROM the shared geometry -------------------------
 // Each shared bar's polygon is `xL,yTop  xR,yTop  xR+rightSlant,yTop+h

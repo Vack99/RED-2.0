@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" role="img" aria-label="Forge">
   <!--
     Forge app icon. STATIC F-mark from the single-source geometry in
-    src/components/forge/brand.tsx (FMARK_BARS): three slanted bars,
+    @gym/brand/forge/logo (FMARK_BARS): three slanted bars,
     top silver / middle gold / bottom silver.
 
     The icon renders WITHOUT page CSS, so colors are hardcoded hex read from

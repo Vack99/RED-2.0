@@ -86,6 +86,9 @@ importers:
 
   apps/admin:
     dependencies:
+      '@gym/brand':
+        specifier: workspace:*
+        version: link:../../packages/brand
       '@gym/data':
         specifier: workspace:*
         version: link:../../packages/data
@@ -135,6 +138,19 @@ importers:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3
+
+  packages/brand:
+    dependencies:
+      react:
+        specifier: 'catalog:'
+        version: 19.2.4
+    devDependencies:
+      '@types/react':
+        specifier: 'catalog:'
+        version: 19.2.15
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.7(@types/node@24.12.4)(vite@8.0.14(@types/node@24.12.4)(jiti@2.7.0))
 
   packages/data:
     dependencies:

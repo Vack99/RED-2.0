@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ForgeLockup } from "../../../../components/forge/brand";
+import { ForgeLockup } from "@gym/brand/forge/logo";
 import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@gym/ui/forge/ui";

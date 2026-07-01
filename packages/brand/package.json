@@ -1,0 +1,17 @@
+{
+  "name": "@gym/brand",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./forge/logo": "./src/forge/logo.tsx"
+  },
+  "peerDependencies": {
+    "react": "catalog:"
+  },
+  "devDependencies": {
+    "@types/react": "catalog:",
+    "vitest": "catalog:"
+  }
+}

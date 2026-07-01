@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   // its own boundary instead of treating the symlinked workspace package as an
   // opaque node_modules dependency. Transpiling @gym/data through Next's own
   // poison-aware pipeline is what keeps its `server-only` tripwire alive (§1/§5).
-  transpilePackages: ["@gym/domain", "@gym/format", "@gym/data", "@gym/ui"],
+  transpilePackages: ["@gym/domain", "@gym/format", "@gym/data", "@gym/ui", "@gym/brand"],
 };
 
 export default nextConfig;

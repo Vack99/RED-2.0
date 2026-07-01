@@ -63,6 +63,16 @@ export default defineConfig({
         },
       },
       {
+        // @gym/brand — the two brand modules + host-map registry. The registry
+        // test references (never renders) the logo/animation components, so node
+        // env is enough; no aliases (imports are relative + `react` type-only).
+        test: {
+          name: "brand",
+          environment: "node",
+          include: ["packages/brand/**/*.test.ts"],
+        },
+      },
+      {
         // apps/admin — app-local utils (auth/nav/swipe). After the @/* alias was
         // deleted (the boundary cutover), every app import resolves via @gym/*
         // workspace specifiers or relative paths, so no resolve alias is needed.
