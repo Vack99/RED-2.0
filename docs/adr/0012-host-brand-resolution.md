@@ -1,6 +1,6 @@
 # ADR-0012 — Host→brand resolution: one shared `proxy.ts` seam, a static registry stubbing the Phase-3 `gym`-row lookup
 
-**Status:** Accepted · **Date:** 2026-06-30 · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (`proxy.ts` not `middleware.ts`, Node-only, `getClaims()`/`getUser()`), [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) (host resolves brand **only, never authz**; presentation-only brand modules; two multi-tenant deploys + one shared Supabase), [ADR-0011](0011-monorepo-packaging-jit-packages-cross-package-boundary.md) (JIT `@gym/*` packages; §6 the `brand ✗→ data/domain` edge lands when `packages/brand` is created) · **Realizes:** roadmap **Phase 2** ("Multi-tenant tracer / de-risker") in [`docs/planning/2026-06-29-multi-gym-platform-roadmap.md`](../planning/2026-06-29-multi-gym-platform-roadmap.md)
+**Status:** Accepted · **Date:** 2026-06-30 · **Amended:** 2026-07-01 (keyspace split, `gym_domain` host modeling, admin-shell scope — per the multitenant-branding scale audit) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (`proxy.ts` not `middleware.ts`, Node-only, `getClaims()`/`getUser()`), [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) (host resolves brand **only, never authz**; presentation-only brand modules; two multi-tenant deploys + one shared Supabase), [ADR-0011](0011-monorepo-packaging-jit-packages-cross-package-boundary.md) (JIT `@gym/*` packages; §6 the `brand ✗→ data/domain` edge lands when `packages/brand` is created) · **Realizes:** roadmap **Phase 2** ("Multi-tenant tracer / de-risker") in [`docs/planning/2026-06-29-multi-gym-platform-roadmap.md`](../planning/2026-06-29-multi-gym-platform-roadmap.md)
 
 ## Context
 
@@ -29,7 +29,7 @@ The ordering is identical across dev/preview/prod — the environment changes th
 
 ### 2. Both apps run the identical seam; per-deployment difference is host-map *data*
 
-`apps/admin` and `apps/client` each run the same seam in their own `proxy.ts`: read **`host`** (never `x-forwarded-host`) + `?gym=` + the `gym` cookie → `resolveBrandId` → stamp **`x-brand`** on the request and persist a fresh `?gym` to a session cookie. Resolution happens **once, at the proxy** (not per RSC subtree — the Phase-3 `gym`-row read is an edge/DB lookup done once). The **only** difference between the two deployments is host-map data: admin's map serves **forge** hosts, the client's serves **forge + red**. Phase-4 RED-admin is then a one-row host-map addition + a provisioned host — **zero mechanism change**.
+`apps/admin` and `apps/client` each run the same seam in their own `proxy.ts`: read **`host`** (never `x-forwarded-host`) + `?gym=` + the `gym` cookie → `resolveBrandId` → stamp **`x-brand`** on the request and persist a fresh `?gym` to a session cookie. Resolution happens **once, at the proxy** (not per RSC subtree — the Phase-3 `gym`-row read is an edge/DB lookup done once). The **only** difference between the two deployments is host-map data: admin's map serves **forge** hosts, the client's serves **forge + red**. Phase-4 RED-admin is then a one-row host-map addition + a provisioned host — **zero mechanism change** (the seam only — the admin shell's de-brand is Phase-4 work; see Consequences).
 
 ### 3. SSR-inlined tokens via a dark-safe `<style>` block — no FOUC, no second layer
 
@@ -41,7 +41,7 @@ Brand modules live in **`@gym/brand`** (a JIT raw-TS package per [ADR-0011](0011
 
 ### 5. The static registry is a labelled Phase-3 stub
 
-`HOST_TO_BRAND` and the brand registry are a **temporary in-code stub** for the Phase-3 `gym`-row lookup, **behind the unchanged `resolveBrandId` signature** (which becomes `async` — a one-line ripple; the call site already `await`s `headers()`). Map keys are production hostnames **== the future `gym.hostname` column**. Phase 2 is zero-schema: no `gym` table, no RLS change, no brand DB read. The "against the shared Supabase" exit criterion is met **only** by the `@gym/data` client factory **instantiating** in `apps/client` with the shared `NEXT_PUBLIC_SUPABASE_*` — instantiation, no query.
+`HOST_TO_BRAND` and the brand registry are a **temporary in-code stub** for the Phase-3 `gym`-row lookup, behind `resolveBrandId`'s `(host, override)` shape (it becomes `async`, and its bare `BrandId` return grows to carry tenant + module once the keyspaces split — see Forward-looking). Map keys are production hostnames **== future `gym_domain(gym_id, hostname, app)` rows** (a gym needs ≥2 hosts — admin + client, as this map already shows — so hostnames are a table, not a column). Phase 2 is zero-schema: no `gym` table, no RLS change, no brand DB read. The "against the shared Supabase" exit criterion is met **only** by the `@gym/data` client factory **instantiating** in `apps/client` with the shared `NEXT_PUBLIC_SUPABASE_*` — instantiation, no query.
 
 ### 6. Override param is `?gym=`
 
@@ -64,13 +64,13 @@ The override is **`?gym=`** (tenant-addressed), forward-honest to the Phase-3 mo
 ## Consequences
 
 - **Brand is CODE; per-gym personalization is DATA — this is the thousands-scale mechanism.** A brand module is a small, enumerable *code* artifact (baseline tokens + logo + at most one bespoke animation hook, e.g. RED's login sequence) that grows **only** when a gym needs bespoke *code*. Per-gym palette/logo/copy becomes **data** on the `gym` row (Phase 3). So thousands of generic gyms share one default module with **zero code**; a personalized gym is the same module + a small token-override map in its row; a genuinely-bespoke gym ships one module, reused thereafter. Onboarding a gym stays a **config act** (INSERT `gym` row + point a domain), never a deploy — exactly as ADR-0008 requires.
-- **Admin changes, behaviour-preserved.** Adopting the symmetric seam touches `apps/admin` (proxy + layout + token/logo relocation), a deliberate deviation from Phase 2's "admin re-deploys unchanged" framing. Its rendered output is **identical** (behaviour-preserving); the product owner chose symmetry so both apps prove the shared brand package and admin is Phase-4-ready with a one-row change. The per-commit gate (lint + typecheck + test + build) and the docs/boundary shields must stay green through the relocation.
+- **Admin changes, behaviour-preserved.** Adopting the symmetric seam touches `apps/admin` (proxy + layout + token/logo relocation), a deliberate deviation from Phase 2's "admin re-deploys unchanged" framing. Its rendered output is **identical** (behaviour-preserving); the product owner chose symmetry so both apps prove the shared brand package and admin's *seam* is Phase-4-ready with a one-row change (the admin *shell* still hardcodes Forge — title, toaster, two lockups, login animation — and is de-branded in Phase 4). The per-commit gate (lint + typecheck + test + build) and the docs/boundary shields must stay green through the relocation.
 - Reading host/headers makes brand-resolved routes **dynamic** — expected, not a regression.
 - Acceptance for riskiest-assumption #3 ("no FOUC") is **observable, not asserted**: tokens are SSR-inlined (no client flash) and the per-brand bundle-size delta is recorded in the slice.
 
 ## Forward-looking (Phase 3+)
 
-- Swap the static host-map for a `gym`-row lookup behind the same `resolveBrandId` signature (sync → async).
+- Swap the static host-map for a `gym`/`gym_domain` lookup (sync → async). **Tenant slug and brand-module id are distinct keyspaces joined via the gym row** — many gyms share one module, so the resolver returns the tenant, from which the module + token-override DATA derive; the `x-brand` header semantics, the registry type, and the layout index change with it (more than a one-line ripple).
 - `?gym=` then names an arbitrary tenant slug (persisted raw, **validated in the resolver**).
 - `brand.css` is serialized from `module-baseline vars ⊕ gym-row token DATA`, **zod-validated before serialization** (guards the `dangerouslySetInnerHTML`).
 - A hot host→id cache may move to Vercel Edge Config.

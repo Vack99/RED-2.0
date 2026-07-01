@@ -53,7 +53,8 @@ Types are indicative Postgres. Exhaustive field lists live in the two mock-analy
 this is the structural spine + the non-obvious rules.
 
 ### Tenant & identity
-- **`gym`** *(tenant; absorbs brand/location/contact from old `perfil`)* — `id`, `owner_user_id→auth.users`, `brand_name` ("RED"), `legal_name`, `tagline`, `descriptor`, `city`, `address`, `lat/lng`, `phone_whatsapp`, `email`, `instagram`, `founded_year`, `area_m2`, `currency`('MXN'), `iva_included`.
+- **`gym`** *(tenant; absorbs brand/location/contact from old `perfil`)* — `id`, `owner_user_id→auth.users`, `brand_name` ("RED"), `legal_name`, `tagline`, `descriptor`, `city`, `address`, `lat/lng`, **`timezone` (IANA, e.g. 'America/Chihuahua' — NOT NULL, set at provisioning; Mexico spans 4 zones and `gym_hours`/`schedule_template` wall-clock times are uninterpretable without it)**, `phone_whatsapp`, `email`, `instagram`, `founded_year`, `area_m2`, `currency`('MXN'), `iva_included`.
+- **`gym_domain`** — `gym_id`, `hostname` (unique), `app` (`admin|client`). A gym needs ≥2 hosts (admin + client); rows seed from `HOST_TO_BRAND` at the Phase-3 swap (supersedes ADR-0012's original single-`gym.hostname` phrasing).
 - **`gym_hours`** — `gym_id`, `weekday 0–6`, `open_time`, `close_time`, `is_closed` (Domingo closed).
 - **`gym_membership`** — `user_id`, `gym_id`, `role` (`owner|operator|member`). §1.
 - **operator profile** *(thin; what's left of `perfil` after brand graduates to `gym`)*.
@@ -72,7 +73,7 @@ this is the structural spine + the non-obvious rules.
 - **`subscription`** — `id`, `member_id`, `plan_id`, `status` (`active|frozen|cancelled`), `classes_used`, `classes_total`, `renews_on`, `period_start/end`, `frozen_until`. (Freeze: up to 15 días/mes.)
 - **`reservation`** — `id`, `gym_id`, `class_session_id`, `member_id`, `status` (`reservada|cancelada|asistida|no_show`), `is_walk_in`, `checked_at`, `created_at`, `cancelled_at`. **Unique (`member_id`, `class_session_id`).**
 - **`asistencia`** *(existing, evolves)* — gains `class_session_id` (and `reservation_id`) FK; "Pasar lista" writes here (*"asistencias enviadas a ASIST"*). The `asistida` state of a reservation.
-- **`payment`** *(evolves from `ventas`)* — `id`, `member_id`, `plan_id`, `paid_on`, `amount_cents`, `method`, `card_last4`, `status`('Pagado').
+- **`payment`** *(evolves from `ventas`)* — `id`, `member_id`, `plan_id`, `folio` *(per-gym numbering — see the migration contract below)*, `paid_on`, `amount_cents`, `method`, `card_last4`, `status`('Pagado').
 - **member stats** — `clases_tomadas`, `racha_sem`, `favorita`, monthly usage by type → **a VIEW** over `reservation`+`class_session`, not a base table.
 - **`contact_message`**, **`waitlist_entry`**, notification log/prefs.
 
@@ -85,6 +86,8 @@ this is the structural spine + the non-obvious rules.
 | `asistencias` | `asistida` state of **`reservation`** (+ `class_session_id` FK) |
 | `perfil` | **`gym`** (brand/location/contact, member-facing) + thin operator profile |
 | `plantillas`, `cobro` | stay operator-side; member app adds member-facing notifications + (future) card checkout |
+
+> **Migration contract (Phase 3 expand/contract):** re-key the global `unique(folio)` — one `venta_folio_seq` today, so gym #2's receipts would interleave with gym #1's — to **`unique(gym_id, folio)`** with a per-gym counter row incremented inside the existing atomic sale RPC (*not* per-gym sequences); likewise re-key the four `user_id`-keyed uniques — `perfil.user_id`, `cobro.user_id`, `paquetes(user_id, nombre)`, the `paquetes_one_popular` partial index — to gym-scoped equivalents.
 
 ## 5. Do-not-violate invariants (🔒 — the shield)
 
@@ -100,7 +103,10 @@ A fresh implementation session **must not**:
 
 ## 6. Parked sub-decisions (🅿️ — defaults stated)
 
-- **Payments / subscriptions processing — DEFERRED.** The client `membresía/checkout` screens (card fields, "Pagar", cargo automático, facturación) are **UI-only for v1**; no real payment processor wired. Build plan-selection + status; defer charging. (Revisit post-launch.)
+- **Payments / subscriptions processing — DEFERRED.** The client `membresía/checkout` is **UI-only for v1**; no real payment processor wired. Build plan-selection + status; the v1 screen shows an honest **"paga en tu gym"** — no dead card fields (collecting card numbers that charge nothing is a trust hazard). (Revisit trigger: **before onboarding the first non-founder-operated gym**; weight OXXO/SPEI as heavily as cards.)
+- **Abuse posture (public surfaces).** Default: Supabase auth rate limits + captcha (Turnstile) on signup, and a per-IP limit or captcha on `contact_message` anon INSERTs — the one surface with **zero** built-in limiting; one shared project means one spammed form burns every tenant's email quota. Implemented in the Phase-6 marketing/auth slices.
+- **Notification channel.** Default: **v1 = in-app only** (auth mail via the Phase-3 SMTP). WhatsApp/push automation is a paid, Meta-verified service — the Phase-6 waitlist slice must not improvise it.
+- **Domain strategy.** Default: platform **wildcard subdomains** (`<gym>.plataforma.mx`) as the zero-DNS-coordination onboarding path; customer-owned apex as a premium add-on. Hosts are `gym_domain` rows (§4).
 - **Canonical tenant name.** Brand string is "RED" everywhere user-facing, but contact handles say Forge (`hola@forgebootcamp.mx`, `@forge.bootcamp`). **Default:** store `brand_name` *and* contact handles on `gym`; treat them independently. Confirm the canonical legal name per gym at Phase 3.
 - **Room/location.** Mock assumes one location; `class_type.sala` ("Sala Yunque/Forja/Brasa") reads as a *room label*, not a second venue. **Default:** single `room` per gym, `class_session.room_id` nullable. Revisit if a gym gets multiple venues.
 - **Self-serve gym onboarding.** Out of scope now (gyms invited/provisioned). Future.
