@@ -37,10 +37,10 @@ el host.
 | Término | Significado | Dónde vive |
 |---|---|---|
 | **inquilino** (tenant) | Un **gimnasio** (la futura fila `gym`). Es la frontera de aislamiento, resuelta por `gym_membership` vía RLS — **nunca** por el host. | Fase 3 (sin esquema en Fase 2) |
-| **marca** (brand) | La identidad de presentación de un gimnasio-cliente (Forge #1, RED #2). Solo tokens/logo/animación/copy; nunca cambia datos, reglas ni permisos. | `@gym/brand` (Fase 2) |
+| **marca** (brand) | La identidad de presentación de un gimnasio-cliente (Forge #1, RED #2). Solo tokens/logo/animación/copy; nunca cambia datos, reglas ni permisos. | `BrandId` — `packages/brand/src/brand-id.ts` |
 | **contrato de marca** (brand contract) | La interfaz de **nombres** de variables CSS (`--canvas`, `--yellow`, `--fg`, …) que los primitivos de `@gym/ui` consumen por nombre. La abstracción estable (DIP) que toda marca debe llenar; no se inventa una segunda capa. | `apps/admin/src/app/globals.css` (`@theme inline`) |
-| **módulo de marca** (brand module) | La implementación concreta del contrato para una marca: **valores** de tokens + logo + una animación opcional. Es **código** (raro, enumerable); Fase 2 trae dos: forge, red. | `@gym/brand` (Fase 2) |
-| **host → inquilino → marca** | La cadena de resolución en `proxy.ts`, en tiempo de ejecución: el host elige *presentación* (marca), nunca confianza. Precedencia: mapa-de-host › override `?gym=` › marca por defecto. | ADR-0012 |
+| **módulo de marca** (brand module) | La implementación concreta del contrato para una marca: **valores** de tokens + logo + una animación opcional. Es **código** (raro, enumerable); Fase 2 trae dos: forge, red. | `BrandModule` / `brands` — `packages/brand/src/registry.ts` (valores en `packages/brand/src/forge/`, `packages/brand/src/red/`) |
+| **host → inquilino → marca** | La cadena de resolución que corre en el `proxy.ts` de **ambos apps** (`apps/admin`, `apps/client`): `resolveBrandId` elige la *marca* por host y el proxy la sella como `x-brand` en la request. El host elige *presentación*, nunca confianza. Precedencia: mapa-de-host › override `?gym=` › marca por defecto. | `packages/brand/src/resolve-brand-id.ts` + `packages/brand/src/host-map.ts`; ADR-0012 |
 
 **A escala:** el *módulo de marca* (código) trae el baseline; la **personalización
 por gimnasio** (paleta/logo/copy) es **dato** en la fila `gym` (Fase 3). Miles de

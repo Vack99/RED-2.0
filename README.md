@@ -3,10 +3,15 @@
 A multi-tenant gym platform (es-MX), built as a **pnpm + Turborepo monorepo**.
 
 ## Layout
-- `apps/admin` — the Next.js 16 single-operator gym admin app (brand #1: Forge).
-- `packages/{domain,format,data,ui}` — brand-neutral `@gym/*` internal packages,
-  shipped as raw TypeScript and compiled Just-in-Time by the app
+- `apps/admin` — the Next.js 16 single-operator gym admin app.
+- `apps/client` — the Next.js 16 socio (member) panel.
+- `packages/{domain,format,data,ui,brand}` — brand-neutral `@gym/*` internal packages,
+  shipped as raw TypeScript and compiled Just-in-Time by each app
   (`docs/adr/0011-monorepo-packaging-jit-packages-cross-package-boundary.md`).
+
+`@gym/brand` carries the shared host→brand seam both apps run — `resolveBrandId` picks
+the marca by host, the proxy stamps `x-brand`, and the layout SSR-inlines its tokens
+(`docs/adr/0012-host-brand-resolution.md`).
 
 See **`ARCHITECTURE.md`** for the map, **`CONTEXT.md`** for the domain vocabulary,
 and **`docs/adr/`** for the locked decisions.
@@ -17,7 +22,7 @@ deps will not resolve under npm / yarn / bun. Node is pinned in `.nvmrc`.
 
 ```bash
 pnpm install        # install deps + wire the Husky hooks
-pnpm dev            # turbo run dev — apps/admin on http://localhost:3000
+pnpm dev            # turbo run dev — both apps (admin + client)
 pnpm build          # production build
 pnpm lint           # eslint + the dependency-cruiser boundary check
 pnpm typecheck      # tsc --noEmit

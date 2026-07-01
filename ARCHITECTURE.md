@@ -1,9 +1,12 @@
 # RED-2.0 — Architecture Map
 
 **Read this first.** This is a **pnpm + Turborepo monorepo** for a multi-tenant gym
-platform (es-MX). One Next.js app today — `apps/admin`, the single-operator gym admin
-(brand #1: Forge) — built from four brand-neutral `@gym/*` packages. The folders
-scream the domain; this page is the map. Mechanism decisions live in
+platform (es-MX). Two Next.js apps — `apps/admin` (the single-operator gym admin) and
+`apps/client` (the socio's panel) — built from five brand-neutral `@gym/*` packages.
+Both apps run one shared host→brand seam: `proxy.ts` calls `@gym/brand`'s pure
+`resolveBrandId`, stamps `x-brand` on the request, and the root layout SSR-inlines that
+brand's tokens (no FOUC; `docs/adr/0012-host-brand-resolution.md`). The folders scream
+the domain; this page is the map. Mechanism decisions live in
 `docs/adr/0011-monorepo-packaging-jit-packages-cross-package-boundary.md`; the target
 platform shape in `docs/adr/0008-platform-multitenant-gym-rls-brand-modules.md`.
 
@@ -21,7 +24,9 @@ platform shape in `docs/adr/0008-platform-multitenant-gym-rls-brand-modules.md`.
 | `@gym/format` | es-MX / America-Chihuahua formatters (`date.ts`, `fecha.ts`, `format.ts`); pure leaf | — (nothing) |
 | `@gym/data` | the `server-only` Supabase DAL + `export/` + browser client + `database.types`; subpath exports `./server/*` ÷ `./client` ÷ `.` | `@gym/domain`, `@gym/format` |
 | `@gym/ui` | the forge primitive kit + UI-runtime utils (`motion`, `utils`/`cn`, `viewport`) | `@gym/domain`, `@gym/format` |
-| `apps/admin` | app routes, `proxy.ts`, app-only utils (`auth`, `nav`, `swipe`), brand token values, Next-root config, `.env*`, `public/`, `globals.css` | all of the above |
+| `@gym/brand` | presentation-only brand modules (tokens + logo + optional login animation) for `forge` + `red`, the `HOST_TO_BRAND` map, and the pure `resolveBrandId`; consumed by both apps | `@gym/format` |
+| `apps/admin` | app routes, `proxy.ts` (auth + brand seam), app-only utils (`auth`, `nav`, `swipe`), Next-root config, `.env*`, `public/`, `globals.css` | all of the above |
+| `apps/client` | the socio's panel: `proxy.ts` brand seam + SSR-inline no-FOUC `layout.tsx`, Next-root config, `.env*`, `globals.css` | all of the above |
 
 The `@gym/*` packages are **Just-in-Time**: they ship raw TypeScript (their `exports`
 point at `./src/*.ts`, no build step) and the app lists them in `transpilePackages`,
@@ -46,6 +51,7 @@ The crown jewel survives the move into packages as **one root cross-package rule
 - **`@gym/domain` + `@gym/format` + `@gym/data` ✗→ `@gym/ui` + `apps/*`** — the pure/server tiers never import presentation or an app.
 - **`@gym/domain` ✗→ `@gym/format` / `@gym/data`**, and **`@gym/format` ✗→ everything internal** — leaves stay leaves; the only intra-core edge is `@gym/data → {domain, format}`.
 - **`@gym/ui` ✗→ `@gym/data` + `apps/*`** — the UI kit may reach the pure leaves only.
+- **`@gym/brand` ✗→ `@gym/data` + `@gym/domain`** — brand is presentation-only; the host resolves a marca, never authz or rules (ADR-0008/0012, ADR-0011 §6). `@gym/brand` may consume the `@gym/format` leaf and be consumed by `@gym/ui` / `apps/*`.
 - Plus `no-circular` + `no-orphans`.
 
 pnpm's isolated linker backstops it: a package may import only what its own
@@ -60,5 +66,6 @@ so an ESLint rule keeps client → `@gym/data/server` imports type-only).
 - A reusable visual primitive → `packages/ui/src/forge/`.
 - A persisted entity / query → `packages/data/src/server/` (the `server-only` seam) + add its subpath to `@gym/data`'s `exports` allow-list.
 - A browser-side Supabase need → `@gym/data/client` (no `server-only`).
+- A new brand (tokens + logo), or a host→brand mapping → `packages/brand/src/<brand>/` for the values, `packages/brand/src/host-map.ts` for the host key.
 - A pure es-MX formatting / date helper → `packages/format/src/`.
 - A locked decision → a new `docs/adr/NNNN-*.md`.

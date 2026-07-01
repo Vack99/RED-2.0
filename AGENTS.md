@@ -12,11 +12,13 @@ cross-package dependency boundary, and "where do I add X?"). Domain vocabulary i
 in `CONTEXT.md`; locked decisions are in `docs/adr/` — the monorepo packaging
 mechanism is `docs/adr/0011-monorepo-packaging-jit-packages-cross-package-boundary.md`.
 
-Layout: `apps/admin` (the Next.js app) + `packages/{domain,format,data,ui}`
-(brand-neutral `@gym/*`, shipped as raw-TypeScript JIT packages — ADR-0011 §1).
+Layout: `apps/{admin,client}` (two Next.js apps) + `packages/{domain,format,data,ui,brand}`
+(brand-neutral `@gym/*`, shipped as raw-TypeScript JIT packages — ADR-0011 §1). Both apps
+run one shared host→brand seam (`@gym/brand`'s `resolveBrandId` → `x-brand`; ADR-0012).
 The boundary — the pure/server tiers `@gym/domain` + `@gym/format` + `@gym/data`
-✗→ the UI kit `@gym/ui` + the apps `apps/*` (and `@gym/ui` ✗→ `@gym/data`) — is
-enforced by `.dependency-cruiser.cjs` and runs on every commit (`pnpm lint`).
+✗→ the UI kit `@gym/ui` + the apps `apps/*` (plus `@gym/ui` ✗→ `@gym/data`, and
+`@gym/brand` ✗→ `@gym/data` + `@gym/domain`) — is enforced by `.dependency-cruiser.cjs`
+and runs on every commit (`pnpm lint`).
 
 **Hooks:** the pre-commit hook (Husky v9) runs `pnpm lint && pnpm typecheck && pnpm test`. Never run `husky`
 with an argument (e.g. `husky --version`) — v9 treats the argument as the hooks
