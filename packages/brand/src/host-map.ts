@@ -5,10 +5,15 @@ import type { BrandId } from "./brand-id";
  * lookup (ADR-0012 §5). Keys are the production hostnames that will become the
  * `gym.hostname` column; the `*.localhost` entries let dev hit the real host arm
  * with zero DNS. Resolution precedence (host-wins) is S1's `resolveBrandId`; this
- * package only owns the data. Production hostnames are added when the domains are
- * provisioned (the Vercel HITL slice) — until then dev runs entirely on `*.localhost`.
+ * package only owns the data. The production hostnames below were provisioned in the
+ * Vercel HITL slice (#16).
  */
 export const HOST_TO_BRAND: Record<string, BrandId> = {
   "forge.localhost": "forge",
   "red.localhost": "red",
+  // Production (Vercel-assigned, #16). The client deployment serves BOTH brands by
+  // host — the multi-tenant proof — while admin stays Forge-only (RED-admin is Phase 4).
+  "red-2-0-admin.vercel.app": "forge",
+  "red-2-0-client.vercel.app": "red",
+  "forge-red-2-0-client.vercel.app": "forge",
 };
