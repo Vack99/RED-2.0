@@ -6,7 +6,12 @@
 // data logic, it belongs in rows.ts instead.
 //
 // BOUNDARY: this is the ONLY file in the repo that imports `exceljs`. The
-// dependency-cruiser rule keeps ExcelJS out of src/domain; keep it that way.
+// dependency-cruiser rule keeps ExcelJS out of @gym/domain; keep it that way.
+
+// Node-only (exceljs builds a Buffer) and publicly reachable as
+// @gym/data/server/export/workbook — the poison-pill keeps it server-side
+// (ADR-0011 §5: every ./server module that isn't a pure carve-out keeps it).
+import "server-only";
 
 import ExcelJS from "exceljs";
 

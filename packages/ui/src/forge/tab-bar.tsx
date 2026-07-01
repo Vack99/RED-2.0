@@ -1,36 +1,34 @@
 "use client";
 
+import type { ComponentProps } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Icon, type IconName } from "./icon";
 
-interface TabItem {
-  href: string;
+// Brand-neutral: the consuming app owns its route table and passes it in as
+// `items`. `href` is exactly what next/link accepts (the typed Route union when
+// typedRoutes is on), so the kit never hard-codes any one brand's routes
+// (audit 2026-06-30).
+export interface TabItem {
+  href: ComponentProps<typeof Link>["href"];
   label: string;
   icon: IconName;
   primary?: boolean;
 }
 
-const TABS: TabItem[] = [
-  { href: "/inicio", label: "INICIO", icon: "home" },
-  { href: "/clientes", label: "CLIENTES", icon: "users" },
-  { href: "/asistencia", label: "ASIST", icon: "check", primary: true },
-  { href: "/vender", label: "+ VENTA", icon: "plus" },
-  { href: "/cuenta", label: "CUENTA", icon: "user" },
-];
-
-export function TabBar() {
+export function TabBar({ items }: { items: readonly TabItem[] }) {
   const pathname = usePathname();
   return (
     <nav
       className="relative z-[5] flex shrink-0 border-t border-line"
       style={{ background: "var(--tab-bg)", padding: "10px 4px 22px" }}
     >
-      {TABS.map((it) => {
-        const on = pathname === it.href || pathname.startsWith(it.href + "/");
+      {items.map((it) => {
+        const href = typeof it.href === "string" ? it.href : (it.href.pathname ?? "");
+        const on = pathname === href || pathname.startsWith(href + "/");
         return (
           <Link
-            key={it.href}
+            key={href}
             href={it.href}
             className="relative flex flex-1 flex-col items-center"
             style={{ gap: 4, padding: "4px 0" }}

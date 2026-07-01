@@ -6,15 +6,36 @@ settings:
 
 catalogs:
   default:
+    '@supabase/ssr':
+      specifier: ^0.10.3
+      version: 0.10.3
+    '@supabase/supabase-js':
+      specifier: ^2.106.2
+      version: 2.106.2
+    '@types/node':
+      specifier: ^24
+      version: 24.12.4
+    '@types/react':
+      specifier: ^19
+      version: 19.2.15
+    '@types/react-dom':
+      specifier: ^19
+      version: 19.2.3
     next:
       specifier: 16.2.6
       version: 16.2.6
+    next-themes:
+      specifier: ^0.4.6
+      version: 0.4.6
     react:
       specifier: 19.2.4
       version: 19.2.4
     react-dom:
       specifier: 19.2.4
       version: 19.2.4
+    sonner:
+      specifier: ^2.0.7
+      version: 2.0.7
     typescript:
       specifier: ^5
       version: 5.9.3
@@ -30,13 +51,13 @@ importers:
   .:
     devDependencies:
       '@types/node':
-        specifier: ^24
+        specifier: 'catalog:'
         version: 24.12.4
       '@types/react':
-        specifier: ^19
+        specifier: 'catalog:'
         version: 19.2.15
       '@types/react-dom':
-        specifier: ^19
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.15)
       dependency-cruiser:
         specifier: ^17.4.2
@@ -78,13 +99,13 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@supabase/ssr':
-        specifier: ^0.10.3
+        specifier: 'catalog:'
         version: 0.10.3(@supabase/supabase-js@2.106.2)
       next:
         specifier: 'catalog:'
         version: 16.2.6(@babel/core@7.29.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       next-themes:
-        specifier: ^0.4.6
+        specifier: 'catalog:'
         version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
         specifier: 'catalog:'
@@ -93,20 +114,20 @@ importers:
         specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       sonner:
-        specifier: ^2.0.7
+        specifier: 'catalog:'
         version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
     devDependencies:
       '@tailwindcss/postcss':
         specifier: ^4
         version: 4.3.0
       '@types/node':
-        specifier: ^24
+        specifier: 'catalog:'
         version: 24.12.4
       '@types/react':
-        specifier: ^19
+        specifier: 'catalog:'
         version: 19.2.15
       '@types/react-dom':
-        specifier: ^19
+        specifier: 'catalog:'
         version: 19.2.3(@types/react@19.2.15)
       tailwindcss:
         specifier: ^4
@@ -124,10 +145,10 @@ importers:
         specifier: workspace:*
         version: link:../format
       '@supabase/ssr':
-        specifier: ^0.10.3
+        specifier: 'catalog:'
         version: 0.10.3(@supabase/supabase-js@2.106.2)
       '@supabase/supabase-js':
-        specifier: ^2.106.2
+        specifier: 'catalog:'
         version: 2.106.2
       exceljs:
         specifier: ^4.4.0
@@ -149,7 +170,11 @@ importers:
         specifier: 'catalog:'
         version: 4.1.7(@types/node@24.12.4)(vite@8.0.14(@types/node@24.12.4)(jiti@2.7.0))
 
-  packages/domain: {}
+  packages/domain:
+    devDependencies:
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.7(@types/node@24.12.4)(vite@8.0.14(@types/node@24.12.4)(jiti@2.7.0))
 
   packages/format:
     devDependencies:
@@ -169,7 +194,7 @@ importers:
         specifier: 'catalog:'
         version: 16.2.6(@babel/core@7.29.7)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       next-themes:
-        specifier: ^0.4.6
+        specifier: 'catalog:'
         version: 0.4.6(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       react:
         specifier: 'catalog:'
@@ -178,11 +203,15 @@ importers:
         specifier: 'catalog:'
         version: 19.2.4(react@19.2.4)
       sonner:
-        specifier: ^2.0.7
+        specifier: 'catalog:'
         version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
       tailwind-merge:
         specifier: ^3.6.0
         version: 3.6.0
+    devDependencies:
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.7(@types/node@24.12.4)(vite@8.0.14(@types/node@24.12.4)(jiti@2.7.0))
 
 packages:
 

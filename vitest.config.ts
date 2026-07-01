@@ -72,6 +72,16 @@ export default defineConfig({
           include: ["apps/admin/src/**/*.test.ts"],
         },
       },
+      {
+        // Repo-structure guards (audit 2026-06-30): manifest/catalog consistency,
+        // turbo-task implementation, docs-as-tests, public-asset orphans, and the
+        // client→server seam convention. Pure fs reads, node env, no aliases.
+        test: {
+          name: "guards",
+          environment: "node",
+          include: ["tools/guards/**/*.test.ts"],
+        },
+      },
     ],
   },
 });

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@gym/domain/rules";
 import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@gym/domain/types";
+import { asClienteId, asPaqueteId, type ClienteId, type PaqueteId } from "@gym/domain/ids";
 import { addDays, firstName, fmtShort, hoyChihuahua, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
@@ -28,8 +29,8 @@ export const crearVentaSchema = z
     mode: z.enum(["new", "existing"]),
     nuevoNombre: z.string().optional(),
     nuevoTel: z.string().optional(),
-    clienteId: z.string().optional(),
-    paqueteId: z.string().min(1),
+    clienteId: z.string().transform(asClienteId).optional(),
+    paqueteId: z.string().min(1).transform(asPaqueteId),
     metodo: z.enum(METODOS),
   })
   .refine(
@@ -59,6 +60,12 @@ export interface VentaResult {
 
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
 const clasesToDb = (c: Clases): number | null => (c === "ilimitado" ? null : c);
+
+// Unbrand entity ids at the DB edge — kind-checked, so swapping a cliente id and
+// a paquete id is a compile error here, not a silent wrong-row lookup (audit
+// 2026-06-30).
+const forCliente = (id: ClienteId): string => id;
+const forPaquete = (id: PaqueteId): string => id;
 
 function vigenciaDisplay(tipo: string, dias: number | null): string {
   return tipo === "mes" ? "todo el mes" : `${dias} días`;
@@ -95,13 +102,13 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     supabase
       .from("paquetes")
       .select("nombre, clases, vigencia_tipo, vigencia_dias, precio")
-      .eq("id", input.paqueteId)
+      .eq("id", forPaquete(input.paqueteId))
       .single(),
     input.mode === "existing"
       ? supabase
           .from("clientes")
           .select("id, nombre, tel, clases_restantes, vence")
-          .eq("id", input.clienteId!)
+          .eq("id", forCliente(input.clienteId!))
           .single()
       : Promise.resolve(null),
   ]);
@@ -156,7 +163,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
       p_monto: paq.precio,
       p_metodo: input.metodo,
       p_vence: toIsoDay(nuevoVence),
-      ...(input.mode === "existing" && { p_cliente_id: input.clienteId! }),
+      ...(input.mode === "existing" && { p_cliente_id: forCliente(input.clienteId!) }),
       ...(nuevoClases !== null && { p_clases_restantes: nuevoClases }),
       ...(paq.clases !== null && { p_clases: paq.clases }),
       ...(paq.vigencia_dias !== null && { p_vigencia_dias: paq.vigencia_dias }),

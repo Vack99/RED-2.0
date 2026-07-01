@@ -4,7 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./ids": "./src/ids.ts",
     "./rules": "./src/rules.ts",
     "./types": "./src/types.ts"
+  },
+  "devDependencies": {
+    "vitest": "catalog:"
   }
 }

@@ -18,9 +18,9 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@types/node": "^24",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
     "dependency-cruiser": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",

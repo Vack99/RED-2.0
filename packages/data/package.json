@@ -5,14 +5,27 @@
   "type": "module",
   "exports": {
     ".": "./src/database.types.ts",
-    "./server/*": "./src/server/*.ts",
-    "./client": "./src/client.ts"
+    "./client": "./src/client.ts",
+    "./server/_auth": "./src/server/_auth.ts",
+    "./server/asistencia": "./src/server/asistencia.ts",
+    "./server/clientes": "./src/server/clientes.ts",
+    "./server/cobro": "./src/server/cobro.ts",
+    "./server/derive": "./src/server/derive.ts",
+    "./server/paquetes": "./src/server/paquetes.ts",
+    "./server/perfil": "./src/server/perfil.ts",
+    "./server/plantillas": "./src/server/plantillas.ts",
+    "./server/respaldo": "./src/server/respaldo.ts",
+    "./server/resumen": "./src/server/resumen.ts",
+    "./server/supabase": "./src/server/supabase.ts",
+    "./server/ventas": "./src/server/ventas.ts",
+    "./server/export/rows": "./src/server/export/rows.ts",
+    "./server/export/workbook": "./src/server/export/workbook.ts"
   },
   "dependencies": {
     "@gym/domain": "workspace:*",
     "@gym/format": "workspace:*",
-    "@supabase/ssr": "^0.10.3",
-    "@supabase/supabase-js": "^2.106.2",
+    "@supabase/ssr": "catalog:",
+    "@supabase/supabase-js": "catalog:",
     "exceljs": "^4.4.0",
     "server-only": "^0.0.1",
     "zod": "catalog:"

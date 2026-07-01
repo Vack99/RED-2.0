@@ -12,6 +12,16 @@ catalog:
   typescript: ^5
   zod: ^4.4.3
   vitest: ^4.1.7
+  # Shared runtime/type libs imported by >=2 workspaces are pinned here too, so a
+  # future manual bump in one manifest can't silently diverge versions across
+  # importers (the manifest-consistency guard enforces this — audit 2026-06-30).
+  next-themes: ^0.4.6
+  sonner: ^2.0.7
+  "@supabase/ssr": ^0.10.3
+  "@supabase/supabase-js": ^2.106.2
+  "@types/node": ^24
+  "@types/react": ^19
+  "@types/react-dom": ^19
 
 # pnpm 11 build-script approval. pnpm blocks native postinstall scripts by
 # default and writes this stub; setting each to `true` approves it so

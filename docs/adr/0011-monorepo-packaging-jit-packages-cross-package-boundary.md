@@ -26,7 +26,7 @@ Packages are named under **`@gym/*`** (`@gym/domain`, `@gym/format`, `@gym/data`
 
 | Package / app | Holds | May import (internal) |
 |---|---|---|
-| `@gym/domain` | pure gym rules + types (`rules.ts`, `types.ts`) | — (nothing; `zod` only) |
+| `@gym/domain` | pure gym rules + types (`rules.ts`, `types.ts`) | — (nothing internal; no runtime deps) |
 | `@gym/format` | es-MX locale + Chihuahua-tz formatting (`date.ts`, `fecha.ts`, `format.ts`) | — (nothing; pure leaf) |
 | `@gym/data` | the whole `server-only` DAL + `export/` + Supabase server/browser clients + `database.types` | `@gym/domain`, `@gym/format` |
 | `@gym/ui` | forge primitive kit + UI-runtime utils (`motion.ts`, `utils.ts`/`cn`, `viewport.ts`); token **contract** only | `@gym/domain`, `@gym/format` |

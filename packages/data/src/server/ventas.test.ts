@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { z } from "zod";
 
-import { crearVenta, type CrearVentaInput } from "./ventas";
+import { crearVenta, crearVentaSchema } from "./ventas";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -102,7 +103,11 @@ const FINITO = {
   precio: 800,
 };
 
-const input = (over: Partial<CrearVentaInput> = {}): CrearVentaInput =>
+// The schema's INPUT type (pre-transform: plain-string ids) — crearVenta takes
+// raw `unknown` and parses, branding the ids itself, so tests build raw input.
+type RawVentaInput = z.input<typeof crearVentaSchema>;
+
+const input = (over: Partial<RawVentaInput> = {}): RawVentaInput =>
   ({
     mode: "new",
     nuevoNombre: "Andrea Castro",
@@ -110,7 +115,7 @@ const input = (over: Partial<CrearVentaInput> = {}): CrearVentaInput =>
     paqueteId: "p1",
     metodo: "efectivo",
     ...over,
-  }) as CrearVentaInput;
+  }) as RawVentaInput;
 
 const lastRpc = (f: FakeClient) => f.rpcCalls.at(-1)!;
 

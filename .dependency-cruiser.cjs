@@ -18,7 +18,7 @@ module.exports = {
       name: "domain-imports-nothing-internal",
       comment:
         "@gym/domain is the innermost leaf — pure gym rules + types — and imports " +
-        "no other internal package (ADR-0011 §4/§6); zod is its only dependency. " +
+        "no other internal package (ADR-0011 §4/§6) and has zero runtime dependencies. " +
         "Anything domain needs from @gym/format or @gym/data is a sign the rule is " +
         "in the wrong tier.",
       severity: "error",
@@ -48,6 +48,17 @@ module.exports = {
       severity: "error",
       from: { path: "^packages/ui/" },
       to: { path: "^(packages/data|apps)/" },
+    },
+    {
+      name: "no-undeclared-npm-deps",
+      comment:
+        "Import only npm packages this workspace declares in its own package.json " +
+        "(ADR-0011 §3: pnpm's isolated linker — a phantom dependency is fixed by " +
+        "DECLARING it, never by relaxing hoisting). Catches e.g. a test importing " +
+        "vitest a package never listed in its devDependencies.",
+      severity: "error",
+      from: {},
+      to: { dependencyTypes: ["npm-no-pkg"] },
     },
     {
       name: "no-circular",
