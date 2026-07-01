@@ -26,3 +26,33 @@ type and a file, so a rename surfaces drift. Distilled from the client brief
 | **respaldo** | The operator's weekly **operational export** of the gym's record — a formatted, multi-sheet Excel (Clientes / Ventas / Asistencias + a Paquetes reference). A curated report the operator keeps, **not** a DB disaster-recovery backup (Supabase PITR owns that); excludes config + secrets (cobro/CLABE, perfil, plantillas). | `docs/adr/0006-respaldo-operational-export.md`; `packages/data/src/server/respaldo.ts` (gather) + `packages/data/src/server/export/` (build, ExcelJS) + `apps/admin/src/app/(app)/cuenta/respaldo/route.ts` (deliver) |
 
 **Flagged tension:** the brief marks phone *optional* (Q4), but WhatsApp retention is the app's reason to exist, so phone is treated as *required* in practice. Email and birthday are optional stored fields (brief Q4). Brand name is **"FORGE"** (Q10) — not "Forge Bootcamp" (a mock string to be removed). **respaldo** is an overloaded word resolved here: it means the operator-facing *operational export* (a curated report), **never** a database disaster-recovery backup — Supabase PITR owns DR, and the file deliberately omits the `cobro` bank details (CLABE) so it is safe to email (ADR-0006).
+
+## Plataforma multi-inquilino (multi-tenant)
+
+Al servir muchos gimnasios desde un mismo despliegue por app, el vocabulario del
+producto crece. La **marca es solo presentación** — nunca decide autorización
+(ADR-0008); el aislamiento de datos es por membresía vía RLS (Fase 3), nunca por
+el host.
+
+| Término | Significado | Dónde vive |
+|---|---|---|
+| **inquilino** (tenant) | Un **gimnasio** (la futura fila `gym`). Es la frontera de aislamiento, resuelta por `gym_membership` vía RLS — **nunca** por el host. | Fase 3 (sin esquema en Fase 2) |
+| **marca** (brand) | La identidad de presentación de un gimnasio-cliente (Forge #1, RED #2). Solo tokens/logo/animación/copy; nunca cambia datos, reglas ni permisos. | `@gym/brand` (Fase 2) |
+| **contrato de marca** (brand contract) | La interfaz de **nombres** de variables CSS (`--canvas`, `--yellow`, `--fg`, …) que los primitivos de `@gym/ui` consumen por nombre. La abstracción estable (DIP) que toda marca debe llenar; no se inventa una segunda capa. | `apps/admin/src/app/globals.css` (`@theme inline`) |
+| **módulo de marca** (brand module) | La implementación concreta del contrato para una marca: **valores** de tokens + logo + una animación opcional. Es **código** (raro, enumerable); Fase 2 trae dos: forge, red. | `@gym/brand` (Fase 2) |
+| **host → inquilino → marca** | La cadena de resolución en `proxy.ts`, en tiempo de ejecución: el host elige *presentación* (marca), nunca confianza. Precedencia: mapa-de-host › override `?gym=` › marca por defecto. | ADR-0012 |
+
+**A escala:** el *módulo de marca* (código) trae el baseline; la **personalización
+por gimnasio** (paleta/logo/copy) es **dato** en la fila `gym` (Fase 3). Miles de
+gimnasios comparten un módulo genérico con cero código; unos pocos son a medida.
+Onboarding de un gimnasio = fila `gym` + dominio, **nunca** un despliegue
+(ADR-0008). El registro host→marca de Fase 2 es un *stub* estático que en Fase 3
+se cambia por una búsqueda de la fila `gym` detrás de la misma firma
+`resolveBrandId` (ADR-0012).
+
+**Flagged ambiguity:** *inquilino* (el gimnasio = tenant) ≠ *cliente* (un miembro
+del gym, glosario arriba). El host resuelve **marca**, no *inquilino de datos*: la
+marca resuelta por host es metadato de presentación influenciable por el atacante
+(ADR-0008); qué filas puede leer/escribir una sesión lo decide **solo** la RLS por
+membresía. `@gym/brand` es solo-presentación y no puede importar `@gym/data` ni
+`@gym/domain` (frontera dependency-cruiser, ADR-0011 §6).
