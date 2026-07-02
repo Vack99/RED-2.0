@@ -41,18 +41,19 @@ el host.
 | **gym_membership** (membresía de gimnasio) | La fila `(user_id, gym_id, role ∈ owner\|operator\|member)` de la que **toda** política RLS resuelve "qué gimnasio + qué rol". Escrita solo dentro de RPCs SECURITY DEFINER, nunca directo. | tabla `gym_membership` (Fase 3); ADR-0009/0013 |
 | **reclamar** (claim-by-match) | Al registrarse, un **email verificado** que coincide con un `cliente` pre-existente del gimnasio reclama esa fila (saldo + historial siguen). El teléfono **nunca** reclama (auto-declarado); ambigüedad → fila nueva. Una RPC atómica SECURITY DEFINER hace claim + `gym_membership` en una transacción. | ADR-0009 (enmienda 2026-07-02) |
 | **RLS-por-membresía** | El mecanismo de aislamiento: helpers SECURITY DEFINER (`is_member_of`/`is_staff_of`/`has_role`) initplan-cacheados vía `(select …)`, un predicado estándar por clase RLS (§3 del shield), `cobro`/CLABE solo-owner. | ADR-0013; `supabase/migrations/` (Fase 3) |
-| **marca** (brand) | La identidad de presentación de un gimnasio-cliente (Forge #1, RED #2). Solo tokens/logo/animación/copy; nunca cambia datos, reglas ni permisos. | `BrandId` — `packages/brand/src/brand-id.ts` |
-| **contrato de marca** (brand contract) | La interfaz de **nombres** de variables CSS (`--canvas`, `--yellow`, `--fg`, …) que los primitivos de `@gym/ui` consumen por nombre. La abstracción estable (DIP) que toda marca debe llenar; no se inventa una segunda capa. | `apps/admin/src/app/globals.css` (`@theme inline`) |
-| **módulo de marca** (brand module) | La implementación concreta del contrato para una marca: **valores** de tokens + logo + una animación opcional. Es **código** (raro, enumerable); Fase 2 trae dos: forge, red. | `BrandModule` / `brands` — `packages/brand/src/registry.ts` (valores en `packages/brand/src/forge/`, `packages/brand/src/red/`) |
+| **marca** (brand) | La identidad de presentación de un gimnasio-cliente (Forge #1, RED #2, más la neutra **base** — Fase 4). Solo tokens/logo/animación/copy; nunca cambia datos, reglas ni permisos. | `BrandId` — `packages/brand/src/brand-id.ts` |
+| **contrato de marca** (brand contract) | La interfaz de **nombres** de variables CSS (`--canvas`, `--yellow`, `--fg`, …) que los primitivos de `@gym/ui` consumen por nombre. La abstracción estable (DIP) que toda marca debe llenar; no se inventa una segunda capa. El esquema zod de `token_overrides` (Fase 4) es su espejo machine-checked: solo estas claves son sobreescribibles. | `apps/admin/src/app/globals.css` (`@theme inline`) |
+| **módulo de marca** (brand module) | La implementación concreta del contrato para una marca: **valores** de tokens (estructurados; un único serializador los vuelve CSS) + logo + copy (nombre, descripción) + una animación opcional. Es **código** (raro, enumerable); censo Fase 4: **base, forge, red** (el test de censo es un tripwire deliberado). | `BrandModule` / `brands` — `packages/brand/src/registry.ts` (valores en `packages/brand/src/forge/`, `packages/brand/src/red/`) |
+| **módulo base** | El módulo de marca neutro que sirven los miles de gimnasios sin código a medida; es el `DEFAULT_BRAND` (fallback cuando `x-brand` es desconocido o ausente — el único knob de fallback). Renderiza completo desde baseline + datos de fila; su voz de copy neutra la aprueba el humano (HITL Fase 4). | `packages/brand/src` — nuevo módulo `base` (Fase 4) |
+| **token overrides** (personalización por gimnasio) | El jsonb `gym.token_overrides`: mapa parcial `{ light?, dark? }` de claves del contrato → valores CSS, con light/dark sobreescribibles por separado. Validado por zod — enum **cerrado** de claves + charset restringido de valores (ES la guardia del `dangerouslySetInnerHTML`); payload inválido → baseline íntegro del módulo. El CSS servido = `módulo ⊕ overrides` por el único serializador. | esquema + merge en `packages/brand/src/` (Fase 4); columna `gym.token_overrides` (Fase 3) |
 | **host → inquilino → marca** | La cadena de resolución que corre en el `proxy.ts` de **ambos apps**: `resolveTenant(host, override)` (async, en `@gym/data`) busca la fila `gym_domain → gym` y el proxy sella `x-gym` (slug del inquilino) + `x-brand` (= `gym.brand_module_id`). El host elige *presentación*, nunca confianza. Precedencia: fila `gym_domain` › override `?gym=` (slug abierto, validado contra la DB) › **sin inquilino** (marca por defecto; escrituras que requieren inquilino se rechazan). | `packages/data` (Fase 3 — reemplaza `resolve-brand-id.ts` + `host-map.ts`, que se **eliminan**); ADR-0012 §5 |
 
 **A escala:** el *módulo de marca* (código) trae el baseline; la **personalización
-por gimnasio** (paleta/logo/copy) es **dato** en la fila `gym` (Fase 3). Miles de
-gimnasios comparten un módulo genérico con cero código; unos pocos son a medida.
-Onboarding de un gimnasio = fila `gym` + dominio, **nunca** un despliegue
-(ADR-0008). El registro host→marca de Fase 2 es un *stub* estático que en Fase 3
-se cambia por una búsqueda de la fila `gym` detrás de la misma firma
-`resolveBrandId` (ADR-0012).
+por gimnasio** (paleta/copy) es **dato** en la fila `gym`: el CSS servido es
+`baseline del módulo ⊕ token_overrides`, zod-validado antes de serializar (Fase 4).
+Miles de gimnasios comparten el **módulo base** con cero código; unos pocos son a
+medida. Onboarding de un gimnasio = fila `gym` + dominio, **nunca** un despliegue
+(ADR-0008).
 
 **Flagged ambiguity:** *inquilino* (el gimnasio = tenant) ≠ *cliente* (un miembro
 del gym, glosario arriba). El host resuelve *presentación y UX*, no *autorización*:
