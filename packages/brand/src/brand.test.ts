@@ -26,9 +26,12 @@ describe("@gym/brand registry", () => {
     }
   });
 
-  it("exercises the code-preset path with exactly one bespoke login animation (RED)", () => {
+  it("exercises the code-preset path — both shipped brands carry a bespoke login hero", () => {
+    // The Forge sequence is now extracted into its own module (grill lock (h)),
+    // joining RED's ignition; the neutral base module (S4) will omit it and
+    // exercise the optional-animation fallback.
+    expect(typeof brands.forge.loginAnimation).toBe("function");
     expect(typeof brands.red.loginAnimation).toBe("function");
-    expect(brands.forge.loginAnimation).toBeUndefined();
   });
 });
 

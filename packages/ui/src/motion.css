@@ -1,0 +1,73 @@
+/* @gym/ui product-motion sheet — the single home of the product `forge-*`
+   keyframes and the `prefers-reduced-motion` block, imported by BOTH apps'
+   globals.css. These are PRODUCT motion (naming, not brand — grill (h)); brand-
+   BESPOKE animation lives self-contained in the brand module. Token-free, so it
+   is dark-safe and carries no part of the brand contract (ADR-0012 §3). */
+
+@keyframes forge-enter {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes forge-flash {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+@keyframes forge-pop {
+  0% {
+    transform: scale(0.4);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+@keyframes forge-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes forge-rise {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* Reduced-motion — the SOLE definer for both apps (grill (d)). Durations AND
+   delays are zeroed so a staggered sequence lands on its final frame at once
+   (content fully visible, form usable immediately — no motion), never left
+   invisible while a delay elapses. Imperative/RAF motion consults motion.ts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

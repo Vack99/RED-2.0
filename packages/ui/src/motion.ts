@@ -1,8 +1,8 @@
 /**
  * Reduced-motion helpers for JS/RAF-driven motion.
  *
- * The global `@media (prefers-reduced-motion: reduce)` block in globals.css
- * neutralizes CSS animations/transitions automatically, but it does NOT reach
+ * The `@media (prefers-reduced-motion: reduce)` block in the shared motion.css
+ * sheet neutralizes CSS animations/transitions automatically, but it does NOT reach
  * imperative motion such as `Element.scrollIntoView({ behavior: "smooth" })`.
  * Those call sites must consult this guard themselves.
  */

@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Product motion + the reduced-motion block live once in @gym/ui and reach both
+   apps through this import (grill (d)/(h)) — the client app's Skeleton finally
+   animates and its reduced-motion gap closes with zero duplication. */
+@import "@gym/ui/motion.css";
+
 /* Register @gym/ui's source with Tailwind v4 (ADR-0011 §7). Tailwind 4 (CSS-first)
    auto-detects classes only from this Next project's root (apps/admin) and ignores
    out-of-root files, so the UI kit under packages/ui/src — now outside the app —
@@ -130,66 +135,5 @@ textarea {
   font-family: inherit;
 }
 
-/* ── Animations (ported from the prototype <style>) ── */
-@keyframes forge-enter {
-  from {
-    transform: translateX(24px);
-    opacity: 0;
-  }
-  to {
-    transform: translateX(0);
-    opacity: 1;
-  }
-}
-@keyframes forge-flash {
-  0% {
-    transform: translateX(-100%);
-    opacity: 0;
-  }
-  20% {
-    opacity: 1;
-  }
-  100% {
-    transform: translateX(100%);
-    opacity: 0;
-  }
-}
-@keyframes forge-pop {
-  0% {
-    transform: scale(0.4);
-  }
-  60% {
-    transform: scale(1.12);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-@keyframes forge-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
-@keyframes forge-rise {
-  from {
-    transform: translateY(8px);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+/* Product `forge-*` keyframes and the reduced-motion block now live in the shared
+   @gym/ui motion sheet imported at the top of this file. */
