@@ -3,10 +3,11 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { hoyChihuahua, iniciales, toIsoDay } from "@gym/format";
+import { hoyEnZona, iniciales, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
+import { getOperatorGym } from "./gym";
 
 /**
  * PostgREST silently caps a single response (commonly ~1000 rows). `getMarcadas`
@@ -110,7 +111,8 @@ export interface AsistenciaHoy {
  */
 export async function getAsistenciasHoy(client?: SupabaseServer): Promise<AsistenciaHoy[]> {
   const supabase = client ?? (await createClient());
-  const hoyIso = toIsoDay(hoyChihuahua());
+  const { timezone: tz } = await getOperatorGym(supabase);
+  const hoyIso = toIsoDay(hoyEnZona(tz));
 
   const { data: asis, error } = await supabase
     .from("asistencias")

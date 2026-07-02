@@ -11,6 +11,7 @@
     "./server/clientes": "./src/server/clientes.ts",
     "./server/cobro": "./src/server/cobro.ts",
     "./server/derive": "./src/server/derive.ts",
+    "./server/gym": "./src/server/gym.ts",
     "./server/paquetes": "./src/server/paquetes.ts",
     "./server/perfil": "./src/server/perfil.ts",
     "./server/plantillas": "./src/server/plantillas.ts",

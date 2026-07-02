@@ -14,7 +14,7 @@
 
 import { derivarCliente } from "../derive";
 import type { ClienteFacts } from "../derive";
-import { fechaChihuahua, fmtShort, isoDay, parseDay } from "@gym/format";
+import { fechaEnZona, fmtShort, isoDay, parseDay } from "@gym/format";
 import { urgenciaCliente } from "@gym/domain/rules";
 import type { EstadoCliente, NivelUrgencia } from "@gym/domain/types";
 
@@ -58,7 +58,8 @@ export interface RespaldoPaquete {
 
 /** Gather output (DAL → shaper). Carries raw DTOs; the shaper formats. */
 export interface RespaldoData {
-  generadoHoy: Date; // injected Chihuahua "today" — keeps the shaper pure & deterministic
+  generadoHoy: Date; // injected gym-local "today" — keeps the shaper pure & deterministic
+  tz: string; // the resolved gym's IANA zone — every fechaEnZona call below uses this
   clientes: RespaldoCliente[];
   ventas: RespaldoVenta[];
   asistencias: RespaldoAsistencia[];
@@ -161,7 +162,7 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
       d.venceDisplay,
       ESTADO_LABEL[d.estado],
       URGENCIA_LABEL[u.nivel],
-      isoDay(fechaChihuahua(c.alta)),
+      isoDay(fechaEnZona(c.alta, data.tz)),
     ];
   });
   return { name: "Clientes", headers, rows };
@@ -171,7 +172,7 @@ function shapeVentas(data: RespaldoData, nombreDe: (id: string) => string): Resp
   const headers = ["Folio", "Fecha", "Cliente", "Paquete", "Monto", "Método", "Vigencia"];
   const rows = data.ventas.map((v) => [
     v.folio,
-    isoDay(fechaChihuahua(v.fecha)),
+    isoDay(fechaEnZona(v.fecha, data.tz)),
     nombreDe(v.cliente_id),
     v.paquete_nombre,
     v.monto, // raw NUMBER — peso-formatted in the workbook

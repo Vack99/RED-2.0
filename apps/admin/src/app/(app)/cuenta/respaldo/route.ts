@@ -19,7 +19,7 @@ import { requireOperator } from "@gym/data/server/_auth";
 import { getRespaldoData } from "@gym/data/server/respaldo";
 import { buildRespaldoRows } from "@gym/data/server/export/rows";
 import { buildRespaldoWorkbook } from "@gym/data/server/export/workbook";
-import { hoyChihuahua, toIsoDay } from "@gym/format";
+import { toIsoDay } from "@gym/format";
 import { createClient } from "@gym/data/server/supabase";
 
 export const runtime = "nodejs"; // ExcelJS needs Node, not edge
@@ -38,7 +38,9 @@ export async function GET(): Promise<Response> {
 
   const data = await getRespaldoData(supabase);
   const buffer = await buildRespaldoWorkbook(buildRespaldoRows(data));
-  const filename = `forge-respaldo-${toIsoDay(hoyChihuahua())}.xlsx`;
+  // Reuse data.generadoHoy (already resolved in the operator's gym zone) instead
+  // of a second, separate tz resolution just for the filename.
+  const filename = `forge-respaldo-${toIsoDay(data.generadoHoy)}.xlsx`;
 
   // The body is a Node Buffer (Uint8Array under the hood), a valid BodyInit; the
   // cast just satisfies TS's lib.dom BodyInit union, which omits Node's Buffer.

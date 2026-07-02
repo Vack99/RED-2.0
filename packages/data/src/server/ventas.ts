@@ -5,11 +5,12 @@ import { z } from "zod";
 import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@gym/domain/rules";
 import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@gym/domain/types";
 import { asClienteId, asPaqueteId, type ClienteId, type PaqueteId } from "@gym/domain/ids";
-import { addDays, firstName, fmtShort, hoyChihuahua, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
+import { addDays, firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 import { getCobro } from "./cobro";
+import { getOperatorGym } from "./gym";
 import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
 import { fmtClases, fmtDatosPago, fmtDias, fmtPrecios, renderMensajes } from "./plantilla-ctx";
@@ -92,6 +93,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // Presence check only — the RPC stamps the operator server-side (SECURITY
   // INVOKER), so the sub is discarded here (matches prior behavior).
   await requireOperator(supabase);
+  const { timezone: tz } = await getOperatorGym(supabase);
 
   // Package facts come from the DB, never the client. The paquete read and (in
   // existing mode) the cliente read are independent, so fire them concurrently;
@@ -116,7 +118,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const { data: paq, error: paqErr } = paqRes;
   if (paqErr || !paq) throw new Error("Paquete no encontrado");
 
-  const hoy = hoyChihuahua();
+  const hoy = hoyEnZona(tz);
   const compraDias =
     paq.vigencia_tipo === "mes"
       ? diasRestantes(calcVigenciaEnd(hoy, "mes"), hoy)
@@ -177,7 +179,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const [{ data: perfil }, plantillas, paquetes, cobro] = await Promise.all([
     supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
     listarPlantillas(supabase),
-    getPaquetes(supabase).catch(() => []),
+    getPaquetes(supabase, tz).catch(() => []),
     getCobro(supabase).catch(() => null),
   ]);
   // Resolve the identity defaults in one place (kept off getPerfil — it's

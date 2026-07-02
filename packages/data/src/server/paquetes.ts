@@ -5,10 +5,11 @@ import { z } from "zod";
 
 import { calcVigenciaEnd } from "@gym/domain/rules";
 import type { Vigencia } from "@gym/domain/types";
-import { fmtShort, hoyChihuahua } from "@gym/format";
+import { fmtShort, hoyEnZona } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
+import { getOperatorGym } from "./gym";
 
 export interface PaqueteDTO {
   id: string;
@@ -25,10 +26,13 @@ export interface PaqueteDTO {
 }
 
 /** The operator's package catalog, ordered for display.
+ *  `tz` is optional: when a caller (e.g. crearVenta) has ALREADY resolved the
+ *  operator's gym timezone, pass it through to skip a second membership round
+ *  trip — otherwise this resolves it itself via getOperatorGym.
  *  @returns the package list · best-effort: returns [] on error (error is not
  *  destructured, so any failure reads as an empty catalog). */
 export const getPaquetes = cache(
-  async (client?: SupabaseServer): Promise<PaqueteDTO[]> => {
+  async (client?: SupabaseServer, tz?: string): Promise<PaqueteDTO[]> => {
     const supabase = client ?? (await createClient());
     const { data } = await supabase
       .from("paquetes")
@@ -37,7 +41,8 @@ export const getPaquetes = cache(
 
     if (!data) return [];
 
-    const hoy = hoyChihuahua();
+    const zone = tz ?? (await getOperatorGym(supabase)).timezone;
+    const hoy = hoyEnZona(zone);
     return data.map((p) => {
       const vigencia: Vigencia = p.vigencia_tipo === "mes" ? "mes" : (p.vigencia_dias ?? 0);
       return {

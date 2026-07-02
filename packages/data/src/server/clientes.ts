@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import { resumirRoster } from "@gym/domain/rules";
 import type { ResumenRoster } from "@gym/domain/types";
-import { addDays, fechaChihuahua, hoyChihuahua, iniciales, isTelValido, toIsoDay } from "@gym/format";
+import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -18,6 +18,7 @@ import {
   type PaseClienteDTO,
 } from "./derive";
 import { getCobro } from "./cobro";
+import { getOperatorGym } from "./gym";
 import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
 import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
@@ -70,7 +71,8 @@ export const getClientesParaPase = cache(
 
     if (!data) return [];
 
-    const hoy = hoyChihuahua();
+    const { timezone: tz } = await getOperatorGym(supabase);
+    const hoy = hoyEnZona(tz);
     return data.map((c) => derivarPaseCliente(c, hoy));
   },
 );
@@ -87,7 +89,8 @@ const FICHA_VENTANA_DIAS = 30;
 export const getClientesRoster = cache(
   async (client?: SupabaseServer): Promise<ClienteDerivado[]> => {
     const supabase = client ?? (await createClient());
-    const hoy = hoyChihuahua();
+    const { timezone: tz } = await getOperatorGym(supabase);
+    const hoy = hoyEnZona(tz);
 
     const [clientesRes, asistRes] = await Promise.all([
       supabase
@@ -119,7 +122,8 @@ export const getClientesRoster = cache(
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<ResumenRoster> => {
     const supabase = client ?? (await createClient());
-    const hoy = hoyChihuahua();
+    const { timezone: tz } = await getOperatorGym(supabase);
+    const hoy = hoyEnZona(tz);
 
     const { data } = await supabase
       .from("clientes")
@@ -144,7 +148,8 @@ export type ClienteFichaDTO = FichaDerivada & {
 export const getClienteFicha = cache(
   async (id: string, client?: SupabaseServer): Promise<ClienteFichaDTO | null> => {
     const supabase = client ?? (await createClient());
-    const hoy = hoyChihuahua();
+    const { timezone: tz } = await getOperatorGym(supabase);
+    const hoy = hoyEnZona(tz);
     const hoyIso = toIsoDay(hoy);
 
     // Deliberate waterfall: await the cliente FIRST so a not-found id returns
@@ -180,7 +185,7 @@ export const getClienteFicha = cache(
         getVecinos(id, supabase),
         supabase.from("perfil").select("negocio").maybeSingle(),
         listarPlantillas(supabase),
-        getPaquetes(supabase).catch(() => []),
+        getPaquetes(supabase, tz).catch(() => []),
         getCobro(supabase).catch(() => null),
       ]);
 
@@ -192,10 +197,10 @@ export const getClienteFicha = cache(
 
     // Classes consumed since the last purchase (Part B clases-gauge denominator):
     // count `consumio` rows with fecha >= the purchase date. The purchase is the
-    // saldo anchor `ventas[0]` (newest-first). lastPurchaseIso is the Chihuahua-local
+    // saldo anchor `ventas[0]` (newest-first). lastPurchaseIso is the gym-local
     // calendar day of that timestamptz, matched against asistencias' `date` column.
     const ventas = ventasRes.data ?? [];
-    const lastPurchaseIso = ventas[0] ? toIsoDay(fechaChihuahua(ventas[0].fecha)) : null;
+    const lastPurchaseIso = ventas[0] ? toIsoDay(fechaEnZona(ventas[0].fecha, tz)) : null;
     let attendedSincePurchase = 0;
     if (lastPurchaseIso) {
       if (lastPurchaseIso >= ventanaIso) {
@@ -224,6 +229,7 @@ export const getClienteFicha = cache(
       ventas,
       hoy,
       hoyIso,
+      tz,
       plantillas,
       negocio,
       attendedSincePurchase,

@@ -4,21 +4,24 @@ import { cache } from "react";
 
 import { calcularResumenMes } from "@gym/domain/rules";
 import type { AsistenciaResumen, ResumenMes, VentaResumen } from "@gym/domain/types";
-import { fechaChihuahua, hoyChihuahua, parseDay, toIsoDay } from "@gym/format";
+import { fechaEnZona, hoyEnZona, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
+import { getOperatorGym } from "./gym";
 
 /**
  * Monthly resumen for the inicio dashboard + cuenta "Resumen del mes".
- * Reads are RLS-scoped, so no explicit auth is needed at the DAL (ADR-0001).
- * Fetches ventas + non-deleted asistencias over a window covering the prior
- * month start → today, maps DB rows to the pure VentaResumen / AsistenciaResumen
- * shapes (Chihuahua-local dates at the boundary), then delegates the math to the
- * pure domain rule calcularResumenMes. Memoized per request.
+ * The table reads are RLS-scoped (ADR-0001); `getOperatorGym` (slice #25) does
+ * gate on the operator explicitly, since resolving the gym's timezone requires
+ * knowing who they are. Fetches ventas + non-deleted asistencias over a window
+ * covering the prior month start → today, maps DB rows to the pure VentaResumen
+ * / AsistenciaResumen shapes (gym-local dates at the boundary), then delegates
+ * the math to the pure domain rule calcularResumenMes. Memoized per request.
  */
 export const getResumenMes = cache(
   async (client?: SupabaseServer): Promise<ResumenMes> => {
     const supabase = client ?? (await createClient());
-    const hoy = hoyChihuahua();
+    const { timezone: tz } = await getOperatorGym(supabase);
+    const hoy = hoyEnZona(tz);
 
     // Window: first day of the PRIOR calendar month (covers mes + prev + semana).
     const desde = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
@@ -37,7 +40,7 @@ export const getResumenMes = cache(
 
     // ventas.fecha is a timestamptz → resolve to its Chihuahua-local calendar day.
     const ventas: VentaResumen[] = (ventasRes.data ?? []).map((v) => ({
-      fecha: fechaChihuahua(v.fecha),
+      fecha: fechaEnZona(v.fecha, tz),
       monto: Number(v.monto),
     }));
 
