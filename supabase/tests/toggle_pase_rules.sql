@@ -49,18 +49,20 @@ declare
   v_back     date := v_today - 3;          -- a back-entry day, never Chihuahua-today
   v_finite   uuid;                          -- finite client: clases_restantes = 5
   v_ilim     uuid;                          -- ilimitado client: clases_restantes = null
+  v_gym      uuid := (select id from public.gym where slug = 'forge');  -- the operator's gym (slice #20)
+  v_agym     uuid;                          -- gym_id stamped on the new asistencia
   v_clases   int;
   v_present  boolean;
   v_hora     text;
   v_stored   time;                          -- the hora actually persisted on the row
 begin
   -- ── Seed: one FINITE and one ILIMITADO client, both owned by the operator ──
-  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre)
-  values (v_op, 'TEST finite',    '0000000001', 5,    v_today + 20, '8 clases')
+  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+  values (v_op, 'TEST finite',    '0000000001', 5,    v_today + 20, '8 clases', v_gym)
   returning id into v_finite;
 
-  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre)
-  values (v_op, 'TEST ilimitado', '0000000002', null, v_today + 20, 'mes')
+  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+  values (v_op, 'TEST ilimitado', '0000000002', null, v_today + 20, 'mes', v_gym)
   returning id into v_ilim;
 
   -- ════════════════════════════════════════════════════════════════════════
@@ -72,6 +74,11 @@ begin
   if v_present is not true then raise exception 'RULE FAIL(b): finite toggle ON did not register present'; end if;
   select clases_restantes into v_clases from public.clientes where id = v_finite;
   if v_clases <> 4 then raise exception 'RULE FAIL(b): finite ON expected clases 4, got %', v_clases; end if;
+
+  -- (slice #20) the new asistencia is born scoped: gym_id stamped from the cliente's gym, never null.
+  select gym_id into v_agym from public.asistencias
+   where cliente_id = v_finite and fecha = v_today and deleted_at is null order by created_at desc limit 1;
+  if v_agym is distinct from v_gym then raise exception 'RULE FAIL(gym): asistencia.gym_id % expected cliente gym %', v_agym, v_gym; end if;
 
   -- FINITE, toggle OFF same day: refunds exactly one (4 -> 5)
   select present into v_present from public.toggle_pase(v_finite, v_today);
