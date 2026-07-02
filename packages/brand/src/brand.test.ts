@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import { DEFAULT_BRAND } from "./brand-id";
-import { HOST_TO_BRAND } from "./host-map";
 import { brands } from "./registry";
 
 // The registry + host-map are a static Phase-3 stub (ADR-0012 §5). These assert the
@@ -29,18 +28,5 @@ describe("@gym/brand registry", () => {
   it("exercises the code-preset path with exactly one bespoke login animation (RED)", () => {
     expect(typeof brands.red.loginAnimation).toBe("function");
     expect(brands.forge.loginAnimation).toBeUndefined();
-  });
-});
-
-describe("HOST_TO_BRAND", () => {
-  it("maps the *.localhost dev hosts to their brand", () => {
-    expect(HOST_TO_BRAND["forge.localhost"]).toBe("forge");
-    expect(HOST_TO_BRAND["red.localhost"]).toBe("red");
-  });
-
-  it("never maps a host to a brand the registry does not ship", () => {
-    for (const id of Object.values(HOST_TO_BRAND)) {
-      expect(brands[id]).toBeDefined();
-    }
   });
 });

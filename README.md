@@ -9,8 +9,9 @@ A multi-tenant gym platform (es-MX), built as a **pnpm + Turborepo monorepo**.
   shipped as raw TypeScript and compiled Just-in-Time by each app
   (`docs/adr/0011-monorepo-packaging-jit-packages-cross-package-boundary.md`).
 
-`@gym/brand` carries the shared host→brand seam both apps run — `resolveBrandId` picks
-the marca by host, the proxy stamps `x-brand`, and the layout SSR-inlines its tokens
+Both apps run one shared host→inquilino→marca seam — `@gym/data`'s `resolveTenant`
+picks the gym by host (the DB-backed `gym_domain → gym` lookup), the proxy stamps
+`x-gym` + `x-brand`, and the layout SSR-inlines the `@gym/brand` module's tokens
 (`docs/adr/0012-host-brand-resolution.md`).
 
 See **`ARCHITECTURE.md`** for the map, **`CONTEXT.md`** for the domain vocabulary,

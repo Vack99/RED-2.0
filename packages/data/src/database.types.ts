@@ -133,6 +133,74 @@ export type Database = {
         }
         Relationships: []
       }
+      gym: {
+        Row: {
+          brand_module_id: string
+          brand_name: string
+          created_at: string
+          id: string
+          legal_name: string | null
+          owner_user_id: string | null
+          slug: string
+          timezone: string
+          token_overrides: Json
+        }
+        Insert: {
+          brand_module_id: string
+          brand_name: string
+          created_at?: string
+          id?: string
+          legal_name?: string | null
+          owner_user_id?: string | null
+          slug: string
+          timezone: string
+          token_overrides?: Json
+        }
+        Update: {
+          brand_module_id?: string
+          brand_name?: string
+          created_at?: string
+          id?: string
+          legal_name?: string | null
+          owner_user_id?: string | null
+          slug?: string
+          timezone?: string
+          token_overrides?: Json
+        }
+        Relationships: []
+      }
+      gym_domain: {
+        Row: {
+          app: string
+          created_at: string
+          gym_id: string
+          hostname: string
+          id: string
+        }
+        Insert: {
+          app: string
+          created_at?: string
+          gym_id: string
+          hostname: string
+          id?: string
+        }
+        Update: {
+          app?: string
+          created_at?: string
+          gym_id?: string
+          hostname?: string
+          id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gym_domain_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       paquetes: {
         Row: {
           clases: number | null

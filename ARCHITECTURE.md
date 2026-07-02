@@ -3,9 +3,10 @@
 **Read this first.** This is a **pnpm + Turborepo monorepo** for a multi-tenant gym
 platform (es-MX). Two Next.js apps — `apps/admin` (the single-operator gym admin) and
 `apps/client` (the socio's panel) — built from five brand-neutral `@gym/*` packages.
-Both apps run one shared host→brand seam: `proxy.ts` calls `@gym/brand`'s pure
-`resolveBrandId`, stamps `x-brand` on the request, and the root layout SSR-inlines that
-brand's tokens (no FOUC; `docs/adr/0012-host-brand-resolution.md`). The folders scream
+Both apps run one shared host→inquilino→marca seam: `proxy.ts` calls `@gym/data`'s
+async `resolveTenant` (the DB-backed `gym_domain → gym` lookup), stamps `x-gym` (tenant
+slug) + `x-brand` (the gym's brand-module key) on the request, and the root layout
+SSR-inlines that brand's tokens (no FOUC; `docs/adr/0012-host-brand-resolution.md`). The folders scream
 the domain; this page is the map. Mechanism decisions live in
 `docs/adr/0011-monorepo-packaging-jit-packages-cross-package-boundary.md`; the target
 platform shape in `docs/adr/0008-platform-multitenant-gym-rls-brand-modules.md`.
@@ -24,7 +25,7 @@ platform shape in `docs/adr/0008-platform-multitenant-gym-rls-brand-modules.md`.
 | `@gym/format` | es-MX / America-Chihuahua formatters (`date.ts`, `fecha.ts`, `format.ts`); pure leaf | — (nothing) |
 | `@gym/data` | the `server-only` Supabase DAL + `export/` + browser client + `database.types`; subpath exports `./server/*` ÷ `./client` ÷ `.` | `@gym/domain`, `@gym/format` |
 | `@gym/ui` | the forge primitive kit + UI-runtime utils (`motion`, `utils`/`cn`, `viewport`) | `@gym/domain`, `@gym/format` |
-| `@gym/brand` | presentation-only brand modules (tokens + logo + optional login animation) for `forge` + `red`, the `HOST_TO_BRAND` map, and the pure `resolveBrandId`; consumed by both apps | `@gym/format` |
+| `@gym/brand` | presentation-only brand modules (tokens + logo + optional login animation) for `forge` + `red`, consumed by both apps; host→gym→brand resolution lives in `@gym/data`'s `resolveTenant` | `@gym/format` |
 | `apps/admin` | app routes, `proxy.ts` (auth + brand seam), app-only utils (`auth`, `nav`, `swipe`), Next-root config, `.env*`, `public/`, `globals.css` | all of the above |
 | `apps/client` | the socio's panel: `proxy.ts` brand seam + SSR-inline no-FOUC `layout.tsx`, Next-root config, `.env*`, `globals.css` | all of the above |
 
@@ -66,6 +67,6 @@ so an ESLint rule keeps client → `@gym/data/server` imports type-only).
 - A reusable visual primitive → `packages/ui/src/forge/`.
 - A persisted entity / query → `packages/data/src/server/` (the `server-only` seam) + add its subpath to `@gym/data`'s `exports` allow-list.
 - A browser-side Supabase need → `@gym/data/client` (no `server-only`).
-- A new brand (tokens + logo), or a host→brand mapping → `packages/brand/src/<brand>/` for the values, `packages/brand/src/host-map.ts` for the host key.
+- A new brand module (tokens + logo) → `packages/brand/src/<brand>/` for the values; a host→gym mapping is a `gym_domain` row (data, not code), resolved by `@gym/data`'s `resolveTenant`.
 - A pure es-MX formatting / date helper → `packages/format/src/`.
 - A locked decision → a new `docs/adr/NNNN-*.md`.

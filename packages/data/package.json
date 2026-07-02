@@ -14,6 +14,7 @@
     "./server/paquetes": "./src/server/paquetes.ts",
     "./server/perfil": "./src/server/perfil.ts",
     "./server/plantillas": "./src/server/plantillas.ts",
+    "./server/resolve-tenant": "./src/server/resolve-tenant.ts",
     "./server/respaldo": "./src/server/respaldo.ts",
     "./server/resumen": "./src/server/resumen.ts",
     "./server/supabase": "./src/server/supabase.ts",
