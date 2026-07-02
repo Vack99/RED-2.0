@@ -29,9 +29,11 @@ set local role authenticated;
 do $$
 declare
   v_op  uuid := current_setting('app.op', true)::uuid;
+  v_gym uuid := (select id from public.gym where slug = 'forge');  -- the operator's gym (slice #20)
   v_id  uuid;
   v_n   text;
   v_b   text;
+  v_pgym uuid;
   v_cnt int;
 begin
   -- Clean slate for this operator (rolled back).
@@ -42,6 +44,11 @@ begin
   perform public.crear_plantilla('Dos', 'b2');
   perform public.crear_plantilla('Tres', 'b3');
   v_id := public.crear_plantilla('Cuatro', 'b4');
+
+  -- (slice #20) crear_plantilla stamps gym_id: the new plantilla is born scoped to the operator's gym.
+  select gym_id into v_pgym from public.plantillas where id = v_id;
+  if v_pgym is distinct from v_gym then raise exception 'RULE FAIL(gym): plantilla.gym_id % expected %', v_pgym, v_gym; end if;
+
   begin
     perform public.crear_plantilla('Cinco', 'b5');
     raise exception 'RULE FAIL(1): 5th insert was allowed';
@@ -75,6 +82,9 @@ begin
   perform public.sembrar_plantillas_default();
   select count(*) into v_cnt from public.plantillas where user_id = v_op;
   if v_cnt <> 4 then raise exception 'RULE FAIL(4): seed produced % rows', v_cnt; end if;
+  -- (slice #20) every seeded plantilla is born scoped to the operator's gym.
+  select count(*) into v_cnt from public.plantillas where user_id = v_op and gym_id = v_gym;
+  if v_cnt <> 4 then raise exception 'RULE FAIL(gym): sembrar left % of 4 rows unscoped', 4 - v_cnt; end if;
   perform public.sembrar_plantillas_default(); -- no-op
   select count(*) into v_cnt from public.plantillas where user_id = v_op;
   if v_cnt <> 4 then raise exception 'RULE FAIL(4): seed not idempotent, now % rows', v_cnt; end if;

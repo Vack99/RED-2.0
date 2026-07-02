@@ -55,6 +55,7 @@ set local role authenticated;
 do $$
 declare
   v_op       uuid := current_setting('app.op', true)::uuid;
+  v_gym      uuid := (select id from public.gym where slug = 'forge');  -- gym_id NOT NULL since slice #20
   v_a        uuid;   -- seeded package A (starts popular)
   v_b        uuid;   -- seeded package B (starts not popular)
   v_c        uuid;   -- seeded package C (starts not popular)
@@ -65,16 +66,16 @@ declare
 begin
   -- ── Seed: three packages owned by the operator, on the now-empty catalog. A starts popular so we
   --    can prove the demote on promoting B. Names are placeholders; the RPC overwrites them on edit.
-  insert into public.paquetes (user_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
-  values (v_op, 'TEST_A seed', 8,  'dias', 20, 500, true,  90)
+  insert into public.paquetes (user_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden, gym_id)
+  values (v_op, 'TEST_A seed', 8,  'dias', 20, 500, true,  90, v_gym)
   returning id into v_a;
 
-  insert into public.paquetes (user_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
-  values (v_op, 'TEST_B seed', 12, 'dias', 25, 700, false, 91)
+  insert into public.paquetes (user_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden, gym_id)
+  values (v_op, 'TEST_B seed', 12, 'dias', 25, 700, false, 91, v_gym)
   returning id into v_b;
 
-  insert into public.paquetes (user_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
-  values (v_op, 'TEST_C seed', 4,  'dias', 15, 300, false, 92)
+  insert into public.paquetes (user_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden, gym_id)
+  values (v_op, 'TEST_C seed', 4,  'dias', 15, 300, false, 92, v_gym)
   returning id into v_c;
 
   -- ════════════════════════════════════════════════════════════════════════
