@@ -1,5 +1,8 @@
 import type { ComponentType, ReactNode } from "react";
 
+import { baseAppIcon } from "./base/app-icon";
+import { BaseLockup } from "./base/logo";
+import { baseTokens } from "./base/tokens";
 import type { BrandId } from "./brand-id";
 import { forgeAppIcon } from "./forge/app-icon";
 import { ForgeLoginAnimation } from "./forge/login-animation";
@@ -28,8 +31,10 @@ export interface BrandCopy {
  * `@gym/ui` CSS-variable contract for one brand. It is CODE (rare, enumerable):
  * structured tokens + a logo + copy, plus AT MOST one bespoke login animation
  * (the code-preset path). Presentation-only — never data, rules, or authz (ADR-0008).
- * No `BrandModule<T>` generic and no second theming layer: two concrete brands, so
- * a plain record IS the seam (ADR-0012 §4).
+ * No `BrandModule<T>` generic and no second theming layer: a small, enumerable set
+ * of concrete brands, so a plain record IS the seam (ADR-0012 §4). Per-gym palette
+ * personalization is DATA (`token_overrides`), merged onto a module baseline by
+ * `brandCss` — not a new module (the *A escala* split; CONTEXT.md).
  */
 export interface BrandModule {
   readonly id: BrandId;
@@ -62,8 +67,23 @@ export interface BrandModule {
   readonly loginAnimation?: ComponentType<{ readonly name: string; readonly children?: ReactNode }>;
 }
 
-/** The two brand modules Phase 2 ships (ADR-0012 §4). */
+/**
+ * The brand modules the platform ships (ADR-0012 §4): the neutral **base** (the
+ * `DEFAULT_BRAND` — Phase 4), plus **forge** and **red**. The census is a
+ * deliberate tripwire (`brand.test.ts`): a new module is a conscious code act.
+ */
 export const brands: Record<BrandId, BrandModule> = {
+  base: {
+    id: "base",
+    tokens: baseTokens,
+    css: tokensToCss(baseTokens),
+    // Neutral es-MX placeholder voice, flagged for the HITL voice decision (grill (c)).
+    copy: { name: "Gimnasio", description: "Gimnasio — plataforma multi-inquilino." },
+    logo: BaseLockup,
+    appIcon: baseAppIcon,
+    // No `loginAnimation`: base exercises the optional-hero fallback (a clean
+    // static login) — the neutral module never ships bespoke motion.
+  },
   forge: {
     id: "forge",
     tokens: forgeTokens,

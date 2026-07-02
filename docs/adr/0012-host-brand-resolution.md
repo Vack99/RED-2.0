@@ -1,6 +1,6 @@
 # ADR-0012 — Host→brand resolution: one shared `proxy.ts` seam, a static registry stubbing the Phase-3 `gym`-row lookup
 
-**Status:** Accepted · **Date:** 2026-06-30 · **Amended:** 2026-07-01 (keyspace split, `gym_domain` host modeling, admin-shell scope — per the multitenant-branding scale audit); 2026-07-02 (Phase-3 grill: the swap relocates resolution to the data tier — see §5) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (`proxy.ts` not `middleware.ts`, Node-only, `getClaims()`/`getUser()`), [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) (host resolves brand **only, never authz**; presentation-only brand modules; two multi-tenant deploys + one shared Supabase), [ADR-0011](0011-monorepo-packaging-jit-packages-cross-package-boundary.md) (JIT `@gym/*` packages; §6 the `brand ✗→ data/domain` edge lands when `packages/brand` is created) · **Realizes:** roadmap **Phase 2** ("Multi-tenant tracer / de-risker") in [`docs/planning/2026-06-29-multi-gym-platform-roadmap.md`](../planning/2026-06-29-multi-gym-platform-roadmap.md)
+**Status:** Accepted · **Date:** 2026-06-30 · **Amended:** 2026-07-01 (keyspace split, `gym_domain` host modeling, admin-shell scope — per the multitenant-branding scale audit); 2026-07-02 (Phase-3 grill: the swap relocates resolution to the data tier — see §5); 2026-07-02 (Phase 4: the neutral `base` module, the `brandCss` module ⊕ `token_overrides` merge, and `DEFAULT_BRAND = 'base'` land — the Forward-looking design below is now realized; see the Phase-4 note under Forward-looking) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (`proxy.ts` not `middleware.ts`, Node-only, `getClaims()`/`getUser()`), [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) (host resolves brand **only, never authz**; presentation-only brand modules; two multi-tenant deploys + one shared Supabase), [ADR-0011](0011-monorepo-packaging-jit-packages-cross-package-boundary.md) (JIT `@gym/*` packages; §6 the `brand ✗→ data/domain` edge lands when `packages/brand` is created) · **Realizes:** roadmap **Phase 2** ("Multi-tenant tracer / de-risker") in [`docs/planning/2026-06-29-multi-gym-platform-roadmap.md`](../planning/2026-06-29-multi-gym-platform-roadmap.md)
 
 ## Context
 
@@ -75,6 +75,18 @@ The override is **`?gym=`** (tenant-addressed), forward-honest to the Phase-3 mo
 - `brand.css` is serialized from `module-baseline vars ⊕ gym-row token DATA`, **zod-validated before serialization** (guards the `dangerouslySetInnerHTML`).
 - A hot host→id cache may move to Vercel Edge Config.
 - A neutral **`base`/`default`** brand module for the thousands of generic gyms is introduced then; Phase 2 lets `'forge'` double as the default.
+
+### Amended (Phase 4 — realized, refinements only)
+
+The Forward-looking design above is now code (no ADR-0015 — these refine, not revise). Realized in `@gym/brand`:
+
+- **The neutral `base` module joins the census** (`base`, `forge`, `red`) and **`DEFAULT_BRAND` flips to `'base'`** (grill (e)): an unknown/absent `x-brand` now wears neutral chrome, never Forge's. The `Object.hasOwn(brands, …)` validation + `DEFAULT_BRAND` fallback in both layouts is unchanged — only the fallback's VALUE moved. Every mapped host is unaffected (host-wins precedence).
+- **Tokens stop being pre-serialized strings**: each module carries structured light/dark token objects and ONE `tokensToCss` serializer renders the `:root,.light{} .dark{}` block (the Phase-2 single-caller inlining condition ends — the merge is the second producer).
+- **`brandCss(module, overrides)` is the single merge/serialize entry both layouts call.** It returns the module's precomputed baseline `css` when overrides are empty (the generic-gym fast path) and merges `module ⊕ overrides` otherwise. Per-gym `token_overrides` arrive as an ARGUMENT the app fetches — `@gym/brand` never fetches, so the `brand ✗→ data/domain` cruiser edge stays frozen (zod enters via the workspace catalog as a regular dependency, no cruiser edit).
+- **The `token_overrides` zod schema guards the `dangerouslySetInnerHTML` sink** (grill (a)): a closed key-enum mirroring the *contrato de marca* + a charset-whitelisted value grammar make `</style>` breakout, declaration injection, and `url(scheme:…)` unrepresentable; any defect rejects the WHOLE payload → the module baseline serves intact (fail-safe, never half-branded).
+- **`base.css` = `base-module baseline ⊕ gym-row token DATA`, zod-validated before serialization** — exactly the Forward-looking `dangerouslySetInnerHTML` guard, now enforced.
+
+Still Phase-3-forward (unchanged): the host→`gym`/`gym_domain` DB lookup that supplies the real `token_overrides` row (this phase uses an app-side fixture argument — a one-line swap at go-live), and any hot host→id Edge Config cache.
 
 ## What a future reader must not undo
 

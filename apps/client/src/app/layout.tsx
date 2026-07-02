@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
 
-import { brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
+import { brandCss, brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
 
 import "./globals.css";
+import { fetchTokenOverrides } from "../lib/token-overrides";
 
 export const metadata: Metadata = {
   title: "Gym",
@@ -33,10 +34,16 @@ export default async function RootLayout({
   const brand = brands[brandId];
   const Logo = brand.logo;
 
+  // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
+  // (b)): the app fetches the override DATA (the fixture seam this phase) and
+  // passes it as an argument — `brandCss` validates it (zod-guarded before it
+  // reaches this sink) and fast-paths to the precomputed baseline when empty.
+  const css = brandCss(brand, fetchTokenOverrides(brandId));
+
   return (
     <html lang="es-MX">
       <head>
-        <style dangerouslySetInnerHTML={{ __html: brand.css }} />
+        <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>
       <body>
         <header style={{ padding: "16px 20px", borderBottom: "1px solid var(--line)" }}>

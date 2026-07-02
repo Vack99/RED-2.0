@@ -7,3 +7,6 @@ export { HOST_TO_BRAND } from "./host-map";
 export { resolveBrandId } from "./resolve-brand-id";
 export type { BrandModule } from "./registry";
 export { brands } from "./registry";
+// The module ⊕ token_overrides merge entry both layouts call (ADR-0012 §3, grill
+// (b)); it validates the untrusted overrides argument before serializing.
+export { brandCss } from "./brand-css";

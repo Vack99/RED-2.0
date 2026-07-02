@@ -7,6 +7,9 @@
     ".": "./src/index.ts",
     "./forge/logo": "./src/forge/logo.tsx"
   },
+  "dependencies": {
+    "zod": "catalog:"
+  },
   "peerDependencies": {
     "react": "catalog:"
   },

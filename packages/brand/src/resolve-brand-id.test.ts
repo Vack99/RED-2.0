@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 
+import { DEFAULT_BRAND } from "./brand-id";
 import { resolveBrandId } from "./resolve-brand-id";
 
 // resolveBrandId is the one pure host→brand seam both apps run (ADR-0012 §1), a
 // plain function over values (sibling to decideRedirect). These arms pin the
 // host-wins precedence — known host-map hit › a `?gym=` override naming a known
 // brand › DEFAULT_BRAND — so "one deployment resolves brand" is falsifiable here.
+// The fallback arm asserts against the DEFAULT_BRAND symbol (Phase 4 flipped its
+// VALUE to 'base' — grill (e); the VALUE itself is pinned once, in brand.test.ts).
 
 describe("resolveBrandId", () => {
   it("resolves a known host-map hit, port-stripped and case-insensitive", () => {
@@ -21,8 +24,8 @@ describe("resolveBrandId", () => {
   });
 
   it("ignores a `?gym=` override that does not name a known brand", () => {
-    expect(resolveBrandId(null, "banana")).toBe("forge");
-    expect(resolveBrandId(null, "toString")).toBe("forge");
+    expect(resolveBrandId(null, "banana")).toBe(DEFAULT_BRAND);
+    expect(resolveBrandId(null, "toString")).toBe(DEFAULT_BRAND);
   });
 
   it("lets the host win over a conflicting override on a mapped domain", () => {
@@ -30,7 +33,7 @@ describe("resolveBrandId", () => {
   });
 
   it("falls back to DEFAULT_BRAND when neither host nor override resolves", () => {
-    expect(resolveBrandId(null, null)).toBe("forge");
-    expect(resolveBrandId("unmapped.example.com", null)).toBe("forge");
+    expect(resolveBrandId(null, null)).toBe(DEFAULT_BRAND);
+    expect(resolveBrandId("unmapped.example.com", null)).toBe(DEFAULT_BRAND);
   });
 });

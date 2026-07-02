@@ -9,12 +9,18 @@ import { brands } from "./registry";
 // brand, or a brand missing its token block, is a bug caught here, not at render.
 
 describe("@gym/brand registry", () => {
-  it("ships exactly the two Phase-2 brands", () => {
-    expect(Object.keys(brands).sort()).toEqual(["forge", "red"]);
+  it("ships exactly the three brands: base, forge, red (the census tripwire)", () => {
+    // Phase 4 joins the neutral `base` module to Forge + RED. A new brand is a
+    // conscious code act, so this census is a deliberate tripwire — a fourth
+    // module (or a dropped one) fails here, not silently at render.
+    expect(Object.keys(brands).sort()).toEqual(["base", "forge", "red"]);
   });
 
-  it("the default brand is a real brand (forge, brand #1)", () => {
-    expect(DEFAULT_BRAND).toBe("forge");
+  it("the default brand is the neutral base module (grill (e))", () => {
+    // DEFAULT_BRAND flipped from 'forge' to 'base' in Phase 4: an unknown/absent
+    // `x-brand` now wears neutral chrome, never Forge's. The default must always
+    // point at a module that exists — asserted in the same slice that ships base.
+    expect(DEFAULT_BRAND).toBe("base");
     expect(brands[DEFAULT_BRAND]).toBeDefined();
   });
 
@@ -35,12 +41,14 @@ describe("@gym/brand registry", () => {
     }
   });
 
-  it("exercises the code-preset path — both shipped brands carry a bespoke login hero", () => {
-    // The Forge sequence is now extracted into its own module (grill lock (h)),
-    // joining RED's ignition; the neutral base module (S4) will omit it and
-    // exercise the optional-animation fallback.
+  it("exercises the code-preset path — forge and red carry a bespoke login hero, base omits it", () => {
+    // The Forge sequence and RED's ignition are self-contained module heroes
+    // (grill lock (h)). The neutral base module OMITS the optional hero, so the
+    // login falls back to a clean static shell — proving the contract is genuinely
+    // optional (`loginAnimation?`), exercised at the seam in static-login.test.ts.
     expect(typeof brands.forge.loginAnimation).toBe("function");
     expect(typeof brands.red.loginAnimation).toBe("function");
+    expect(brands.base.loginAnimation).toBeUndefined();
   });
 });
 

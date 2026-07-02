@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit } from "next/font/google";
+import { brandCss } from "@gym/brand";
 import "./globals.css";
 import { Providers } from "./providers";
 import { Toaster } from "@gym/ui/toaster";
 import { resolveBrand } from "../lib/brand";
+import { fetchTokenOverrides } from "../lib/token-overrides";
 
 // Outfit is the prototype's display/body face. Exposed as the CSS var
 // `--font-outfit`, which globals.css wires into `--font-sans` and <body>.
@@ -49,14 +51,20 @@ export default async function RootLayout({
   // `<html style>`: inline custom-property specificity would beat `.dark{}` and
   // silently kill next-themes' class-based dark mode. `resolveBrand` validates the
   // `x-brand` header against the registry (absent/forged → DEFAULT_BRAND).
+  //
+  // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
+  // (b)): the app fetches the override DATA (the fixture seam this phase) and
+  // passes it as an argument — `brandCss` validates it (zod-guarded before it
+  // reaches this sink) and fast-paths to the precomputed baseline when empty.
   const brand = await resolveBrand();
+  const css = brandCss(brand, fetchTokenOverrides(brand.id));
 
   // suppressHydrationWarning: next-themes sets the `class` on <html> before
   // hydration, so the server/client mismatch on that attribute is expected.
   return (
     <html lang="es-MX" className={outfit.variable} suppressHydrationWarning>
       <head>
-        <style dangerouslySetInnerHTML={{ __html: brand.css }} />
+        <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>
       <body className="antialiased">
         <Providers>
