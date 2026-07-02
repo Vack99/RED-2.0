@@ -40,9 +40,9 @@ declare
   v_vence  date;
   v_paq    text;
 begin
-  -- Seed: a finite client owned by the operator, with a known saldo.
-  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre)
-  values (v_op, 'TEST original', '0000000001', 5, v_today + 20, '8 clases')
+  -- Seed: a finite client owned by the operator, with a known saldo. gym_id NOT NULL since slice #20.
+  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+  values (v_op, 'TEST original', '0000000001', 5, v_today + 20, '8 clases', (select id from public.gym where slug = 'forge'))
   returning id into v_cli;
 
   -- (1) Update identity -> nombre + tel change.
