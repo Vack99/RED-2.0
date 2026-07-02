@@ -5,15 +5,17 @@ import { listarPlantillas } from "@gym/data/server/plantillas";
 import { getResumenMes } from "@gym/data/server/resumen";
 import { fmtMesAnio, hoyChihuahua } from "@gym/format";
 
+import { resolveBrand } from "../../../lib/brand";
 import { CuentaScreen } from "./_components/cuenta";
 
 export default async function Page() {
-  const [perfil, resumen, cobro, paquetes, plantillas] = await Promise.all([
+  const [perfil, resumen, cobro, paquetes, plantillas, brand] = await Promise.all([
     getPerfil(),
     getResumenMes(),
     getCobro(),
     getPaquetes(),
     listarPlantillas(),
+    resolveBrand(),
   ]);
 
   const mesLabel = fmtMesAnio(hoyChihuahua());
@@ -26,6 +28,7 @@ export default async function Page() {
       paquetes={paquetes}
       plantillas={plantillas}
       mesLabel={mesLabel}
+      brandName={brand.copy.name}
     />
   );
 }

@@ -1,6 +1,4 @@
-import { headers } from "next/headers";
-
-import { brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
+import { resolveBrand } from "../../../lib/brand";
 
 import { LoginForm } from "./_components/login-form";
 import { StaticLogin } from "./_components/static-login";
@@ -11,13 +9,10 @@ import { StaticLogin } from "./_components/static-login";
 // The page renders the RESOLVED brand module's optional login hero (grill lock
 // (h)) with the real Supabase form slotted in as children; a module that omits a
 // hero (the neutral base module, later) falls back to a clean static login. The
-// `x-brand` header is read + validated exactly as the layouts do (ADR-0012 §3):
-// it arrives from HTTP, so an absent/forged value falls back to DEFAULT_BRAND.
+// brand comes from the shared `resolveBrand` helper (the same `x-brand` read the
+// layout does, ADR-0012 §3).
 export default async function LoginPage() {
-  const stamped = (await headers()).get("x-brand");
-  const brandId: BrandId =
-    stamped !== null && Object.hasOwn(brands, stamped) ? (stamped as BrandId) : DEFAULT_BRAND;
-  const brand = brands[brandId];
+  const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
 
   const form = <LoginForm />;

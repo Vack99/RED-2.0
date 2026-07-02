@@ -1,9 +1,11 @@
 import type { ComponentType, ReactNode } from "react";
 
 import type { BrandId } from "./brand-id";
+import { forgeAppIcon } from "./forge/app-icon";
 import { ForgeLoginAnimation } from "./forge/login-animation";
 import { ForgeLockup } from "./forge/logo";
 import { forgeTokens } from "./forge/tokens";
+import { redAppIcon } from "./red/app-icon";
 import { RedLoginHero } from "./red/login-hero";
 import { RedLockup } from "./red/logo";
 import { redTokens } from "./red/tokens";
@@ -40,6 +42,13 @@ export interface BrandModule {
   /** Brand lockup — recolors via the CSS-var contract. */
   readonly logo: ComponentType<{ size?: number }>;
   /**
+   * Self-contained square app-icon SVG markup for the dynamic `/icon` favicon
+   * route — flat token-value colors, no `var(--…)`/gradients (a favicon paints
+   * with no page CSS). Built once at module load from the module's own tokens +
+   * the single mark geometry source (`./{brand}/app-icon`).
+   */
+  readonly appIcon: string;
+  /**
    * Bespoke login hero — a self-contained component carrying its own local
    * keyframes (grill lock (h)): Forge ships one (the bar-build sequence), RED
    * ships one (the ignition, composed with the form slot by `./red/login-hero`);
@@ -61,6 +70,7 @@ export const brands: Record<BrandId, BrandModule> = {
     css: tokensToCss(forgeTokens),
     copy: { name: "FORGE", description: "FORGE — administración del gimnasio." },
     logo: ForgeLockup,
+    appIcon: forgeAppIcon,
     loginAnimation: ForgeLoginAnimation,
   },
   red: {
@@ -69,6 +79,7 @@ export const brands: Record<BrandId, BrandModule> = {
     css: tokensToCss(redTokens),
     copy: { name: "RED", description: "RED — administración del gimnasio." },
     logo: RedLockup,
+    appIcon: redAppIcon,
     loginAnimation: RedLoginHero,
   },
 };

@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { ForgeLockup } from "@gym/brand/forge/logo";
 import { Icon } from "@gym/ui/forge/icon";
 import { MensajePicker } from "@gym/ui/forge/mensaje-picker";
 import { Button, Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
@@ -10,11 +9,14 @@ import { pesos, waLink } from "@gym/format";
 
 export function Recibo({
   result,
+  lockup,
   onClose,
   onOtra,
   onVerCliente,
 }: {
   result: VentaResult;
+  /** The resolved marca's lockup, rendered server-side (grill lock (g)). */
+  lockup: React.ReactNode;
   onClose: () => void;
   onOtra: () => void;
   onVerCliente: (id: string) => void;
@@ -67,7 +69,7 @@ export function Recibo({
             <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: 4, background: perf }} />
 
             <div className="flex items-start justify-between">
-              <ForgeLockup size={11} />
+              {lockup}
               <div style={{ textAlign: "right" }}>
                 <div className="uppercase" style={{ fontSize: 9.5, color: "#7a5a26", letterSpacing: 1.5 }}>FOLIO</div>
                 <Tnum className="font-extrabold" style={{ fontSize: 14, color: "#1c1917" }}>F-{folio}</Tnum>

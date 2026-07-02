@@ -26,6 +26,15 @@ describe("@gym/brand registry", () => {
     }
   });
 
+  it("every module carries a self-contained app-icon SVG for the dynamic favicon route", () => {
+    // Favicons paint without page CSS, so the icon must be standalone markup —
+    // guard that the /icon route (grill (g)) always has a real SVG to serve.
+    for (const brand of Object.values(brands)) {
+      expect(brand.appIcon).toContain("<svg");
+      expect(brand.appIcon).toContain("</svg>");
+    }
+  });
+
   it("exercises the code-preset path — both shipped brands carry a bespoke login hero", () => {
     // The Forge sequence is now extracted into its own module (grill lock (h)),
     // joining RED's ignition; the neutral base module (S4) will omit it and

@@ -27,7 +27,7 @@ const TOKENS = [
  *  believable es-MX data. María bought an 8-clase package and has 1 class left
  *  (por vencer) — so "clases", "paquete", "vence" and "dias" all read together.
  *  Fixed constant on purpose: this is an EXAMPLE, never live client data. */
-function sampleCtx(negocio: string): PlantillaContext {
+function sampleCtx(negocio: string, brandName: string): PlantillaContext {
   return {
     nombre: "María",
     clases: "1 clase",
@@ -36,18 +36,21 @@ function sampleCtx(negocio: string): PlantillaContext {
     dias: "3 días",
     precios: "• 8 clases — $800\n• Ilimitado — $1,200",
     datos_pago: "Transferencia BBVA\nCLABE 012 320 00…",
-    negocio: negocio || "FORGE",
+    negocio: negocio || brandName,
   };
 }
 
 export function PlantillaEditor({
   plantilla,
   negocio,
+  brandName,
   onDone,
   onCancel,
 }: {
   plantilla?: PlantillaDTO;
   negocio: string;
+  /** Resolved marca name — the sample "negocio" fallback (grill lock (c)). */
+  brandName: string;
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -151,7 +154,7 @@ export function PlantillaEditor({
           <Eyebrow>VISTA DE EJEMPLO</Eyebrow>
           <div style={{ marginTop: 8, border: "1px solid var(--line)" }}>
             {body.trim() ? (
-              <WhatsappBubble>{renderPlantilla(body, sampleCtx(negocio))}</WhatsappBubble>
+              <WhatsappBubble>{renderPlantilla(body, sampleCtx(negocio, brandName))}</WhatsappBubble>
             ) : (
               <div
                 style={{

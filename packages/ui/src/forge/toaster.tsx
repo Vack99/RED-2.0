@@ -1,23 +1,13 @@
 "use client";
 
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 import { Icon } from "./icon";
 
-type Tone = "success" | "warning" | "info";
+// The toast queue HOST moved to the brand-neutral `@gym/ui/toaster` (grill lock
+// (j)); the token-driven card + the `forgeToast` fire helper stay here under the
+// product namespace.
 
-/** Toast queue host — mounted once in the root layout. */
-export function ForgeToaster() {
-  return (
-    <Toaster
-      position="top-center"
-      offset={16}
-      mobileOffset={16}
-      gap={8}
-      toastOptions={{ unstyled: true, style: { width: "100%" } }}
-      style={{ width: "min(410px, calc(100vw - 32px))" }}
-    />
-  );
-}
+type Tone = "success" | "warning" | "info";
 
 function ForgeToastCard({ tone, title, body }: { tone: Tone; title: string; body?: string }) {
   const border =
