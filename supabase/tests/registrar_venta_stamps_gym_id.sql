@@ -46,7 +46,8 @@ begin
 
   select gym_id into v_cli_gym   from public.clientes where id = v_cli;
   if v_cli_gym is distinct from v_gym then raise exception 'STAMP FAIL(1): new cliente.gym_id % expected %', v_cli_gym, v_gym; end if;
-  select gym_id into v_venta_gym from public.ventas where folio = v_folio;
+  -- folio is unique per-gym since #24 (not globally), so look it up scoped by the venta's gym.
+  select gym_id into v_venta_gym from public.ventas where gym_id = v_gym and folio = v_folio;
   if v_venta_gym is distinct from v_gym then raise exception 'STAMP FAIL(1): venta.gym_id % expected %', v_venta_gym, v_gym; end if;
 
   -- ── (2) Existing-cliente path: the second venta inherits the cliente's gym_id ──
@@ -55,7 +56,7 @@ begin
       p_nombre := 'ignored', p_tel := 'ignored', p_paquete_nombre := '8 clases',
       p_vigencia_tipo := 'dias', p_monto := 750, p_metodo := 'efectivo',
       p_cliente_id := v_cli, p_clases_restantes := 16, p_vence := v_today + 40);
-  select gym_id into v_venta_gym from public.ventas where folio = v_folio;
+  select gym_id into v_venta_gym from public.ventas where gym_id = v_cli_gym and folio = v_folio;
   if v_venta_gym is distinct from v_cli_gym then raise exception 'STAMP FAIL(2): venta.gym_id % expected cliente gym %', v_venta_gym, v_cli_gym; end if;
 
   raise notice 'registrar_venta stamps gym_id: (1) new cliente+venta scoped, (2) venta inherits cliente gym';

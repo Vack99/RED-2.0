@@ -24,8 +24,15 @@ const BRANCH = 'denial-suite';
 const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Run order: the seeded cross-tenant vectors, then the S0 (gym/gym_domain anon-read) and S1
-// (gym_membership) table vectors. A future slice adds a vector to a file here — not a second harness.
-const SUITE = ['rls_cross_tenant_denial.sql', 'gym_tenant_anon_read.sql', 'gym_membership_rls.sql'];
+// (gym_membership) table vectors, then the S5 per-gym folio + gym-scoped re-key vectors (#24).
+// A future slice adds a vector to a file here — not a second harness.
+const SUITE = [
+  'rls_cross_tenant_denial.sql',
+  'gym_tenant_anon_read.sql',
+  'gym_membership_rls.sql',
+  'folio_per_gym.sql',
+  'rekey_gym_scoped.sql',
+];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 const parentRef = process.env.SUPABASE_PROJECT_REF;
