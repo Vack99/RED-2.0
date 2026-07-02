@@ -1,6 +1,6 @@
 # ADR-0006 — Respaldo: an operational export, not a disaster-recovery backup
 
-**Status:** Accepted · **Date:** 2026-06-01 · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (RLS, no ORM), [ADR-0002](0002-derived-not-stored.md) (derived-at-read)
+**Status:** Accepted · **Date:** 2026-06-01 · **Amended:** 2026-07-02 (mail-provider clause — see [ADR-0014](0014-custom-smtp-platform-sender.md)) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (RLS, no ORM), [ADR-0002](0002-derived-not-stored.md) (derived-at-read)
 
 ## Context
 
@@ -59,7 +59,8 @@ flagged-tension note in `CONTEXT.md`.) Concretely:
 - **Phase 2 (deferred — designed, not built): weekly email.** Has nowhere to fire until there's
   a deploy target. Intended stack on record: scheduler (Vercel Cron, or Supabase `pg_cron` +
   `pg_net`) → a secret-guarded Route Handler that **reuses gather + build** → email via an
-  external provider (Resend; Supabase only sends *auth* mail) → recipient = operator's
+  external provider (Resend — the platform's one mail vendor, which [ADR-0014](0014-custom-smtp-platform-sender.md)
+  also wires into Supabase Auth as custom SMTP because the built-in auth mailer is dev-only) → recipient = operator's
   `auth.users.email` → opt-in via a `respaldo_semanal` toggle on `perfil`. **Not** a Deno edge
   function — that can't reuse the Node ExcelJS builder, forcing a rewrite. The Phase 1 split
   exists precisely so Phase 2 wires a trigger to existing code, not a second implementation.
