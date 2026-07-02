@@ -63,9 +63,9 @@ export default defineConfig({
         },
       },
       {
-        // @gym/brand — the two brand modules + host-map registry. The registry
-        // test references (never renders) the logo/animation components, so node
-        // env is enough; no aliases (imports are relative + `react` type-only).
+        // @gym/brand — the two brand modules + the registry. The registry test
+        // references (never renders) the logo/animation components, so node env is
+        // enough; no aliases (imports are relative + `react` type-only).
         test: {
           name: "brand",
           environment: "node",
