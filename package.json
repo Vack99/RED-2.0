@@ -15,6 +15,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:denial": "node supabase/tests/run-denial-suite.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
