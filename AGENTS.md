@@ -14,7 +14,7 @@ mechanism is `docs/adr/0011-monorepo-packaging-jit-packages-cross-package-bounda
 
 Layout: `apps/{admin,client}` (two Next.js apps) + `packages/{domain,format,data,ui,brand}`
 (brand-neutral `@gym/*`, shipped as raw-TypeScript JIT packages — ADR-0011 §1). Both apps
-run one shared host→brand seam (`@gym/brand`'s `resolveBrandId` → `x-brand`; ADR-0012).
+run one shared host→inquilino→marca seam (`@gym/data`'s `resolveTenant` → `x-gym` + `x-brand`; ADR-0012).
 The boundary — the pure/server tiers `@gym/domain` + `@gym/format` + `@gym/data`
 ✗→ the UI kit `@gym/ui` + the apps `apps/*` (plus `@gym/ui` ✗→ `@gym/data`, and
 `@gym/brand` ✗→ `@gym/data` + `@gym/domain`) — is enforced by `.dependency-cruiser.cjs`

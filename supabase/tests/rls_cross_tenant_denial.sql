@@ -6,6 +6,14 @@
 -- surface as "no rows" / a raised exception, never a leak or a write. Recorded GREEN on the CURRENT
 -- per-`auth.uid()` policy set — the "before" baseline the S10 cutover gate re-runs (ADR-0013 §5).
 --
+-- Slice #23 extends the suite with the GYM-SCOPED vectors (the `#23 GYM-SCOPED VECTORS` section below):
+-- three synthetic gym-A principals that own NO tenant row via user_id (operator_a, owner2_a, and a
+-- gym-A `member` membership for member_m), so ONLY the new gym-scoped policies (is_staff_of /
+-- is_member_of / has_role / the owning-member auth_user_id path) can grant them anything — never the
+-- surviving per-`auth.uid()` policies. These assertions are RED without this slice's policies and GREEN
+-- with them, and prove: staff read/write, curated member read, owning-member read (member-vs-member),
+-- member-vs-operator-surface (read+write), and cobro owner-only (operator DENIED CLABE, owner granted).
+--
 -- Zero hardcoded prod UUIDs (audit finding 6, ADR-0013 §5): gym A is looked up by slug from the spine
 -- seeds; the synthetic gym #2 (a non-Chihuahua zone, America/Mexico_City) and all three auth users are
 -- minted with gen_random_uuid(). Fixtures are transaction-local — seeded inside BEGIN/ROLLBACK and rolled
@@ -40,6 +48,13 @@ declare
   owner_a      uuid := gen_random_uuid();
   operator_b   uuid := gen_random_uuid();
   member_m     uuid := gen_random_uuid();
+  -- #23 gym-scoped fixtures: two synthetic gym-A staff + a gym-A member, none of whom own any tenant
+  -- row via user_id — so the gym-scoped predicates (is_staff_of / is_member_of / has_role / the
+  -- owning-member auth_user_id path) are the ONLY thing that can grant them access, never the surviving
+  -- per-`auth.uid()` policies. operator_a proves is_staff_of (reads gym A's 6 staff tables) AND that
+  -- cobro is owner-only (operator DENIED CLABE). owner2_a proves has_role('owner') grants cobro.
+  operator_a   uuid := gen_random_uuid();
+  owner2_a     uuid := gen_random_uuid();
   claimed_cli  uuid;
   has_gym_id   boolean;
 begin
@@ -62,11 +77,19 @@ begin
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', owner_a,    'authenticated', 'authenticated', 'owner-a@test.local'),
     ('00000000-0000-0000-0000-000000000000', operator_b, 'authenticated', 'authenticated', 'operator-b@test.local'),
-    ('00000000-0000-0000-0000-000000000000', member_m,   'authenticated', 'authenticated', 'member-m@test.local');
+    ('00000000-0000-0000-0000-000000000000', member_m,   'authenticated', 'authenticated', 'member-m@test.local'),
+    ('00000000-0000-0000-0000-000000000000', operator_a, 'authenticated', 'authenticated', 'operator-a@test.local'),
+    ('00000000-0000-0000-0000-000000000000', owner2_a,   'authenticated', 'authenticated', 'owner2-a@test.local');
 
+  -- owner_a/operator_b as before. #23 adds gym-A staff (operator_a, owner2_a) plus member_m's own
+  -- gym-A `member` membership: a claimed member IS a gym member (ADR-0009), so is_member_of grants the
+  -- curated-catalog read while the owning-member `auth_user_id` path grants their own cliente row.
   insert into public.gym_membership (user_id, gym_id, role) values
     (owner_a,    gym_a, 'owner'),
-    (operator_b, gym_b, 'operator');
+    (operator_b, gym_b, 'operator'),
+    (operator_a, gym_a, 'operator'),
+    (owner2_a,   gym_a, 'owner'),
+    (member_m,   gym_a, 'member');
 
   -- Two clientes in gym A owned by owner_a (one claimed by member_m, one unclaimed), plus one venta +
   -- one asistencia for the claimed cliente — so "B sees 0" denies against REAL rows, not an empty
@@ -85,6 +108,13 @@ begin
               '8 clases', 8, 'dias', 20, 750, 'efectivo');
     insert into public.asistencias (user_id, gym_id, cliente_id, fecha, consumio)
       values (owner_a, gym_a, claimed_cli, (now() at time zone 'America/Chihuahua')::date, true);
+    -- #23: one row per curated + owner-only table in gym A (owned by owner_a via user_id) so the
+    -- gym-scoped read vectors ("operator_a sees 1", "member_m sees 1", "operator_b sees 0") assert
+    -- against REAL rows, never a vacuously empty table.
+    insert into public.paquetes  (user_id, gym_id, nombre, precio, vigencia_dias) values (owner_a, gym_a, '8 clases', 750, 20);
+    insert into public.plantillas (user_id, gym_id, nombre, body) values (owner_a, gym_a, 'Recordatorio', 'Hola {nombre}');
+    insert into public.perfil    (user_id, gym_id, negocio) values (owner_a, gym_a, 'FORGE');
+    insert into public.cobro     (user_id, gym_id) values (owner_a, gym_a);
   else
     -- Pre-#20 schema (this branch's git base): no gym_id yet, and the claim distinction arrives with
     -- #20's auth_user_id — both clientes seed unclaimed-shaped here.
@@ -104,6 +134,10 @@ begin
   perform set_config('t.owner_a',     owner_a::text,     true);
   perform set_config('t.operator_b',  operator_b::text,  true);
   perform set_config('t.claimed_cli', claimed_cli::text, true);
+  perform set_config('t.operator_a',  operator_a::text,  true);
+  perform set_config('t.owner2_a',    owner2_a::text,    true);
+  perform set_config('t.member_m',    member_m::text,    true);
+  perform set_config('t.has_gym_id',  has_gym_id::text,  true);
 end $$;
 
 -- ── Positive control: gym A's owner DOES see the seeded rows (guards a vacuous pass) ──────────────
@@ -146,6 +180,19 @@ begin
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'DENIAL FAIL: B updated % of A''s client rows', n; end if;
 
+  -- 2b) #23 cross-gym on the curated + owner-only classes: B (gym #2 staff) is is_staff_of(gym_a)=false,
+  -- has_role(gym_a,'owner')=false, and owns no gym-A row via user_id → reads 0 and writes 0. Guarded to
+  -- the #20 shape (the seeded curated/cobro rows exist only there); pre-#20 these tables are unseeded.
+  if current_setting('t.has_gym_id', true)::boolean then
+    select count(*) into n from public.paquetes;   if n <> 0 then raise exception 'DENIAL FAIL: B sees % paquetes', n; end if;
+    select count(*) into n from public.perfil;      if n <> 0 then raise exception 'DENIAL FAIL: B sees % perfil', n; end if;
+    select count(*) into n from public.plantillas;  if n <> 0 then raise exception 'DENIAL FAIL: B sees % plantillas', n; end if;
+    select count(*) into n from public.cobro;        if n <> 0 then raise exception 'DENIAL FAIL: B sees % cobro (CLABE)', n; end if;
+    update public.paquetes set precio = 1 where nombre = '8 clases';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'DENIAL FAIL: B updated % of A''s paquetes rows', n; end if;
+  end if;
+
   -- 3) RPC registrar_venta on A's client -> RLS hides the UPDATE -> raises 'Cliente no encontrado'
   got_error := false;
   begin
@@ -166,6 +213,94 @@ begin
   if not got_error then raise exception 'DENIAL FAIL: toggle_pase did not deny B on A''s client'; end if;
 
   raise notice 'RLS cross-tenant denial: all vectors denied for operator B';
+end $$;
+reset role;
+
+-- ══ #23 GYM-SCOPED VECTORS (require #20's gym_id + this slice's policies) ══════════════════════════
+-- These three blocks are the denial-test-FIRST target for the gym-scoped policy expand. Each fixture
+-- user owns NO tenant row via user_id, so the SURVIVING per-`auth.uid()` policies grant them nothing —
+-- the gym-scoped predicates are the ONLY thing under test. Without this slice's policies the positive
+-- grants below see 0 rows and RAISE (RED); with them they see the seeded rows (GREEN). All three are
+-- gated on `t.has_gym_id` so the suite stays green on the pre-#20 base shape (#21's diamond-DAG tolerance).
+
+-- ── operator_a: staff of gym A (is_staff_of) reads its 6 staff tables; DENIED cobro (owner-only) ──────
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.operator_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  a_client uuid := current_setting('t.claimed_cli', true)::uuid;
+  n int;
+begin
+  if not current_setting('t.has_gym_id', true)::boolean then return; end if;
+
+  -- GRANT (is_staff_of gym_a): sees BOTH clientes, the venta, the asistencia, and the curated rows.
+  select count(*) into n from public.clientes;    if n <> 2 then raise exception 'GYM FAIL: operator_a sees % clientes (expected 2)', n; end if;
+  select count(*) into n from public.ventas;       if n <> 1 then raise exception 'GYM FAIL: operator_a sees % ventas', n; end if;
+  select count(*) into n from public.asistencias;  if n <> 1 then raise exception 'GYM FAIL: operator_a sees % asistencias', n; end if;
+  select count(*) into n from public.paquetes;     if n <> 1 then raise exception 'GYM FAIL: operator_a sees % paquetes', n; end if;
+  select count(*) into n from public.perfil;        if n <> 1 then raise exception 'GYM FAIL: operator_a sees % perfil', n; end if;
+  select count(*) into n from public.plantillas;   if n <> 1 then raise exception 'GYM FAIL: operator_a sees % plantillas', n; end if;
+
+  -- GRANT (is_staff_of write): staff may update a gym-A cliente.
+  update public.clientes set clases_restantes = 7 where id = a_client;
+  get diagnostics n = row_count;
+  if n <> 1 then raise exception 'GYM FAIL: operator_a staff-update hit % rows (expected 1)', n; end if;
+
+  -- DENY (owner-only): an operator of gym A must NEVER read CLABE — the load-bearing owner-only proof.
+  select count(*) into n from public.cobro;
+  if n <> 0 then raise exception 'GYM FAIL: operator_a read % cobro rows — CLABE leaked to a non-owner', n; end if;
+end $$;
+reset role;
+
+-- ── owner2_a: owner of gym A (has_role owner) DOES read cobro/CLABE — proves the grant isn't vacuous ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.owner2_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare n int;
+begin
+  if not current_setting('t.has_gym_id', true)::boolean then return; end if;
+  select count(*) into n from public.cobro;
+  if n <> 1 then raise exception 'GYM FAIL: owner2_a (owner) sees % cobro rows (expected 1)', n; end if;
+end $$;
+reset role;
+
+-- ── member_m: owning-member reads ONLY their own cliente + the curated catalog; denied everything else ─
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.member_m', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  a_client uuid := current_setting('t.claimed_cli', true)::uuid;
+  n int;
+begin
+  if not current_setting('t.has_gym_id', true)::boolean then return; end if;
+
+  -- GRANT (owning member, auth_user_id): sees EXACTLY their own claimed cliente — not the unclaimed one
+  -- (member-vs-member denial: no member reads a peer's row).
+  select count(*) into n from public.clientes;
+  if n <> 1 then raise exception 'GYM FAIL: member_m sees % clientes (expected exactly their own 1)', n; end if;
+
+  -- GRANT (is_member_of): a gym member reads the curated/showcased catalog.
+  select count(*) into n from public.paquetes;    if n <> 1 then raise exception 'GYM FAIL: member_m sees % paquetes', n; end if;
+  select count(*) into n from public.perfil;       if n <> 1 then raise exception 'GYM FAIL: member_m sees % perfil', n; end if;
+  select count(*) into n from public.plantillas;  if n <> 1 then raise exception 'GYM FAIL: member_m sees % plantillas', n; end if;
+
+  -- DENY (member-vs-operator-surface, reads): ventas/asistencias are staff-only (no owning-member read
+  -- path in the expand phase); cobro is owner-only.
+  select count(*) into n from public.ventas;       if n <> 0 then raise exception 'GYM FAIL: member_m read % ventas (operator surface)', n; end if;
+  select count(*) into n from public.asistencias;  if n <> 0 then raise exception 'GYM FAIL: member_m read % asistencias (operator surface)', n; end if;
+  select count(*) into n from public.cobro;         if n <> 0 then raise exception 'GYM FAIL: member_m read % cobro (CLABE)', n; end if;
+
+  -- DENY (member-vs-operator-surface, writes): the owning-member grant is READ-only (member writes are
+  -- Phase 6) — a member cannot update their own cliente nor any curated/staff surface.
+  update public.clientes set clases_restantes = 0 where id = a_client;
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'GYM FAIL: member_m wrote % of their own cliente (should be read-only)', n; end if;
+  update public.paquetes set precio = 1 where nombre = '8 clases';
+  get diagnostics n = row_count;
+  if n <> 0 then raise exception 'GYM FAIL: member_m wrote % paquetes rows (operator surface)', n; end if;
 end $$;
 reset role;
 

@@ -493,6 +493,13 @@ export type Database = {
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
+      reclamar_o_crear_cliente: {
+        Args: { p_gym_id: string }
+        Returns: {
+          cliente_id: string
+          reclamado: boolean
+        }[]
+      }
       registrar_venta: {
         Args: {
           p_clases?: number
