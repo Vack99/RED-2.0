@@ -27,9 +27,12 @@ const METODO_ENUM: Record<Metodo, MetodoEnum> = {
 export function VenderScreen({
   paquetes,
   clientes,
+  lockup,
 }: {
   paquetes: PaqueteDTO[];
   clientes: ClienteLiteDTO[];
+  /** The resolved marca's lockup for the receipt (grill lock (g)). */
+  lockup: React.ReactNode;
 }) {
   const router = useRouter();
 
@@ -143,6 +146,7 @@ export function VenderScreen({
     return (
       <Recibo
         result={recibo}
+        lockup={lockup}
         onClose={resetForm}
         onOtra={resetForm}
         onVerCliente={(id) => router.push(`/clientes/${id}`)}

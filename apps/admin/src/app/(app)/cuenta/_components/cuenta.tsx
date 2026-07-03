@@ -33,6 +33,8 @@ interface CuentaScreenProps {
   plantillas: PlantillaDTO[];
   /** Real es-MX month label, e.g. "MAYO 2026". */
   mesLabel: string;
+  /** Resolved marca name — the "negocio" fallback when the perfil row has none (grill lock (c)). */
+  brandName: string;
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -82,6 +84,7 @@ export function CuentaScreen({
   paquetes,
   plantillas,
   mesLabel,
+  brandName,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -96,7 +99,7 @@ export function CuentaScreen({
       .slice(0, 2)
       .join("")
       .toUpperCase() || "C";
-  const negocio = perfil?.negocio ?? "FORGE";
+  const negocio = perfil?.negocio ?? brandName;
 
   const { ingresosMes, ventasMes, asistMes, ingresosMesPrev, ventasMesPrev, asistMesPrev } =
     resumen;
@@ -129,6 +132,7 @@ export function CuentaScreen({
         onClose={() => setPlantillasOpen(false)}
         plantillas={plantillas}
         negocio={negocio}
+        brandName={brandName}
       />
 
       <PaquetesSheet open={paquetesOpen} onClose={() => setPaquetesOpen(false)} paquetes={paquetes} />

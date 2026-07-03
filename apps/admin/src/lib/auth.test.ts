@@ -19,4 +19,9 @@ describe("decideRedirect", () => {
     expect(decideRedirect(true, "/inicio")).toBeNull();
     expect(decideRedirect(true, "/vender")).toBeNull();
   });
+
+  it("lets the dynamic favicon route through regardless of auth (a tab paints its icon pre-login)", () => {
+    expect(decideRedirect(false, "/icon")).toBeNull();
+    expect(decideRedirect(true, "/icon")).toBeNull();
+  });
 });

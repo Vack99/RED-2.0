@@ -17,7 +17,9 @@
     "./forge/ui": "./src/forge/ui.tsx",
     "./forge/use-flip": "./src/forge/use-flip.ts",
     "./forge/whatsapp-bubble": "./src/forge/whatsapp-bubble.tsx",
-    "./motion": "./src/motion.ts"
+    "./motion": "./src/motion.ts",
+    "./motion.css": "./src/motion.css",
+    "./toaster": "./src/toaster.tsx"
   },
   "dependencies": {
     "@gym/domain": "workspace:*",

@@ -3,7 +3,6 @@
 import * as React from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ForgeLockup } from "@gym/brand/forge/logo";
 import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@gym/ui/forge/ui";
@@ -21,6 +20,8 @@ interface InicioScreenProps {
   recientes: AsistenciaHoy[];
   /** Pre-formatted greeting eyebrow (carries the year), built server-side via fmtEyebrow. */
   eyebrow: string;
+  /** The resolved marca's lockup, rendered server-side (grill lock (g)). */
+  lockup: React.ReactNode;
 }
 
 export function InicioScreen({
@@ -29,6 +30,7 @@ export function InicioScreen({
   totalActivos,
   recientes,
   eyebrow,
+  lockup,
 }: InicioScreenProps) {
   const router = useRouter();
 
@@ -60,7 +62,7 @@ export function InicioScreen({
     <div>
       {/* Brand row */}
       <div className="flex items-center justify-between" style={{ padding: "14px 22px 16px" }}>
-        <ForgeLockup size={12} />
+        {lockup}
         <button
           onClick={() => router.push("/cuenta")}
           className="forge-hit forge-pressable border border-line bg-surface font-extrabold"

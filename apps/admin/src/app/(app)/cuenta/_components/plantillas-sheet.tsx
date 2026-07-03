@@ -17,11 +17,14 @@ export function PlantillasSheet({
   onClose,
   plantillas,
   negocio,
+  brandName,
 }: {
   open: boolean;
   onClose: () => void;
   plantillas: PlantillaDTO[];
   negocio: string;
+  /** Resolved marca name — the sample "negocio" fallback in the editor (grill lock (c)). */
+  brandName: string;
 }) {
   const router = useRouter();
   const [view, setView] = React.useState<View>({ mode: "list" });
@@ -153,6 +156,7 @@ export function PlantillasSheet({
         <PlantillaEditor
           plantilla={view.mode === "edit" ? view.plantilla : undefined}
           negocio={negocio}
+          brandName={brandName}
           onDone={() => setView({ mode: "list" })}
           onCancel={() => setView({ mode: "list" })}
         />

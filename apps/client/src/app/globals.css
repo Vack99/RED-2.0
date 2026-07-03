@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Product motion + the reduced-motion block live once in @gym/ui and reach both
+   apps through this import (grill (d)/(h)) — the Skeleton's `forge-flash` shimmer
+   finally animates here and reduced motion is now respected. */
+@import "@gym/ui/motion.css";
+
 /* Register the out-of-app source that ships the classes this app renders (ADR-0011
    §7). Tailwind v4 auto-scans only this Next project's root, so classes used by the
    @gym/ui Card and the @gym/brand logos — both outside apps/client — would be
