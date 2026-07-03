@@ -304,5 +304,64 @@ begin
 end $$;
 reset role;
 
+-- ══ C1 VECTORS: a NON-forge operator's NEW-cliente + template writes land in THEIR gym, not forge ═════
+-- The vector that would have caught C1 (the membership-derived-gym fix). operator_b is staff of gym B (the
+-- synthetic non-forge gym); the staff write RPCs, for a NEW cliente / a new template, must stamp gym B and
+-- draw gym B's folio — NEVER forge (gym A). Pre-fix the RPCs derived gym from the `slug='forge'` shortcut, so
+-- they stamped gym A while the still-present legacy per-`auth.uid()` with-check let the write through: these
+-- assertions are RED against the pre-fix bodies. Post-fix (gym derived from gym_membership) they stamp gym B:
+-- GREEN. Gated on #20's gym_id shape (the money-path gym_id + the S5 per-gym folio counter). gym B is looked
+-- up by slug (zero prod UUIDs); everything is transaction-local and rolled back.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.operator_b', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  gym_b     uuid;
+  new_cli   uuid;
+  new_folio bigint;
+  v_gym     uuid;
+  v_id      uuid;
+begin
+  if not current_setting('t.has_gym_id', true)::boolean then return; end if;
+  select id into gym_b from public.gym where slug = 'denial-suite-gym-2';
+
+  -- (a) registrar_venta for a NEW cliente: the cliente + venta are stamped gym B and the folio is drawn from
+  -- gym B's OWN counter (a brand-new gym → its first folio comes off gym B's row, not forge's).
+  select r.folio, r.cliente_id into new_folio, new_cli from public.registrar_venta(
+    p_nombre := 'Nuevo B', p_tel := '6149998877', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
+    p_monto := 750, p_metodo := 'efectivo', p_clases_restantes := 8,
+    p_vence := (now() at time zone 'America/Mexico_City')::date + 20, p_clases := 8, p_vigencia_dias := 20) r;
+
+  select gym_id into v_gym from public.clientes where id = new_cli;
+  if v_gym is distinct from gym_b then
+    raise exception 'C1 FAIL: NEW cliente stamped gym % (expected operator B''s gym %, not forge)', v_gym, gym_b;
+  end if;
+
+  select gym_id into v_gym from public.ventas where cliente_id = new_cli;
+  if v_gym is distinct from gym_b then
+    raise exception 'C1 FAIL: venta stamped gym % (expected operator B''s gym %, not forge)', v_gym, gym_b;
+  end if;
+
+  -- Folio drawn from gym B's OWN counter, not forge's. gym B is created fresh in the fixtures with zero
+  -- ventas, so next_folio seeds its counter to 1000 and its first-ever folio is 1001; forge's counter runs
+  -- far higher, so a folio of 1001 proves the draw came off gym B's row. (gym_folio_counter is policy-less
+  -- and unreadable to the authenticated caller by design — S5 — so the returned folio is the provenance
+  -- signal, not a direct counter read.)
+  if new_folio <> 1001 then
+    raise exception 'C1 FAIL: folio % is not gym B''s first folio (1001) — not drawn from gym B''s counter', new_folio;
+  end if;
+
+  -- (b) crear_plantilla: the new template is stamped gym B, not forge.
+  v_id := public.crear_plantilla('Vector B', 'Hola {nombre}');
+  select gym_id into v_gym from public.plantillas where id = v_id;
+  if v_gym is distinct from gym_b then
+    raise exception 'C1 FAIL: crear_plantilla stamped gym % (expected operator B''s gym %, not forge)', v_gym, gym_b;
+  end if;
+
+  raise notice 'C1 vectors: NEW-cliente venta + template both stamped the operator''s own gym';
+end $$;
+reset role;
+
 select 'rls cross-tenant denial: OK' as result;
 rollback;
