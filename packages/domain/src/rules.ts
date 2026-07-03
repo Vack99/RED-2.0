@@ -204,9 +204,9 @@ function difDias(a: Date, b: Date): number {
 /**
  * Aggregate the ventas + asistencias ledgers into the dashboard / cuenta
  * monthly resumen (ADR-0002 — derived at read, never stored). PURE: `hoy` is
- * passed in (a Chihuahua-local Date), never read from a clock; no I/O. The DAL
+ * passed in (a gym-local Date), never read from a clock; no I/O. The DAL
  * maps DB rows to the minimal VentaResumen / AsistenciaResumen shapes (parsing
- * dates at the boundary) and calls this with `hoyChihuahua()`.
+ * dates at the boundary) and calls this with `hoyEnZona(tz)`.
  *
  * Reported windows:
  *  - *Mes: the current CALENDAR month-to-date.

@@ -13,6 +13,12 @@ import type { SupabaseServer } from "./supabase";
  * (PostgREST semantics), so a paginator's "loop until a short page returns"
  * termination is exercised for real — a single seeded read of `[from, to]`
  * resolves to exactly that window.
+ *
+ * Slice #25 (per-gym timezone): every client also answers `.auth.getClaims()`
+ * (a fixed authenticated operator) and the `gym_membership`/`gym` tables
+ * `getOperatorGym` resolves — defaulting to Forge's REAL zone
+ * (America/Chihuahua), so every EXISTING test (none of which assert a
+ * different zone) stays green untouched. Override via `rows.gymTimezone`.
  */
 
 export interface FakeRows {
@@ -20,6 +26,8 @@ export interface FakeRows {
   ventas?: unknown[];
   asistencias?: unknown[];
   paquetes?: unknown[];
+  /** Overrides the default `gym.timezone` (America/Chihuahua) getOperatorGym resolves to. */
+  gymTimezone?: string;
 }
 
 export interface FakeClient {
@@ -68,6 +76,12 @@ export function makeFake(
         return b;
       },
       order: () => b,
+      limit: () => b, // no-op passthrough — the fake's seeded lists are already small
+      // getOperatorGym's terminal call — resolves to the first (only) seeded row.
+      maybeSingle: async () => {
+        if (err) return { data: null, error: err };
+        return { data: list[0] ?? null, error: null };
+      },
       // Awaited directly: `await supabase.from(t).select(...)...` resolves here. A
       // ranged read returns the inclusive `[from, to]` slice (PostgREST semantics) so
       // the paginator concatenates pages and stops on the first short page.
@@ -81,7 +95,14 @@ export function makeFake(
   };
 
   const client = {
-    from: (table: string) => builder(table, (rows as Record<string, unknown[]>)[table] ?? []),
+    auth: {
+      getClaims: async () => ({ data: { claims: { sub: "test-operator" } } }),
+    },
+    from: (table: string) => {
+      if (table === "gym_membership") return builder(table, [{ gym_id: "test-gym" }]);
+      if (table === "gym") return builder(table, [{ timezone: rows.gymTimezone ?? "America/Chihuahua" }]);
+      return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
+    },
   };
 
   return { client: client as unknown as SupabaseServer, isCalls, gteCalls, rangeCalls };

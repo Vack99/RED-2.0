@@ -2,8 +2,9 @@ import "server-only";
 
 import { cache } from "react";
 
-import { hoyChihuahua } from "@gym/format";
+import { hoyEnZona } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
+import { getOperatorGym } from "./gym";
 import type {
   RespaldoAsistencia,
   RespaldoCliente,
@@ -99,6 +100,11 @@ async function readAllAsistencias(supabase: SupabaseServer): Promise<RespaldoAsi
  * the real per-request client) so the gather is testable with a fake (audit cluster
  * 4); wrapped in React `cache()` to share the result across one request's callers.
  *
+ * `generadoHoy`/`tz` resolve the operator's gym via `getOperatorGym` (ADR-0013
+ * membership, slice #25) so the "today" the export stamps is the GYM's local
+ * calendar day, not a hardcoded zone (Forge's gym row IS America/Chihuahua, so
+ * its behavior stays byte-identical).
+ *
  * Soft-delete: only `asistencias` carries `deleted_at` (clientes/ventas do not), so
  * the soft-delete filter `.is("deleted_at", null)` is applied at THAT query alone —
  * the "excludes soft-deleted" guarantee lives here, not in the shaper.
@@ -106,7 +112,8 @@ async function readAllAsistencias(supabase: SupabaseServer): Promise<RespaldoAsi
 export const getRespaldoData = cache(
   async (client?: SupabaseServer): Promise<RespaldoData> => {
     const supabase = client ?? (await createClient());
-    const generadoHoy = hoyChihuahua();
+    const { timezone: tz } = await getOperatorGym(supabase);
+    const generadoHoy = hoyEnZona(tz);
 
     const [clientesRes, ventas, asistencias, paquetesRes] = await Promise.all([
       supabase
@@ -148,6 +155,6 @@ export const getRespaldoData = cache(
       vigencia_dias: p.vigencia_dias,
     }));
 
-    return { generadoHoy, clientes, ventas, asistencias, paquetes };
+    return { generadoHoy, tz, clientes, ventas, asistencias, paquetes };
   },
 );

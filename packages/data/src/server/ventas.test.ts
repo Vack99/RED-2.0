@@ -47,6 +47,7 @@ function makeFake(rows: FakeRows, opts: { sub?: string | null } = {}): FakeClien
       eq: () => b,
       is: () => b,
       order: () => b,
+      limit: () => b,
       single: async () => ({ data: single, error: null }),
       maybeSingle: async () => ({ data: single, error: null }),
       // Awaited directly (plantillas): resolve to the full row list.
@@ -74,6 +75,12 @@ function makeFake(rows: FakeRows, opts: { sub?: string | null } = {}): FakeClien
           return builder(rows.cobro ?? null, []);
         case "plantillas":
           return builder(null, rows.plantillas ?? []);
+        // Slice #25: getOperatorGym's membership + gym lookups — default to
+        // Forge's real zone, matching the shared supabase-fake.test-helper.
+        case "gym_membership":
+          return builder({ gym_id: "test-gym" }, []);
+        case "gym":
+          return builder({ timezone: "America/Chihuahua" }, []);
         default:
           return builder(null, []);
       }

@@ -16,6 +16,12 @@ import {
 // Fixed "today" so the derivation is deterministic (months are 0-based).
 const HOY = new Date(2026, 4, 27); // 27 May 2026
 
+// shapeFicha's tz arg (slice #25, PRD #17 named exception): every ficha fixture
+// below models the REAL Forge gym, whose gym row IS America/Chihuahua — a named
+// test constant (not a re-introduced module-level default), mirroring the same
+// gym-#1-fixture convention supabase/tests/toggle_pase_rules.sql already uses.
+const TZ_FORGE = "America/Chihuahua";
+
 function facts(over: Partial<ClienteFacts> = {}): ClienteFacts {
   return {
     id: "c1",
@@ -174,7 +180,7 @@ describe("shapeFicha", () => {
       { fecha: "2026-05-25", hora: "08:15:00", consumio: true },
       { fecha: "2026-05-20", hora: null, consumio: true }, // back-entry, no time
     ];
-    const f = shapeFicha(clienteRow, asist, [], HOY, HOY_ISO, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, asist, [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.presentHoy).toBe(true);
     expect(f.horaHoy).toBe("07:30");
     expect(f.historial).toHaveLength(2); // today excluded
@@ -189,7 +195,7 @@ describe("shapeFicha", () => {
       venta(),
       venta({ paquete_nombre: "Ilimitado", monto: 1200, metodo: "pendiente", clases: null, vigencia_tipo: "mes", vigencia_dias: null }),
     ];
-    const f = shapeFicha(clienteRow, [], ventas, HOY, HOY_ISO, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], ventas, HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.pagos[0]).toEqual({ fechaDisplay: "20 may", paquete: "8 clases", montoDisplay: "$800", metodo: "Efectivo" });
     expect(f.pagos[1].metodo).toBe("Por pagar");
     expect(f.ventasCount).toBe(2);
@@ -199,18 +205,18 @@ describe("shapeFicha", () => {
   });
 
   it("dayDenom falls back to 30 for mes packages, no ventas, AND a 0 vigencia_dias (divide-by-zero guard)", () => {
-    expect(shapeFicha(clienteRow, [], [], HOY, HOY_ISO, [], "FORGE", 0).dayDenom).toBe(30);
+    expect(shapeFicha(clienteRow, [], [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0).dayDenom).toBe(30);
     expect(
-      shapeFicha(clienteRow, [], [venta({ vigencia_tipo: "mes", vigencia_dias: null })], HOY, HOY_ISO, [], "FORGE", 0).dayDenom,
+      shapeFicha(clienteRow, [], [venta({ vigencia_tipo: "mes", vigencia_dias: null })], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0).dayDenom,
     ).toBe(30);
     expect(
-      shapeFicha(clienteRow, [], [venta({ vigencia_dias: 0 })], HOY, HOY_ISO, [], "FORGE", 0).dayDenom,
+      shapeFicha(clienteRow, [], [venta({ vigencia_dias: 0 })], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0).dayDenom,
     ).toBe(30); // the `|| 30` guard, not `?? 30`
   });
 
   it("renders mensajes from the templates for the derived saldo + negocio", () => {
     const body = "Hola {nombre}, te quedan {clases} de tu {paquete} (vence {vence}). — {negocio}";
-    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, [{ id: "t1", nombre: "Recordatorio", body }], "FORGE GYM", 0);
+    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "Recordatorio", body }], "FORGE GYM", 0);
     expect(f.mensajes).toEqual([
       { id: "t1", nombre: "Recordatorio", texto: "Hola Andrea, te quedan 5 clases de tu 8 clases (vence 16 jun). — FORGE GYM" },
     ]);
@@ -226,6 +232,7 @@ describe("shapeFicha", () => {
       [],
       HOY,
       HOY_ISO,
+      TZ_FORGE,
       [{ id: "t1", nombre: "Renovación", body }],
       "FORGE",
       0,
@@ -242,7 +249,7 @@ describe("shapeFicha", () => {
 
   it("omits the extras arg entirely (existing positional callers) — {precios}/{datos_pago} stay literal", () => {
     const body = "{precios}|{datos_pago}";
-    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, [{ id: "t1", nombre: "X", body }], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "X", body }], "FORGE", 0);
     expect(f.mensajes[0].texto).toBe("{precios}|{datos_pago}");
   });
 });
@@ -304,7 +311,7 @@ describe("shapeFicha gauges", () => {
 
   it("stacks the clases balance: clasesRest 23 + usadas 1 → fill 23/24, usadas 1", () => {
     const row = { ...clienteRow, clases_restantes: 23 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, [], "FORGE", 1);
+    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 1);
     expect(f.clasesGauge).not.toBeNull();
     expect(f.clasesGauge!.usadas).toBe(1);
     expect(f.clasesGauge!.fill).toBeCloseTo(23 / 24);
@@ -312,21 +319,21 @@ describe("shapeFicha gauges", () => {
 
   it("just-purchased reads ≈ full (nothing used yet)", () => {
     const row = { ...clienteRow, clases_restantes: 8 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, [], "FORGE", 0);
+    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.clasesGauge!.fill).toBe(1);
     expect(f.clasesGauge!.usadas).toBe(0);
   });
 
   it("partially drained: clasesRest 3 + usadas 5 → fill 3/8", () => {
     const row = { ...clienteRow, clases_restantes: 3 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, [], "FORGE", 5);
+    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 5);
     expect(f.clasesGauge!.fill).toBeCloseTo(3 / 8);
     expect(f.clasesGauge!.usadas).toBe(5);
   });
 
   it("expired/forfeited (clasesRest 0) → empty clases bar, usadas reflects real count", () => {
     const row = { ...clienteRow, clases_restantes: 0 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, [], "FORGE", 8);
+    const f = shapeFicha(row, [], [venta({ clases: 8 })], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 8);
     expect(f.clasesGauge!.fill).toBe(0);
     expect(f.clasesGauge!.usadas).toBe(8);
   });
@@ -343,6 +350,7 @@ describe("shapeFicha gauges", () => {
       [venta({ clases: null, vigencia_tipo: "mes", vigencia_dias: null })],
       HOY,
       HOY_ISO,
+      TZ_FORGE,
       [],
       "FORGE",
       0,
@@ -352,14 +360,14 @@ describe("shapeFicha gauges", () => {
   });
 
   it("no ventas → both gauges null (no anchor)", () => {
-    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.clasesGauge).toBeNull();
     expect(f.diasGauge).toBeNull();
   });
 
   it("días fill from vence vs the last purchase date", () => {
     // purchased 2026-05-17, vence 2026-06-16 → denom 30; today 2026-05-27 → diasRest 20 → 20/30.
-    const f = shapeFicha(clienteRow, [], [venta()], HOY, HOY_ISO, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [venta()], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.diasGauge!.fill).toBeCloseTo(20 / 30);
   });
 
@@ -371,6 +379,7 @@ describe("shapeFicha gauges", () => {
       [venta({ fecha: "2026-06-16T18:00:00Z" })],
       HOY,
       HOY_ISO,
+      TZ_FORGE,
       [],
       "FORGE",
       0,

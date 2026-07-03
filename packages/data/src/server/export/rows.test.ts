@@ -56,6 +56,7 @@ const paquete = (over: Partial<RespaldoPaquete> = {}): RespaldoPaquete => ({
 
 const data = (over: Partial<RespaldoData> = {}): RespaldoData => ({
   generadoHoy: HOY,
+  tz: "America/Chihuahua", // models the real Forge gym's zone (fixture convention, slice #25)
   clientes: [],
   ventas: [],
   asistencias: [],

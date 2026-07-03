@@ -5,7 +5,7 @@
 
 import { derivarEstado, diasRestantes, forfeit } from "@gym/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@gym/domain/types";
-import { DOW, fechaChihuahua, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
+import { DOW, fechaEnZona, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
 
 import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
@@ -219,6 +219,10 @@ export function shapeFicha(
   ventas: FichaVentaRow[],
   hoy: Date,
   hoyIso: string,
+  /** The resolved gym's IANA zone (PRD #17 named exception, audit finding 1) —
+   *  every timestamptz→calendar-day conversion below (pagos/compradoDisplay/
+   *  altaDisplay/lastPurchaseDate) resolves in THIS zone, never a hardcoded one. */
+  tz: string,
   plantillas: PlantillaDTO[],
   negocio: string,
   attendedSincePurchase: number,
@@ -243,7 +247,7 @@ export function shapeFicha(
   const horaHoy = asistencias.find((a) => a.fecha === hoyIso)?.hora?.slice(0, 5) ?? null;
 
   const pagos: FichaPago[] = ventas.map((v) => ({
-    fechaDisplay: fmtShort(fechaChihuahua(v.fecha)),
+    fechaDisplay: fmtShort(fechaEnZona(v.fecha, tz)),
     paquete: v.paquete_nombre,
     montoDisplay: pesos(v.monto),
     metodo: metodoLabel(v.metodo),
@@ -254,15 +258,15 @@ export function shapeFicha(
   // `|| 30` (not `?? 30`): a stored vigencia_dias of 0 must also fall back, else
   // the days ring divides by zero (cliente-detalle.tsx renders diasRest / dayDenom).
   const dayDenom = latest ? (latest.vigencia_tipo === "mes" ? 30 : latest.vigencia_dias || 30) : 30;
-  const compradoDisplay = latest ? fmtShort(fechaChihuahua(latest.fecha)) : "—";
-  const altaDisplay = fmtShort(fechaChihuahua(c.created_at));
+  const compradoDisplay = latest ? fmtShort(fechaEnZona(latest.fecha, tz)) : "—";
+  const altaDisplay = fmtShort(fechaEnZona(c.created_at, tz));
 
   const cliente = derivarCliente(c, hoy, asistencias.length);
 
   // Saldo depletion gauges, anchored to the last purchase (`ventas[0]`). No ventas
   // → no anchor → both null (UI renders just the números). Ilimitado clases → the
   // clases bar is meaningless (no decrement ever happens) → its gauge is null too.
-  const lastPurchaseDate = latest ? fechaChihuahua(latest.fecha) : null;
+  const lastPurchaseDate = latest ? fechaEnZona(latest.fecha, tz) : null;
   const venceDate = c.vence ? parseDay(c.vence) : null;
 
   const clasesGauge: ClasesGauge | null =
