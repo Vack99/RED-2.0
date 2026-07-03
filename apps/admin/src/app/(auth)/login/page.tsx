@@ -15,11 +15,13 @@ export default async function LoginPage() {
   const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
 
-  const form = <LoginForm />;
-
   return LoginHero ? (
-    <LoginHero name={brand.copy.name}>{form}</LoginHero>
+    <LoginHero name={brand.copy.name}>
+      <LoginForm afterHero />
+    </LoginHero>
   ) : (
-    <StaticLogin logo={brand.logo}>{form}</StaticLogin>
+    <StaticLogin logo={brand.logo}>
+      <LoginForm />
+    </StaticLogin>
   );
 }

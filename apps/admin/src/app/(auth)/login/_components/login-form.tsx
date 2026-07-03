@@ -19,9 +19,11 @@ import { createClient } from "@gym/data/client";
 
 // Sharp decelerate for the field rise (snappy settle), matching the hero.
 const EASE = "cubic-bezier(.32,.72,0,1)";
-// Fields slide in just after the hero's shine begins, one after another. The
-// offset is tuned to follow the brand hero; it depends on no hero export.
-const FORM_AT = 1590;
+// Fields slide in one after another. When a hero plays first, the stagger waits
+// for the hero's shine to begin (the hero fills that window with motion); with
+// no hero (the neutral base module — StaticLogin, a motion-free lockup) the
+// wait would be a dead blank space, so the form enters at t=0 instead.
+const HERO_OFFSET = 1590;
 const FORM_STEP = 150;
 
 /**
@@ -29,8 +31,13 @@ const FORM_STEP = 150;
  * client (which persists the session to cookies); the proxy then sees the
  * session on the next navigation. The export stays named `LoginForm` (the login
  * page imports it by that name).
+ *
+ * `afterHero` shifts the staggered entrance to follow a brand login hero (forge,
+ * red). Modules with no hero (base) leave it false so the form still enters
+ * gently but immediately, with no blank window (review finding #1).
  */
-export function LoginForm() {
+export function LoginForm({ afterHero = false }: { readonly afterHero?: boolean }) {
+  const FORM_AT = afterHero ? HERO_OFFSET : 0;
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

@@ -1,10 +1,19 @@
 import { createElement, type ComponentType } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+// LoginForm calls useRouter() at render; there is no AppRouterContext in this
+// SSR test, so stub it. createClient is only touched on submit, so it is inert.
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace() {}, refresh() {} }) }));
 
 import { brands } from "@gym/brand";
 
+import { LoginForm } from "./login-form";
 import { StaticLogin } from "./static-login";
+
+// Any animation-delay at or above this offset means the field rise is waiting on
+// a hero that plays first. With no hero, that is a dead blank window.
+const HERO_TUNED_DELAYS = [1740, 1890, 2040];
 
 // The login page picks `brand.loginAnimation ?? <StaticLogin>` (page.tsx). These
 // exercise the optional-animation contract at the seam: a module WITH a hero
@@ -49,6 +58,28 @@ describe("login optional-animation contract", () => {
         createElement(brand.loginAnimation, { name: brand.copy.name }, form),
       );
       expect(html, `${brand.id} hero must render its children`).toContain(FORM_SENTINEL);
+    }
+  });
+
+  // Review finding #1: the hero-tuned stagger (delays ≥ 1740ms) leaves a dead
+  // blank window when no hero plays first. The form must enter at t=0 without a
+  // hero, and only wait for the hero when one is actually present.
+  it("without a hero, the form carries no hero-tuned delay (enters at t=0)", () => {
+    const html = renderToStaticMarkup(createElement(LoginForm));
+
+    for (const delay of HERO_TUNED_DELAYS) {
+      expect(html, `no-hero form must not defer to ${delay}ms`).not.toContain(`${delay}ms`);
+    }
+    // It still enters with a gentle stagger, just immediately.
+    expect(html).toContain("150ms");
+    expect(html).toContain("forge-rise");
+  });
+
+  it("after a hero, the field rise keeps the gate-approved 1740/1890/2040 delays", () => {
+    const html = renderToStaticMarkup(createElement(LoginForm, { afterHero: true }));
+
+    for (const delay of HERO_TUNED_DELAYS) {
+      expect(html, `hero form must defer to ${delay}ms`).toContain(`${delay}ms`);
     }
   });
 });
