@@ -10,11 +10,14 @@ import type {
   Clases,
   CompraPaquete,
   EstadoCliente,
+  EstadoSesion,
   NivelUrgencia,
   PlantillaContext,
+  PlantillaHorario,
   ResumenMes,
   ResumenRoster,
   Saldo,
+  SesionOcupacion,
   Urgencia,
   VentaResumen,
   Vigencia,
@@ -288,4 +291,139 @@ export function renderPlantilla(body: string, ctx: PlantillaContext): string {
     const value = ctx[key as keyof PlantillaContext];
     return value ?? match;
   });
+}
+
+// ── Agenda scheduling rules (Phase 5, ADR-0010) ──────────────────────────
+
+/** capacity − active count (ADR-0010 §3 — occupancy is DERIVED, never
+ *  stored). Clamped at 0 defensively; a working system never overbooks past
+ *  capacity, but a read must never show a negative "quedan". */
+export function disponibles(capacidad: number, activos: number): number {
+  return Math.max(0, capacidad - activos);
+}
+
+/** Fraction of capacity filled (0–1) — the single home for the casi-lleno
+ *  threshold check and the "%" the SEMANA view renders. */
+export function ratioOcupacion(capacidad: number, activos: number): number {
+  return activos / capacidad;
+}
+
+const CASI_LLENO_RATIO = 0.85;
+
+/**
+ * A session's derived estado (ADR-0010 §3, invariant §5.1 — never stored).
+ * `esPrimeraNoPasada` is supplied by the caller: derivarEstadosDia computes it
+ * once per day (the "which one is a continuación" scan), rather than
+ * re-deriving it per session. Precedence is a strict ladder: termino (a past
+ * session is ALWAYS termino, regardless of how full it was) > a_continuacion
+ * > lleno > casi_lleno > normal.
+ */
+export function derivarEstadoSesion(
+  sesion: SesionOcupacion,
+  ahora: Date,
+  esPrimeraNoPasada: boolean,
+): EstadoSesion {
+  if (sesion.startsAt.getTime() <= ahora.getTime()) return "termino";
+  if (esPrimeraNoPasada) return "a_continuacion";
+  if (sesion.activos >= sesion.capacidad) return "lleno";
+  if (ratioOcupacion(sesion.capacidad, sesion.activos) >= CASI_LLENO_RATIO) return "casi_lleno";
+  return "normal";
+}
+
+/** Index of the day's first non-past session (its "a continuación" class) in
+ *  a chronologically-sorted list. -1 once the whole day is past. */
+export function indicePrimeraNoPasada(sesiones: SesionOcupacion[], ahora: Date): number {
+  return sesiones.findIndex((s) => s.startsAt.getTime() > ahora.getTime());
+}
+
+/**
+ * Derive every session's estado for one day in a single pass — the batch
+ * counterpart of derivarEstadoSesion, so "which one is a continuación" is
+ * computed once, not re-scanned per row. `sesiones` must already be sorted by
+ * startsAt (the DAL's read order).
+ */
+export function derivarEstadosDia(sesiones: SesionOcupacion[], ahora: Date): EstadoSesion[] {
+  const idx = indicePrimeraNoPasada(sesiones, ahora);
+  return sesiones.map((s, i) => derivarEstadoSesion(s, ahora, i === idx));
+}
+
+/**
+ * Whether a session's ★ especial badge shows: a_continuación is the single
+ * top-badge slot an Agenda row renders, so it supersedes the especial name
+ * (mock digest: a special session that were also a-continuación would show
+ * "A CONTINUACIÓN", not its name). `esEspecial` is the stored `is_special`
+ * fact (ADR-0010 §1) — never itself derived.
+ */
+export function muestraEspecial(estado: EstadoSesion, esEspecial: boolean): boolean {
+  return esEspecial && estado !== "a_continuacion";
+}
+
+// ── Editor bounds (PRD decision e) ───────────────────────────────────────
+
+const DURACIONES_VALIDAS: readonly number[] = [30, 45, 60, 75, 90];
+
+/** duración ∈ {30, 45, 60, 75, 90} minutes. */
+export function duracionValida(min: number): boolean {
+  return DURACIONES_VALIDAS.includes(min);
+}
+
+/** cupo 4–40, whole classes only. */
+export function cupoValido(cupo: number): boolean {
+  return Number.isInteger(cupo) && cupo >= 4 && cupo <= 40;
+}
+
+/** hora 05:00–22:45 in 15-min steps, as an "HH:MM" wall-clock string. */
+export function horaValida(hhmm: string): boolean {
+  const m = /^(\d{2}):(\d{2})$/.exec(hhmm);
+  if (!m) return false;
+  const hh = Number(m[1]);
+  const mm = Number(m[2]);
+  if (mm % 15 !== 0) return false;
+  const total = hh * 60 + mm;
+  return total >= 5 * 60 && total <= 22 * 60 + 45;
+}
+
+// ── Template materialization spec (ADR-0010 §1) ──────────────────────────
+
+/** The zone's UTC offset (ms) AT `utcMs`: the standard two-pass Intl
+ *  technique — format `utcMs`'s wall clock in `tz`, re-read those fields as if
+ *  they were themselves UTC, and diff against the true UTC instant. */
+function offsetMsEnZona(utcMs: number, tz: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(new Date(utcMs));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  const asIfUtc = Date.UTC(get("year"), get("month") - 1, get("day"), get("hour") % 24, get("minute"), get("second"));
+  return asIfUtc - utcMs;
+}
+
+/**
+ * Materialize one schedule_template's absolute starts_at for the week whose
+ * Monday is `lunesSemana` (local Y/M/D fields — the caller resolves which
+ * week; per PRD decision (k), domain never reads a gym row itself). This IS
+ * the ADR-0010 §1 materialization spec: recurrence lives in the template, but
+ * the stored fact is the absolute instant computed here.
+ *
+ * Deterministic: the same (plantilla, lunesSemana, tz) ALWAYS yields the same
+ * instant — exactly what makes the DB's `(template_id, starts_at)` unique
+ * guard an idempotent re-run (PRD decision c), not a separate mechanism.
+ * tz-honest: the same wall clock in two different gym zones yields two
+ * different absolute instants (single-pass offset lookup — this app's class
+ * hours, 05:00–22:45, never straddle a DST transition).
+ */
+export function materializarSesion(plantilla: PlantillaHorario, lunesSemana: Date, tz: string): Date {
+  const y = lunesSemana.getFullYear();
+  const m = lunesSemana.getMonth();
+  const d = lunesSemana.getDate() + plantilla.weekday;
+  const [hh, mm] = plantilla.startTime.split(":").map(Number);
+  const guess = Date.UTC(y, m, d, hh, mm);
+  return new Date(guess - offsetMsEnZona(guess, tz));
 }
