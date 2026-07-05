@@ -36,6 +36,7 @@ const SUITE = [
   'registro_claim.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',
+  'catalog_rls_denial.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;

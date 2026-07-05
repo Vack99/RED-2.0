@@ -9,6 +9,12 @@ export type Brand<T, B extends string> = T & { readonly [idBrand]: B };
 
 export type ClienteId = Brand<string, "ClienteId">;
 export type PaqueteId = Brand<string, "PaqueteId">;
+export type CoachId = Brand<string, "CoachId">;
+export type ClassTypeId = Brand<string, "ClassTypeId">;
+export type RoomId = Brand<string, "RoomId">;
 
 export const asClienteId = (id: string): ClienteId => id as ClienteId;
 export const asPaqueteId = (id: string): PaqueteId => id as PaqueteId;
+export const asCoachId = (id: string): CoachId => id as CoachId;
+export const asClassTypeId = (id: string): ClassTypeId => id as ClassTypeId;
+export const asRoomId = (id: string): RoomId => id as RoomId;
