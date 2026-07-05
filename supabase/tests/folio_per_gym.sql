@@ -36,14 +36,21 @@ begin
     ('00000000-0000-0000-0000-000000000000', op_x, 'authenticated', 'authenticated', 'folio-op-x@test.local'),
     ('00000000-0000-0000-0000-000000000000', op_y, 'authenticated', 'authenticated', 'folio-op-y@test.local');
 
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes)
-    values (op_x, gym_x, 'Cliente X', '6140000001', 5) returning id into cli_x;
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes)
-    values (op_y, gym_y, 'Cliente Y', '6140000002', 5) returning id into cli_y;
+  -- Each operator is staff of their own gym via gym_membership — the gym-scoped policies
+  -- (is_staff_of) are what grant registrar_venta's existing-cliente UPDATE post-cutover; the
+  -- pre-cutover fixture rode the legacy per-`auth.uid()` policies instead (stale, fixed 2026-07-05).
+  insert into public.gym_membership (user_id, gym_id, role) values
+    (op_x, gym_x, 'operator'),
+    (op_y, gym_y, 'operator');
+
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes)
+    values (gym_x, 'Cliente X', '6140000001', 5) returning id into cli_x;
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes)
+    values (gym_y, 'Cliente Y', '6140000002', 5) returning id into cli_y;
 
   -- gym_x's pre-existing folio 1050 (the high-water mark the counter must continue from, untouched).
-  insert into public.ventas (user_id, gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
-    values (op_x, gym_x, cli_x, 1050, '8 clases', 8, 'dias', 20, 750, 'efectivo');
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
+    values (gym_x, cli_x, 1050, '8 clases', 8, 'dias', 20, 750, 'efectivo');
 
   perform set_config('t.op_x',  op_x::text,  true);
   perform set_config('t.op_y',  op_y::text,  true);

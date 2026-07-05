@@ -97,38 +97,38 @@ begin
   -- a branch only when it executes, so the untaken shape's statements never bind on this schema.
   if has_gym_id then
     -- #20 schema (every preview branch): gym_id is NOT NULL, so the fixtures supply it.
-    insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, auth_user_id)
-      values (owner_a, gym_a, 'Cliente Claimed', '6141112233', 5, member_m)
+    insert into public.clientes (gym_id, nombre, tel, clases_restantes, auth_user_id)
+      values (gym_a, 'Cliente Claimed', '6141112233', 5, member_m)
       returning id into claimed_cli;
-    insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, auth_user_id)
-      values (owner_a, gym_a, 'Cliente Unclaimed', '6144445566', 8, null);
-    insert into public.ventas (user_id, gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
-      values (owner_a, gym_a, claimed_cli,
+    insert into public.clientes (gym_id, nombre, tel, clases_restantes, auth_user_id)
+      values (gym_a, 'Cliente Unclaimed', '6144445566', 8, null);
+    insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
+      values (gym_a, claimed_cli,
               (select coalesce(max(folio), 0) + 1 from public.ventas),
               '8 clases', 8, 'dias', 20, 750, 'efectivo');
-    insert into public.asistencias (user_id, gym_id, cliente_id, fecha, consumio)
-      values (owner_a, gym_a, claimed_cli, (now() at time zone 'America/Chihuahua')::date, true);
+    insert into public.asistencias (gym_id, cliente_id, fecha, consumio)
+      values (gym_a, claimed_cli, (now() at time zone 'America/Chihuahua')::date, true);
     -- #23: one row per curated + owner-only table in gym A (owned by owner_a via user_id) so the
     -- gym-scoped read vectors ("operator_a sees 1", "member_m sees 1", "operator_b sees 0") assert
     -- against REAL rows, never a vacuously empty table.
-    insert into public.paquetes  (user_id, gym_id, nombre, precio, vigencia_dias) values (owner_a, gym_a, '8 clases', 750, 20);
-    insert into public.plantillas (user_id, gym_id, nombre, body) values (owner_a, gym_a, 'Recordatorio', 'Hola {nombre}');
-    insert into public.perfil    (user_id, gym_id, negocio) values (owner_a, gym_a, 'FORGE');
-    insert into public.cobro     (user_id, gym_id) values (owner_a, gym_a);
+    insert into public.paquetes  (gym_id, nombre, precio, vigencia_dias) values (gym_a, '8 clases', 750, 20);
+    insert into public.plantillas (gym_id, nombre, body) values (gym_a, 'Recordatorio', 'Hola {nombre}');
+    insert into public.perfil    (gym_id, negocio) values (gym_a, 'FORGE');
+    insert into public.cobro     (gym_id) values (gym_a);
   else
     -- Pre-#20 schema (this branch's git base): no gym_id yet, and the claim distinction arrives with
     -- #20's auth_user_id — both clientes seed unclaimed-shaped here.
-    insert into public.clientes (user_id, nombre, tel, clases_restantes)
-      values (owner_a, 'Cliente Claimed', '6141112233', 5)
+    insert into public.clientes (nombre, tel, clases_restantes)
+      values ('Cliente Claimed', '6141112233', 5)
       returning id into claimed_cli;
-    insert into public.clientes (user_id, nombre, tel, clases_restantes)
-      values (owner_a, 'Cliente Unclaimed', '6144445566', 8);
-    insert into public.ventas (user_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
-      values (owner_a, claimed_cli,
+    insert into public.clientes (nombre, tel, clases_restantes)
+      values ('Cliente Unclaimed', '6144445566', 8);
+    insert into public.ventas (cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
+      values (claimed_cli,
               (select coalesce(max(folio), 0) + 1 from public.ventas),
               '8 clases', 8, 'dias', 20, 750, 'efectivo');
-    insert into public.asistencias (user_id, cliente_id, fecha, consumio)
-      values (owner_a, claimed_cli, (now() at time zone 'America/Chihuahua')::date, true);
+    insert into public.asistencias (cliente_id, fecha, consumio)
+      values (claimed_cli, (now() at time zone 'America/Chihuahua')::date, true);
   end if;
 
   perform set_config('t.owner_a',     owner_a::text,     true);

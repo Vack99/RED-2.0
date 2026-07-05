@@ -34,12 +34,22 @@ const SUITE = [
   'folio_per_gym.sql',
   'rekey_gym_scoped.sql',
   'registro_claim.sql',
+  'contract_a_denials.sql',
+  'contract_b_denials.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 const parentRef = process.env.SUPABASE_PROJECT_REF;
-if (!token || !parentRef) {
-  console.error('FATAL: set SUPABASE_ACCESS_TOKEN and SUPABASE_PROJECT_REF');
+// Rehearsal override: run directly against a fixed target ref (a throwaway free project) instead of
+// provisioning a preview branch — preview branching is paywalled (402). Refuses the live parent ref.
+const targetRef = process.env.SUPABASE_TARGET_REF;
+const LIVE_PARENT_REF = 'hjppxawglmukfvsgmcog';
+if (!token || (!parentRef && !targetRef)) {
+  console.error('FATAL: set SUPABASE_ACCESS_TOKEN and either SUPABASE_PROJECT_REF or SUPABASE_TARGET_REF');
+  process.exit(2);
+}
+if (targetRef && (targetRef === parentRef || targetRef === LIVE_PARENT_REF)) {
+  console.error(`REFUSED: SUPABASE_TARGET_REF (${targetRef}) must not be the live parent or SUPABASE_PROJECT_REF`);
   process.exit(2);
 }
 
@@ -83,7 +93,8 @@ async function ensureBranch() {
 }
 
 try {
-  const ref = await ensureBranch();
+  const ref = targetRef ?? (await ensureBranch());
+  if (targetRef) console.log(`Using target ref "${targetRef}" directly (SUPABASE_TARGET_REF override; branch path skipped).`);
   let failed = 0;
   for (const file of SUITE) {
     const sql = await readFile(join(HERE, file), 'utf8');

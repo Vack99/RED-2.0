@@ -65,18 +65,18 @@ begin
   -- c_phone shares u_phone's PHONE but has a DIFFERENT email (→ phone must NOT claim); two dup@x.mx rows
   -- make u_ambig ambiguous (→ create); c_cross matches u_cross's email but lives in gym A while u_cross
   -- registers into gym B (→ cross-gym must NOT claim).
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, email, auth_user_id)
-    values (owner_a, gym_a, 'Ana Preexistente', '6141112233', 5, 'ana@x.mx', null)
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
+    values (gym_a, 'Ana Preexistente', '6141112233', 5, 'ana@x.mx', null)
     returning id into c_match;
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, email, phone_e164, auth_user_id)
-    values (owner_a, gym_a, 'Titular Real', '6143334455', 7, 'titular-real@x.mx', '+526143334455', null)
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, phone_e164, auth_user_id)
+    values (gym_a, 'Titular Real', '6143334455', 7, 'titular-real@x.mx', '+526143334455', null)
     returning id into c_phone;
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, email, auth_user_id)
-    values (owner_a, gym_a, 'Dup Uno', '6144440001', 3, 'dup@x.mx', null);
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, email, auth_user_id)
-    values (owner_a, gym_a, 'Dup Dos', '6144440002', 4, 'dup@x.mx', null);
-  insert into public.clientes (user_id, gym_id, nombre, tel, clases_restantes, email, auth_user_id)
-    values (owner_a, gym_a, 'Cross Preexistente', '6147778899', 9, 'cross@x.mx', null)
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
+    values (gym_a, 'Dup Uno', '6144440001', 3, 'dup@x.mx', null);
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
+    values (gym_a, 'Dup Dos', '6144440002', 4, 'dup@x.mx', null);
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
+    values (gym_a, 'Cross Preexistente', '6147778899', 9, 'cross@x.mx', null)
     returning id into c_cross;
 
   perform set_config('t.gym_a',     gym_a::text,     true);

@@ -63,50 +63,50 @@ begin
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', u_p, 'authenticated', 'authenticated', 'rekey-p@test.local'),
     ('00000000-0000-0000-0000-000000000000', u_q, 'authenticated', 'authenticated', 'rekey-q@test.local');
-  insert into public.clientes (user_id, gym_id, nombre, tel) values (u_p, gym_p, 'Cli P', '6140000003') returning id into cli_p;
-  insert into public.clientes (user_id, gym_id, nombre, tel) values (u_q, gym_q, 'Cli Q', '6140000004') returning id into cli_q;
+  insert into public.clientes (gym_id, nombre, tel) values (gym_p, 'Cli P', '6140000003') returning id into cli_p;
+  insert into public.clientes (gym_id, nombre, tel) values (gym_q, 'Cli Q', '6140000004') returning id into cli_q;
 
   -- ventas unique(gym_id, folio): same folio in two gyms OK; repeat within one gym rejected.
-  insert into public.ventas (user_id, gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
-    values (u_p, gym_p, cli_p, 2001, '8 clases', 8, 'dias', 20, 750, 'efectivo');
-  insert into public.ventas (user_id, gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
-    values (u_q, gym_q, cli_q, 2001, '8 clases', 8, 'dias', 20, 750, 'efectivo');  -- cross-gym twin: OK (global unique is GONE)
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
+    values (gym_p, cli_p, 2001, '8 clases', 8, 'dias', 20, 750, 'efectivo');
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
+    values (gym_q, cli_q, 2001, '8 clases', 8, 'dias', 20, 750, 'efectivo');  -- cross-gym twin: OK (global unique is GONE)
   begin
-    insert into public.ventas (user_id, gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
-      values (u_p, gym_p, cli_p, 2001, '8 clases', 8, 'dias', 20, 750, 'efectivo');
+    insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
+      values (gym_p, cli_p, 2001, '8 clases', 8, 'dias', 20, 750, 'efectivo');
     raise exception 'REKEY FAIL: duplicate folio 2001 within gym_p was accepted';
   exception when unique_violation then null; end;
 
   -- perfil unique(gym_id): one perfil per gym.
-  insert into public.perfil (user_id, gym_id, negocio) values (u_p, gym_p, 'P');
-  insert into public.perfil (user_id, gym_id, negocio) values (u_q, gym_q, 'Q');  -- other gym: OK
+  insert into public.perfil (gym_id, negocio) values (gym_p, 'P');
+  insert into public.perfil (gym_id, negocio) values (gym_q, 'Q');  -- other gym: OK
   begin
-    insert into public.perfil (user_id, gym_id, negocio) values (u_q, gym_p, 'P2');
+    insert into public.perfil (gym_id, negocio) values (gym_p, 'P2');
     raise exception 'REKEY FAIL: second perfil in gym_p was accepted';
   exception when unique_violation then null; end;
 
   -- cobro unique(gym_id): one cobro per gym.
-  insert into public.cobro (user_id, gym_id, titular) values (u_p, gym_p, 'P');
-  insert into public.cobro (user_id, gym_id, titular) values (u_q, gym_q, 'Q');  -- other gym: OK
+  insert into public.cobro (gym_id, titular) values (gym_p, 'P');
+  insert into public.cobro (gym_id, titular) values (gym_q, 'Q');  -- other gym: OK
   begin
-    insert into public.cobro (user_id, gym_id, titular) values (u_q, gym_p, 'P2');
+    insert into public.cobro (gym_id, titular) values (gym_p, 'P2');
     raise exception 'REKEY FAIL: second cobro in gym_p was accepted';
   exception when unique_violation then null; end;
 
   -- paquetes unique(gym_id, nombre): same nombre across gyms OK; repeat within a gym rejected.
   -- (vigencia_dias supplied to satisfy paquetes_vigencia_ck: dias-tipo requires a non-null vigencia_dias.)
-  insert into public.paquetes (user_id, gym_id, nombre, precio, vigencia_dias) values (u_p, gym_p, '8 clases', 750, 30);
-  insert into public.paquetes (user_id, gym_id, nombre, precio, vigencia_dias) values (u_q, gym_q, '8 clases', 750, 30);  -- cross-gym: OK
+  insert into public.paquetes (gym_id, nombre, precio, vigencia_dias) values (gym_p, '8 clases', 750, 30);
+  insert into public.paquetes (gym_id, nombre, precio, vigencia_dias) values (gym_q, '8 clases', 750, 30);  -- cross-gym: OK
   begin
-    insert into public.paquetes (user_id, gym_id, nombre, precio, vigencia_dias) values (u_p, gym_p, '8 clases', 800, 30);
+    insert into public.paquetes (gym_id, nombre, precio, vigencia_dias) values (gym_p, '8 clases', 800, 30);
     raise exception 'REKEY FAIL: duplicate paquete nombre within gym_p was accepted';
   exception when unique_violation then null; end;
 
   -- paquetes one-popular per gym: two popular in one gym rejected; one popular each gym OK.
   update public.paquetes set popular = true where gym_id = gym_p and nombre = '8 clases';
-  insert into public.paquetes (user_id, gym_id, nombre, precio, popular, vigencia_dias) values (u_q, gym_q, 'Renovacion', 1200, true, 30);  -- other gym popular: OK
+  insert into public.paquetes (gym_id, nombre, precio, popular, vigencia_dias) values (gym_q, 'Renovacion', 1200, true, 30);  -- other gym popular: OK
   begin
-    insert into public.paquetes (user_id, gym_id, nombre, precio, popular, vigencia_dias) values (u_p, gym_p, 'Renovacion', 1200, true, 30);
+    insert into public.paquetes (gym_id, nombre, precio, popular, vigencia_dias) values (gym_p, 'Renovacion', 1200, true, 30);
     raise exception 'REKEY FAIL: a second popular paquete within gym_p was accepted';
   exception when unique_violation then null; end;
 

@@ -24,7 +24,6 @@ export type Database = {
           gym_id: string
           hora: string | null
           id: string
-          user_id: string
         }
         Insert: {
           cliente_id: string
@@ -35,7 +34,6 @@ export type Database = {
           gym_id: string
           hora?: string | null
           id?: string
-          user_id: string
         }
         Update: {
           cliente_id?: string
@@ -46,7 +44,6 @@ export type Database = {
           gym_id?: string
           hora?: string | null
           id?: string
-          user_id?: string
         }
         Relationships: [
           {
@@ -80,7 +77,6 @@ export type Database = {
           privacy_accepted_at: string | null
           tel: string
           terms_accepted_at: string | null
-          user_id: string
           vence: string | null
         }
         Insert: {
@@ -97,7 +93,6 @@ export type Database = {
           privacy_accepted_at?: string | null
           tel: string
           terms_accepted_at?: string | null
-          user_id: string
           vence?: string | null
         }
         Update: {
@@ -114,7 +109,6 @@ export type Database = {
           privacy_accepted_at?: string | null
           tel?: string
           terms_accepted_at?: string | null
-          user_id?: string
           vence?: string | null
         }
         Relationships: [
@@ -139,7 +133,6 @@ export type Database = {
           id: string
           tarjeta: string | null
           titular: string | null
-          user_id: string
         }
         Insert: {
           acepta_efectivo?: boolean
@@ -152,7 +145,6 @@ export type Database = {
           id?: string
           tarjeta?: string | null
           titular?: string | null
-          user_id: string
         }
         Update: {
           acepta_efectivo?: boolean
@@ -165,13 +157,12 @@ export type Database = {
           id?: string
           tarjeta?: string | null
           titular?: string | null
-          user_id?: string
         }
         Relationships: [
           {
             foreignKeyName: "cobro_gym_id_fkey"
             columns: ["gym_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "gym"
             referencedColumns: ["id"]
           },
@@ -245,6 +236,29 @@ export type Database = {
           },
         ]
       }
+      gym_folio_counter: {
+        Row: {
+          gym_id: string
+          last_folio: number
+        }
+        Insert: {
+          gym_id: string
+          last_folio: number
+        }
+        Update: {
+          gym_id?: string
+          last_folio?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gym_folio_counter_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: true
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gym_membership: {
         Row: {
           created_at: string
@@ -284,7 +298,6 @@ export type Database = {
           orden: number
           popular: boolean
           precio: number
-          user_id: string
           vigencia_dias: number | null
           vigencia_tipo: string
         }
@@ -297,7 +310,6 @@ export type Database = {
           orden?: number
           popular?: boolean
           precio: number
-          user_id: string
           vigencia_dias?: number | null
           vigencia_tipo?: string
         }
@@ -310,7 +322,6 @@ export type Database = {
           orden?: number
           popular?: boolean
           precio?: number
-          user_id?: string
           vigencia_dias?: number | null
           vigencia_tipo?: string
         }
@@ -333,7 +344,6 @@ export type Database = {
           id: string
           negocio: string
           tel: string | null
-          user_id: string
         }
         Insert: {
           ciudad?: string | null
@@ -343,7 +353,6 @@ export type Database = {
           id?: string
           negocio?: string
           tel?: string | null
-          user_id: string
         }
         Update: {
           ciudad?: string | null
@@ -353,13 +362,12 @@ export type Database = {
           id?: string
           negocio?: string
           tel?: string | null
-          user_id?: string
         }
         Relationships: [
           {
             foreignKeyName: "perfil_gym_id_fkey"
             columns: ["gym_id"]
-            isOneToOne: false
+            isOneToOne: true
             referencedRelation: "gym"
             referencedColumns: ["id"]
           },
@@ -372,7 +380,6 @@ export type Database = {
           gym_id: string
           id: string
           nombre: string
-          user_id: string
         }
         Insert: {
           body: string
@@ -380,7 +387,6 @@ export type Database = {
           gym_id: string
           id?: string
           nombre: string
-          user_id: string
         }
         Update: {
           body?: string
@@ -388,7 +394,6 @@ export type Database = {
           gym_id?: string
           id?: string
           nombre?: string
-          user_id?: string
         }
         Relationships: [
           {
@@ -412,7 +417,6 @@ export type Database = {
           metodo: string
           monto: number
           paquete_nombre: string
-          user_id: string
           vigencia_dias: number | null
           vigencia_tipo: string
         }
@@ -421,13 +425,12 @@ export type Database = {
           cliente_id: string
           created_at?: string
           fecha?: string
-          folio?: number
+          folio: number
           gym_id: string
           id?: string
           metodo: string
           monto: number
           paquete_nombre: string
-          user_id: string
           vigencia_dias?: number | null
           vigencia_tipo: string
         }
@@ -442,7 +445,6 @@ export type Database = {
           metodo?: string
           monto?: number
           paquete_nombre?: string
-          user_id?: string
           vigencia_dias?: number | null
           vigencia_tipo?: string
         }
@@ -493,6 +495,7 @@ export type Database = {
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
+      next_folio: { Args: { p_gym: string }; Returns: number }
       reclamar_o_crear_cliente: {
         Args: { p_gym_id: string }
         Returns: {
@@ -520,6 +523,7 @@ export type Database = {
         }[]
       }
       sembrar_plantillas_default: { Args: never; Returns: undefined }
+      staff_gym: { Args: never; Returns: string }
       toggle_pase: {
         Args: { p_cliente_id: string; p_fecha: string }
         Returns: {
