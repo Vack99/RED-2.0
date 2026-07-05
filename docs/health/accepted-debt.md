@@ -67,3 +67,11 @@ The health gate treats each as 🟢 ACCEPTED until its trigger is crossed.
 - accepted: 2026-06-02
 - rationale: 2-month window counted in JS; push-to-DB candidate
 - trigger: table:asistencias op:> threshold:20000
+
+### L-009 — plantillas_member_select exposes operator WhatsApp templates to members
+- disease: over-grant (RLS read surface)
+- detector: 2026-07-05 post-cutover db audit F2 (docs/health/2026-07-05-post-cutover-db-audit.md)
+- location: policy plantillas_member_select (is_member_of; migration 20260702173309)
+- accepted: 2026-07-05
+- rationale: latent — zero real members exist yet; templates carry no PII/secrets, only the operator's message copy. Fix is a one-line narrowing to is_staff_of when triggered. Cross-recorded in ADR-0009's 2026-07-05 amendment.
+- trigger: manual:first real member self-registers at any gym (same trigger as the #27 SMTP un-defer)
