@@ -1,3 +1,5 @@
+import { getClassTypes } from "@gym/data/server/class-type";
+import { getCoaches } from "@gym/data/server/coach";
 import { getCobro } from "@gym/data/server/cobro";
 import { getOperatorGym } from "@gym/data/server/gym";
 import { getPaquetes } from "@gym/data/server/paquetes";
@@ -11,12 +13,14 @@ import { CuentaScreen } from "./_components/cuenta";
 
 export default async function Page() {
   const { timezone: tz } = await getOperatorGym();
-  const [perfil, resumen, cobro, paquetes, plantillas, brand] = await Promise.all([
+  const [perfil, resumen, cobro, paquetes, plantillas, coaches, classTypes, brand] = await Promise.all([
     getPerfil(),
     getResumenMes(),
     getCobro(),
     getPaquetes(undefined, tz),
     listarPlantillas(),
+    getCoaches(),
+    getClassTypes(),
     resolveBrand(),
   ]);
 
@@ -29,6 +33,8 @@ export default async function Page() {
       cobro={cobro}
       paquetes={paquetes}
       plantillas={plantillas}
+      coaches={coaches}
+      classTypes={classTypes}
       mesLabel={mesLabel}
       brandName={brand.copy.name}
     />
