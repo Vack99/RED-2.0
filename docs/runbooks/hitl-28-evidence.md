@@ -56,3 +56,6 @@ operator stamp (7 columns). All rows, balances, and the auth account survive.
   Row counts vs backup: 36/32/198 clientes/ventas/asistencias (+1/+1/+3 = the Gate-1 health-check sale + pases; monto +$799), perfil/plantillas/cobro/paquetes unchanged (2/8/2/6). **Zero data loss.**
   **Advisors AFTER-B:** dual-policy `multiple_permissive` WARNs collapsed 30+ → 2 (the by-design pairs: clientes member+staff SELECT, gym_membership self+staff SELECT); all 6 user_id unindexed-FK INFOs gone; security list = pre-cutover by-design baseline (REST-exposed definer helpers incl. reclamar + staff_gym; pre-existing HaveIBeenPwned auth note; folio counter deny-all INFO). Nothing introduced by the cutover.
   Live-recorded versions: claim RPC `20260705070642` · A `20260705081431` · B `20260705082018`.
+- [x] 2026-07-05 — post-cutover exit audit: **FINDINGS-NONBLOCKING** (`docs/health/2026-07-05-post-cutover-db-audit.md`); F2 → ledger L-009.
+- [x] 2026-07-05 — **human deploy-verify walk: ALL GREEN** (hosts resolve per gym_domain, brand-correct; Forge admin ops in prod; live register→confirm→claim on the default sender — "custom sender" AC WAIVED per #27 owner-deferral).
+- [x] 2026-07-05 — #28 CLOSED. Rehearsal project deleted. Follow-up queued: weekly keepalive ping (free-tier pause guard).
