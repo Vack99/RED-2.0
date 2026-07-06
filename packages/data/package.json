@@ -12,6 +12,7 @@
     "./server/agenda-miembro": "./src/server/agenda-miembro.ts",
     "./server/asistencia": "./src/server/asistencia.ts",
     "./server/catalog": "./src/server/catalog.ts",
+    "./server/clase-miembro": "./src/server/clase-miembro.ts",
     "./server/class-type": "./src/server/class-type.ts",
     "./server/clientes": "./src/server/clientes.ts",
     "./server/coach": "./src/server/coach.ts",

@@ -343,6 +343,7 @@ export type Database = {
           clases_restantes: number | null
           created_at: string
           email: string | null
+          favorite_class_type_id: string | null
           gym_id: string
           id: string
           nombre: string
@@ -359,6 +360,7 @@ export type Database = {
           clases_restantes?: number | null
           created_at?: string
           email?: string | null
+          favorite_class_type_id?: string | null
           gym_id: string
           id?: string
           nombre: string
@@ -375,6 +377,7 @@ export type Database = {
           clases_restantes?: number | null
           created_at?: string
           email?: string | null
+          favorite_class_type_id?: string | null
           gym_id?: string
           id?: string
           nombre?: string
@@ -386,6 +389,13 @@ export type Database = {
           vence?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "clientes_favorite_class_type_id_fkey"
+            columns: ["favorite_class_type_id"]
+            isOneToOne: false
+            referencedRelation: "class_type"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "clientes_gym_id_fkey"
             columns: ["gym_id"]
@@ -1301,12 +1311,24 @@ export type Database = {
           reservation_id: string
         }[]
       }
+      roster_clase: {
+        Args: { p_session_id: string }
+        Returns: {
+          iniciales: string
+        }[]
+      }
       sembrar_plantillas_default: { Args: never; Returns: undefined }
       set_plan_features: {
         Args: { p_labels: string[]; p_plan_id: string }
         Returns: undefined
       }
       staff_gym: { Args: never; Returns: string }
+      toggle_favorito_tipo: {
+        Args: { p_class_type_id: string }
+        Returns: {
+          favorito: string
+        }[]
+      }
       toggle_pase: {
         Args: { p_cliente_id: string; p_fecha: string }
         Returns: {

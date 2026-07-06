@@ -30,6 +30,15 @@ const NUM_TONE: Record<TonoReserva, string> = {
   finished: "text-muted",
 };
 
+/** Filled heart glyph — the "Tu favorita" mark, rendered wherever the mock tags a favorite. */
+function HeartMini() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+      <path d="M12 3l2.6 6.3 6.4.5-4.9 4.1 1.6 6.2L12 17l-5.3 3.4 1.6-6.2L3.4 9.8l6.4-.5z" />
+    </svg>
+  );
+}
+
 /** Two-letter avatar initials from a coach name ("Marisa" → "MA"). */
 function inicialesCoach(nombre: string): string {
   const p = nombre.trim().split(/\s+/).filter(Boolean);
@@ -73,8 +82,15 @@ function ClassCard({ sesion, onOpen }: { sesion: SesionMiembroDTO; onOpen: () =>
       <div className="flex min-w-0 flex-1 flex-col p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="truncate text-lg font-bold uppercase tracking-wide text-fg">
-              {sesion.tipo}
+            <div className="flex items-center gap-1.5">
+              <span className="truncate text-lg font-bold uppercase tracking-wide text-fg">
+                {sesion.tipo}
+              </span>
+              {sesion.favorita && (
+                <span className="flex-none text-accent" aria-label="Tu favorita">
+                  <HeartMini />
+                </span>
+              )}
             </div>
             <div className="mt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">
               {sesion.coaches} · {sesion.duracionLabel}
@@ -244,6 +260,12 @@ function SummarySheet({
         </b>{" "}
         · {sesion.duracionLabel}
       </p>
+      {sesion.favorita && (
+        <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-accent">
+          <HeartMini />
+          Tu favorita
+        </span>
+      )}
 
       <div className="mt-4 flex items-center gap-2.5 rounded-xl border border-line bg-surface px-3 py-2.5">
         <span className="flex">
