@@ -4,13 +4,13 @@ import * as React from "react";
 import { Icon } from "@gym/ui/forge/icon";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
-import type { PaqueteDTO } from "@gym/data/server/paquetes";
+import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import { pesos } from "@gym/format";
 import { PaqueteEditor } from "./paquete-editor";
 
 // Edit existing only — no "new", no delete (locked scope). The view is just
-// list ⇄ edit; tapping a row carries the chosen PaqueteDTO into the editor.
-type View = { mode: "list" } | { mode: "edit"; paquete: PaqueteDTO };
+// list ⇄ edit; tapping a row carries the chosen plan into the editor.
+type View = { mode: "list" } | { mode: "edit"; paquete: PlanEditorDTO };
 
 export function PaquetesSheet({
   open,
@@ -19,7 +19,7 @@ export function PaquetesSheet({
 }: {
   open: boolean;
   onClose: () => void;
-  paquetes: PaqueteDTO[];
+  paquetes: PlanEditorDTO[];
 }) {
   const [view, setView] = React.useState<View>({ mode: "list" });
 

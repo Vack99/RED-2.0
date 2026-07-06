@@ -1,6 +1,10 @@
 "use server";
 
-import { actualizarPaquete } from "@gym/data/server/paquetes";
+import {
+  actualizarPaquete,
+  actualizarPaqueteMarketing,
+  setPlanFeatures,
+} from "@gym/data/server/paquetes";
 import {
   actualizarPlantilla,
   crearPlantilla,
@@ -28,4 +32,12 @@ export async function sembrarPlantillasDefaultAction(): Promise<void> {
 
 export async function actualizarPaqueteAction(raw: unknown): Promise<void> {
   return actualizarPaquete(raw);
+}
+
+export async function actualizarPaqueteMarketingAction(raw: unknown): Promise<void> {
+  return actualizarPaqueteMarketing(raw);
+}
+
+export async function setPlanFeaturesAction(raw: unknown): Promise<void> {
+  return setPlanFeatures(raw);
 }

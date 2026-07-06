@@ -57,6 +57,10 @@ declare
   owner2_a     uuid := gen_random_uuid();
   claimed_cli  uuid;
   has_gym_id   boolean;
+  -- #38: capture gym A's seeded paquete + probe for the plan_feature table so the plan_feature vectors
+  -- stay green on branches without this slice's migration (diamond-DAG tolerance, matching has_gym_id).
+  v_paquete_a      uuid;
+  has_plan_feature boolean;
 begin
   select id into gym_a from public.gym where slug = 'forge';
   if gym_a is null then
@@ -69,6 +73,12 @@ begin
     select 1 from information_schema.columns
     where table_schema = 'public' and table_name = 'clientes' and column_name = 'gym_id'
   ) into has_gym_id;
+
+  -- #38: does the plan_feature table exist on this branch's schema?
+  select exists (
+    select 1 from information_schema.tables
+    where table_schema = 'public' and table_name = 'plan_feature'
+  ) into has_plan_feature;
 
   -- Synthetic gym #2: non-Chihuahua zone; brand_module_id is opaque here (Phase 4 owns the shape).
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
@@ -111,10 +121,16 @@ begin
     -- #23: one row per curated + owner-only table in gym A (owned by owner_a via user_id) so the
     -- gym-scoped read vectors ("operator_a sees 1", "member_m sees 1", "operator_b sees 0") assert
     -- against REAL rows, never a vacuously empty table.
-    insert into public.paquetes  (gym_id, nombre, precio, vigencia_dias) values (gym_a, '8 clases', 750, 20);
+    insert into public.paquetes  (gym_id, nombre, precio, vigencia_dias) values (gym_a, '8 clases', 750, 20)
+      returning id into v_paquete_a;
     insert into public.plantillas (gym_id, nombre, body) values (gym_a, 'Recordatorio', 'Hola {nombre}');
     insert into public.perfil    (gym_id, negocio) values (gym_a, 'FORGE');
     insert into public.cobro     (gym_id) values (gym_a);
+    -- #38: one plan_feature row on gym A's paquete so the curated-read vectors assert against a REAL row.
+    if has_plan_feature then
+      insert into public.plan_feature (gym_id, plan_id, label, orden)
+        values (gym_a, v_paquete_a, 'Acceso a todas las clases', 0);
+    end if;
   else
     -- Pre-#20 schema (this branch's git base): no gym_id yet, and the claim distinction arrives with
     -- #20's auth_user_id — both clientes seed unclaimed-shaped here.
@@ -138,6 +154,8 @@ begin
   perform set_config('t.owner2_a',    owner2_a::text,    true);
   perform set_config('t.member_m',    member_m::text,    true);
   perform set_config('t.has_gym_id',  has_gym_id::text,  true);
+  perform set_config('t.paquete_a',       coalesce(v_paquete_a::text, ''), true);
+  perform set_config('t.has_plan_feature', has_plan_feature::text,         true);
 end $$;
 
 -- ── Positive control: gym A's owner DOES see the seeded rows (guards a vacuous pass) ──────────────
@@ -191,6 +209,15 @@ begin
     update public.paquetes set precio = 1 where nombre = '8 clases';
     get diagnostics n = row_count;
     if n <> 0 then raise exception 'DENIAL FAIL: B updated % of A''s paquetes rows', n; end if;
+  end if;
+
+  -- #38 plan_feature (curated): B (gym #2 staff) reads 0 and writes 0 of A's marketing feature list.
+  if current_setting('t.has_plan_feature', true)::boolean then
+    select count(*) into n from public.plan_feature;
+    if n <> 0 then raise exception 'DENIAL FAIL: B sees % plan_feature', n; end if;
+    update public.plan_feature set label = 'hack' where label = 'Acceso a todas las clases';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'DENIAL FAIL: B updated % of A''s plan_feature rows', n; end if;
   end if;
 
   -- 3) RPC registrar_venta on A's client -> RLS hides the UPDATE -> raises 'Cliente no encontrado'
@@ -250,6 +277,17 @@ begin
   -- DENY (owner-only): an operator of gym A must NEVER read CLABE — the load-bearing owner-only proof.
   select count(*) into n from public.cobro;
   if n <> 0 then raise exception 'GYM FAIL: operator_a read % cobro rows — CLABE leaked to a non-owner', n; end if;
+
+  -- #38 plan_feature (curated): staff READ the seeded feature (is_member_of) AND may WRITE it (is_staff_of).
+  -- The update keeps the row count at 1 (member_m's later read asserts on it) — it proves staff-write, not a
+  -- row add. Without this slice's policies this select returns 0 and RAISES (RED); with them it sees the row.
+  if current_setting('t.has_plan_feature', true)::boolean then
+    select count(*) into n from public.plan_feature;
+    if n <> 1 then raise exception 'GYM FAIL: operator_a sees % plan_feature (expected 1)', n; end if;
+    update public.plan_feature set orden = 5 where label = 'Acceso a todas las clases';
+    get diagnostics n = row_count;
+    if n <> 1 then raise exception 'GYM FAIL: operator_a staff-update of plan_feature hit % rows (expected 1)', n; end if;
+  end if;
 end $$;
 reset role;
 
@@ -301,6 +339,15 @@ begin
   update public.paquetes set precio = 1 where nombre = '8 clases';
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'GYM FAIL: member_m wrote % paquetes rows (operator surface)', n; end if;
+
+  -- #38 plan_feature: a member READS the curated feature list (is_member_of) but may NOT write it.
+  if current_setting('t.has_plan_feature', true)::boolean then
+    select count(*) into n from public.plan_feature;
+    if n <> 1 then raise exception 'GYM FAIL: member_m sees % plan_feature (expected 1)', n; end if;
+    update public.plan_feature set label = 'x' where label = 'Acceso a todas las clases';
+    get diagnostics n = row_count;
+    if n <> 0 then raise exception 'GYM FAIL: member_m wrote % plan_feature rows (read-only surface)', n; end if;
+  end if;
 end $$;
 reset role;
 

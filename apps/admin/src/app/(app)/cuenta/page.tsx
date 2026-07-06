@@ -1,6 +1,6 @@
 import { getCobro } from "@gym/data/server/cobro";
 import { getOperatorGym } from "@gym/data/server/gym";
-import { getPaquetes } from "@gym/data/server/paquetes";
+import { getPlanesEditor } from "@gym/data/server/paquetes";
 import { getPerfil } from "@gym/data/server/perfil";
 import { listarPlantillas } from "@gym/data/server/plantillas";
 import { getResumenMes } from "@gym/data/server/resumen";
@@ -15,7 +15,7 @@ export default async function Page() {
     getPerfil(),
     getResumenMes(),
     getCobro(),
-    getPaquetes(undefined, tz),
+    getPlanesEditor(undefined, tz),
     listarPlantillas(),
     resolveBrand(),
   ]);

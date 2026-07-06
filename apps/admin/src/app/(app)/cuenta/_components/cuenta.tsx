@@ -16,7 +16,7 @@ import {
 } from "@gym/ui/forge/ui";
 import type { ResumenMes } from "@gym/domain/types";
 import type { CobroDTO } from "@gym/data/server/cobro";
-import type { PaqueteDTO } from "@gym/data/server/paquetes";
+import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import { pesos } from "@gym/format";
@@ -29,7 +29,7 @@ interface CuentaScreenProps {
   perfil: PerfilDTO | null;
   resumen: ResumenMes;
   cobro: CobroDTO | null;
-  paquetes: PaqueteDTO[];
+  paquetes: PlanEditorDTO[];
   plantillas: PlantillaDTO[];
   /** Real es-MX month label, e.g. "MAYO 2026". */
   mesLabel: string;
