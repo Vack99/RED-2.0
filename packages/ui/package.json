@@ -9,6 +9,7 @@
     "./forge/agenda/fixtures": "./src/forge/agenda/fixtures.ts",
     "./forge/agenda/quick-glance-sheet": "./src/forge/agenda/quick-glance-sheet.tsx",
     "./forge/agenda/session-card": "./src/forge/agenda/session-card.tsx",
+    "./forge/agenda/session-roster": "./src/forge/agenda/session-roster.tsx",
     "./forge/agenda/session-view": "./src/forge/agenda/session-view.ts",
     "./forge/agenda/special-star": "./src/forge/agenda/special-star.tsx",
     "./forge/agenda/week-group": "./src/forge/agenda/week-group.tsx",

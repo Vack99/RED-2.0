@@ -13,9 +13,10 @@ import {
   ratioOcupacion,
 } from "@gym/domain/rules";
 import type { EstadoSesion } from "@gym/domain/types";
-import { addDays, fechaEnZona, inicioSemana, instanteEnZona, parseDay, sameDay, semanaLunSab, toIsoDay } from "@gym/format";
+import { addDays, fechaEnZona, iniciales, inicioSemana, instanteEnZona, parseDay, sameDay, semanaLunSab, toIsoDay } from "@gym/format";
 
 import { requireOperator } from "./_auth";
+import { getClientesParaPase, type PaseClienteDTO } from "./clientes";
 import { getOperatorGym } from "./gym";
 import { contarActivos } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
@@ -258,6 +259,70 @@ export const getAgendaSemana = cache(
   },
 );
 
+// ── Roster (slice #60 — reservation-aware Pasar lista) ──────────────────────
+
+/** One booked member on a session's roster. `present` is the reservation's `asistida`
+ *  state (the pase de lista mark); `isWalkIn` flags an operator-created door reservation. */
+export interface RosterMemberDTO {
+  clienteId: string;
+  nombre: string;
+  inicial: string;
+  paquete: string;
+  present: boolean;
+  isWalkIn: boolean;
+}
+
+/** A session's roster plus the walk-in picker candidates. `roster` is the active
+ *  reservations (`reservada | asistida`) — booked members and already-marked walk-ins;
+ *  `candidates` is every other gym cliente (not on the roster), the pool Pasar lista can
+ *  add as a walk-in. */
+export interface SesionRosterDTO {
+  roster: RosterMemberDTO[];
+  candidates: PaseClienteDTO[];
+}
+
+/** The booked roster for one session (staff RLS-scoped), joined to clientes, plus the
+ *  walk-in candidate pool — three plain reads assembled in JS (no embedded PostgREST
+ *  select), matching the rest of the DAL. Roster ordered by name. */
+export const getSesionRoster = cache(
+  async (sessionId: string, client?: SupabaseServer): Promise<SesionRosterDTO> => {
+    const supabase = client ?? (await createClient());
+    await requireOperator(supabase);
+
+    const [{ data: reservas, error }, candidatosTodos] = await Promise.all([
+      supabase
+        .from("reservation")
+        .select("member_id, status, is_walk_in")
+        .eq("class_session_id", sessionId)
+        .in("status", ["reservada", "asistida"]),
+      getClientesParaPase(supabase),
+    ]);
+    if (error) throw error;
+
+    const activas = reservas ?? [];
+    const byId = new Map(candidatosTodos.map((c) => [c.id, c]));
+
+    const roster: RosterMemberDTO[] = activas
+      .map((r) => {
+        const c = byId.get(r.member_id);
+        return {
+          clienteId: r.member_id,
+          nombre: c?.nombre ?? "—",
+          inicial: c?.inicial ?? iniciales(c?.nombre ?? "—"),
+          paquete: c?.paquete ?? "Sin paquete",
+          present: r.status === "asistida",
+          isWalkIn: r.is_walk_in,
+        };
+      })
+      .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const enRoster = new Set(activas.map((r) => r.member_id));
+    const candidates = candidatosTodos.filter((c) => !enRoster.has(c.id));
+
+    return { roster, candidates };
+  },
+);
+
 // ── Mutations ─────────────────────────────────────────────────────────────
 
 /** A discriminated result so the actions render one message surface — every
@@ -423,5 +488,36 @@ export async function cancelarSesion(raw: unknown, client?: SupabaseServer): Pro
     const { error } = await supabase.rpc("cancel_class_session", { p_session_id: parsed.data.sesionId });
     if (error) throw new Error(error.message || "No se pudo cancelar la sesión");
     return {};
+  });
+}
+
+export const pasarListaSesionSchema = z.object({
+  sessionId: z.string().uuid(),
+  clienteId: z.string().uuid(),
+});
+export type PasarListaSesionInput = z.infer<typeof pasarListaSesionSchema>;
+
+/** Reservation-aware Pasar lista (slice #60; ADR-0010 §4/§5): toggles one member's
+ *  attendance for one session through the atomic `pasar_lista_sesion` RPC. A booked
+ *  member flips reservada→asistida WITHOUT re-consuming (already consumed at booking);
+ *  a walk-in gets an is_walk_in reservation + consumes exactly as the front desk does;
+ *  untoggle reverses each symmetrically. The RPC owns all balance math (ADR-0005 seam);
+ *  this seam just validates, re-auths, and returns the new present state. */
+export async function pasarListaSesion(
+  raw: unknown,
+  client?: SupabaseServer,
+): Promise<AgendaResultado<{ present: boolean; hora: string | null }>> {
+  const parsed = pasarListaSesionSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  const input = parsed.data;
+
+  return ejecutar(async () => {
+    const supabase = client ?? (await createClient());
+    await requireOperator(supabase);
+    const { data, error } = await supabase
+      .rpc("pasar_lista_sesion", { p_session_id: input.sessionId, p_cliente_id: input.clienteId })
+      .single();
+    if (error || !data) throw new Error(error?.message || "No se pudo pasar lista");
+    return { present: data.present, hora: data.hora };
   });
 }

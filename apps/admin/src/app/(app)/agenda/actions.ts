@@ -5,11 +5,15 @@ import {
   crearHorarioRecurrente,
   crearSesion,
   editarSesion,
+  getSesionRoster,
+  pasarListaSesion,
   type AgendaResultado,
   type CancelarSesionInput,
   type CrearHorarioRecurrenteInput,
   type CrearSesionInput,
   type EditarSesionInput,
+  type PasarListaSesionInput,
+  type SesionRosterDTO,
 } from "@gym/data/server/agenda";
 import { crearClassType } from "@gym/data/server/catalog";
 
@@ -41,4 +45,17 @@ export async function cancelarSesionAction(input: CancelarSesionInput): Promise<
 
 export async function crearClassTypeAction(input: { name: string }): Promise<AgendaResultado<{ id: string }>> {
   return crearClassType(input);
+}
+
+/** The booked roster + walk-in candidates for a session — loaded lazily when the
+ *  quick-glance sheet opens (slice #60). */
+export async function rosterSesionAction(sessionId: string): Promise<SesionRosterDTO> {
+  return getSesionRoster(sessionId);
+}
+
+/** Toggle one member's attendance for one session (reservation-aware Pasar lista). */
+export async function pasarListaSesionAction(
+  input: PasarListaSesionInput,
+): Promise<AgendaResultado<{ present: boolean; hora: string | null }>> {
+  return pasarListaSesion(input);
 }

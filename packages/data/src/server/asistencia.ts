@@ -20,8 +20,15 @@ import { getOperatorGym } from "./gym";
 const PAGE = 1000;
 
 /**
- * Active attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
+ * Active FRONT-DESK attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
  * Chihuahua date (ADR-0003) — the offset grid is gone.
+ *
+ * Front-desk rows ONLY (`class_session_id` null — slice #60): this map drives the
+ * pase screen's presence marks and its `toggle_pase` taps, and that RPC now owns
+ * only front-desk rows (a session pase's untoggle must also revert its reservation,
+ * which only `pasar_lista_sesion` does). Showing a session pase here would render a
+ * mark whose tap writes a SECOND, consuming row — display and toggle must read the
+ * same row set. Session pases still appear in the read-only feeds (getAsistenciasHoy).
  *
  * Paginated (see PAGE above) so PostgREST's per-response cap can't silently drop
  * attendance. If check-in volume grows very large, a date-windowed read (only the
@@ -41,6 +48,7 @@ export const getMarcadas = cache(
         .from("asistencias")
         .select("fecha, cliente_id")
         .is("deleted_at", null)
+        .is("class_session_id", null)
         .order("fecha")
         .range(from, from + PAGE - 1);
       const page = data ?? [];
@@ -106,6 +114,11 @@ export interface AsistenciaHoy {
  * Today's asistencia rows joined to clientes, ordered by time (most recent
  * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
  * returns DTOs only (no raw rows cross the boundary, ADR-0001).
+ *
+ * DECIDED (slice #60): session pases (rows `pasar_lista_sesion` writes, with
+ * `class_session_id` set) DO appear here — this is the read-only feed of who
+ * checked in today, whichever seam wrote it. Only the front-desk pase screen's
+ * map (getMarcadas) excludes them, because its marks drive `toggle_pase`.
  *
  * @returns the DTO list (empty when no rows) · throws on DB error.
  */

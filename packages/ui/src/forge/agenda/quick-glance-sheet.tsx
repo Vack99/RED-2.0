@@ -4,14 +4,15 @@ import * as React from "react";
 
 import { Sheet } from "../sheet";
 import { type EstadoSesion, countLabel, occupancyPct } from "./session-view";
+import { SessionRoster, type CandidateRow, type RosterRow } from "./session-roster";
 import { SpecialStar } from "./special-star";
 
 /**
  * The quick-glance bottom sheet a session card opens: hora + tipo, the coaches ·
  * duración meta line, the cupo count with an occupancy bar + availability line,
- * and an edit pencil. It ships WITHOUT the roster — "Ver lista" / "Pasar lista" /
- * walk-in "Agregar" and the ASIST feed all need `reservation` and land in Phase 6
- * (PRD (g)). Built on the shared `Sheet`; token-only.
+ * an edit pencil, and (slice #60) the reservation-aware roster — booked members with
+ * a Pasar lista present-toggle + a walk-in "Agregar" picker. The roster block renders
+ * only when `roster` props are supplied. Built on the shared `Sheet`; token-only.
  *
  * The sheet reads "greener" than the card: a healthy class shows a green
  * availability line + bar where the card's bar is neutral, so it owns its own
@@ -40,6 +41,9 @@ export function disponibilidadColor(estado: EstadoSesion): string {
   }
 }
 
+/** Stable empty set so the roster's `busy` prop never changes identity when absent. */
+const EMPTY_BUSY: Set<string> = new Set();
+
 export interface QuickGlanceSheetProps {
   open: boolean;
   onClose: () => void;
@@ -53,6 +57,13 @@ export interface QuickGlanceSheetProps {
   isSpecial?: boolean;
   specialName?: string | null;
   onEdit: () => void;
+  /** Slice #60 roster. When supplied, the sheet renders the Pasar lista block. */
+  roster?: RosterRow[];
+  candidates?: CandidateRow[];
+  rosterLoading?: boolean;
+  rosterBusy?: Set<string>;
+  onTogglePresent?: (clienteId: string) => void;
+  onAddWalkIn?: (clienteId: string) => void;
 }
 
 export function QuickGlanceSheet({
@@ -68,6 +79,12 @@ export function QuickGlanceSheet({
   isSpecial = false,
   specialName = null,
   onEdit,
+  roster,
+  candidates = [],
+  rosterLoading = false,
+  rosterBusy,
+  onTogglePresent,
+  onAddWalkIn,
 }: QuickGlanceSheetProps) {
   const col = disponibilidadColor(estado);
   const free = Math.max(0, cap - booked);
@@ -124,6 +141,17 @@ export function QuickGlanceSheet({
           <div style={{ height: "100%", width: `${occupancyPct(booked, cap)}%`, background: col, transition: "width .4s ease" }} />
         </div>
         <div style={{ marginTop: 10, fontSize: 11.5, fontWeight: 600, letterSpacing: 0.3, color: col }}>{disponibilidadLine(estado, free)}</div>
+
+        {roster !== undefined && onTogglePresent && onAddWalkIn && (
+          <SessionRoster
+            rows={roster}
+            candidates={candidates}
+            loading={rosterLoading}
+            busy={rosterBusy ?? EMPTY_BUSY}
+            onToggle={onTogglePresent}
+            onAddWalkIn={onAddWalkIn}
+          />
+        )}
       </div>
     </Sheet>
   );

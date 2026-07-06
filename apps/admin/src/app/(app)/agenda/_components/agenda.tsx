@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { DateStrip } from "@gym/ui/forge/agenda/date-strip";
 import { EditorSheet, type CoachOption, type EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 import { QuickGlanceSheet } from "@gym/ui/forge/agenda/quick-glance-sheet";
+import type { CandidateRow, RosterRow } from "@gym/ui/forge/agenda/session-roster";
 import { SessionCard } from "@gym/ui/forge/agenda/session-card";
 import { WeekGroup, type WeekRow } from "@gym/ui/forge/agenda/week-group";
 import { Icon } from "@gym/ui/forge/icon";
@@ -18,6 +19,8 @@ import {
   crearHorarioRecurrenteAction,
   crearSesionAction,
   editarSesionAction,
+  pasarListaSesionAction,
+  rosterSesionAction,
 } from "../actions";
 import { pasoAgenda } from "./paso-agenda";
 import type { CardVM } from "./session-vm";
@@ -151,7 +154,15 @@ export function AgendaScreen(props: AgendaScreenProps) {
     setTipos(props.tipos);
   }
 
-  const [glance, setGlance] = React.useState<{ open: boolean; card: CardVM | null }>({ open: false, card: null });
+  const [glance, setGlance] = React.useState<{
+    open: boolean;
+    card: CardVM | null;
+    loading: boolean;
+    roster: RosterRow[];
+    candidates: CandidateRow[];
+  }>({ open: false, card: null, loading: false, roster: [], candidates: [] });
+  // clienteIds with a pase in flight — drives the roster's pending affordance.
+  const [rosterBusy, setRosterBusy] = React.useState<Set<string>>(() => new Set());
   const [editor, setEditor] = React.useState<EditorState>({
     open: false,
     mode: "create",
@@ -172,9 +183,44 @@ export function AgendaScreen(props: AgendaScreenProps) {
   };
 
   // ── Sheets ──────────────────────────────────────────────────────────────
-  const openGlance = (card: CardVM) => setGlance({ open: true, card });
+  // Opening a card's quick-glance lazily loads its roster (booked members + walk-in
+  // candidates) — the whole week's rosters would be a read per session up front.
+  const openGlance = (card: CardVM) => {
+    setGlance({ open: true, card, loading: true, roster: [], candidates: [] });
+    setRosterBusy(new Set());
+    void rosterSesionAction(card.id).then((res) => {
+      setGlance((g) => (g.card?.id === card.id ? { ...g, loading: false, roster: res.roster, candidates: res.candidates } : g));
+    });
+  };
   const closeGlance = () => setGlance((g) => ({ ...g, open: false }));
   const closeEditor = () => setEditor((e) => ({ ...e, open: false }));
+
+  // Reservation-aware Pasar lista: one atomic RPC per tap (booked → asistida no re-consume;
+  // walk-in → is_walk_in reservation + consume; untoggle reverses). The RPC is authoritative,
+  // so we reload the roster from it rather than optimistically guessing membership, then refresh
+  // the agenda so a walk-in's occupancy bump lands on the card counts.
+  const runPase = async (clienteId: string) => {
+    const card = glance.card;
+    if (!card || rosterBusy.has(clienteId)) return;
+    const sessionId = card.id;
+    setRosterBusy((prev) => new Set(prev).add(clienteId));
+    try {
+      const res = await pasarListaSesionAction({ sessionId, clienteId });
+      if (!res.ok) {
+        forgeToast({ tone: "warning", title: "No se pudo pasar lista", body: res.error });
+        return;
+      }
+      const fresh = await rosterSesionAction(sessionId);
+      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: fresh.roster, candidates: fresh.candidates } : g));
+      router.refresh();
+    } finally {
+      setRosterBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(clienteId);
+        return next;
+      });
+    }
+  };
 
   const openCreate = () => {
     closeGlance();
@@ -434,6 +480,12 @@ export function AgendaScreen(props: AgendaScreenProps) {
           isSpecial={glance.card.esEspecial}
           specialName={glance.card.specialName}
           onEdit={() => glance.card && openEdit(glance.card)}
+          roster={glance.roster}
+          candidates={glance.candidates}
+          rosterLoading={glance.loading}
+          rosterBusy={rosterBusy}
+          onTogglePresent={runPase}
+          onAddWalkIn={runPase}
         />
       )}
 
