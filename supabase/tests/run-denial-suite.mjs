@@ -39,6 +39,7 @@ const SUITE = [
   'catalog_rls_denial.sql',
   'scheduling_rls_denial.sql',
   'scheduling_materialization.sql',
+  'gym_content_denial.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;

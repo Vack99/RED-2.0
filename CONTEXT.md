@@ -72,3 +72,20 @@ pertenencia se nombra siempre `gym_membership`. En Fase 3 el término del domini
 sigue siendo **cliente**: la tabla `clientes` evoluciona *aditivamente* (gana
 `gym_id`, `auth_user_id` NULL permanente, `phone_e164`, timestamps de términos) —
 el "`member`" del shield es esta misma fila, sin rename.
+
+## Contenido del gimnasio (Fase 5, PRD #36 S3)
+
+El contenido operador-curado que la app cliente (Fase 6) mostrará en sus páginas
+de nosotros/marketing — para que nada de cara al miembro quede hardcodeado. Cada
+tabla es `gym_id`-scoped, clase RLS curada/mostrable (ADR-0013 §3: staff escribe,
+miembro lee, anon diferido a Fase 6) y trae `sort_order` para el orden que el
+operador elige.
+
+| Término | Significado | Dónde vive en el código |
+|---|---|---|
+| **valor** (about_value) | Una tarjeta de "quiénes somos" (título + descripción), p. ej. "Comunidad". | `AboutValueDTO` — `packages/data/src/server/about-values.ts` |
+| **instalación** (facility) | Una tarjeta de instalación (nombre + descripción), p. ej. "Área de pesas". | `FacilityDTO` — `packages/data/src/server/facilities.ts` |
+| **stat** | Un par etiqueta/valor de marketing (`value` es texto libre: "500+", "10 años"). | `StatDTO` — `packages/data/src/server/stats.ts` |
+| **FAQ** | Un par pregunta/respuesta. | `FaqDTO` — `packages/data/src/server/faqs.ts` |
+
+Autoría bajo `cuenta` (patrón existente de sub-sheet): `apps/admin/src/app/(app)/cuenta/_components/gym-content-sheet.tsx` + los seams `"use server"` en `apps/admin/src/app/(app)/cuenta/actions.ts`. Esquema + RLS: `supabase/migrations/20260706150000_create_gym_content.sql`; suite de negación: `supabase/tests/gym_content_denial.sql`.

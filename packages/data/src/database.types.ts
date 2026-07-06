@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      about_value: {
+        Row: {
+          created_at: string
+          description: string
+          gym_id: string
+          id: string
+          sort_order: number
+          title: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          gym_id: string
+          id?: string
+          sort_order?: number
+          title: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          gym_id?: string
+          id?: string
+          sort_order?: number
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "about_value_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asistencias: {
         Row: {
           cliente_id: string
@@ -449,6 +484,76 @@ export type Database = {
             foreignKeyName: "cobro_gym_id_fkey"
             columns: ["gym_id"]
             isOneToOne: true
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      facility: {
+        Row: {
+          created_at: string
+          description: string
+          gym_id: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          gym_id: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          gym_id?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "facility_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      faq: {
+        Row: {
+          answer: string
+          created_at: string
+          gym_id: string
+          id: string
+          question: string
+          sort_order: number
+        }
+        Insert: {
+          answer: string
+          created_at?: string
+          gym_id: string
+          id?: string
+          question: string
+          sort_order?: number
+        }
+        Update: {
+          answer?: string
+          created_at?: string
+          gym_id?: string
+          id?: string
+          question?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "faq_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
             referencedRelation: "gym"
             referencedColumns: ["id"]
           },
@@ -903,6 +1008,41 @@ export type Database = {
             columns: ["template_id"]
             isOneToOne: false
             referencedRelation: "schedule_template"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      stat: {
+        Row: {
+          created_at: string
+          gym_id: string
+          id: string
+          label: string
+          sort_order: number
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          gym_id: string
+          id?: string
+          label: string
+          sort_order?: number
+          value: string
+        }
+        Update: {
+          created_at?: string
+          gym_id?: string
+          id?: string
+          label?: string
+          sort_order?: number
+          value?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "stat_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
             referencedColumns: ["id"]
           },
         ]
