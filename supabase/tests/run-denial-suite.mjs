@@ -42,6 +42,8 @@ const SUITE = [
   'gym_content_denial.sql',
   'anon_catalog_read.sql',
   'contact_intake.sql',
+  'reservation_rls_denial.sql',
+  'reservar_clase_rules.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;

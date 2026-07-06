@@ -17,6 +17,7 @@ import { addDays, fechaEnZona, inicioSemana, instanteEnZona, parseDay, sameDay, 
 
 import { requireOperator } from "./_auth";
 import { getOperatorGym } from "./gym";
+import { contarActivos } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
 
 /**
@@ -39,9 +40,9 @@ export interface SesionAgendaDTO {
   startsAt: Date;
   duracionMin: number;
   capacidad: number;
-  /** Active reservations for this session — PRD decision d: `reservation` lands in
-   *  Phase 6, so this reads 0 until then. The projection MECHANISM (this field +
-   *  `disponibles`/`estado` derived from it) ships now. */
+  /** Active reservations for this session (`reservada | asistida`), the derived-
+   *  occupancy count — slice #57 repointed this from the 0-projection to the real
+   *  count via the single `contarActivos` seam. `disponibles`/`estado` derive from it. */
   activos: number;
   disponibles: number;
   estado: EstadoSesion;
@@ -75,14 +76,6 @@ export interface AgendaSemanaDTO {
   lunes: Date;
   dias: DiaAgendaSemanaDTO[];
   resumenSemana: ResumenDia & { ratioOcupacion: number };
-}
-
-/** capacity − count(active reservations) projection (PRD #36 decision d).
- *  `reservation` doesn't exist until Phase 6, so this always reads 0 — the single
- *  seam Phase 6 repoints to a real count query; every other projection consumer
- *  (disponibles, estado, resumen) is already wired to whatever this returns. */
-function activosDeSesion(): number {
-  return 0;
 }
 
 interface SesionRaw {
@@ -148,12 +141,14 @@ async function fetchSesionesEnRango(
     coachesBySession.set(j.session_id, list);
   }
 
+  const activosBySession = await contarActivos(supabase, sessionIds);
+
   return rows.map((r) => ({
     id: r.id,
     startsAt: new Date(r.starts_at),
     duracionMin: r.duration_min,
     capacidad: r.capacity,
-    activos: activosDeSesion(),
+    activos: activosBySession.get(r.id) ?? 0,
     tipo: tipoById.get(r.class_type_id) ?? "—",
     esEspecial: r.is_special,
     nombreEspecial: r.special_name,

@@ -15,11 +15,11 @@ import type { SupabaseServer } from "./supabase";
 /**
  * The seam: every Agenda reader/mutation takes an injectable client (ADR-0001), so
  * ORCHESTRATION — the ensure-materialized call before every read, the tz-honest
- * window bounds, the join assembly, the derived-occupancy wiring (PRD #36 decision
- * d — 0 active until Phase 6), and every mutation's Zod + RPC payload — is testable
- * with a hand-rolled fake. No Supabase, no DB. The RPCs themselves (RLS scoping,
- * materialization idempotency) are proven against the real schema elsewhere
- * (supabase/tests/, ADR-0005).
+ * window bounds, the join assembly, the derived-occupancy wiring (slice #57 repointed
+ * it to the `contar_reservas_activas` count seam), and every mutation's Zod + RPC
+ * payload — is testable with a hand-rolled fake. No Supabase, no DB. The RPCs
+ * themselves (RLS scoping, the consume math, materialization idempotency) are proven
+ * against the real schema elsewhere (supabase/tests/, ADR-0005).
  */
 
 const TZ = "America/Chihuahua"; // UTC-6, DST-free in 2026 (2022 reform)
@@ -220,13 +220,31 @@ describe("getAgendaDia", () => {
     expect(dia.sesiones.every((s) => s.coaches.length === 0)).toBe(true);
   });
 
-  it("derives the 0-active occupancy projection (PRD decision d): activos 0, disponibles == capacidad", async () => {
+  it("no active reservations (count seam returns none): activos 0, disponibles == capacidad", async () => {
     const { client } = makeFake(rowsFor());
     const dia = await getAgendaDia("2026-06-17", client);
     for (const s of dia.sesiones) {
       expect(s.activos).toBe(0);
       expect(s.disponibles).toBe(s.capacidad);
     }
+  });
+
+  it("wires the contar_reservas_activas count seam into activos/disponibles per session", async () => {
+    const { client, rpcCalls } = makeFake(rowsFor(), {
+      rpc: (name) =>
+        name === "contar_reservas_activas"
+          ? { data: [{ session_id: "s1", activos: 5 }], error: null }
+          : { data: null, error: null },
+    });
+    const dia = await getAgendaDia("2026-06-17", client);
+    const s1 = dia.sesiones.find((s) => s.id === "s1")!;
+    const s2 = dia.sesiones.find((s) => s.id === "s2")!;
+    expect(s1.activos).toBe(5);
+    expect(s1.disponibles).toBe(s1.capacidad - 5);
+    expect(s2.activos).toBe(0); // absent from the count → defaults to 0
+    // the seam is queried with the day's session ids
+    const call = rpcCalls.find((c) => c.name === "contar_reservas_activas");
+    expect(call?.args.p_session_ids).toEqual(["s1", "s2"]);
   });
 
   it("derives estado 'termino' for a past session and wires muestraEspecial from is_special", async () => {

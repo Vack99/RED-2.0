@@ -39,6 +39,119 @@
   --color-danger-soft: var(--red-soft);
 }
 
+/* Reservar · confirmed-booking morph — the signature delight moment (slice #57). Two arcs draw the
+   ring like the RED logo, the tick strokes in as it closes, then confetti bursts from the centre. Colors
+   are contract tokens only (var(--yellow) accent, var(--red), var(--fg), var(--muted)) so it paints per
+   brand. `prefers-reduced-motion` parks everything in its final, visible state (no draw, no burst). */
+.rvc-check {
+  position: relative;
+  width: 78px;
+  height: 78px;
+  margin: 2px auto 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rvc-svg {
+  width: 78px;
+  height: 78px;
+  overflow: visible;
+}
+.rvc-ring,
+.rvc-tick {
+  fill: none;
+  stroke: var(--yellow);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100 240;
+  stroke-dashoffset: 108;
+}
+.rvc-ring {
+  stroke-width: 5;
+}
+.rvc-tick {
+  stroke-width: 6;
+}
+.rvc-top {
+  animation: rvcDraw 0.44s cubic-bezier(0.45, 0.05, 0.35, 1) 0s forwards;
+}
+.rvc-bot {
+  animation: rvcDraw 0.44s cubic-bezier(0.45, 0.05, 0.35, 1) 0.3s forwards;
+}
+.rvc-tick {
+  animation: rvcDraw 0.3s cubic-bezier(0.5, 0, 0.3, 1) 0.76s forwards;
+}
+@keyframes rvcDraw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.rvc-glow {
+  position: absolute;
+  inset: -14px;
+  border-radius: 50%;
+  opacity: 0;
+  background: radial-gradient(circle, var(--yellow-soft), transparent 66%);
+  animation: rvcGlow 2.6s ease 0.78s infinite;
+  z-index: -1;
+}
+@keyframes rvcGlow {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 0.5;
+  }
+  100% {
+    opacity: 0.62;
+  }
+}
+.rvc-confetti {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.rvc-confetti i {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 7px;
+  height: 7px;
+  margin: -3px;
+  border-radius: 1px;
+  opacity: 0;
+  animation: rvcBurst 0.9s cubic-bezier(0.2, 0.7, 0.3, 1) 1.04s forwards;
+}
+@keyframes rvcBurst {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.3) rotate(0deg);
+  }
+  16% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--dx), var(--dy)) scale(1) rotate(200deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rvc-ring,
+  .rvc-tick {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .rvc-glow,
+  .rvc-confetti i {
+    animation: none;
+  }
+}
+
 * {
   box-sizing: border-box;
 }

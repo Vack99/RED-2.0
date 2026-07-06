@@ -18,6 +18,7 @@ import {
   toIsoDay,
 } from "@gym/format";
 
+import { contarActivos } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
 
 /**
@@ -29,11 +30,12 @@ import { createClient, type SupabaseServer } from "./supabase";
  * non-member caller reads no membership row and gets no agenda; the member reads
  * only sessions of the gym they belong to (class_session's is_member_of SELECT).
  *
- * It reuses @gym/domain's state ladder and @gym/format wholesale, deriving occupancy
- * through the same 0-active projection every agenda consumer uses today (booking, a
- * later slice, repoints that projection — this reader inherits it untouched). The
- * DTO is display-ready: hora / duración / weekday / dnum are formatted server-side
- * in the gym tz, so the client island is pure presentation with no tz logic.
+ * It reuses @gym/domain's state ladder and @gym/format wholesale. Occupancy derives
+ * through the single `contarActivos` seam (slice #57 repointed it from the 0-active
+ * projection to the real count). The DTO is display-ready: hora / duración / weekday /
+ * dnum are formatted server-side in the gym tz, and the sala / nivel / descripción the
+ * booking summary sheet renders ride along, so the client island is pure presentation
+ * with no tz logic. `miReserva` flags the member's own active booking per session.
  */
 
 export interface SesionMiembroDTO {
@@ -41,15 +43,23 @@ export interface SesionMiembroDTO {
   tipo: string;
   /** Coach names joined " · ", or "Por asignar" when none are assigned. */
   coaches: string;
-  /** Gym-local wall clock "HH:MM". */
+  /** Gym-local wall clock "HH:MM" (start). */
   hora: string;
+  /** Gym-local wall clock "HH:MM" (start + duration) — the sheet range + "termina". */
+  horaFin: string;
   /** "60 min". */
   duracionLabel: string;
   estado: EstadoSesion;
   disponibles: number;
   capacidad: number;
-  /** 0–100, the occupancy bar width. Reads 0 until booking lands (0-active projection). */
+  /** 0–100, the occupancy bar width (derived from the real active count, slice #57). */
   ocupacionPct: number;
+  /** Class-type detail for the booking summary sheet (mock: rvs-grid + rvs-desc). */
+  sala: string | null;
+  nivel: string | null;
+  descripcion: string | null;
+  /** True when the signed-in member already holds an active reservation for this session. */
+  miReserva: boolean;
 }
 
 export interface DiaMiembroDTO {
@@ -69,6 +79,13 @@ export interface AgendaSemanaMiembroDTO {
   dias: DiaMiembroDTO[];
 }
 
+export interface SaldoMiembroDTO {
+  /** Ilimitado (clases_restantes IS NULL) — the booking sheet omits the finite note. */
+  ilimitado: boolean;
+  /** Classes left on a finite plan; null for ilimitado. Drives "usa 1 de tus N clases". */
+  clasesRestantes: number | null;
+}
+
 interface SesionMiembroRaw {
   id: string;
   startsAt: Date;
@@ -76,6 +93,10 @@ interface SesionMiembroRaw {
   capacidad: number;
   activos: number;
   tipo: string;
+  sala: string | null;
+  nivel: string | null;
+  descripcion: string | null;
+  miReserva: boolean;
   coaches: string[];
 }
 
@@ -126,14 +147,23 @@ async function fetchSesionesMiembro(
   const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
   const sessionIds = rows.map((r) => r.id);
 
-  const [tiposRes, joinsRes] = await Promise.all([
-    supabase.from("class_type").select("id, name").in("id", tipoIds),
+  const [tiposRes, joinsRes, misReservasRes] = await Promise.all([
+    supabase.from("class_type").select("id, name, sala, level, description").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", sessionIds),
+    // The member's OWN active reservations among these sessions (RLS returns only their rows).
+    supabase
+      .from("reservation")
+      .select("class_session_id")
+      .in("class_session_id", sessionIds)
+      .in("status", ["reservada", "asistida"]),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
+  if (misReservasRes.error) throw misReservasRes.error;
 
-  const tipoById = new Map((tiposRes.data ?? []).map((t) => [t.id, t.name]));
+  const tipoById = new Map((tiposRes.data ?? []).map((t) => [t.id, t]));
+  const misReservas = new Set((misReservasRes.data ?? []).map((r) => r.class_session_id));
+  const activosBySession = await contarActivos(supabase, sessionIds);
   const joins = joinsRes.data ?? [];
   const coachIds = [...new Set(joins.map((j) => j.coach_id))];
 
@@ -152,17 +182,23 @@ async function fetchSesionesMiembro(
     coachesBySession.set(j.session_id, list);
   }
 
-  return rows.map((r) => ({
-    id: r.id,
-    startsAt: new Date(r.starts_at),
-    duracionMin: r.duration_min,
-    capacidad: r.capacity,
-    // Occupancy is DERIVED from active reservations (ADR-0010 §3); booking (#57)
-    // repoints this to the real count. Read-only until then, so 0.
-    activos: 0,
-    tipo: tipoById.get(r.class_type_id) ?? "—",
-    coaches: coachesBySession.get(r.id) ?? [],
-  }));
+  return rows.map((r) => {
+    const tipo = tipoById.get(r.class_type_id);
+    return {
+      id: r.id,
+      startsAt: new Date(r.starts_at),
+      duracionMin: r.duration_min,
+      capacidad: r.capacity,
+      // Occupancy DERIVED from active reservations via the single seam (ADR-0010 §3).
+      activos: activosBySession.get(r.id) ?? 0,
+      tipo: tipo?.name ?? "—",
+      sala: tipo?.sala ?? null,
+      nivel: tipo?.level ?? null,
+      descripcion: tipo?.description ?? null,
+      miReserva: misReservas.has(r.id),
+      coaches: coachesBySession.get(r.id) ?? [],
+    };
+  });
 }
 
 function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMiembroDTO {
@@ -171,11 +207,16 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
     tipo: s.tipo,
     coaches: s.coaches.length ? s.coaches.join(" · ") : "Por asignar",
     hora: horaEnZona(s.startsAt, tz),
+    horaFin: horaEnZona(new Date(s.startsAt.getTime() + s.duracionMin * 60_000), tz),
     duracionLabel: `${s.duracionMin} min`,
     estado,
     disponibles: disponibles(s.capacidad, s.activos),
     capacidad: s.capacidad,
     ocupacionPct: Math.round(ratioOcupacion(s.capacidad, s.activos) * 100),
+    sala: s.sala,
+    nivel: s.nivel,
+    descripcion: s.descripcion,
+    miReserva: s.miReserva,
   };
 }
 
@@ -213,5 +254,26 @@ export const getAgendaSemanaMiembro = cache(
     });
 
     return { dias };
+  },
+);
+
+/**
+ * The signed-in member's class balance for the booking summary sheet's finite-plan
+ * note. RLS-scoped self-read of their own `clientes` row (clientes_member_select,
+ * auth_user_id = auth.uid()); `clases_restantes IS NULL` = ilimitado (ADR-0004). A
+ * caller with no cliente row (edge) reads as ilimitado-safe `{ ilimitado: false,
+ * clasesRestantes: 0 }`. `client` injectable (ADR-0001); memoized per request.
+ */
+export const getSaldoMiembro = cache(
+  async (client?: SupabaseServer): Promise<SaldoMiembroDTO> => {
+    const supabase = client ?? (await createClient());
+    const { data, error } = await supabase
+      .from("clientes")
+      .select("clases_restantes")
+      .limit(1)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return { ilimitado: false, clasesRestantes: 0 };
+    return { ilimitado: data.clases_restantes === null, clasesRestantes: data.clases_restantes };
   },
 );
