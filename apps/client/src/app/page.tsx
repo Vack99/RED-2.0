@@ -1,26 +1,134 @@
-import { createClient } from "@gym/data/client";
-import { Card } from "@gym/ui/forge/ui";
+import type { Metadata, Route } from "next";
+import { headers } from "next/headers";
+import Link from "next/link";
+
+import { brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
+import {
+  getHorarioHoyPublico,
+  getMarketingGym,
+  getPlanesPublicos,
+} from "@gym/data/server/marketing";
+
+import { PricingTeaser } from "./_components/pricing-teaser";
+
+export const metadata: Metadata = {
+  title: "Inicio",
+  description:
+    "Reserva tu clase y entrena desde hoy. Sin permanencia, cancelas cuando quieras.",
+};
 
 /**
- * The socio's landing — one trivial branded page. Its chrome (logo + tokens) is
- * the marca the proxy resolved; the Card recolors per brand off the injected
- * token block (surface + line). It also carries the phase's shared-Supabase
- * proof (ADR-0012 §5): the @gym/data browser factory INSTANTIATES against the
- * shared NEXT_PUBLIC_SUPABASE_* — instantiation only, no table/policy/query
- * (the schema + RLS land in Phase 3). Reaching this render proves the factory
- * constructed; `data-supabase-ready` surfaces its live query surface in the HTML.
+ * The public comercial landing (PRD #49 S2, mock `comercial` slot): the gym's identity, a today-schedule
+ * teaser, and a pricing teaser — all reading the real anon catalog, none hardcoded. The gym is resolved
+ * from the proxy's `x-gym` stamp; the hero lockup from the `x-brand` module. Paint is token-driven, so a
+ * RED host renders RED and a Forge host renders Forge with no brand-specific copy in this file.
+ *
+ * Marketing prose (the tagline, footer descriptor, hours) has no data column yet — it is generic,
+ * platform-true copy shared across brands (the same posture as the Precios "Todos los planes incluyen"
+ * row), never a per-gym claim; a later schema slice can data-drive it.
  */
-export default function Home() {
-  const supabase = createClient();
+export default async function Home() {
+  const h = await headers();
+  const slug = h.get("x-gym");
+  const stampedBrand = h.get("x-brand");
+  const brandId: BrandId =
+    stampedBrand !== null && Object.hasOwn(brands, stampedBrand)
+      ? (stampedBrand as BrandId)
+      : DEFAULT_BRAND;
+  const Logo = brands[brandId].logo;
+
+  const gym = slug ? await getMarketingGym(slug) : null;
+  const [planes, horario] = gym
+    ? await Promise.all([
+        getPlanesPublicos(gym.id),
+        getHorarioHoyPublico(gym.id, gym.timezone),
+      ])
+    : [[], []];
+  const brandName = gym?.brandName ?? brands[brandId].copy.name;
 
   return (
-    <main style={{ padding: 20 }}>
-      <Card>
-        <p style={{ margin: 0, fontWeight: 600 }}>Bienvenido a tu panel.</p>
-        <p hidden data-supabase-ready={typeof supabase.from === "function"}>
-          Supabase client instanciado.
+    <main className="mx-auto flex w-full max-w-md flex-col pb-14">
+      <section className="flex flex-col items-center px-7 pt-14 text-center">
+        <Logo size={64} />
+        <p className="mt-6 text-xs font-medium uppercase tracking-[0.22em] text-muted">
+          Entrenamiento funcional
         </p>
-      </Card>
+        <p className="mt-4 text-sm font-semibold uppercase tracking-[0.14em] text-accent">
+          Reserva. Entrena. Avanza.
+        </p>
+
+        <Link
+          href="/registro"
+          className="mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-white hover:opacity-90"
+        >
+          Reservar clase
+          <span aria-hidden>→</span>
+        </Link>
+      </section>
+
+      <PricingTeaser planes={planes} />
+
+      <section className="mt-12 px-7">
+        <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
+          Hoy en {brandName}
+        </h2>
+        {horario.length > 0 ? (
+          <div className="mt-4">
+            {horario.map((s) => (
+              <Link
+                key={s.id}
+                href="/registro"
+                className="flex items-baseline justify-between border-t border-line py-3.5 last:border-b"
+              >
+                <span className="flex items-baseline gap-4">
+                  <span className="min-w-[46px] text-sm font-bold tabular-nums text-accent">
+                    {s.hora}
+                  </span>
+                  <span className="text-[15px] font-medium text-fg">
+                    {s.tipo}
+                  </span>
+                </span>
+                <span className="text-[11px] tabular-nums text-muted">
+                  {s.disponibles} lugares
+                </span>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-4 text-sm text-muted">
+            Hoy no hay clases programadas. Vuelve mañana.
+          </p>
+        )}
+      </section>
+
+      <footer className="mt-14 px-7 text-center">
+        <p className="text-[15px] font-medium text-fg">{brandName}</p>
+        <p className="mt-1.5 text-[11px] text-muted">
+          Lun a Sáb · desde las 05:30
+        </p>
+        <div className="mt-5 flex items-center justify-center gap-4">
+          {/* Nosotros/Contacto are sibling routes (#52/#53) landing alongside this slice — typed
+              `as Route` (Next's intentional-forward-route marker); /precios is already live. */}
+          <Link
+            href={"/nosotros" as Route}
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted hover:text-fg"
+          >
+            Nosotros
+          </Link>
+          <Link
+            href="/precios"
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted hover:text-fg"
+          >
+            Precios
+          </Link>
+          <Link
+            href={"/contacto" as Route}
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted hover:text-fg"
+          >
+            Contacto
+          </Link>
+        </div>
+      </footer>
     </main>
   );
 }

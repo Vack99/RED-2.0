@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import Link from "next/link";
 
 import { brandCss, brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
 
 import "./globals.css";
+import { PublicHeader } from "./_components/public-header";
 import { fetchTokenOverrides } from "../lib/token-overrides";
 
 export const metadata: Metadata = {
@@ -31,9 +31,10 @@ export default async function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   const stamped = (await headers()).get("x-brand");
   const brandId: BrandId =
-    stamped !== null && Object.hasOwn(brands, stamped) ? (stamped as BrandId) : DEFAULT_BRAND;
+    stamped !== null && Object.hasOwn(brands, stamped)
+      ? (stamped as BrandId)
+      : DEFAULT_BRAND;
   const brand = brands[brandId];
-  const Logo = brand.logo;
 
   // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
   // (b)): the app fetches the override DATA (the fixture seam this phase) and
@@ -47,20 +48,10 @@ export default async function RootLayout({
         <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>
       <body className="min-h-dvh bg-canvas text-fg">
-        {/* Shared public header (brand-token, no brand import in page code): the logo returns home,
-            the Entrar link is the one always-available account entry point the mock's marketing
-            screens carry in their scrhead. */}
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-canvas/90 px-5 py-4 backdrop-blur">
-          <Link href="/" aria-label="Inicio" className="inline-flex items-center">
-            <Logo />
-          </Link>
-          <Link
-            href="/entrar"
-            className="rounded-full px-4 py-2 text-sm font-semibold text-fg hover:text-accent"
-          >
-            Entrar
-          </Link>
-        </header>
+        {/* Shared public header + slide-in nav drawer (brand-token, no brand paint in page code): the
+            hamburger opens the marketing nav, the Entrar link is the always-available account entry
+            point. The drawer's lockup is selected from the brand registry by the proxy-resolved id. */}
+        <PublicHeader brandId={brandId} />
         {children}
       </body>
     </html>

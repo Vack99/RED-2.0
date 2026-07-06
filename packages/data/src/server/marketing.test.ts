@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
-import { getFaqsPublicas, getMarketingGym, getPlanesPublicos } from "./marketing";
+import {
+  getFaqsPublicas,
+  getHorarioHoyPublico,
+  getMarketingGym,
+  getPlanesPublicos,
+} from "./marketing";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -15,6 +20,8 @@ interface TableRows {
   paquetes?: Record<string, unknown>[];
   plan_feature?: Record<string, unknown>[];
   faq?: Record<string, unknown>[];
+  class_session?: Record<string, unknown>[];
+  class_type?: Record<string, unknown>[];
 }
 
 interface EqCall {
@@ -23,20 +30,31 @@ interface EqCall {
   val: unknown;
 }
 
-function makeFake(rows: TableRows): { client: SupabaseServer; eqCalls: EqCall[] } {
+function makeFake(rows: TableRows): {
+  client: SupabaseServer;
+  eqCalls: EqCall[];
+} {
   const eqCalls: EqCall[] = [];
 
   const client = {
     from: (table: string) => {
-      const list = (rows as Record<string, Record<string, unknown>[]>)[table] ?? [];
+      const list =
+        (rows as Record<string, Record<string, unknown>[]>)[table] ?? [];
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: (col: string, val: unknown) => {
           eqCalls.push({ table, col, val });
           return builder;
         },
+        is: () => builder,
+        gte: () => builder,
+        lt: () => builder,
+        in: () => builder,
         order: async () => ({ data: list, error: null }),
         maybeSingle: async () => ({ data: list[0] ?? null, error: null }),
+        // Terminal `.in(...)` (the class_type read has no `.order`): resolve when awaited.
+        then: (resolve: (r: { data: unknown; error: null }) => void) =>
+          resolve({ data: list, error: null }),
       };
       return builder;
     },
@@ -46,13 +64,19 @@ function makeFake(rows: TableRows): { client: SupabaseServer; eqCalls: EqCall[] 
 }
 
 const GYM = "gym-red-demo";
+// Mexico_City is UTC−6 year-round (no DST since 2022) — deterministic wall-clock assertions.
+const TZ = "America/Mexico_City";
 
 describe("marketing DAL — public anon reads", () => {
-  it("getMarketingGym maps the row and filters by slug", async () => {
-    const fake = makeFake({ gym: [{ id: GYM, brand_name: "RED Demo" }] });
+  it("getMarketingGym maps the row (incl. timezone) and filters by slug", async () => {
+    const fake = makeFake({
+      gym: [{ id: GYM, brand_name: "RED Demo", timezone: TZ }],
+    });
     const gym = await getMarketingGym("red-demo", fake.client);
-    expect(gym).toEqual({ id: GYM, brandName: "RED Demo" });
-    expect(fake.eqCalls).toEqual([{ table: "gym", col: "slug", val: "red-demo" }]);
+    expect(gym).toEqual({ id: GYM, brandName: "RED Demo", timezone: TZ });
+    expect(fake.eqCalls).toEqual([
+      { table: "gym", col: "slug", val: "red-demo" },
+    ]);
   });
 
   it("getMarketingGym returns null for an unknown slug", async () => {
@@ -135,7 +159,50 @@ describe("marketing DAL — public anon reads", () => {
       faq: [{ id: "q1", question: "¿Puedo congelar?", answer: "Sí." }],
     });
     const faqs = await getFaqsPublicas(GYM, fake.client);
-    expect(faqs).toEqual([{ id: "q1", question: "¿Puedo congelar?", answer: "Sí." }]);
+    expect(faqs).toEqual([
+      { id: "q1", question: "¿Puedo congelar?", answer: "Sí." },
+    ]);
     expect(fake.eqCalls).toEqual([{ table: "faq", col: "gym_id", val: GYM }]);
+  });
+
+  it("getHorarioHoyPublico maps today's sessions to hora/tipo/derived-spots and scopes to the gym", async () => {
+    // 06:00 and 19:00 gym-local for America/Mexico_City (UTC−6) = 12:00Z / 01:00Z next day.
+    const fake = makeFake({
+      class_session: [
+        {
+          id: "s1",
+          class_type_id: "t-fu",
+          starts_at: "2026-07-06T12:00:00Z",
+          capacity: 12,
+        },
+        {
+          id: "s2",
+          class_type_id: "t-me",
+          starts_at: "2026-07-07T01:00:00Z",
+          capacity: 8,
+        },
+      ],
+      class_type: [
+        { id: "t-fu", name: "Fuerza" },
+        { id: "t-me", name: "Metcon" },
+      ],
+    });
+
+    const horario = await getHorarioHoyPublico(GYM, TZ, fake.client);
+
+    // Derived occupancy: anon reads 0 active reservations (member-owned), so disponibles === capacity.
+    expect(horario).toEqual([
+      { id: "s1", hora: "06:00", tipo: "Fuerza", disponibles: 12 },
+      { id: "s2", hora: "19:00", tipo: "Metcon", disponibles: 8 },
+    ]);
+    // The session read MUST be gym-scoped (the anon policy is flat across gyms).
+    expect(fake.eqCalls).toEqual([
+      { table: "class_session", col: "gym_id", val: GYM },
+    ]);
+  });
+
+  it("getHorarioHoyPublico returns [] when there are no sessions today", async () => {
+    const fake = makeFake({ class_session: [] });
+    expect(await getHorarioHoyPublico(GYM, TZ, fake.client)).toEqual([]);
   });
 });
