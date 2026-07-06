@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useEffect, useState, useTransition } from "react";
+import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -185,7 +186,7 @@ function Row({
   trailing?: ReactNode;
   danger?: boolean;
   onClick?: () => void;
-  href?: string;
+  href?: Route;
 }) {
   const inner = (
     <>
