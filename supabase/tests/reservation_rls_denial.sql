@@ -97,6 +97,10 @@ begin
   if not raised then raise exception 'ANON DENIAL FAIL: anon executed reservar_clase'; end if;
 
   raised := false;
+  begin perform public.cancelar_reserva(session_a); exception when others then raised := true; end;
+  if not raised then raise exception 'ANON DENIAL FAIL: anon executed cancelar_reserva'; end if;
+
+  raised := false;
   begin perform public.contar_reservas_activas(array[session_a]); exception when others then raised := true; end;
   if not raised then raise exception 'ANON DENIAL FAIL: anon executed contar_reservas_activas'; end if;
 end $$;

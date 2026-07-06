@@ -1202,6 +1202,13 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: undefined
       }
+      cancelar_reserva: {
+        Args: { p_session_id: string }
+        Returns: {
+          clases_restantes: number
+          reservation_id: string
+        }[]
+      }
       contar_reservas_activas: {
         Args: { p_session_ids: string[] }
         Returns: {

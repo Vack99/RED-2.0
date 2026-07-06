@@ -5,12 +5,14 @@ import { useRouter } from "next/navigation";
 
 import type {
   AgendaSemanaMiembroDTO,
+  PerfilResumenMiembroDTO,
   SaldoMiembroDTO,
   SesionMiembroDTO,
 } from "@gym/data/server/agenda-miembro";
 
 import { presentarEstadoReserva, type TonoReserva } from "../../../lib/reserva-vista";
 import { reservarClaseAction } from "../actions";
+import { PerfilOverlay } from "./perfil-overlay";
 
 /**
  * The Reservar week + booking flow (slice #57). A client island: the day picker
@@ -342,16 +344,21 @@ type SheetState = { sesion: SesionMiembroDTO; mode: "summary" | "confirmed" };
 export function ReservarSemana({
   semana,
   saldo,
+  nombre,
   iniciales,
+  perfil,
 }: {
   semana: AgendaSemanaMiembroDTO;
   saldo: SaldoMiembroDTO;
+  nombre: string;
   iniciales: string;
+  perfil: PerfilResumenMiembroDTO;
 }) {
   const hoyIdx = semana.dias.findIndex((d) => d.esHoy);
   const [sel, setSel] = useState(hoyIdx >= 0 ? hoyIdx : 0);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [shown, setShown] = useState(false);
+  const [perfilOpen, setPerfilOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -400,6 +407,7 @@ export function ReservarSemana({
         <button
           type="button"
           aria-label="Perfil"
+          onClick={() => setPerfilOpen(true)}
           className="flex h-10 w-10 flex-none items-center justify-center rounded-full border border-line bg-surface text-xs font-bold text-accent"
         >
           {iniciales}
@@ -474,6 +482,15 @@ export function ReservarSemana({
           </div>
         </div>
       )}
+
+      <PerfilOverlay
+        open={perfilOpen}
+        onClose={() => setPerfilOpen(false)}
+        nombre={nombre}
+        iniciales={iniciales}
+        desde={perfil.desde}
+        reservas={perfil.reservas}
+      />
     </main>
   );
 }
