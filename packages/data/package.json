@@ -7,6 +7,7 @@
     ".": "./src/database.types.ts",
     "./client": "./src/client.ts",
     "./server/_auth": "./src/server/_auth.ts",
+    "./server/agenda": "./src/server/agenda.ts",
     "./server/asistencia": "./src/server/asistencia.ts",
     "./server/clientes": "./src/server/clientes.ts",
     "./server/cobro": "./src/server/cobro.ts",
