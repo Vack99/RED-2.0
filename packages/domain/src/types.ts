@@ -98,6 +98,32 @@ export interface ResumenMes {
   asistenciasSemana: number[];
 }
 
+// ── Agenda scheduling types (Phase 5, ADR-0010) ──────────────────────────
+
+/** A class_session's derived estado — DERIVED live, never stored (ADR-0010 §3,
+ *  invariant §5.1). `termino`: starts_at has passed. `a_continuacion`: the
+ *  day's first non-past session. `lleno`/`casi_lleno`: occupancy-driven (count
+ *  >= capacity / ratio >= 0.85). `normal`: none of the above. A strict ladder —
+ *  termino > a_continuacion > lleno > casi_lleno > normal — never combined. */
+export type EstadoSesion = "termino" | "a_continuacion" | "lleno" | "casi_lleno" | "normal";
+
+/** The minimal shape derivarEstadoSesion / derivarEstadosDia need per session. */
+export interface SesionOcupacion {
+  startsAt: Date;
+  capacidad: number;
+  activos: number;
+}
+
+/** A schedule_template's recurrence rule, reduced to what materializarSesion
+ *  needs (ADR-0010 §1): weekday 0=Lunes..5=Sábado (the schema's Lun-Sáb
+ *  convention — there is no Domingo class day) + a wall-clock start_time
+ *  ("HH:MM"). `duration_min`/`capacity` live on the template row but don't
+ *  participate in computing the instant. */
+export interface PlantillaHorario {
+  weekday: number;
+  startTime: string;
+}
+
 /** Tokens available to WhatsApp templates; each maps to a {token} in a
  *  template body. See renderPlantilla. */
 export interface PlantillaContext {

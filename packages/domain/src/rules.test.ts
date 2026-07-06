@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, derivarEstado, diasRestantes, forfeit, nombrePaquete, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
+import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete", () => {
@@ -355,5 +355,185 @@ describe("calcularResumenMes", () => {
     const finMarzo = new Date(2026, 2, 31); // 31 Mar 2026, diaHoy = 31
     const rr = calcularResumenMes([v(2026, 1, 28, 700)], [], finMarzo); // 28 feb
     expect(rr.ingresosMesPrev).toBe(700); // 28 ≤ 31 → counted, no clamp
+  });
+});
+
+// ── Agenda scheduling rules (Phase 5, ADR-0010) ──────────────────────────
+
+describe("disponibles", () => {
+  it("is capacity minus active count", () => {
+    expect(disponibles(20, 12)).toBe(8);
+  });
+  it("clamps at 0 (never goes negative)", () => {
+    expect(disponibles(20, 25)).toBe(0);
+  });
+});
+
+describe("ratioOcupacion", () => {
+  it("is the active fraction of capacity", () => {
+    expect(ratioOcupacion(20, 18)).toBe(0.9);
+    expect(ratioOcupacion(24, 16)).toBeCloseTo(0.667, 3);
+  });
+});
+
+describe("derivarEstadoSesion + derivarEstadosDia (fixture: MIÉ 17 JUN mock digest)", () => {
+  // The approved Agenda mock's day list, 17 jun 2026 (real calendar Wed):
+  // 06:15 FUERZA 24/24 (past → TERMINÓ) · 08:15 FUNCIONAL 19/24 (next up →
+  // A CONTINUACIÓN) · 12:30 METCON 18/20 (90% → CASI LLENO) · 18:15 FUERZA
+  // 16/24 ★ NOCHE DE FUERZA (67% → normal) · 19:15 FUNCIONAL 17/20 (exactly
+  // the 85% threshold → CASI LLENO).
+  const DIA = (h: number, m: number) => new Date(2026, 5, 17, h, m);
+  const AHORA = DIA(7, 0); // between the 06:15 and 08:15 rows
+
+  const sesiones = [
+    { startsAt: DIA(6, 15), capacidad: 24, activos: 24 },
+    { startsAt: DIA(8, 15), capacidad: 24, activos: 19 },
+    { startsAt: DIA(12, 30), capacidad: 20, activos: 18 },
+    { startsAt: DIA(18, 15), capacidad: 24, activos: 16 },
+    { startsAt: DIA(19, 15), capacidad: 20, activos: 17 },
+  ];
+
+  it("derives the whole day's estados in one batch pass, matching the mock digest", () => {
+    expect(derivarEstadosDia(sesiones, AHORA)).toEqual([
+      "termino",
+      "a_continuacion",
+      "casi_lleno",
+      "normal",
+      "casi_lleno",
+    ]);
+  });
+
+  it("terminó suppresses count states — a past FULL session is termino, not lleno", () => {
+    expect(derivarEstadoSesion(sesiones[0], AHORA, false)).toBe("termino");
+    // adversarial: even flagged as the day's "next" session, a past start always wins
+    expect(derivarEstadoSesion(sesiones[0], AHORA, true)).toBe("termino");
+  });
+
+  it("a_continuacion is the day's first NON-past session only", () => {
+    expect(indicePrimeraNoPasada(sesiones, AHORA)).toBe(1);
+  });
+
+  it("lleno fires at count >= capacity; casi_lleno at ratio >= 0.85 inclusive", () => {
+    expect(derivarEstadoSesion({ startsAt: DIA(20, 0), capacidad: 20, activos: 20 }, AHORA, false)).toBe("lleno");
+    expect(derivarEstadoSesion({ startsAt: DIA(20, 0), capacidad: 20, activos: 17 }, AHORA, false)).toBe(
+      "casi_lleno",
+    ); // exactly 0.85
+    expect(derivarEstadoSesion({ startsAt: DIA(20, 0), capacidad: 20, activos: 16 }, AHORA, false)).toBe("normal"); // 0.80, just under
+  });
+
+  it("is all-termino once the whole day is past", () => {
+    const finDia = DIA(23, 0);
+    expect(derivarEstadosDia(sesiones, finDia)).toEqual([
+      "termino",
+      "termino",
+      "termino",
+      "termino",
+      "termino",
+    ]);
+    expect(indicePrimeraNoPasada(sesiones, finDia)).toBe(-1);
+  });
+});
+
+describe("muestraEspecial", () => {
+  it("shows the especial badge when the session isn't a-continuación", () => {
+    expect(muestraEspecial("normal", true)).toBe(true);
+    expect(muestraEspecial("casi_lleno", true)).toBe(true);
+  });
+  it("a-continuación supersedes the especial badge (mock: only one top-badge slot)", () => {
+    expect(muestraEspecial("a_continuacion", true)).toBe(false);
+  });
+  it("is false for a non-especial session regardless of estado", () => {
+    expect(muestraEspecial("normal", false)).toBe(false);
+    expect(muestraEspecial("a_continuacion", false)).toBe(false);
+  });
+});
+
+describe("duracionValida", () => {
+  it("accepts the five allowed durations", () => {
+    for (const min of [30, 45, 60, 75, 90]) expect(duracionValida(min)).toBe(true);
+  });
+  it("rejects anything else", () => {
+    expect(duracionValida(50)).toBe(false);
+    expect(duracionValida(0)).toBe(false);
+  });
+});
+
+describe("cupoValido", () => {
+  it("accepts the 4-40 whole-number range", () => {
+    expect(cupoValido(4)).toBe(true);
+    expect(cupoValido(40)).toBe(true);
+    expect(cupoValido(24)).toBe(true);
+  });
+  it("rejects out of range or fractional", () => {
+    expect(cupoValido(3)).toBe(false);
+    expect(cupoValido(41)).toBe(false);
+    expect(cupoValido(20.5)).toBe(false);
+  });
+});
+
+describe("horaValida", () => {
+  it("accepts the 05:00-22:45 range on 15-min steps", () => {
+    expect(horaValida("05:00")).toBe(true);
+    expect(horaValida("22:45")).toBe(true);
+    expect(horaValida("18:00")).toBe(true);
+    expect(horaValida("12:15")).toBe(true);
+  });
+  it("rejects outside the range", () => {
+    expect(horaValida("04:45")).toBe(false);
+    expect(horaValida("23:00")).toBe(false);
+  });
+  it("rejects non-15-min steps", () => {
+    expect(horaValida("18:05")).toBe(false);
+    expect(horaValida("18:10")).toBe(false);
+  });
+  it("rejects malformed strings", () => {
+    expect(horaValida("6:00")).toBe(false);
+    expect(horaValida("18:00:00")).toBe(false);
+  });
+});
+
+describe("materializarSesion", () => {
+  const LUNES = new Date(2026, 5, 15); // Mon 15 jun 2026 — same week as the mock digest
+  const CHIHUAHUA = "America/Chihuahua";
+  const MEXICO_CITY = "America/Mexico_City";
+
+  it("is deterministic — repeated calls with the same inputs yield the same instant (the idempotency the (template_id, starts_at) unique guard relies on)", () => {
+    const plantilla = { weekday: 2, startTime: "18:00" }; // Wed (Lunes+2)
+    const a = materializarSesion(plantilla, LUNES, CHIHUAHUA);
+    const b = materializarSesion(plantilla, LUNES, CHIHUAHUA);
+    expect(a.getTime()).toBe(b.getTime());
+  });
+
+  it("places the weekday offset from the week's Monday (weekday 0=Lunes..5=Sábado)", () => {
+    const lunes = materializarSesion({ weekday: 0, startTime: "06:00" }, LUNES, MEXICO_CITY);
+    const sabado = materializarSesion({ weekday: 5, startTime: "06:00" }, LUNES, MEXICO_CITY);
+    expect(Math.round((sabado.getTime() - lunes.getTime()) / 86_400_000)).toBe(5);
+  });
+
+  it("round-trips: the instant, read back through the SAME tz, reproduces the wall clock it was built from", () => {
+    const instante = materializarSesion({ weekday: 2, startTime: "18:00" }, LUNES, CHIHUAHUA);
+    const dtf = new Intl.DateTimeFormat("en-CA", {
+      timeZone: CHIHUAHUA,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    const parts = dtf.formatToParts(instante);
+    const get = (t: string) => parts.find((p) => p.type === t)!.value;
+    expect(`${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`).toBe(
+      "2026-06-17 18:00",
+    );
+  });
+
+  it("is tz-honest: the same wall clock in two different gym zones yields two different absolute instants (historical divergence, pre-2022-reform June DST: Chihuahua GMT-6 / Mexico City GMT-5)", () => {
+    const lunes2020 = new Date(2020, 5, 15); // Mon 15 jun 2020
+    const plantilla = { weekday: 0, startTime: "18:00" };
+    const chi = materializarSesion(plantilla, lunes2020, CHIHUAHUA);
+    const mex = materializarSesion(plantilla, lunes2020, MEXICO_CITY);
+    expect(chi.getTime()).not.toBe(mex.getTime());
+    expect((chi.getTime() - mex.getTime()) / 3_600_000).toBe(1); // Chihuahua 1h behind Mexico City that June
   });
 });
