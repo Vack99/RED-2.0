@@ -16,7 +16,11 @@ import {
   reordenarBloques,
   reordenarPorTraer,
 } from "@gym/data/server/class-type";
-import { actualizarPaquete } from "@gym/data/server/paquetes";
+import {
+  actualizarPaquete,
+  actualizarPaqueteMarketing,
+  setPlanFeatures,
+} from "@gym/data/server/paquetes";
 import {
   actualizarPlantilla,
   crearPlantilla,
@@ -92,4 +96,12 @@ export async function actualizarPorTraerAction(raw: unknown): Promise<void> {
 
 export async function reordenarPorTraerAction(raw: unknown): Promise<void> {
   return reordenarPorTraer(raw);
+}
+
+export async function actualizarPaqueteMarketingAction(raw: unknown): Promise<void> {
+  return actualizarPaqueteMarketing(raw);
+}
+
+export async function setPlanFeaturesAction(raw: unknown): Promise<void> {
+  return setPlanFeatures(raw);
 }

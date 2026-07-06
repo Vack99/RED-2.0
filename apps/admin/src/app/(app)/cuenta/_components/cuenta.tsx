@@ -18,7 +18,7 @@ import type { ResumenMes } from "@gym/domain/types";
 import type { ClassTypeDTO } from "@gym/data/server/class-type";
 import type { CoachDTO } from "@gym/data/server/coach";
 import type { CobroDTO } from "@gym/data/server/cobro";
-import type { PaqueteDTO } from "@gym/data/server/paquetes";
+import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import { pesos } from "@gym/format";
@@ -33,7 +33,7 @@ interface CuentaScreenProps {
   perfil: PerfilDTO | null;
   resumen: ResumenMes;
   cobro: CobroDTO | null;
-  paquetes: PaqueteDTO[];
+  paquetes: PlanEditorDTO[];
   plantillas: PlantillaDTO[];
   coaches: CoachDTO[];
   classTypes: ClassTypeDTO[];
