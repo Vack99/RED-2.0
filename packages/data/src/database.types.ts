@@ -62,6 +62,120 @@ export type Database = {
           },
         ]
       }
+      class_session: {
+        Row: {
+          cancelled_at: string | null
+          capacity: number
+          class_type_id: string
+          created_at: string
+          duration_min: number
+          gym_id: string
+          id: string
+          is_special: boolean
+          room_id: string | null
+          special_name: string | null
+          starts_at: string
+          template_id: string | null
+        }
+        Insert: {
+          cancelled_at?: string | null
+          capacity: number
+          class_type_id: string
+          created_at?: string
+          duration_min: number
+          gym_id: string
+          id?: string
+          is_special?: boolean
+          room_id?: string | null
+          special_name?: string | null
+          starts_at: string
+          template_id?: string | null
+        }
+        Update: {
+          cancelled_at?: string | null
+          capacity?: number
+          class_type_id?: string
+          created_at?: string
+          duration_min?: number
+          gym_id?: string
+          id?: string
+          is_special?: boolean
+          room_id?: string | null
+          special_name?: string | null
+          starts_at?: string
+          template_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_session_class_type_id_fkey"
+            columns: ["class_type_id"]
+            isOneToOne: false
+            referencedRelation: "class_type"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_session_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_session_room_id_fkey"
+            columns: ["room_id"]
+            isOneToOne: false
+            referencedRelation: "room"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_session_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_template"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      class_session_coach: {
+        Row: {
+          coach_id: string
+          gym_id: string
+          session_id: string
+        }
+        Insert: {
+          coach_id: string
+          gym_id: string
+          session_id: string
+        }
+        Update: {
+          coach_id?: string
+          gym_id?: string
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_session_coach_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_session_coach_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_session_coach_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "class_session"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       class_type: {
         Row: {
           created_at: string
@@ -609,6 +723,133 @@ export type Database = {
           },
         ]
       }
+      schedule_template: {
+        Row: {
+          capacity: number
+          class_type_id: string
+          created_at: string
+          duration_min: number
+          gym_id: string
+          id: string
+          is_active: boolean
+          start_time: string
+          weekday: number
+        }
+        Insert: {
+          capacity: number
+          class_type_id: string
+          created_at?: string
+          duration_min: number
+          gym_id: string
+          id?: string
+          is_active?: boolean
+          start_time: string
+          weekday: number
+        }
+        Update: {
+          capacity?: number
+          class_type_id?: string
+          created_at?: string
+          duration_min?: number
+          gym_id?: string
+          id?: string
+          is_active?: boolean
+          start_time?: string
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_template_class_type_id_fkey"
+            columns: ["class_type_id"]
+            isOneToOne: false
+            referencedRelation: "class_type"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_template_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_template_coach: {
+        Row: {
+          coach_id: string
+          gym_id: string
+          template_id: string
+        }
+        Insert: {
+          coach_id: string
+          gym_id: string
+          template_id: string
+        }
+        Update: {
+          coach_id?: string
+          gym_id?: string
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_template_coach_coach_id_fkey"
+            columns: ["coach_id"]
+            isOneToOne: false
+            referencedRelation: "coach"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_template_coach_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_template_coach_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_template"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      schedule_template_week: {
+        Row: {
+          created_at: string
+          gym_id: string
+          template_id: string
+          week_start: string
+        }
+        Insert: {
+          created_at?: string
+          gym_id: string
+          template_id: string
+          week_start: string
+        }
+        Update: {
+          created_at?: string
+          gym_id?: string
+          template_id?: string
+          week_start?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "schedule_template_week_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "schedule_template_week_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "schedule_template"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ventas: {
         Row: {
           clases: number | null
@@ -691,11 +932,58 @@ export type Database = {
         Args: { p_body: string; p_id: string; p_nombre: string }
         Returns: undefined
       }
+      cancel_class_session: {
+        Args: { p_session_id: string }
+        Returns: undefined
+      }
       crear_plantilla: {
         Args: { p_body: string; p_nombre: string }
         Returns: string
       }
+      create_class_session: {
+        Args: {
+          p_capacity: number
+          p_class_type_id: string
+          p_coach_ids?: string[]
+          p_duration_min: number
+          p_is_special?: boolean
+          p_room_id?: string
+          p_special_name?: string
+          p_starts_at: string
+        }
+        Returns: string
+      }
+      create_recurring_schedule: {
+        Args: {
+          p_capacity: number
+          p_class_type_id: string
+          p_coach_ids?: string[]
+          p_duration_min: number
+          p_horizon_weeks?: number
+          p_start_time: string
+          p_weekdays: number[]
+        }
+        Returns: string[]
+      }
+      edit_class_session: {
+        Args: {
+          p_capacity: number
+          p_class_type_id: string
+          p_coach_ids?: string[]
+          p_duration_min: number
+          p_is_special?: boolean
+          p_room_id?: string
+          p_session_id: string
+          p_special_name?: string
+          p_starts_at: string
+        }
+        Returns: undefined
+      }
       eliminar_plantilla: { Args: { p_id: string }; Returns: undefined }
+      ensure_week_materialized: {
+        Args: { p_week_start: string }
+        Returns: number
+      }
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }

@@ -12,9 +12,13 @@ export type PaqueteId = Brand<string, "PaqueteId">;
 export type CoachId = Brand<string, "CoachId">;
 export type ClassTypeId = Brand<string, "ClassTypeId">;
 export type RoomId = Brand<string, "RoomId">;
+export type ClassSessionId = Brand<string, "ClassSessionId">;
+export type ScheduleTemplateId = Brand<string, "ScheduleTemplateId">;
 
 export const asClienteId = (id: string): ClienteId => id as ClienteId;
 export const asPaqueteId = (id: string): PaqueteId => id as PaqueteId;
 export const asCoachId = (id: string): CoachId => id as CoachId;
 export const asClassTypeId = (id: string): ClassTypeId => id as ClassTypeId;
 export const asRoomId = (id: string): RoomId => id as RoomId;
+export const asClassSessionId = (id: string): ClassSessionId => id as ClassSessionId;
+export const asScheduleTemplateId = (id: string): ScheduleTemplateId => id as ScheduleTemplateId;
