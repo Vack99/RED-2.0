@@ -84,12 +84,24 @@ export default defineConfig({
       },
       {
         // apps/client — the socio's panel. App-local pure logic (auth-form
-        // validation) — node env, no aliases (imports resolve via @gym/*
-        // workspace specifiers or relative paths), mirroring the admin project.
+        // validation) plus the server-only Turnstile captcha verifier that guards
+        // registration. Node env; the verifier keeps the `import 'server-only'`
+        // poison-pill (it holds the captcha secret), stubbed via the same empty
+        // module the @gym/data project uses.
         test: {
           name: "client",
           environment: "node",
           include: ["apps/client/src/**/*.test.ts"],
+        },
+        resolve: {
+          alias: {
+            "server-only": fileURLToPath(
+              new URL(
+                "./packages/data/node_modules/server-only/empty.js",
+                import.meta.url,
+              ),
+            ),
+          },
         },
       },
       {

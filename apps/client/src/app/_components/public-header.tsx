@@ -10,7 +10,7 @@ import type { ReactNode } from "react";
 // gate. So it hides itself there. A client island (it needs the pathname); the
 // brand logo is resolved on the server and passed in as an already-rendered node,
 // so no brand import crosses into this file.
-const RUTAS_SIN_HEADER = new Set(["/entrar", "/restablecer"]);
+const RUTAS_SIN_HEADER = new Set(["/entrar", "/registro", "/restablecer"]);
 
 export function PublicHeader({ logo }: { readonly logo: ReactNode }) {
   const pathname = usePathname();
