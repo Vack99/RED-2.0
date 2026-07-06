@@ -115,3 +115,27 @@ WARN) — nothing new introduced by this seed.
   upcoming ★ evento especial.
 - [x] Cross-tenant denial holds with red-demo present (direct check, both directions, OK).
 - [x] Evidence doc committed; pre-write dump recorded above.
+
+## Phase-5 exit gate (#47) — owner walk, 2026-07-05
+
+The human-only exit gate, walked by the owner on-device after the ten-slice stack merged to `main`
+@ `b06e61a` (dependency order #37 → #42 → #43 → #38 → #39 → #40 → #41 → #44 → #45 → #46; every
+merge commit shield-gated, final 615/615 tests, prod build green).
+
+- **Deploy**: both Vercel projects (`red-2-0-admin`, `red-2-0-client`) built `b06e61a` to
+  Production, Ready.
+- **Visual fidelity (on-device)**: Agenda walked against the interactive mock — DÍA (date strip,
+  relative labels, `A continuación` card, summary line), SEMANA, create/edit/cancel flow. Signed
+  off. One concrete delta filed: **#48** (vender phone input fails silently when the number carries
+  an extra digit — needs an inline validation message). No other deltas.
+- **Live forge smoke**: one-off clase created from the UI ✓ (rendered on DÍA with derived
+  0/N occupancy), cancelled cleanly ✓; vender reachable from ficha + INICIO and a real sale
+  completed correctly ✓.
+- **red-demo check (host `red-demo.localhost`, local admin, live DB)**: RED brand rendered by host
+  with zero code change ✓; isolation confirmed across clientes / cuenta / coaches / plantillas —
+  red-demo-only data everywhere, no forge rows ✓; seeded agenda rendered ✓.
+- **Known gap (by design, not a delta)**: red-demo's CONTENIDO DEL GIMNASIO is empty — the gym
+  content seed was deferred (§ above) because #39's tables went live after this seed; the tables
+  now exist, seed pending as an optional follow-up.
+
+**Verdict: Phase-5 exit criteria MET.** Roadmap row ticked; #47 closed.
