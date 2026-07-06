@@ -13,6 +13,7 @@
     "@gym/domain": "workspace:*",
     "@gym/format": "workspace:*",
     "@gym/ui": "workspace:*",
+    "@supabase/ssr": "catalog:",
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"

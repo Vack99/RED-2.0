@@ -14,7 +14,9 @@ import { createClient, type SupabaseServer } from "./supabase";
 export type SesionResultado = { ok: true } | { ok: false; error: string };
 
 /** Email+password sign-in. A wrong credential collapses to one opaque message
- *  (never reveal which field failed). */
+ *  (never reveal which field failed) — but an unconfirmed email is surfaced
+ *  distinctly (not "wrong password") so the form can prompt a confirmation
+ *  check instead. */
 export async function iniciarSesion(
   email: string,
   password: string,
@@ -22,7 +24,14 @@ export async function iniciarSesion(
 ): Promise<SesionResultado> {
   const supabase = client ?? (await createClient());
   const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-  return error ? { ok: false, error: "Correo o contraseña incorrectos." } : { ok: true };
+  if (!error) return { ok: true };
+  if (error.code === "email_not_confirmed") {
+    return {
+      ok: false,
+      error: "Confirma tu correo antes de entrar. Revisa el enlace que te enviamos.",
+    };
+  }
+  return { ok: false, error: "Correo o contraseña incorrectos." };
 }
 
 /** Send the forgot-password email; `redirectTo` is the `/restablecer` landing.

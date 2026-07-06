@@ -322,6 +322,7 @@ export type Database = {
           id: string
           label: string
           sort_order: number
+          value: string | null
         }
         Insert: {
           class_type_id: string
@@ -330,6 +331,7 @@ export type Database = {
           id?: string
           label: string
           sort_order?: number
+          value?: string | null
         }
         Update: {
           class_type_id?: string
@@ -338,6 +340,7 @@ export type Database = {
           id?: string
           label?: string
           sort_order?: number
+          value?: string | null
         }
         Relationships: [
           {
@@ -635,6 +638,9 @@ export type Database = {
       }
       gym: {
         Row: {
+          about_pull_quote: string | null
+          about_story: string | null
+          about_tagline: string | null
           brand_module_id: string
           brand_name: string
           created_at: string
@@ -646,6 +652,9 @@ export type Database = {
           token_overrides: Json
         }
         Insert: {
+          about_pull_quote?: string | null
+          about_story?: string | null
+          about_tagline?: string | null
           brand_module_id: string
           brand_name: string
           created_at?: string
@@ -657,6 +666,9 @@ export type Database = {
           token_overrides?: Json
         }
         Update: {
+          about_pull_quote?: string | null
+          about_story?: string | null
+          about_tagline?: string | null
           brand_module_id?: string
           brand_name?: string
           created_at?: string
@@ -811,6 +823,7 @@ export type Database = {
           id: string
           name: string | null
           nombre: string
+          nota: string | null
           orden: number
           popular: boolean
           precio: number
@@ -828,6 +841,7 @@ export type Database = {
           id?: string
           name?: string | null
           nombre: string
+          nota?: string | null
           orden?: number
           popular?: boolean
           precio: number
@@ -845,6 +859,7 @@ export type Database = {
           id?: string
           name?: string | null
           nombre?: string
+          nota?: string | null
           orden?: number
           popular?: boolean
           precio?: number

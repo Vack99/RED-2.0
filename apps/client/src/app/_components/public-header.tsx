@@ -44,8 +44,18 @@ const RUTAS_SIN_HEADER = new Set(["/entrar", "/registro", "/restablecer"]);
  * The hamburger morphs to an X, the drawer slides from the left with a staggered nav reveal, and the
  * backdrop dismisses on tap. All motion is gated behind `motion-safe:` so a reduced-motion visitor gets
  * the final state instantly (no delayed-invisible nav items).
+ *
+ * `signedIn` (server-resolved via `getClaims()` in the layout — never re-derived here) swaps the
+ * top-right "Entrar" link for a members' affordance into `/reservar`, so a returning member isn't
+ * offered the sign-in page they already passed (B5).
  */
-export function PublicHeader({ logo }: { readonly logo: ReactNode }) {
+export function PublicHeader({
+  logo,
+  signedIn,
+}: {
+  readonly logo: ReactNode;
+  readonly signedIn: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
@@ -78,10 +88,10 @@ export function PublicHeader({ logo }: { readonly logo: ReactNode }) {
         </button>
 
         <Link
-          href="/entrar"
+          href={signedIn ? "/reservar" : "/entrar"}
           className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted hover:text-fg"
         >
-          Entrar
+          {signedIn ? "Mi cuenta" : "Entrar"}
         </Link>
       </header>
 

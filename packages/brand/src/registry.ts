@@ -44,8 +44,13 @@ export interface BrandModule {
   readonly css: string;
   /** The closed brand-voice minimum. */
   readonly copy: BrandCopy;
-  /** Brand lockup — recolors via the CSS-var contract. */
-  readonly logo: ComponentType<{ size?: number }>;
+  /**
+   * Brand lockup — recolors via the CSS-var contract. Static by default (chrome:
+   * headers/footers/receipts); `animate` opts the landing/hero into a bespoke
+   * ignition where a brand ships one (RED's neon ring). Static modules ignore the
+   * flag — a single widened slot, not a second single-caller `heroMark` member.
+   */
+  readonly logo: ComponentType<{ size?: number; animate?: boolean }>;
   /**
    * Self-contained square app-icon SVG markup for the dynamic `/icon` favicon
    * route — flat token-value colors, no `var(--…)`/gradients (a favicon paints
@@ -65,6 +70,8 @@ export interface BrandModule {
    * cross into @gym/brand.
    */
   readonly loginAnimation?: ComponentType<{ readonly name: string; readonly children?: ReactNode }>;
+  /** Which token scheme the app SSR-stamps onto `<html>` by default. Omitted = light. */
+  readonly defaultScheme?: "light" | "dark";
 }
 
 /**
@@ -101,5 +108,6 @@ export const brands: Record<BrandId, BrandModule> = {
     logo: RedLockup,
     appIcon: redAppIcon,
     loginAnimation: RedLoginHero,
+    defaultScheme: "dark",
   },
 };

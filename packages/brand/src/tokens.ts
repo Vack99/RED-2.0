@@ -28,8 +28,10 @@ export const TOKEN_KEYS = [
 
   "green",
   "red",
+  "warning",
   "green-soft",
   "red-soft",
+  "warning-soft",
 
   "wa-bubble",
   "wa-bubble-fg",

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
           // the member can retry / an operator reconciles. The RPC is idempotent.
         }
       }
-      return NextResponse.redirect(new URL("/", request.url));
+      return NextResponse.redirect(new URL("/reservar", request.url));
     }
   }
 

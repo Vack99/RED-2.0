@@ -2,7 +2,7 @@
 
 import Script from "next/script";
 import Link from "next/link";
-import { useActionState, useState, type FormEvent } from "react";
+import { useActionState, useEffect, useState, type FormEvent } from "react";
 
 import {
   validarCorreo,
@@ -17,6 +17,15 @@ const INICIAL: RegistroActionState = { status: "idle" };
 // Cloudflare's documented ALWAYS-PASS test sitekey — the default so dev works with no real key; the
 // owner swaps in the production sitekey via NEXT_PUBLIC_TURNSTILE_SITE_KEY post-queue.
 const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
+
+// Turnstile's implicit render calls these by NAME off `window` once the challenge resolves — the
+// Managed widget takes a beat, so submit must stay gated on a real token rather than firing the
+// instant the form mounts (B3: an empty `cf-turnstile-response` fails server-side verification).
+type TurnstileWindow = typeof window & {
+  onRegistroTurnstileSuccess?: (token: string) => void;
+  onRegistroTurnstileExpired?: () => void;
+  onRegistroTurnstileError?: () => void;
+};
 
 // Shared underline-field styling (the mock's `.field`), identical to the entrar screen: uppercase
 // micro-label, a bottom-ruled input that turns accent on focus and the semantic `--red` when invalid.
@@ -43,11 +52,19 @@ export function RegistroForm() {
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [acepta, setAcepta] = useState(false);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const [errNombre, setErrNombre] = useState<string | null>(null);
   const [errCorreo, setErrCorreo] = useState<string | null>(null);
   const [errTelefono, setErrTelefono] = useState<string | null>(null);
   const [errPassword, setErrPassword] = useState<string | null>(null);
+
+  useEffect(() => {
+    const w = window as TurnstileWindow;
+    w.onRegistroTurnstileSuccess = (token) => setTurnstileToken(token);
+    w.onRegistroTurnstileExpired = () => setTurnstileToken(null);
+    w.onRegistroTurnstileError = () => setTurnstileToken(null);
+  }, []);
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -223,11 +240,17 @@ export function RegistroForm() {
           </span>
         </label>
 
-        <div className="cf-turnstile" data-sitekey={SITE_KEY} />
+        <div
+          className="cf-turnstile"
+          data-sitekey={SITE_KEY}
+          data-callback="onRegistroTurnstileSuccess"
+          data-expired-callback="onRegistroTurnstileExpired"
+          data-error-callback="onRegistroTurnstileError"
+        />
 
         <button
           type="submit"
-          disabled={!acepta || pending}
+          disabled={!acepta || !turnstileToken || pending}
           className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-white transition hover:brightness-105 disabled:opacity-40"
         >
           <span>{pending ? "Creando cuenta…" : "Crear cuenta"}</span>
@@ -238,12 +261,17 @@ export function RegistroForm() {
           )}
         </button>
 
-        <p className="text-center text-[13px] text-muted">
-          ¿Ya tienes cuenta?{" "}
-          <Link href="/entrar" className="font-semibold text-accent">
-            Entrar
+        <div className="flex flex-col items-center gap-3 text-[13px]">
+          <p className="text-muted">
+            ¿Ya tienes cuenta?{" "}
+            <Link href="/entrar" className="font-semibold text-accent">
+              Entrar
+            </Link>
+          </p>
+          <Link href="/" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
+            Volver al inicio
           </Link>
-        </p>
+        </div>
       </form>
     </>
   );

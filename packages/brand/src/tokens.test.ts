@@ -6,9 +6,10 @@ import { TOKEN_KEYS, tokensToCss, type BrandTokens } from "./tokens";
 
 /**
  * The serializer is the ONE renderer of the `:root,.light {} .dark {}` block
- * (PRD grill lock (b)) — structured tokens in, the exact block out. Forge/red
- * equivalence is proven below against a frozen copy of the pre-refactor CSS
- * strings, compared after whitespace normalization (acceptance criterion:
+ * (PRD grill lock (b)) — structured tokens in, the exact block out. Forge's
+ * output is pinned against a frozen fixture; RED's dark-only neon output is
+ * pinned against its expected block (identical `:root,.light` and `.dark`),
+ * both compared after whitespace normalization (acceptance criterion:
  * "normalized comparison in tests").
  */
 
@@ -17,9 +18,10 @@ function normalize(css: string): string {
   return css.replace(/\s+/g, " ").trim();
 }
 
-// Frozen copies of the pre-refactor `forgeTokenCss` / `redTokenCss` string
-// constants (git history: forge/tokens.ts, red/tokens.ts before this slice).
-// Equivalence-only fixtures — never imported by product code.
+// Expected serializer output, pinned by hand. Forge is a frozen copy of its
+// module's rendered block (with the amber warning channel); RED is its dark-only
+// neon block (§3.1, identical light/dark). Fixtures only — never imported by
+// product code.
 
 const forgeTokenCssBeforeRefactor = `:root,
 .light {
@@ -45,8 +47,10 @@ const forgeTokenCssBeforeRefactor = `:root,
 
   --green: #1f9d57;
   --red: #d6443c;
+  --warning: #d97706;
   --green-soft: rgba(31, 157, 87, 0.13);
   --red-soft: rgba(214, 68, 60, 0.12);
+  --warning-soft: rgba(217, 119, 6, 0.13);
 
   --wa-bubble: #d9fdd3;
   --wa-bubble-fg: #111b21;
@@ -83,8 +87,10 @@ const forgeTokenCssBeforeRefactor = `:root,
 
   --green: #5cd47a;
   --red: #ff5a5a;
+  --warning: #f59e0b;
   --green-soft: rgba(92, 212, 122, 0.14);
   --red-soft: rgba(255, 90, 90, 0.14);
+  --warning-soft: rgba(245, 158, 11, 0.14);
 
   --wa-bubble: #005c4b;
   --wa-bubble-fg: #e9edef;
@@ -98,81 +104,88 @@ const forgeTokenCssBeforeRefactor = `:root,
   --backdrop: #050505;
 }`;
 
-const redTokenCssBeforeRefactor = `:root,
+// RED is a dark-only neon identity (owner decision): ONE `redNeon` scheme fills
+// BOTH `light` and `dark`, pixel-matched to the mock `:root` (remediation §3.1).
+// So the serializer must emit the SAME block for `:root,.light` and `.dark`.
+const redTokenCssExpected = `:root,
 .light {
-  --canvas: #faf6f6;
-  --surface: #ffffff;
-  --sunk: #f1e7e7;
-  --line: #ecdede;
-  --line-soft: #f4eaea;
+  --canvas: #0a0a0a;
+  --surface: #121212;
+  --sunk: #0e0e0e;
+  --line: #1f1f1f;
+  --line-soft: #262626;
 
-  --yellow: #dc2626;
-  --gold: #a11212;
-  --yellow-dim: #c4433c;
-  --yellow-soft: rgba(220, 38, 38, 0.14);
-  --yellow-edge: rgba(161, 18, 18, 0.4);
-  --press-yellow: #ef4444;
+  --yellow: #b5161c;
+  --gold: #7e0d10;
+  --yellow-dim: #9a2b28;
+  --yellow-soft: rgba(239, 43, 26, 0.13);
+  --yellow-edge: rgba(239, 43, 26, 0.4);
+  --press-yellow: #d92b1f;
 
-  --silver: #6f6a6a;
-  --silver-dim: #9b9494;
+  --silver: #c5c5c5;
+  --silver-dim: #8c8c8c;
 
-  --fg: #1a1010;
-  --muted: #857c7c;
-  --muted-soft: #bdb4b4;
-
-  --green: #1f9d57;
-  --red: #d6443c;
-  --green-soft: rgba(31, 157, 87, 0.13);
-  --red-soft: rgba(214, 68, 60, 0.12);
-
-  --wa-bubble: #d9fdd3;
-  --wa-bubble-fg: #111b21;
-  --wa-bubble-meta: rgba(17, 27, 33, 0.5);
-
-  --ink: #0a0a0a;
-  --glass: rgba(255, 255, 255, 0.78);
-  --scrim: rgba(28, 16, 16, 0.42);
-  --tab-bg: #ffffff;
-
-  --backdrop: #efe0e0;
-}
-
-.dark {
-  --canvas: #0c0808;
-  --surface: #161010;
-  --sunk: #080505;
-  --line: #241c1c;
-  --line-soft: #1a1414;
-
-  --yellow: #f04444;
-  --gold: #f04444;
-  --yellow-dim: #7a2020;
-  --yellow-soft: rgba(240, 68, 68, 0.14);
-  --yellow-edge: rgba(240, 68, 68, 0.42);
-  --press-yellow: #ff5a5a;
-
-  --silver: #c5bcbc;
-  --silver-dim: #6e6666;
-
-  --fg: #faf5f5;
-  --muted: #7a7070;
-  --muted-soft: #3f3838;
+  --fg: #fafafa;
+  --muted: #7a7a7a;
+  --muted-soft: #5e5e5e;
 
   --green: #5cd47a;
   --red: #ff5a5a;
+  --warning: #e8902a;
   --green-soft: rgba(92, 212, 122, 0.14);
   --red-soft: rgba(255, 90, 90, 0.14);
+  --warning-soft: rgba(232, 144, 42, 0.14);
 
   --wa-bubble: #005c4b;
   --wa-bubble-fg: #e9edef;
   --wa-bubble-meta: rgba(233, 237, 239, 0.6);
 
   --ink: #0a0a0a;
-  --glass: rgba(22, 16, 16, 0.72);
+  --glass: rgba(18, 18, 18, 0.72);
   --scrim: rgba(0, 0, 0, 0.64);
-  --tab-bg: #0c0808;
+  --tab-bg: #0a0a0a;
 
-  --backdrop: #050303;
+  --backdrop: #050505;
+}
+
+.dark {
+  --canvas: #0a0a0a;
+  --surface: #121212;
+  --sunk: #0e0e0e;
+  --line: #1f1f1f;
+  --line-soft: #262626;
+
+  --yellow: #b5161c;
+  --gold: #7e0d10;
+  --yellow-dim: #9a2b28;
+  --yellow-soft: rgba(239, 43, 26, 0.13);
+  --yellow-edge: rgba(239, 43, 26, 0.4);
+  --press-yellow: #d92b1f;
+
+  --silver: #c5c5c5;
+  --silver-dim: #8c8c8c;
+
+  --fg: #fafafa;
+  --muted: #7a7a7a;
+  --muted-soft: #5e5e5e;
+
+  --green: #5cd47a;
+  --red: #ff5a5a;
+  --warning: #e8902a;
+  --green-soft: rgba(92, 212, 122, 0.14);
+  --red-soft: rgba(255, 90, 90, 0.14);
+  --warning-soft: rgba(232, 144, 42, 0.14);
+
+  --wa-bubble: #005c4b;
+  --wa-bubble-fg: #e9edef;
+  --wa-bubble-meta: rgba(233, 237, 239, 0.6);
+
+  --ink: #0a0a0a;
+  --glass: rgba(18, 18, 18, 0.72);
+  --scrim: rgba(0, 0, 0, 0.64);
+  --tab-bg: #0a0a0a;
+
+  --backdrop: #050505;
 }`;
 
 describe("tokensToCss", () => {
@@ -213,7 +226,7 @@ describe("tokensToCss", () => {
     expect(normalize(tokensToCss(forgeTokens))).toBe(normalize(forgeTokenCssBeforeRefactor));
   });
 
-  it("red: rendered CSS is equivalent to the pre-refactor block (normalized)", () => {
-    expect(normalize(tokensToCss(redTokens))).toBe(normalize(redTokenCssBeforeRefactor));
+  it("red: dark-only neon renders the same block for :root,.light and .dark (normalized)", () => {
+    expect(normalize(tokensToCss(redTokens))).toBe(normalize(redTokenCssExpected));
   });
 });

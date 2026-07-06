@@ -34,8 +34,10 @@ export const forgeTokens: BrandTokens = {
 
     green: "#1f9d57",
     red: "#d6443c",
+    warning: "#d97706",
     "green-soft": "rgba(31, 157, 87, 0.13)",
     "red-soft": "rgba(214, 68, 60, 0.12)",
+    "warning-soft": "rgba(217, 119, 6, 0.13)",
 
     "wa-bubble": "#d9fdd3",
     "wa-bubble-fg": "#111b21",
@@ -71,8 +73,10 @@ export const forgeTokens: BrandTokens = {
 
     green: "#5cd47a",
     red: "#ff5a5a",
+    warning: "#f59e0b",
     "green-soft": "rgba(92, 212, 122, 0.14)",
     "red-soft": "rgba(255, 90, 90, 0.14)",
+    "warning-soft": "rgba(245, 158, 11, 0.14)",
 
     "wa-bubble": "#005c4b",
     "wa-bubble-fg": "#e9edef",

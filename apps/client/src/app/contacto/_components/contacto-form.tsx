@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useActionState } from "react";
+import { useActionState, useEffect, useState } from "react";
 
 import { enviarContactoAction, type ContactoActionState } from "../actions";
 
@@ -9,6 +9,15 @@ const INICIAL: ContactoActionState = { status: "idle" };
 /** Cloudflare's documented ALWAYS-PASS test sitekey — the default so dev works with no real key; the
  *  owner swaps in the production sitekey via NEXT_PUBLIC_TURNSTILE_SITE_KEY post-queue. */
 const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
+
+// Turnstile's implicit render calls these by NAME off `window` once the challenge resolves — the
+// Managed widget takes a beat, so submit must stay gated on a real token rather than firing the
+// instant the form mounts (B3: an empty `cf-turnstile-response` fails server-side verification).
+type TurnstileWindow = typeof window & {
+  onContactoTurnstileSuccess?: (token: string) => void;
+  onContactoTurnstileExpired?: () => void;
+  onContactoTurnstileError?: () => void;
+};
 
 function fieldClass(invalid: boolean | undefined): string {
   return `w-full rounded-xl border bg-surface px-4 py-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent ${
@@ -24,6 +33,14 @@ function fieldClass(invalid: boolean | undefined): string {
 export function ContactoForm() {
   const [state, action, pending] = useActionState(enviarContactoAction, INICIAL);
   const invalid = state.status === "invalid" ? state.fields : undefined;
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    const w = window as TurnstileWindow;
+    w.onContactoTurnstileSuccess = (token) => setTurnstileToken(token);
+    w.onContactoTurnstileExpired = () => setTurnstileToken(null);
+    w.onContactoTurnstileError = () => setTurnstileToken(null);
+  }, []);
 
   if (state.status === "success") {
     return (
@@ -62,11 +79,17 @@ export function ContactoForm() {
           {invalid?.mensaje && <span className="text-xs text-accent">Escribe tu mensaje.</span>}
         </label>
 
-        <div className="cf-turnstile" data-sitekey={SITE_KEY} />
+        <div
+          className="cf-turnstile"
+          data-sitekey={SITE_KEY}
+          data-callback="onContactoTurnstileSuccess"
+          data-expired-callback="onContactoTurnstileExpired"
+          data-error-callback="onContactoTurnstileError"
+        />
 
         <button
           type="submit"
-          disabled={pending}
+          disabled={!turnstileToken || pending}
           className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
         >
           {pending ? "Enviando…" : "Enviar mensaje"}

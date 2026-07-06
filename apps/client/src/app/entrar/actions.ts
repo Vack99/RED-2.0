@@ -21,7 +21,7 @@ export async function entrarAction(
     String(formData.get("password") ?? ""),
   );
   if (!result.ok) return { status: "error", error: result.error };
-  redirect("/");
+  redirect("/reservar");
 }
 
 export type ResetActionState = { status: "idle" } | { status: "sent" };

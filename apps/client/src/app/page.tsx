@@ -49,7 +49,7 @@ export default async function Home() {
   return (
     <main className="mx-auto flex w-full max-w-md flex-col pb-14">
       <section className="flex flex-col items-center px-7 pt-14 text-center">
-        <Logo size={64} />
+        <Logo size={200} animate />
         <p className="mt-6 text-xs font-medium uppercase tracking-[0.22em] text-muted">
           Entrenamiento funcional
         </p>

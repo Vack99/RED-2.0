@@ -20,9 +20,14 @@ import { createClient } from "@gym/data/client";
 // Sharp decelerate for the field rise (snappy settle), matching the hero.
 const EASE = "cubic-bezier(.32,.72,0,1)";
 // Fields slide in one after another. When a hero plays first, the stagger waits
-// for the hero's shine to begin (the hero fills that window with motion); with
-// no hero (the neutral base module — StaticLogin, a motion-free lockup) the
-// wait would be a dead blank space, so the form enters at t=0 instead.
+// for the hero's ignition to settle (the hero fills that window with motion);
+// with no hero (the neutral base module — StaticLogin, a motion-free lockup) the
+// wait would be a dead blank space, so the form enters at t=0 instead. Tuned to
+// Forge's bar-build hero — the production admin brand (this constant serves 100%
+// of prod admin traffic). RED-in-admin is a dev-only test surface (Doc 2 §6); its
+// ring settles ~700ms later, so the form reveals mid-ignition there — acceptable,
+// as no RED admin ships. The RED ring's production home is the client, which
+// composes its own hero timing.
 const HERO_OFFSET = 1590;
 const FORM_STEP = 150;
 

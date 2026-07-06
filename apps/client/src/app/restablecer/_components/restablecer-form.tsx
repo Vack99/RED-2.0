@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState, type FormEvent } from "react";
 
 import { validarPasswordNueva } from "../../../lib/auth-validacion";
@@ -92,6 +93,10 @@ export function RestablecerForm() {
       >
         {pending ? "Guardando…" : "Guardar contraseña"}
       </button>
+
+      <Link href="/" className="text-center text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
+        Volver al inicio
+      </Link>
     </form>
   );
 }
