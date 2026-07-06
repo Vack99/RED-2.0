@@ -15,12 +15,16 @@ import {
   Tnum,
 } from "@gym/ui/forge/ui";
 import type { ResumenMes } from "@gym/domain/types";
+import type { ClassTypeDTO } from "@gym/data/server/class-type";
+import type { CoachDTO } from "@gym/data/server/coach";
 import type { CobroDTO } from "@gym/data/server/cobro";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import { pesos } from "@gym/format";
 
+import { ClassTypesSheet } from "./class-types-sheet";
+import { CoachesSheet } from "./coaches-sheet";
 import { LogoutButton } from "./logout-button";
 import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
@@ -31,6 +35,8 @@ interface CuentaScreenProps {
   cobro: CobroDTO | null;
   paquetes: PaqueteDTO[];
   plantillas: PlantillaDTO[];
+  coaches: CoachDTO[];
+  classTypes: ClassTypeDTO[];
   /** Real es-MX month label, e.g. "MAYO 2026". */
   mesLabel: string;
   /** Resolved marca name — the "negocio" fallback when the perfil row has none (grill lock (c)). */
@@ -83,11 +89,15 @@ export function CuentaScreen({
   cobro,
   paquetes,
   plantillas,
+  coaches,
+  classTypes,
   mesLabel,
   brandName,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
+  const [coachesOpen, setCoachesOpen] = React.useState(false);
+  const [classTypesOpen, setClassTypesOpen] = React.useState(false);
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
   // a null-perfil guard (the perfil row may not be seeded yet).
@@ -115,6 +125,18 @@ export function CuentaScreen({
 
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
     {
+      icon: "users",
+      label: "COACHES",
+      sub: `${coaches.length} coach${coaches.length === 1 ? "" : "es"}`,
+      onClick: () => setCoachesOpen(true),
+    },
+    {
+      icon: "flame",
+      label: "TIPOS DE CLASE",
+      sub: `${classTypes.length} tipo${classTypes.length === 1 ? "" : "s"} de clase`,
+      onClick: () => setClassTypesOpen(true),
+    },
+    {
       icon: "wa",
       label: "PLANTILLAS DE WHATSAPP",
       sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`,
@@ -136,6 +158,10 @@ export function CuentaScreen({
       />
 
       <PaquetesSheet open={paquetesOpen} onClose={() => setPaquetesOpen(false)} paquetes={paquetes} />
+
+      <CoachesSheet open={coachesOpen} onClose={() => setCoachesOpen(false)} coaches={coaches} />
+
+      <ClassTypesSheet open={classTypesOpen} onClose={() => setClassTypesOpen(false)} classTypes={classTypes} />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 
