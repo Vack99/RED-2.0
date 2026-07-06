@@ -51,6 +51,7 @@ export type Database = {
       }
       asistencias: {
         Row: {
+          class_session_id: string | null
           cliente_id: string
           consumio: boolean
           created_at: string
@@ -59,8 +60,10 @@ export type Database = {
           gym_id: string
           hora: string | null
           id: string
+          reservation_id: string | null
         }
         Insert: {
+          class_session_id?: string | null
           cliente_id: string
           consumio?: boolean
           created_at?: string
@@ -69,8 +72,10 @@ export type Database = {
           gym_id: string
           hora?: string | null
           id?: string
+          reservation_id?: string | null
         }
         Update: {
+          class_session_id?: string | null
           cliente_id?: string
           consumio?: boolean
           created_at?: string
@@ -79,8 +84,16 @@ export type Database = {
           gym_id?: string
           hora?: string | null
           id?: string
+          reservation_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "asistencias_class_session_id_fkey"
+            columns: ["class_session_id"]
+            isOneToOne: false
+            referencedRelation: "class_session"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "asistencias_cliente_id_fkey"
             columns: ["cliente_id"]
@@ -93,6 +106,13 @@ export type Database = {
             columns: ["gym_id"]
             isOneToOne: false
             referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "asistencias_reservation_id_fkey"
+            columns: ["reservation_id"]
+            isOneToOne: false
+            referencedRelation: "reservation"
             referencedColumns: ["id"]
           },
         ]
@@ -1366,6 +1386,13 @@ export type Database = {
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
       next_folio: { Args: { p_gym: string }; Returns: number }
+      pasar_lista_sesion: {
+        Args: { p_cliente_id: string; p_session_id: string }
+        Returns: {
+          hora: string
+          present: boolean
+        }[]
+      }
       reclamar_o_crear_cliente: {
         Args: { p_gym_id: string }
         Returns: {

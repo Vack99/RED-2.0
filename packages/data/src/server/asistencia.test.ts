@@ -51,6 +51,20 @@ describe("getMarcadas — full attendance map (injected fake)", () => {
     ]);
   });
 
+  it("reads only active FRONT-DESK rows — soft-delete AND class_session_id filters (slice #60)", async () => {
+    // The map drives the pase screen's toggle_pase taps, which own only front-desk
+    // rows (class_session_id null) — a session pase surfacing here would render a
+    // mark whose tap writes a second, consuming row.
+    const { client, isCalls } = makeFake({ asistencias: [asistencia()] });
+
+    await getMarcadas(client);
+
+    expect(isCalls["asistencias"]).toEqual([
+      ["deleted_at", null],
+      ["class_session_id", null],
+    ]);
+  });
+
   it("groups rows by fecha → correct per-day cliente_id lists (map shape)", async () => {
     const { client } = makeFake({
       asistencias: [

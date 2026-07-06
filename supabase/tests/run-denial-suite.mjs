@@ -45,6 +45,7 @@ const SUITE = [
   'reservation_rls_denial.sql',
   'reservar_clase_rules.sql',
   'cancelar_reserva_rules.sql',
+  'pasar_lista_sesion_rules.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
