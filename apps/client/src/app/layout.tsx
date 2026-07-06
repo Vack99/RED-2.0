@@ -1,10 +1,10 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 
-import { brandCss, brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
+import { brandCss } from "@gym/brand";
 
 import "./globals.css";
 import { PublicHeader } from "./_components/public-header";
+import { resolveBrand } from "../lib/brand";
 import { fetchTokenOverrides } from "../lib/token-overrides";
 
 export const metadata: Metadata = {
@@ -29,18 +29,14 @@ export const metadata: Metadata = {
 export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
-  const stamped = (await headers()).get("x-brand");
-  const brandId: BrandId =
-    stamped !== null && Object.hasOwn(brands, stamped)
-      ? (stamped as BrandId)
-      : DEFAULT_BRAND;
-  const brand = brands[brandId];
+  const brand = await resolveBrand();
+  const Logo = brand.logo;
 
   // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
   // (b)): the app fetches the override DATA (the fixture seam this phase) and
   // passes it as an argument — `brandCss` validates it (zod-guarded before it
   // reaches this sink) and fast-paths to the precomputed baseline when empty.
-  const css = brandCss(brand, fetchTokenOverrides(brandId));
+  const css = brandCss(brand, fetchTokenOverrides(brand.id));
 
   return (
     <html lang="es-MX">
@@ -48,10 +44,11 @@ export default async function RootLayout({
         <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>
       <body className="min-h-dvh bg-canvas text-fg">
-        {/* Shared public header + slide-in nav drawer (brand-token, no brand paint in page code): the
-            hamburger opens the marketing nav, the Entrar link is the always-available account entry
-            point. The drawer's lockup is selected from the brand registry by the proxy-resolved id. */}
-        <PublicHeader brandId={brandId} />
+        {/* Shared public header (brand-token, no brand import in page code): the logo returns home,
+            the Entrar link is the one always-available account entry point the mock's marketing
+            screens carry in their scrhead. It hides itself on the auth routes, where the login
+            hero owns the full viewport. */}
+        <PublicHeader logo={<Logo />} />
         {children}
       </body>
     </html>

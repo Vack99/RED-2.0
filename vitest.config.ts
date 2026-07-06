@@ -83,8 +83,9 @@ export default defineConfig({
         },
       },
       {
-        // apps/client — app-local server helpers (the Turnstile captcha verifier
-        // that guards the contact-form intake). Node env; the helper keeps the
+        // apps/client — the socio's panel: app-local pure logic (auth-form
+        // validation) plus server helpers (the Turnstile captcha verifier that
+        // guards the contact-form intake). Node env; the captcha helper keeps the
         // `import 'server-only'` poison-pill (it holds the captcha secret), stubbed
         // via the same empty module the @gym/data project uses.
         test: {
