@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fechaEnZona, hoyEnZona, hoyIsoEnZona, instanteEnZona } from "./fecha";
+import { fechaEnZona, horaEnZona, hoyEnZona, hoyIsoEnZona, instanteEnZona } from "./fecha";
 
 // Two zones, both currently DST-free per IANA tzdata for 2026 (the 2022 Mexican
 // reform dropped DST everywhere except a narrow US-border strip that excludes
@@ -108,5 +108,32 @@ describe("instanteEnZona", () => {
       const b = instanteEnZona(new Date(2026, 5, 18), "06:00", tz);
       expect(Math.round((b.getTime() - a.getTime()) / 86_400_000)).toBe(1);
     }
+  });
+});
+
+// The read-side sibling of instanteEnZona: an absolute instant (a class_session's
+// starts_at) rendered as the gym-local "HH:MM" wall clock the Agenda card shows.
+describe("horaEnZona", () => {
+  it("renders the wall clock in the gym zone (2026 Chihuahua GMT-6): a midday UTC instant reads 12:00", () => {
+    expect(horaEnZona(new Date("2026-05-20T18:00:00Z"), CHIHUAHUA)).toBe("12:00");
+  });
+
+  it("is the exact read-back of instanteEnZona for a fixed wall clock (both zones)", () => {
+    for (const tz of [CHIHUAHUA, MEXICO_CITY]) {
+      const instante = instanteEnZona(new Date(2026, 5, 17), "08:15", tz);
+      expect(horaEnZona(instante, tz)).toBe("08:15");
+    }
+  });
+
+  it("proves `tz` genuinely changes the result: a pre-2022-reform 1h-offset instant reads DIFFERENT wall clocks", () => {
+    // 2020-07-01T05:30:00Z -> Chihuahua (GMT-6) 23:30 ; Mexico City (GMT-5 DST) 00:30.
+    const instante = new Date("2020-07-01T05:30:00Z");
+    expect(horaEnZona(instante, CHIHUAHUA)).toBe("23:30");
+    expect(horaEnZona(instante, MEXICO_CITY)).toBe("00:30");
+  });
+
+  it("renders local midnight as 00:00, never 24:00", () => {
+    // 2026-05-20T06:00:00Z -> Chihuahua (GMT-6) 2026-05-20 00:00.
+    expect(horaEnZona(new Date("2026-05-20T06:00:00Z"), CHIHUAHUA)).toBe("00:00");
   });
 });

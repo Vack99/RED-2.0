@@ -7,7 +7,9 @@ const TABS: readonly TabItem[] = [
   { href: "/inicio", label: "INICIO", icon: "home" },
   { href: "/clientes", label: "CLIENTES", icon: "users" },
   { href: "/asistencia", label: "ASIST", icon: "check", primary: true },
-  { href: "/vender", label: "+ VENTA", icon: "plus" },
+  // AGENDA takes vender's slot (PRD #36 h); vender stays reachable from the
+  // cliente ficha (RENOVAR) + the INICIO "nuevo cliente" quick action.
+  { href: "/agenda", label: "AGENDA", icon: "cal" },
   { href: "/cuenta", label: "CUENTA", icon: "user" },
 ];
 

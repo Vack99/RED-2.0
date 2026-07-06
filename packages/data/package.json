@@ -10,6 +10,7 @@
     "./server/about-values": "./src/server/about-values.ts",
     "./server/agenda": "./src/server/agenda.ts",
     "./server/asistencia": "./src/server/asistencia.ts",
+    "./server/catalog": "./src/server/catalog.ts",
     "./server/class-type": "./src/server/class-type.ts",
     "./server/clientes": "./src/server/clientes.ts",
     "./server/coach": "./src/server/coach.ts",
