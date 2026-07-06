@@ -3,6 +3,7 @@ import 'server-only'
 import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '../database.types'
 
@@ -42,6 +43,22 @@ export const createClient = cache(async () => {
     },
   )
 })
+
+/**
+ * Cookieless ANON server client for the public marketing reads (ADR-0012 §5, the same posture
+ * `resolveTenant`'s pre-auth lookup uses). It carries NO session, so it is ALWAYS the `anon` role —
+ * independent of whether the visitor happens to be logged in — which is exactly the surface the
+ * decision-(b) anon-SELECT policies gate. Per-gym scoping is the caller's job (`.eq('gym_id', …)`),
+ * since the anon policies are flat (`using (true)`) across gyms. The URL/anon key are identical for
+ * every tenant (ADR-0008), so there is no per-gym secret here. Same `SupabaseServer` shape as the
+ * cookie client, so the DAL's injectable-client seam (ADR-0001) is unchanged.
+ */
+export function createAnonClient(): SupabaseServer {
+  return createSupabaseClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+  )
+}
 
 /**
  * The per-request server client type — `Awaited` because `createClient` is async.

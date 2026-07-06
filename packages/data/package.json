@@ -19,6 +19,7 @@
     "./server/facilities": "./src/server/facilities.ts",
     "./server/faqs": "./src/server/faqs.ts",
     "./server/gym": "./src/server/gym.ts",
+    "./server/marketing": "./src/server/marketing.ts",
     "./server/paquetes": "./src/server/paquetes.ts",
     "./server/perfil": "./src/server/perfil.ts",
     "./server/plantillas": "./src/server/plantillas.ts",

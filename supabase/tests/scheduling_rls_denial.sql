@@ -9,7 +9,8 @@
 --
 -- Vectors proved:
 --   1) staff of gym A: reads all 4 tables + create_class_session RPC lands a session in gym A.
---   2) anon reads 0 rows on all 4 tables (decision b: anon is Phase 6).
+--   2) anon reads class_session/class_session_coach/schedule_template (decision b discharged in #50),
+--      but NOT schedule_template_coach (excluded from the anon set).
 --   3) cross-tenant operator (staff of gym B only): reads 0 of gym A's rows; direct update affects 0;
 --      direct insert denied by with-check; create_class_session referencing gym A's class_type RAISES;
 --      edit/cancel of gym A's session RAISE (RLS scopes the row out → "not found"); delete on gym A's
@@ -74,15 +75,19 @@ begin
   perform set_config('t.session_a',  session_a::text,  true);
 end $$;
 
--- ── anon: reads 0 on all 4 tables ─────────────────────────────────────────────
+-- ── anon: reads the public catalog (decision (b), #50), but NOT the template coach join ───────────
+-- Post-#50 (20260706160000_phase6_anon_catalog_read) anon SELECTs class_session, class_session_coach
+-- and schedule_template — the marketing pages' public surface. schedule_template_coach is deliberately
+-- LEFT OUT of the anon set (PRD #49 names "class sessions +coach join", not the template's coach join),
+-- so it stays invisible to anon. The exhaustive anon allowlist is asserted in anon_catalog_read.sql.
 set local role anon;
 do $$
 declare n int;
 begin
-  select count(*) into n from public.class_session;           if n <> 0 then raise exception 'ANON FAIL: class_session % rows visible', n; end if;
-  select count(*) into n from public.class_session_coach;     if n <> 0 then raise exception 'ANON FAIL: class_session_coach % rows visible', n; end if;
-  select count(*) into n from public.schedule_template;       if n <> 0 then raise exception 'ANON FAIL: schedule_template % rows visible', n; end if;
-  select count(*) into n from public.schedule_template_coach; if n <> 0 then raise exception 'ANON FAIL: schedule_template_coach % rows visible', n; end if;
+  select count(*) into n from public.class_session;           if n < 1 then raise exception 'ANON READ FAIL: class_session % rows (public since #50)', n; end if;
+  select count(*) into n from public.class_session_coach;     if n < 1 then raise exception 'ANON READ FAIL: class_session_coach % rows (public since #50)', n; end if;
+  select count(*) into n from public.schedule_template;       if n < 1 then raise exception 'ANON READ FAIL: schedule_template % rows (public since #50)', n; end if;
+  select count(*) into n from public.schedule_template_coach; if n <> 0 then raise exception 'ANON DENIAL FAIL: schedule_template_coach % rows visible (must stay non-anon)', n; end if;
 end $$;
 reset role;
 

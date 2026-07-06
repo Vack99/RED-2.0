@@ -1,6 +1,6 @@
--- Cross-tenant + anon RLS denial suite for the S0 catalog spine (coach, class_type
--- +children, room) — slice #37 (PRD #36 S0; ADR-0013 curated/showcased class; decision b:
--- no anon read yet).
+-- Cross-tenant + anon RLS suite for the S0 catalog spine (coach, class_type
+-- +children, room) — slice #37 (PRD #36 S0; ADR-0013 curated/showcased class). The anon
+-- vector was flipped to "reads" by slice #50 (decision b discharged — the catalog is public).
 --
 -- Denial-test-FIRST (TDD): recorded RED before the 20260705230121_create_catalog_spine
 -- migration creates these tables/policies (fails with "relation does not exist"), GREEN
@@ -14,7 +14,7 @@
 --      every write attempt against gym A's rows affects 0 rows (update AND insert denied).
 --   3) a gym-A MEMBER (is_member_of, no staff role) reads gym A's catalog but every write
 --      attempt affects 0 rows (curated class: members never write).
---   4) anon reads 0 rows on all 5 tables (decision b: anon is deferred to Phase 6).
+--   4) anon reads all 5 tables (decision b discharged in #50 — the catalog is public).
 --
 -- HOW TO RUN: node supabase/tests/run-denial-suite.mjs (SUPABASE_TARGET_REF override), or
 -- ad hoc via the Supabase MCP execute_sql.
@@ -65,16 +65,19 @@ begin
   perform set_config('t.class_type_a', ct_a::text,       true);
 end $$;
 
--- ── anon: reads 0 on all 5 tables ─────────────────────────────────────────────
+-- ── anon: reads all 5 tables (decision (b) discharged in #50 — the catalog is public) ─────────────
+-- Post-#50 (20260706160000_phase6_anon_catalog_read) the showcased catalog is anon-readable; the
+-- marketing pages consume exactly these tables. The exhaustive anon allowlist lives in
+-- anon_catalog_read.sql — here we assert the five S0 tables flipped from 0 to visible.
 set local role anon;
 do $$
 declare n int;
 begin
-  select count(*) into n from public.coach;                   if n <> 0 then raise exception 'ANON FAIL: coach % rows visible', n; end if;
-  select count(*) into n from public.class_type;              if n <> 0 then raise exception 'ANON FAIL: class_type % rows visible', n; end if;
-  select count(*) into n from public.class_type_workblock;    if n <> 0 then raise exception 'ANON FAIL: class_type_workblock % rows visible', n; end if;
-  select count(*) into n from public.class_type_bring_item;   if n <> 0 then raise exception 'ANON FAIL: class_type_bring_item % rows visible', n; end if;
-  select count(*) into n from public.room;                    if n <> 0 then raise exception 'ANON FAIL: room % rows visible', n; end if;
+  select count(*) into n from public.coach;                   if n < 1 then raise exception 'ANON READ FAIL: coach % rows (public since #50)', n; end if;
+  select count(*) into n from public.class_type;              if n < 1 then raise exception 'ANON READ FAIL: class_type % rows (public since #50)', n; end if;
+  select count(*) into n from public.class_type_workblock;    if n < 1 then raise exception 'ANON READ FAIL: class_type_workblock % rows (public since #50)', n; end if;
+  select count(*) into n from public.class_type_bring_item;   if n < 1 then raise exception 'ANON READ FAIL: class_type_bring_item % rows (public since #50)', n; end if;
+  select count(*) into n from public.room;                    if n < 1 then raise exception 'ANON READ FAIL: room % rows (public since #50)', n; end if;
 end $$;
 reset role;
 

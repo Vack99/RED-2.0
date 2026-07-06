@@ -5,8 +5,8 @@
 --
 -- Proves, for all four tables: staff of gym A (is_staff_of) can read/write/delete their own gym's
 -- rows; an authenticated member of gym A (is_member_of, non-staff) can read but never write; staff of
--- a DIFFERENT gym B is denied every read/write/delete path into gym A's rows; and anon is denied reads
--- entirely (decision b — anon-read is deferred to Phase 6, not granted here).
+-- a DIFFERENT gym B is denied every read/write/delete path into gym A's rows; and anon READS all four
+-- tables (decision b discharged in #50 — the gym content is public marketing surface).
 --
 -- Self-asserting: every check RAISEs on failure; a clean run returns one 'OK' row. Zero hardcoded prod
 -- UUIDs (ADR-0013 §5): gym A/B are looked up by slug from the spine seeds (forge/red); every auth user
@@ -168,20 +168,22 @@ begin
 end $$;
 reset role;
 
--- ── anon: denied every read (decision b — anon-read defers to Phase 6, not granted here) ──────────
+-- ── anon: reads all four gym-content tables (decision (b) discharged in #50 — content is public) ──
+-- Post-#50 (20260706160000_phase6_anon_catalog_read) the marketing pages render gym content anonymously.
+-- The staff-delete earlier in this suite removed the seeded faq row, so anon expects 0 faqs but >=1 of
+-- the others (about_value/facility survive; stat gained a staff-inserted row). The exhaustive anon
+-- allowlist is asserted in anon_catalog_read.sql.
 reset role;
 set local role anon;
 do $$
 declare n int;
 begin
   select count(*) into n from public.about_value;
-  if n <> 0 then raise exception 'DENIAL FAIL: anon reads % about_value rows (anon-read must defer to Phase 6)', n; end if;
+  if n < 1 then raise exception 'ANON READ FAIL: anon reads % about_value rows (public since #50)', n; end if;
   select count(*) into n from public.facility;
-  if n <> 0 then raise exception 'DENIAL FAIL: anon reads % facility rows', n; end if;
+  if n < 1 then raise exception 'ANON READ FAIL: anon reads % facility rows (public since #50)', n; end if;
   select count(*) into n from public.stat;
-  if n <> 0 then raise exception 'DENIAL FAIL: anon reads % stat rows', n; end if;
-  select count(*) into n from public.faq;
-  if n <> 0 then raise exception 'DENIAL FAIL: anon reads % faq rows', n; end if;
+  if n < 1 then raise exception 'ANON READ FAIL: anon reads % stat rows (public since #50)', n; end if;
 end $$;
 reset role;
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import Link from "next/link";
 
 import { brandCss, brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
 
@@ -45,9 +46,20 @@ export default async function RootLayout({
       <head>
         <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>
-      <body>
-        <header style={{ padding: "16px 20px", borderBottom: "1px solid var(--line)" }}>
-          <Logo />
+      <body className="min-h-dvh bg-canvas text-fg">
+        {/* Shared public header (brand-token, no brand import in page code): the logo returns home,
+            the Entrar link is the one always-available account entry point the mock's marketing
+            screens carry in their scrhead. */}
+        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-canvas/90 px-5 py-4 backdrop-blur">
+          <Link href="/" aria-label="Inicio" className="inline-flex items-center">
+            <Logo />
+          </Link>
+          <Link
+            href="/entrar"
+            className="rounded-full px-4 py-2 text-sm font-semibold text-fg hover:text-accent"
+          >
+            Entrar
+          </Link>
         </header>
         {children}
       </body>
