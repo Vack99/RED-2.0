@@ -134,6 +134,7 @@ describe("marketing DAL — public anon reads", () => {
     expect(planes).toEqual([
       {
         id: "p1",
+        nombre: "8 clases",
         name: "Ocho clases",
         subtitle: "El plan estándar",
         precio: 700,
@@ -144,6 +145,7 @@ describe("marketing DAL — public anon reads", () => {
       },
       {
         id: "p2",
+        nombre: "Ilimitado",
         name: "Ilimitado", // falls back to the grant-derived nombre when marketing name is null
         subtitle: null,
         precio: 1400,

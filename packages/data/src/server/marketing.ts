@@ -49,6 +49,9 @@ export const getMarketingGym = cache(
  *  `name` falls back to the grant-derived `nombre` when the operator has not set a marketing name. */
 export interface PlanPublicoDTO {
   id: string;
+  /** Grant-derived label ("8 clases" / "Ilimitado") — the plan's stable per-gym identity (unique). The
+   *  member membresía surface marks its current plan by matching this against clientes.paquete_nombre. */
+  nombre: string;
   name: string;
   subtitle: string | null;
   precio: number;
@@ -59,7 +62,9 @@ export interface PlanPublicoDTO {
 }
 
 /** A gym's public plan catalog in display order: paquetes (marketing surface) enriched with each plan's
- *  ordered feature list (one extra query, grouped in memory — no N+1). Anon + gym-scoped. Best-effort:
+ *  ordered feature list (one extra query, grouped in memory — no N+1). Anon + gym-scoped. Also readable
+ *  with an injected MEMBER session (the perfil's "Cambiar plan" list, slice #61) — the member policies
+ *  (paquetes_/plan_feature_member_select) scope the same query to their own gym. Best-effort:
  *  returns [] when the read fails (error is not destructured). Memoized per request. */
 export const getPlanesPublicos = cache(
   async (
@@ -92,6 +97,7 @@ export const getPlanesPublicos = cache(
 
     return rows.map((p) => ({
       id: p.id,
+      nombre: p.nombre,
       name: p.name ?? p.nombre,
       subtitle: p.subtitle,
       precio: p.precio,

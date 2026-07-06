@@ -514,6 +514,8 @@ export function ReservarSemana({
         reservas={perfil.reservas}
         notificaciones={perfil.notificaciones}
         marca={perfil.marca}
+        membresia={perfil.membresia}
+        planes={perfil.planes}
       />
     </main>
   );

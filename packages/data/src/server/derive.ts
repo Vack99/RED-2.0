@@ -313,3 +313,85 @@ export function shapeFicha(
     mensajes,
   };
 }
+
+// ── Membresía (member plan card) derivation ────────────────────────
+// The client app's plan card (slice #61) funnels the `mi_membresia()` RPC's RLS-privileged SCALARS
+// through the SAME pure sub-helpers the admin ficha's shapeFicha uses (forfeit / clasesDenom / gaugeFill),
+// so the member's "N de N clases" gauge equals the admin ficha's for the same client — ONE derivation
+// home. Contract-A is preserved by construction: no raw ventas/asistencias arrays reach this layer, only
+// the anchor monto/vigencia display fields + the attendedSincePurchase count the RPC already computed.
+// The gauge inherits the separately-tracked consume-at-booking skew (#57/#60) BY DESIGN — parity with the
+// admin ficha is the criterion, not a "fix" here.
+
+/** The scalars `mi_membresia()` returns — the RLS-privileged anchor fields + the entitlement pass-throughs. */
+export interface MembresiaFacts {
+  paqueteNombre: string | null;
+  clasesRestantes: number | null; // NULL = ilimitado
+  vence: string | null; // 'YYYY-MM-DD'
+  anchorMonto: number | null; // NULL = no anchor sale (no bar, no price)
+  anchorVigenciaTipo: string | null; // 'mes' | 'dias'
+  anchorVigenciaDias: number | null;
+  attendedSincePurchase: number;
+}
+
+/** The plan card's clases depletion gauge — the SAME shape/meaning as shapeFicha's ClasesGauge, plus the
+ *  `total`/`restantes` the card's "N de N" caption renders. */
+export interface MembresiaGauge {
+  usadas: number; // classes consumed since the anchor purchase
+  total: number; // the balance granted at that purchase (usadas + restantes)
+  restantes: number; // classes left now
+  fill: number; // 0–1 bar fill (restantes / total, clamped)
+}
+
+export interface MembresiaDerivada {
+  planNombre: string; // "8 clases" / "Ilimitado" / "Sin plan"
+  ilimitado: boolean; // no finite count (∞) — the card hides the gauge
+  clasesRestLabel: string; // "∞" / "5" / "0"
+  precioDisplay: string | null; // "$800" — the anchor sale's monto; null when no anchor
+  cadenciaLabel: string | null; // "al mes" / "30 días"; null when no anchor
+  renovacionDisplay: string | null; // "16 jun"; null when no vence
+  gauge: MembresiaGauge | null; // null = ilimitado or no anchor (no bar)
+}
+
+/**
+ * Shape the plan card from the RPC scalars. PURE — `hoy` is passed in (gym-local). Mirrors
+ * derivarCliente's read-time forfeit and shapeFicha's clasesGauge construction EXACTLY, so the number the
+ * member sees equals the admin ficha's for the same client.
+ */
+export function derivarMembresia(m: MembresiaFacts, hoy: Date): MembresiaDerivada {
+  const venceDate = m.vence ? parseDay(m.vence) : null;
+  const diasRest = venceDate ? diasRestantes(venceDate, hoy) : 0;
+  const tienePaquete = !!m.paqueteNombre && m.vence !== null;
+
+  // Read-time forfeit (IDENTICAL to derivarCliente): an expired finite plan shows 0; ilimitado untouched.
+  const clasesBase: Clases = m.clasesRestantes === null ? "ilimitado" : m.clasesRestantes;
+  const clasesRest: Clases = tienePaquete ? forfeit(clasesBase, diasRest) : 0;
+  const ilimitado = clasesRest === "ilimitado";
+  const hasAnchor = m.anchorMonto !== null;
+
+  // Clases depletion gauge — the SAME guard + math as shapeFicha.clasesGauge: hidden (null) for ilimitado
+  // (no decrement ever) or when there is no anchor sale (nothing to divide by).
+  const gauge: MembresiaGauge | null =
+    hasAnchor && clasesRest !== "ilimitado"
+      ? {
+          usadas: m.attendedSincePurchase,
+          total: clasesDenom(clasesRest, m.attendedSincePurchase),
+          restantes: clasesRest,
+          fill: gaugeFill(clasesRest, clasesDenom(clasesRest, m.attendedSincePurchase)),
+        }
+      : null;
+
+  return {
+    planNombre: m.paqueteNombre ?? "Sin plan",
+    ilimitado,
+    clasesRestLabel: ilimitado ? "∞" : String(clasesRest),
+    precioDisplay: hasAnchor ? pesos(m.anchorMonto) : null,
+    cadenciaLabel: hasAnchor
+      ? m.anchorVigenciaTipo === "mes"
+        ? "al mes"
+        : `${m.anchorVigenciaDias} días`
+      : null,
+    renovacionDisplay: venceDate ? fmtShort(venceDate) : null,
+    gauge,
+  };
+}

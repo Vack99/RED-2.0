@@ -49,6 +49,7 @@ const SUITE = [
   'favorito_rules.sql',
   'roster_clase_rules.sql',
   'notificaciones_toggle.sql',
+  'mi_membresia_rules.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;

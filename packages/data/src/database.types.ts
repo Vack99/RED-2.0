@@ -1398,6 +1398,19 @@ export type Database = {
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
+      mi_membresia: {
+        Args: never
+        Returns: {
+          anchor_dia: string
+          anchor_monto: number
+          anchor_vigencia_dias: number
+          anchor_vigencia_tipo: string
+          attended_since_purchase: number
+          clases_restantes: number
+          paquete_nombre: string
+          vence: string
+        }[]
+      }
       next_folio: { Args: { p_gym: string }; Returns: number }
       pasar_lista_sesion: {
         Args: { p_cliente_id: string; p_session_id: string }

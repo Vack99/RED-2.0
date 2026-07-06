@@ -15,11 +15,16 @@ import {
   MON,
   MONTHS_FULL,
   parseDay,
+  pesos,
   sameDay,
   semanaLunSab,
   toIsoDay,
 } from "@gym/format";
 
+import { derivarMembresia, type MembresiaDerivada } from "./derive";
+import { getPlanesPublicos } from "./marketing";
+
+export type { MembresiaDerivada } from "./derive";
 import { contarActivos } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
 
@@ -110,7 +115,9 @@ interface SesionMiembroRaw {
  *  caller reads none, so the reader throws and the page renders its signed-out state.
  *  `marca` (gym.brand_name) is the brand-neutral display name the perfil footer renders
  *  from real data — never a hardcoded brand string. */
-async function resolverMiembroGym(supabase: SupabaseServer): Promise<{ tz: string; marca: string }> {
+async function resolverMiembroGym(
+  supabase: SupabaseServer,
+): Promise<{ id: string; tz: string; marca: string }> {
   const { data: membership } = await supabase
     .from("gym_membership")
     .select("gym_id")
@@ -125,7 +132,7 @@ async function resolverMiembroGym(supabase: SupabaseServer): Promise<{ tz: strin
     .maybeSingle();
   if (!gym) throw new Error("Gimnasio no encontrado");
 
-  return { tz: gym.timezone, marca: gym.brand_name };
+  return { id: membership.gym_id, tz: gym.timezone, marca: gym.brand_name };
 }
 
 /** Non-cancelled sessions in `[low, high)` (an absolute UTC range), joined to
@@ -341,6 +348,20 @@ export interface ProximaReservaDTO {
  * their own clientes row through the existing member SELECT policy — a preference only,
  * no delivery channel. `marca` is the gym's brand display name for the perfil footer.
  */
+/** One plan as the perfil's "Cambiar plan" list renders it (slice #61): the public marketing surface a
+ *  member reads through their own session, plus `current` (this is the member's active plan). `precioLabel`
+ *  is formatted server-side so the client island imports no format helper. */
+export interface PlanMembresiaDTO {
+  id: string;
+  name: string;
+  subtitle: string | null;
+  precioLabel: string;
+  cadence: string | null;
+  badge: string | null;
+  popular: boolean;
+  current: boolean;
+}
+
 export interface PerfilResumenMiembroDTO {
   desde: string | null;
   reservas: ProximaReservaDTO[];
@@ -348,12 +369,46 @@ export interface PerfilResumenMiembroDTO {
   notificaciones: boolean;
   /** Brand display name (gym.brand_name) for the perfil footer — real data, brand-neutral. */
   marca: string;
+  /** The signed-in member's plan card (slice #61): plan name, price, the "N de N clases" depletion gauge,
+   *  renovación date, ∞ for ilimitado — derived from the RLS-privileged `mi_membresia()` scalars. null when
+   *  the caller has no cliente row. */
+  membresia: MembresiaDerivada | null;
+  /** The gym's real plan catalog for the "Cambiar plan" mode, current plan marked. */
+  planes: PlanMembresiaDTO[];
+}
+
+/** The signed-in member's plan card, derived from the `mi_membresia()` RPC's RLS-privileged scalars
+ *  (Contract-A: raw ventas/asistencias never reach here — the RPC returns only the anchor monto/vigencia/
+ *  day + the attendedSincePurchase count). Funnelled through the pure derive.ts sub-helpers so the number
+ *  equals the admin ficha's. null when the caller has no cliente row. `paqueteNombre` also feeds the
+ *  current-plan marking below. */
+async function fetchMembresia(
+  supabase: SupabaseServer,
+  tz: string,
+): Promise<{ membresia: MembresiaDerivada | null; paqueteNombre: string | null }> {
+  const { data, error } = await supabase.rpc("mi_membresia");
+  if (error) throw error;
+  const row = data?.[0];
+  if (!row) return { membresia: null, paqueteNombre: null };
+  const membresia = derivarMembresia(
+    {
+      paqueteNombre: row.paquete_nombre,
+      clasesRestantes: row.clases_restantes,
+      vence: row.vence,
+      anchorMonto: row.anchor_monto,
+      anchorVigenciaTipo: row.anchor_vigencia_tipo,
+      anchorVigenciaDias: row.anchor_vigencia_dias,
+      attendedSincePurchase: row.attended_since_purchase,
+    },
+    hoyEnZona(tz),
+  );
+  return { membresia, paqueteNombre: row.paquete_nombre };
 }
 
 export const getPerfilResumenMiembro = cache(
   async (client?: SupabaseServer): Promise<PerfilResumenMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const { tz, marca } = await resolverMiembroGym(supabase);
+    const { id: gymId, tz, marca } = await resolverMiembroGym(supabase);
 
     const { data: cli } = await supabase
       .from("clientes")
@@ -367,11 +422,33 @@ export const getPerfilResumenMiembro = cache(
         })()
       : null;
 
+    const [reservas, { membresia, paqueteNombre }, catalogo] = await Promise.all([
+      fetchProximasReservas(supabase, tz),
+      fetchMembresia(supabase, tz),
+      // The member reads their own gym's catalog through their session (paquetes_/plan_feature_member_
+      // _select, is_member_of); the anon reader is reused with the member client + their gym id.
+      getPlanesPublicos(gymId, supabase),
+    ]);
+
+    // Mark the member's active plan by its unique per-gym grant label (clientes.paquete_nombre).
+    const planes: PlanMembresiaDTO[] = catalogo.map((p) => ({
+      id: p.id,
+      name: p.name,
+      subtitle: p.subtitle,
+      precioLabel: pesos(p.precio),
+      cadence: p.cadence,
+      badge: p.badge,
+      popular: p.popular,
+      current: paqueteNombre !== null && p.nombre === paqueteNombre,
+    }));
+
     return {
       desde,
-      reservas: await fetchProximasReservas(supabase, tz),
+      reservas,
       notificaciones: cli?.notificaciones_activadas ?? true,
       marca,
+      membresia,
+      planes,
     };
   },
 );

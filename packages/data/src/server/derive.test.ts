@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   clasesDenom,
   derivarCliente,
+  derivarMembresia,
   derivarPaseCliente,
   diasDenom,
   gaugeFill,
@@ -11,6 +12,7 @@ import {
   type FichaAsistRow,
   type FichaClienteRow,
   type FichaVentaRow,
+  type MembresiaFacts,
 } from "./derive";
 
 // Fixed "today" so the derivation is deterministic (months are 0-based).
@@ -385,5 +387,97 @@ describe("shapeFicha gauges", () => {
       0,
     );
     expect(f.diasGauge!.fill).toBe(0);
+  });
+});
+
+describe("derivarMembresia", () => {
+  const HOY_ISO = "2026-05-27";
+  const clienteRow: FichaClienteRow = {
+    id: "c1",
+    nombre: "Andrea Castro",
+    tel: "614 218 3401",
+    paquete_nombre: "8 clases",
+    clases_restantes: 5,
+    vence: "2026-06-16",
+    created_at: "2026-04-10T18:00:00Z",
+  };
+  const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
+    fecha: "2026-05-17T18:00:00Z",
+    paquete_nombre: "8 clases",
+    monto: 800,
+    metodo: "efectivo",
+    clases: 8,
+    vigencia_tipo: "dias",
+    vigencia_dias: 30,
+    ...over,
+  });
+  const mFacts = (over: Partial<MembresiaFacts> = {}): MembresiaFacts => ({
+    paqueteNombre: "8 clases",
+    clasesRestantes: 5,
+    vence: "2026-06-16",
+    anchorMonto: 800,
+    anchorVigenciaTipo: "dias",
+    anchorVigenciaDias: 30,
+    attendedSincePurchase: 0,
+    ...over,
+  });
+
+  // The load-bearing proof: fed the SAME scalars, derivarMembresia's gauge equals shapeFicha's
+  // clasesGauge — the client plan card and the admin ficha are ONE derivation.
+  it("gauge equals shapeFicha.clasesGauge for the same client (partially drained)", () => {
+    const row = { ...clienteRow, clases_restantes: 3 };
+    const ficha = shapeFicha(row, [], [venta()], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 5);
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 3, attendedSincePurchase: 5 }), HOY);
+    expect(mem.gauge).not.toBeNull();
+    expect(mem.gauge!.fill).toBeCloseTo(ficha.clasesGauge!.fill);
+    expect(mem.gauge!.usadas).toBe(ficha.clasesGauge!.usadas);
+    expect(mem.gauge!.fill).toBeCloseTo(3 / 8);
+    expect(mem.gauge!.total).toBe(8);
+    expect(mem.gauge!.restantes).toBe(3);
+  });
+
+  it("stacked balance: clasesRest 23 + usadas 1 → fill 23/24, matching the ficha", () => {
+    const row = { ...clienteRow, clases_restantes: 23 };
+    const ficha = shapeFicha(row, [], [venta()], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 1);
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 23, attendedSincePurchase: 1 }), HOY);
+    expect(mem.gauge!.fill).toBeCloseTo(ficha.clasesGauge!.fill);
+    expect(mem.gauge!.fill).toBeCloseTo(23 / 24);
+  });
+
+  it("expired/forfeited finite plan → clasesRest 0, empty bar (matches read-time forfeit)", () => {
+    // vence in the past → forfeit to 0, exactly as derivarCliente/shapeFicha.
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 5, vence: "2026-05-20", attendedSincePurchase: 8 }), HOY);
+    expect(mem.clasesRestLabel).toBe("0");
+    expect(mem.gauge!.fill).toBe(0);
+    expect(mem.gauge!.usadas).toBe(8);
+  });
+
+  it("ilimitado (clases_restantes NULL) → ∞, gauge hidden, cadence 'al mes'", () => {
+    const mem = derivarMembresia(
+      mFacts({ clasesRestantes: null, anchorVigenciaTipo: "mes", anchorVigenciaDias: null }),
+      HOY,
+    );
+    expect(mem.ilimitado).toBe(true);
+    expect(mem.clasesRestLabel).toBe("∞");
+    expect(mem.gauge).toBeNull();
+    expect(mem.cadenciaLabel).toBe("al mes");
+  });
+
+  it("no anchor sale → no bar, no price, no cadence (still shows plan + renovación)", () => {
+    const mem = derivarMembresia(
+      mFacts({ anchorMonto: null, anchorVigenciaTipo: null, anchorVigenciaDias: null }),
+      HOY,
+    );
+    expect(mem.gauge).toBeNull();
+    expect(mem.precioDisplay).toBeNull();
+    expect(mem.cadenciaLabel).toBeNull();
+    expect(mem.planNombre).toBe("8 clases");
+    expect(mem.renovacionDisplay).toBe("16 jun");
+  });
+
+  it("finite cadence renders the días window; price is the anchor monto", () => {
+    const mem = derivarMembresia(mFacts({ anchorMonto: 800, anchorVigenciaTipo: "dias", anchorVigenciaDias: 20 }), HOY);
+    expect(mem.precioDisplay).toBe("$800");
+    expect(mem.cadenciaLabel).toBe("20 días");
   });
 });

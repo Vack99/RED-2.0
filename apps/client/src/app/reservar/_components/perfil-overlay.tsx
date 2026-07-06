@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { createClient } from "@gym/data/client";
-import type { ProximaReservaDTO } from "@gym/data/server/agenda-miembro";
+import type {
+  MembresiaDerivada,
+  PlanMembresiaDTO,
+  ProximaReservaDTO,
+} from "@gym/data/server/agenda-miembro";
 
 import { buildIcs } from "../../../lib/ics";
 import { cancelarReservaAction, setNotificacionesAction } from "../actions";
@@ -259,6 +263,123 @@ function ConfirmSheet({
   );
 }
 
+/** The "Tu plan" card (mock: mb-card): plan name, the anchor-sale price, the "N de N clases" depletion
+ *  gauge (∞ + a full bar for ilimitado; hidden when there is no anchor sale), and the renovación date.
+ *  Read-only — every number is server-derived; the only action opens the change-plan mode. */
+function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void }) {
+  const barWidth = m.ilimitado ? "100%" : `${Math.round((m.gauge?.fill ?? 0) * 100)}%`;
+  return (
+    <section className="mt-7">
+      <div className="rounded-2xl border border-line bg-surface p-5">
+        <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Tu plan</div>
+        <div className="mt-2 text-2xl font-extrabold tracking-tight text-fg">{m.planNombre}</div>
+        {m.precioDisplay && (
+          <div className="mt-1 text-xs text-accent">
+            {m.precioDisplay}
+            {m.cadenciaLabel && <span className="text-muted"> · {m.cadenciaLabel}</span>}
+          </div>
+        )}
+
+        <div className="mt-5">
+          <div className="flex items-baseline justify-between">
+            {m.ilimitado ? (
+              <span className="text-[13px] text-fg">
+                <b className="font-bold text-accent">Ilimitado</b> · sin límite este mes
+              </span>
+            ) : m.gauge ? (
+              <span className="text-[13px] text-fg">
+                <b className="font-bold text-accent">{m.gauge.usadas}</b> de {m.gauge.total} clases este mes
+              </span>
+            ) : (
+              <span className="text-[13px] text-fg">
+                <b className="font-bold text-accent">{m.clasesRestLabel}</b> clases restantes
+              </span>
+            )}
+            {m.ilimitado ? (
+              <span className="text-[10px] uppercase tracking-wide text-muted">activo</span>
+            ) : (
+              m.gauge && (
+                <span className="text-[10px] uppercase tracking-wide text-muted">{m.gauge.restantes} restantes</span>
+              )
+            )}
+          </div>
+          {/* The depletion bar only renders when there is a denominator (ilimitado = full; a gauge = fill).
+              A finite plan with no anchor sale shows just the count above. */}
+          {(m.ilimitado || m.gauge) && (
+            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-sunk">
+              <div className="h-full rounded-full bg-accent" style={{ width: barWidth }} />
+            </div>
+          )}
+        </div>
+
+        {m.renovacionDisplay && (
+          <div className="mt-3 text-[11px] text-muted">
+            Renueva el <b className="font-semibold text-accent">{m.renovacionDisplay}</b>
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={onChange}
+          className="mt-5 w-full rounded-xl border border-line py-3 text-[10px] font-bold uppercase tracking-wider text-muted"
+        >
+          Cambiar plan
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** One row in the "Cambiar plan" list (mock: mb-plan): the marketing name, price, cadence, and subtitle,
+ *  with the member's current plan marked and disabled. "Elegir" opens the paga-en-tu-gym confirm — the
+ *  client app NEVER writes balance or catalog, so there is no instant swap (the mock's is mock-only). */
+function PlanRow({ p, onPick }: { p: PlanMembresiaDTO; onPick: () => void }) {
+  const hi = p.popular && !p.current;
+  const badge = p.current ? "Tu plan actual" : hi ? (p.badge ?? "Más popular") : null;
+  return (
+    <div
+      className={`relative mb-3.5 rounded-2xl border bg-surface p-[18px] ${
+        hi ? "border-accent" : "border-line"
+      }`}
+    >
+      {badge && (
+        <span
+          className={`absolute -top-2 left-4 px-2 py-0.5 text-[8.5px] font-bold uppercase tracking-wide ${
+            p.current ? "bg-sunk text-muted" : "bg-accent text-white"
+          }`}
+        >
+          {badge}
+        </span>
+      )}
+      <div className="flex items-baseline justify-between">
+        <span className={`text-base font-bold ${hi ? "text-accent" : "text-fg"}`}>{p.name}</span>
+        <span className="text-[22px] font-extrabold tabular-nums text-fg">{p.precioLabel}</span>
+      </div>
+      {p.cadence && <div className="mt-0.5 text-[10.5px] text-muted">{p.cadence}</div>}
+      {p.subtitle && <div className="mt-2 text-[11.5px] leading-snug text-muted">{p.subtitle}</div>}
+      {p.current ? (
+        <button
+          type="button"
+          disabled
+          className="mt-3.5 w-full rounded-lg border border-line py-3 text-[10px] font-bold uppercase tracking-wider text-muted-soft"
+        >
+          Plan actual
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onPick}
+          className={`mt-3.5 w-full rounded-lg py-3 text-[10px] font-bold uppercase tracking-wider ${
+            hi ? "bg-accent text-white" : "border border-line text-fg"
+          }`}
+        >
+          Elegir
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function PerfilOverlay({
   open,
   onClose,
@@ -268,6 +389,8 @@ export function PerfilOverlay({
   reservas,
   notificaciones,
   marca,
+  membresia,
+  planes,
 }: {
   open: boolean;
   onClose: () => void;
@@ -277,8 +400,14 @@ export function PerfilOverlay({
   reservas: ProximaReservaDTO[];
   notificaciones: boolean;
   marca: string;
+  membresia: MembresiaDerivada | null;
+  planes: PlanMembresiaDTO[];
 }) {
   const [shown, setShown] = useState(false);
+  // The overlay's sub-view: the hub, or the "Cambiar plan" catalog list (the mock's data-pmode).
+  const [mode, setMode] = useState<"hub" | "plans">("hub");
+  // The plan the socio tapped "Elegir" on — drives the paga-en-tu-gym confirm sheet (no write).
+  const [picked, setPicked] = useState<PlanMembresiaDTO | null>(null);
   const [confirm, setConfirm] = useState<ProximaReservaDTO | null>(null);
   const [logout, setLogout] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
@@ -307,6 +436,8 @@ export function PerfilOverlay({
     setLogout(false);
     setLogoutError(null);
     setError(null);
+    setMode("hub");
+    setPicked(null);
     onClose();
   }
 
@@ -374,53 +505,82 @@ export function PerfilOverlay({
         </header>
 
         <div className="flex-1 overflow-y-auto px-6 pb-8 pt-2">
-          <div className="flex items-center gap-4 py-1.5">
-            <span className="flex h-14 w-14 flex-none items-center justify-center rounded-full border border-line bg-surface text-sm font-bold text-accent">
-              {iniciales}
-            </span>
-            <div className="min-w-0">
-              <div className="truncate text-[22px] font-extrabold tracking-tight text-fg">{nombre}</div>
-              {desde && <div className="mt-1 text-[10px] uppercase tracking-wide text-muted">Miembro desde {desde}</div>}
+          {mode === "plans" ? (
+            <div>
+              <button
+                type="button"
+                onClick={() => { setMode("hub"); setPicked(null); }}
+                className="mb-4 inline-flex items-center gap-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted"
+              >
+                {backArrow}
+                Volver a mi perfil
+              </button>
+              <div className="mb-3.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Cambiar plan</div>
+              {planes.length > 0 ? (
+                planes.map((p) => <PlanRow key={p.id} p={p} onPick={() => setPicked(p)} />)
+              ) : (
+                <p className="text-xs leading-relaxed text-muted">
+                  Aún no hay planes publicados. Pregunta en recepción por las opciones disponibles.
+                </p>
+              )}
+              <p className="mt-4 text-[11px] leading-relaxed text-muted-soft">
+                Los pagos se gestionan directamente en tu gimnasio. Al elegir un plan te explicamos cómo
+                completarlo en recepción.
+              </p>
             </div>
-          </div>
+          ) : (
+            <>
+              <div className="flex items-center gap-4 py-1.5">
+                <span className="flex h-14 w-14 flex-none items-center justify-center rounded-full border border-line bg-surface text-sm font-bold text-accent">
+                  {iniciales}
+                </span>
+                <div className="min-w-0">
+                  <div className="truncate text-[22px] font-extrabold tracking-tight text-fg">{nombre}</div>
+                  {desde && <div className="mt-1 text-[10px] uppercase tracking-wide text-muted">Miembro desde {desde}</div>}
+                </div>
+              </div>
 
-          <section className="mt-7">
-            <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Próximas reservas</div>
-            {reservas.length > 0 ? (
-              reservas.map((r) => (
-                <ReservaCard
-                  key={r.sessionId}
-                  r={r}
-                  onCancel={() => { setError(null); setConfirm(r); }}
-                  onOpen={onClose}
+              {membresia && <PlanCard m={membresia} onChange={() => setMode("plans")} />}
+
+              <section className="mt-7">
+                <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Próximas reservas</div>
+                {reservas.length > 0 ? (
+                  reservas.map((r) => (
+                    <ReservaCard
+                      key={r.sessionId}
+                      r={r}
+                      onCancel={() => { setError(null); setConfirm(r); }}
+                      onOpen={onClose}
+                    />
+                  ))
+                ) : (
+                  <EmptyReservas onReservar={close} />
+                )}
+              </section>
+
+              <section className="mt-8">
+                <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Cuenta</div>
+                <Row label="Notificaciones" trailing={<Toggle on={notif} onToggle={toggleNotif} disabled={pending} />} />
+                <Row
+                  label="Términos y privacidad"
+                  trailing={<span className="text-muted-soft">{chevron}</span>}
+                  href="/legal"
+                  onClick={close}
                 />
-              ))
-            ) : (
-              <EmptyReservas onReservar={close} />
-            )}
-          </section>
+                <Row
+                  label="Ayuda y contacto"
+                  trailing={<span className="text-muted-soft">{chevron}</span>}
+                  href="/contacto"
+                  onClick={close}
+                />
+                <Row label="Cerrar sesión" danger onClick={() => { setLogoutError(null); setLogout(true); }} />
+              </section>
 
-          <section className="mt-8">
-            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Cuenta</div>
-            <Row label="Notificaciones" trailing={<Toggle on={notif} onToggle={toggleNotif} disabled={pending} />} />
-            <Row
-              label="Términos y privacidad"
-              trailing={<span className="text-muted-soft">{chevron}</span>}
-              href="/legal"
-              onClick={close}
-            />
-            <Row
-              label="Ayuda y contacto"
-              trailing={<span className="text-muted-soft">{chevron}</span>}
-              href="/contacto"
-              onClick={close}
-            />
-            <Row label="Cerrar sesión" danger onClick={() => { setLogoutError(null); setLogout(true); }} />
-          </section>
-
-          <footer className="mt-8 text-center">
-            <div className="text-[9px] uppercase tracking-[0.16em] text-muted-soft">{marca} App v1.0</div>
-          </footer>
+              <footer className="mt-8 text-center">
+                <div className="text-[9px] uppercase tracking-[0.16em] text-muted-soft">{marca} App v1.0</div>
+              </footer>
+            </>
+          )}
         </div>
 
         {confirm && (
@@ -447,6 +607,19 @@ export function PerfilOverlay({
             pending={logoutPending}
             onCancel={() => { setLogout(false); setLogoutError(null); }}
             onConfirm={cerrarSesion}
+          />
+        )}
+
+        {picked && (
+          <ConfirmSheet
+            title={`Cambiar a ${picked.name}`}
+            body={`Los pagos se realizan directamente en tu gimnasio. Pasa a recepción para activar ${picked.name} (${picked.precioLabel}); el equipo lo aplica al confirmar tu pago. No se cobra nada desde la app.`}
+            error={null}
+            cancelLabel="Cancelar"
+            confirmLabel="Entendido"
+            pending={false}
+            onCancel={() => setPicked(null)}
+            onConfirm={() => setPicked(null)}
           />
         )}
       </div>
