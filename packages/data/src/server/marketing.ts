@@ -103,6 +103,101 @@ export const getPlanesPublicos = cache(
   },
 );
 
+/** One weekday's opening hours as the Contacto page renders them. `closed` days carry null open/close
+ *  times (the row shows "Cerrado"); open days carry the "HH:MM" strings the operator stored. */
+export interface HorarioDTO {
+  day: string;
+  opens: string | null;
+  closes: string | null;
+  closed: boolean;
+}
+
+/** A gym's public contact details (address + map pin + direct channels + weekly hours) as the Contacto
+ *  page consumes them. Every field is nullable — a gym with partial contact info renders empty states.
+ *  `latitude`/`longitude` feed the coords label and the derived open-in-maps URL (never a stored URL). */
+export interface ContactoDTO {
+  addressLine: string | null;
+  addressNote: string | null;
+  latitude: number | null;
+  longitude: number | null;
+  whatsapp: string | null;
+  email: string | null;
+  instagram: string | null;
+  horarios: HorarioDTO[];
+}
+
+/** Map the stored `hours` jsonb (an array of `{day, opens, closes}` or `{day, closed:true}`) into the
+ *  ordered HorarioDTO list the page renders. Defensive: a non-array or a malformed entry is skipped, so
+ *  bad operator data degrades to a shorter table rather than a crash. */
+export function parseHorarios(raw: unknown): HorarioDTO[] {
+  if (!Array.isArray(raw)) return [];
+  const out: HorarioDTO[] = [];
+  for (const entry of raw) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const e = entry as Record<string, unknown>;
+    if (typeof e.day !== "string") continue;
+    const closed = e.closed === true;
+    out.push({
+      day: e.day,
+      opens: !closed && typeof e.opens === "string" ? e.opens : null,
+      closes: !closed && typeof e.closes === "string" ? e.closes : null,
+      closed,
+    });
+  }
+  return out;
+}
+
+/** A gym's public contact details, anon + gym-scoped. Returns null when no gym_contact row exists (the
+ *  page renders its "contacto próximamente" state). Best-effort. Memoized per request. Postgres `numeric`
+ *  serializes as a string over PostgREST, so lat/long are coerced to numbers here. */
+export const getContacto = cache(
+  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<ContactoDTO | null> => {
+    const { data } = await client
+      .from("gym_contact")
+      .select("address_line, address_note, latitude, longitude, whatsapp, email, instagram, hours")
+      .eq("gym_id", gymId)
+      .maybeSingle();
+    if (!data) return null;
+    return {
+      addressLine: data.address_line,
+      addressNote: data.address_note,
+      latitude: data.latitude == null ? null : Number(data.latitude),
+      longitude: data.longitude == null ? null : Number(data.longitude),
+      whatsapp: data.whatsapp,
+      email: data.email,
+      instagram: data.instagram,
+      horarios: parseHorarios(data.hours),
+    };
+  },
+);
+
+/** The contact-form intake payload. `gymSlug` is the public host slug (the RPC resolves it to the gym
+ *  server-side — ADR-0012, never a client-supplied gym id); `ip` (nullable) feeds the RPC's per-IP limit. */
+export interface EnviarMensajeInput {
+  gymSlug: string;
+  nombre: string;
+  correo: string;
+  mensaje: string;
+  ip: string | null;
+}
+
+/** Submit a contact-form lead through the guarded intake RPC — the ONE anon WRITE on the public surface.
+ *  The RPC (SECURITY DEFINER) validates, enforces the per-IP rate limit, and inserts; a raised limit or a
+ *  validation failure surfaces as a thrown error the caller maps to a friendly message. Anon client. */
+export async function enviarMensajeContacto(
+  input: EnviarMensajeInput,
+  client: SupabaseServer = createAnonClient(),
+): Promise<void> {
+  const { error } = await client.rpc("enviar_mensaje_contacto", {
+    p_gym_slug: input.gymSlug,
+    p_nombre: input.nombre,
+    p_correo: input.correo,
+    p_mensaje: input.mensaje,
+    p_ip: input.ip ?? undefined,
+  });
+  if (error) throw new Error(error.message);
+}
+
 /** One pregunta/respuesta pair for the public FAQ accordion. */
 export interface FaqPublicaDTO {
   id: string;

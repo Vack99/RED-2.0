@@ -41,6 +41,7 @@ const SUITE = [
   'scheduling_materialization.sql',
   'gym_content_denial.sql',
   'anon_catalog_read.sql',
+  'contact_intake.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;

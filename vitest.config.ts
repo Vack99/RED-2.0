@@ -83,6 +83,27 @@ export default defineConfig({
         },
       },
       {
+        // apps/client — app-local server helpers (the Turnstile captcha verifier
+        // that guards the contact-form intake). Node env; the helper keeps the
+        // `import 'server-only'` poison-pill (it holds the captcha secret), stubbed
+        // via the same empty module the @gym/data project uses.
+        test: {
+          name: "client",
+          environment: "node",
+          include: ["apps/client/src/**/*.test.ts"],
+        },
+        resolve: {
+          alias: {
+            "server-only": fileURLToPath(
+              new URL(
+                "./packages/data/node_modules/server-only/empty.js",
+                import.meta.url,
+              ),
+            ),
+          },
+        },
+      },
+      {
         // Repo-structure guards (audit 2026-06-30): manifest/catalog consistency,
         // turbo-task implementation, docs-as-tests, public-asset orphans, and the
         // client→server seam convention. Pure fs reads, node env, no aliases.

@@ -40,6 +40,7 @@ import {
   eliminarPlantilla,
   sembrarPlantillasDefault,
 } from "@gym/data/server/plantillas";
+import { marcarLeido } from "@gym/data/server/mensajes";
 import { actualizarStat, crearStat, eliminarStat, reordenarStats } from "@gym/data/server/stats";
 
 /** Thin write seams over the DAL. (app) reads are dynamic (cookie-bound), so the client
@@ -118,6 +119,10 @@ export async function actualizarPaqueteMarketingAction(raw: unknown): Promise<vo
 
 export async function setPlanFeaturesAction(raw: unknown): Promise<void> {
   return setPlanFeatures(raw);
+}
+
+export async function marcarMensajeLeidoAction(raw: unknown): Promise<void> {
+  return marcarLeido(raw);
 }
 
 export async function crearAboutValueAction(raw: unknown): Promise<void> {

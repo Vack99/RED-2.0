@@ -12,8 +12,8 @@
 --       clientes (member-owned) and schedule_template_coach (the one scheduling child deliberately
 --       LEFT OUT of the anon set) stays invisible to anon.
 --   (c) NO OTHER anon widening exists — the authoritative machine check: the exact set of tables
---       carrying an anon-role SELECT policy equals the 16-table allowlist (2 Phase-3 spine + 14
---       decision-(b)), and no anon WRITE policy exists anywhere.
+--       carrying an anon-role SELECT policy equals the 17-table allowlist (2 Phase-3 spine + 14
+--       decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE policy exists.
 --
 -- Self-asserting (every check RAISEs on failure; a clean run returns one 'OK' row). Wrapped in
 -- BEGIN/ROLLBACK — touches no row. gym A is looked up by slug (forge) from the spine seeds; no
@@ -56,6 +56,7 @@ begin
     returning id into pkg;
   insert into public.plan_feature (gym_id, plan_id, label, orden) values (gym_a, pkg, 'Acceso a la clase', 0);
   insert into public.about_value (gym_id, title, description) values (gym_a, 'Comunidad', 'Entrenamos juntos.');
+  insert into public.gym_contact (gym_id, address_line) values (gym_a, 'Av. Probe 1');
   insert into public.facility (gym_id, name, description) values (gym_a, 'Área de pesas', 'Equipo completo.');
   insert into public.stat (gym_id, label, value) values (gym_a, 'Miembros activos', '500+');
   insert into public.faq (gym_id, question, answer) values (gym_a, '¿Necesito membresía anual?', 'No.');
@@ -73,8 +74,8 @@ do $$
 declare
   expected text[] := array[
     'about_value','class_session','class_session_coach','class_type','class_type_bring_item',
-    'class_type_workblock','coach','faq','facility','gym','gym_domain','paquetes','plan_feature',
-    'room','schedule_template','stat'
+    'class_type_workblock','coach','faq','facility','gym','gym_contact','gym_domain','paquetes',
+    'plan_feature','room','schedule_template','stat'
   ];
   got     text[];
   extra   text[];
@@ -122,6 +123,7 @@ begin
   select count(*) into n from public.stat;                   if n < 1 then raise exception 'ANON READ FAIL: stat % rows', n; end if;
   select count(*) into n from public.faq;                    if n < 1 then raise exception 'ANON READ FAIL: faq % rows', n; end if;
   select count(*) into n from public.room;                   if n < 1 then raise exception 'ANON READ FAIL: room % rows', n; end if;
+  select count(*) into n from public.gym_contact;            if n < 1 then raise exception 'ANON READ FAIL: gym_contact % rows', n; end if;
 
   -- (b) denied on the excluded sibling + the member-owned table (both seeded — non-vacuous)
   select count(*) into n from public.schedule_template_coach;
