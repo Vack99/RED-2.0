@@ -83,6 +83,16 @@ export default defineConfig({
         },
       },
       {
+        // apps/client — the socio's panel. App-local pure logic (auth-form
+        // validation) — node env, no aliases (imports resolve via @gym/*
+        // workspace specifiers or relative paths), mirroring the admin project.
+        test: {
+          name: "client",
+          environment: "node",
+          include: ["apps/client/src/**/*.test.ts"],
+        },
+      },
+      {
         // Repo-structure guards (audit 2026-06-30): manifest/catalog consistency,
         // turbo-task implementation, docs-as-tests, public-asset orphans, and the
         // client→server seam convention. Pure fs reads, node env, no aliases.
