@@ -60,3 +60,46 @@ export function fechaEnZona(isoTimestamp: string, tz: string): Date {
   const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
   return new Date(get("year"), get("month") - 1, get("day"));
 }
+
+// ── Agenda write-side tz math (Phase 5, ADR-0010 §k) ─────────────────────
+// The Agenda DAL resolves EVERY absolute instant it sends to a scheduling RPC —
+// and every reader window bound — through instanteEnZona, never re-deriving the
+// offset trick per call site. `@gym/domain`'s materializarSesion needs the exact
+// same two-pass technique for its own (template, week) instant; the two packages
+// are siblings, not layered (see the module header), so this is the same small,
+// deliberate duplication as date.ts's difDias/mismoDia — not an oversight.
+function offsetMsEnZona(utcMs: number, tz: string): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour12: false,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
+  const parts = dtf.formatToParts(new Date(utcMs));
+  const get = (t: string) => Number(parts.find((p) => p.type === t)!.value);
+  const asIfUtc = Date.UTC(
+    get("year"),
+    get("month") - 1,
+    get("day"),
+    get("hour") % 24,
+    get("minute"),
+    get("second"),
+  );
+  return asIfUtc - utcMs;
+}
+
+/**
+ * The absolute UTC instant for a gym-local wall clock: `diaLocal`'s Y/M/D fields
+ * + an "HH:MM" time, interpreted in `tz`. The write-side inverse of fechaEnZona —
+ * every Agenda mutation that submits a `starts_at` (crear/editar sesión) and both
+ * day/week readers' window bounds resolve through here.
+ */
+export function instanteEnZona(diaLocal: Date, hhmm: string, tz: string): Date {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  const guess = Date.UTC(diaLocal.getFullYear(), diaLocal.getMonth(), diaLocal.getDate(), hh, mm);
+  return new Date(guess - offsetMsEnZona(guess, tz));
+}
