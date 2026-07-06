@@ -62,6 +62,8 @@ export interface SesionMiembroDTO {
   descripcion: string | null;
   /** True when the signed-in member already holds an active reservation for this session. */
   miReserva: boolean;
+  /** True when this session's class type is the member's favorite (the "Tu favorita" tag). */
+  favorita: boolean;
 }
 
 export interface DiaMiembroDTO {
@@ -99,6 +101,7 @@ interface SesionMiembroRaw {
   nivel: string | null;
   descripcion: string | null;
   miReserva: boolean;
+  favorita: boolean;
   coaches: string[];
 }
 
@@ -149,7 +152,7 @@ async function fetchSesionesMiembro(
   const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
   const sessionIds = rows.map((r) => r.id);
 
-  const [tiposRes, joinsRes, misReservasRes] = await Promise.all([
+  const [tiposRes, joinsRes, misReservasRes, favoritoId] = await Promise.all([
     supabase.from("class_type").select("id, name, sala, level, description").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", sessionIds),
     // The member's OWN active reservations among these sessions (RLS returns only their rows).
@@ -158,6 +161,7 @@ async function fetchSesionesMiembro(
       .select("class_session_id")
       .in("class_session_id", sessionIds)
       .in("status", ["reservada", "asistida"]),
+    fetchFavoritoId(supabase),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
@@ -198,9 +202,22 @@ async function fetchSesionesMiembro(
       nivel: tipo?.level ?? null,
       descripcion: tipo?.description ?? null,
       miReserva: misReservas.has(r.id),
+      favorita: r.class_type_id === favoritoId,
       coaches: coachesBySession.get(r.id) ?? [],
     };
   });
+}
+
+/** The signed-in member's favorite class-type id (self-read of their own clientes row);
+ *  null when unset or the row is unreadable. Drives the "Tu favorita" tag across the week,
+ *  the summary sheet, and mis reservas. */
+async function fetchFavoritoId(supabase: SupabaseServer): Promise<string | null> {
+  const { data } = await supabase
+    .from("clientes")
+    .select("favorite_class_type_id")
+    .limit(1)
+    .maybeSingle();
+  return data?.favorite_class_type_id ?? null;
 }
 
 function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMiembroDTO {
@@ -219,6 +236,7 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
     nivel: s.nivel,
     descripcion: s.descripcion,
     miReserva: s.miReserva,
+    favorita: s.favorita,
   };
 }
 
@@ -304,6 +322,8 @@ export interface ProximaReservaDTO {
   finIso: string;
   /** Room label for the .ics location, or null. */
   sala: string | null;
+  /** True when this booking's class type is the member's favorite (the "Favorita" chip). */
+  favorita: boolean;
 }
 
 /**
@@ -368,9 +388,10 @@ async function fetchProximasReservas(
   if (rows.length === 0) return [];
 
   const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
-  const [tiposRes, joinsRes] = await Promise.all([
+  const [tiposRes, joinsRes, favoritoId] = await Promise.all([
     supabase.from("class_type").select("id, name, sala").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", rows.map((r) => r.id)),
+    fetchFavoritoId(supabase),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
@@ -409,6 +430,7 @@ async function fetchProximasReservas(
       inicioIso: inicio.toISOString(),
       finIso: new Date(inicio.getTime() + r.duration_min * 60_000).toISOString(),
       sala: tipo?.sala ?? null,
+      favorita: r.class_type_id === favoritoId,
     };
   });
 }

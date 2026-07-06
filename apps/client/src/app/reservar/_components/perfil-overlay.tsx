@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import type { ProximaReservaDTO } from "@gym/data/server/agenda-miembro";
@@ -48,27 +49,54 @@ function descargarIcs(r: ProximaReservaDTO) {
   a.click();
 }
 
-function ReservaCard({ r, onCancel }: { r: ProximaReservaDTO; onCancel: () => void }) {
+const heartMini = (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+    <path d="M12 3l2.6 6.3 6.4.5-4.9 4.1 1.6 6.2L12 17l-5.3 3.4 1.6-6.2L3.4 9.8l6.4-.5z" />
+  </svg>
+);
+
+function ReservaCard({
+  r,
+  onCancel,
+  onOpen,
+}: {
+  r: ProximaReservaDTO;
+  onCancel: () => void;
+  onOpen: () => void;
+}) {
   return (
     <div className="mb-3 flex overflow-hidden rounded-2xl border border-line bg-surface">
-      <div className="flex w-[86px] flex-none flex-col items-center justify-center gap-1.5 bg-sunk px-2 py-4">
+      <Link
+        href={`/clase/${r.sessionId}`}
+        onClick={onOpen}
+        aria-label={`Ver ${r.tipo}`}
+        className="flex w-[86px] flex-none flex-col items-center justify-center gap-1.5 bg-sunk px-2 py-4"
+      >
         <span className="text-xl font-extrabold tabular-nums text-accent">{r.hora}</span>
         <span className="text-center text-[8.5px] font-semibold uppercase leading-tight tracking-wide text-muted">
           {r.fechaCorta}
           <br />
           {r.mesCorto}
         </span>
-      </div>
+      </Link>
       <div className="min-w-0 flex-1 border-l border-dashed border-line p-4">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[17px] font-extrabold uppercase tracking-wide text-fg">{r.tipo}</span>
-          <span className="flex-none border border-accent/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-accent">
-            Confirmada
-          </span>
-        </div>
-        <div className="mt-1.5 text-[10.5px] uppercase tracking-wide text-muted">
-          {r.coaches} · {r.duracionLabel}
-        </div>
+        <Link href={`/clase/${r.sessionId}`} onClick={onOpen} className="block">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="truncate text-[17px] font-extrabold uppercase tracking-wide text-fg">{r.tipo}</span>
+            <span className="flex-none border border-accent/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-accent">
+              Confirmada
+            </span>
+            {r.favorita && (
+              <span className="flex flex-none items-center gap-1 border border-accent/40 px-1.5 py-0.5 text-[8px] font-bold uppercase tracking-wide text-accent">
+                {heartMini}
+                Favorita
+              </span>
+            )}
+          </div>
+          <div className="mt-1.5 text-[10.5px] uppercase tracking-wide text-muted">
+            {r.coaches} · {r.duracionLabel}
+          </div>
+        </Link>
         <div className="mt-3 flex gap-2">
           <button
             type="button"
@@ -200,7 +228,12 @@ export function PerfilOverlay({
             <div className="mb-3 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Próximas reservas</div>
             {reservas.length > 0 ? (
               reservas.map((r) => (
-                <ReservaCard key={r.sessionId} r={r} onCancel={() => { setError(null); setConfirm(r); }} />
+                <ReservaCard
+                  key={r.sessionId}
+                  r={r}
+                  onCancel={() => { setError(null); setConfirm(r); }}
+                  onOpen={onClose}
+                />
               ))
             ) : (
               <EmptyReservas onReservar={close} />

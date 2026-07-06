@@ -219,6 +219,21 @@ describe("getAgendaSemanaMiembro", () => {
     expect(mon.disponibles).toBe(mon.capacidad); // absent from the count → 0 active
   });
 
+  it("flags favorita on sessions whose class type is the member's favorite (else false)", async () => {
+    const rows = pastRows();
+    rows.clientes = [{ favorite_class_type_id: "ct2" }]; // ct2 = Metcon (wed1)
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows));
+    const wed = semana.dias[2].sesiones[0]; // ct2
+    const mon = semana.dias[0].sesiones[0]; // ct1
+    expect(wed.favorita).toBe(true);
+    expect(mon.favorita).toBe(false);
+  });
+
+  it("leaves favorita false for every session when the member has no favorite", async () => {
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(pastRows()));
+    expect(semana.dias.flatMap((d) => d.sesiones).every((s) => s.favorita === false)).toBe(true);
+  });
+
   it("carries the class-type sala / nivel / descripción for the booking sheet", async () => {
     const rows = pastRows();
     rows.class_type = [
