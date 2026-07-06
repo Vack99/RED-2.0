@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { presentarEstadoReserva } from "./reserva-vista";
 
 /**
- * The estado → booking-card vocabulary map (slice #56). Translates the domain
+ * The estado → booking-card vocabulary map (slice #56/#57). Translates the domain
  * state ladder (@gym/domain EstadoSesion) into the mock's card presentation —
  * verified without rendering, since the client test env is node-only.
  */
@@ -16,6 +16,7 @@ describe("presentarEstadoReserva", () => {
       unidad: "terminada",
       cta: "Terminó",
       reservable: false,
+      reservada: false,
       atenuada: true,
     });
   });
@@ -37,8 +38,32 @@ describe("presentarEstadoReserva", () => {
       unidad: "libres",
       cta: "Reservar",
       reservable: true,
+      reservada: false,
       atenuada: false,
     });
+  });
+
+  it("miReserva → an accent 'Reservada' chip, not bookable, spots still shown", () => {
+    const v = presentarEstadoReserva("normal", 6, true);
+    expect(v.tono).toBe("open");
+    expect(v.unidad).toBe("reservada");
+    expect(v.cta).toBe("Reservada");
+    expect(v.reservable).toBe(false);
+    expect(v.reservada).toBe(true);
+  });
+
+  it("a booked FULL class reads 'Reservada' (reservada outranks lleno)", () => {
+    const v = presentarEstadoReserva("lleno", 0, true);
+    expect(v.reservada).toBe(true);
+    expect(v.cta).toBe("Reservada");
+    expect(v.tono).toBe("open");
+  });
+
+  it("a booked PAST class stays 'Terminó' (terminada outranks reservada)", () => {
+    const v = presentarEstadoReserva("termino", 0, true);
+    expect(v.cta).toBe("Terminó");
+    expect(v.reservada).toBe(false);
+    expect(v.atenuada).toBe(true);
   });
 
   it("singularizes the unit label at exactly one free spot", () => {

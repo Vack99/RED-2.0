@@ -2,17 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import { instanteEnZona } from "@gym/format";
 
-import { getAgendaSemanaMiembro } from "./agenda-miembro";
+import { getAgendaSemanaMiembro, getSaldoMiembro } from "./agenda-miembro";
 import type { SupabaseServer } from "./supabase";
 
 /**
- * The member-facing agenda reader (PRD #49 S3, slice #56) — the seam BESIDE the
+ * The member-facing agenda reader (PRD #49 S3, slice #56/#57) — the seam BESIDE the
  * staff-gated getAgendaSemana (two auth contexts, not duplication). It takes an
  * injectable client (ADR-0001), so orchestration — the member-gym resolution, the
- * tz-honest week window, the join assembly, the derived-estado wiring (0-active
- * projection until booking ships), and the display-ready formatting — is testable
- * with a hand-rolled fake. RLS is the only gate (no operator check); the anon /
- * no-membership denial is proven at the DB layer in the SQL denial suite.
+ * tz-honest week window, the join assembly, the derived-estado wiring (occupancy via
+ * the contar_reservas_activas count seam, slice #57), the own-reservation flag, and
+ * the display-ready formatting — is testable with a hand-rolled fake. RLS is the only
+ * gate (no operator check); the anon / no-membership denial is proven at the DB layer.
  */
 
 const TZ = "America/Chihuahua"; // UTC-6, DST-free in 2026
@@ -35,10 +35,15 @@ interface Rows {
   class_type?: Record<string, unknown>[];
   class_session_coach?: Record<string, unknown>[];
   coach?: Record<string, unknown>[];
+  reservation?: Record<string, unknown>[];
+  clientes?: Record<string, unknown>[];
   gymTimezone?: string;
 }
 
-function makeFake(rows: Rows = {}) {
+function makeFake(
+  rows: Rows = {},
+  rpc?: (name: string, args: Record<string, unknown>) => { data: unknown; error: unknown },
+) {
   function builder(list: Record<string, unknown>[]) {
     let filtered = list;
     let orderCol: string | null = null;
@@ -91,6 +96,8 @@ function makeFake(rows: Rows = {}) {
       if (table === "gym") return builder([{ id: "gym-1", timezone: rows.gymTimezone ?? TZ }]);
       return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },
+    rpc: (name: string, args: Record<string, unknown>) =>
+      Promise.resolve(rpc ? rpc(name, args) : { data: [], error: null }),
   };
   return client as unknown as SupabaseServer;
 }
@@ -186,12 +193,43 @@ describe("getAgendaSemanaMiembro", () => {
     expect(withCoaches.every((s) => s.coaches === "Por asignar")).toBe(true);
   });
 
-  it("derives the 0-active occupancy projection: disponibles == capacidad, ocupacionPct 0", async () => {
+  it("no active reservations (count seam empty): disponibles == capacidad, ocupacionPct 0, miReserva false", async () => {
     const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(pastRows()));
     for (const s of semana.dias.flatMap((d) => d.sesiones)) {
       expect(s.disponibles).toBe(s.capacidad);
       expect(s.ocupacionPct).toBe(0);
+      expect(s.miReserva).toBe(false);
     }
+  });
+
+  it("wires the count seam into disponibles/ocupacionPct and flags the member's own reservation", async () => {
+    const rows = pastRows();
+    rows.reservation = [{ class_session_id: "wed1", status: "reservada" }]; // the member holds wed1 (RLS returns only own)
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows, (name) =>
+      name === "contar_reservas_activas"
+        ? { data: [{ session_id: "wed1", activos: 15 }], error: null }
+        : { data: [], error: null },
+    ));
+    const wed = semana.dias[2].sesiones[0];
+    const mon = semana.dias[0].sesiones[0];
+    expect(wed.disponibles).toBe(wed.capacidad - 15);
+    expect(wed.ocupacionPct).toBe(Math.round((15 / wed.capacidad) * 100));
+    expect(wed.miReserva).toBe(true);
+    expect(mon.miReserva).toBe(false); // not in the reservation set
+    expect(mon.disponibles).toBe(mon.capacidad); // absent from the count → 0 active
+  });
+
+  it("carries the class-type sala / nivel / descripción for the booking sheet", async () => {
+    const rows = pastRows();
+    rows.class_type = [
+      { id: "ct1", name: "Fuerza", sala: "Sala Yunque", level: "Intermedio", description: "Barra y fierro." },
+      { id: "ct2", name: "Metcon", sala: "Sala Brasa", level: "Alta intensidad", description: "Suda." },
+    ];
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows));
+    const wed = semana.dias[2].sesiones[0];
+    expect(wed.sala).toBe("Sala Brasa");
+    expect(wed.nivel).toBe("Alta intensidad");
+    expect(wed.descripcion).toBe("Suda.");
   });
 
   it("resolves every past session to estado 'termino' via the domain ladder", async () => {
@@ -241,5 +279,22 @@ describe("getAgendaSemanaMiembro", () => {
     await expect(
       getAgendaSemanaMiembro("2020-06-17", makeFake({ gym_membership: [] })),
     ).rejects.toThrow();
+  });
+});
+
+describe("getSaldoMiembro", () => {
+  it("reads a finite balance from the member's own cliente row", async () => {
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ clases_restantes: 7 }] }));
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7 });
+  });
+
+  it("reports ilimitado when clases_restantes is null", async () => {
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ clases_restantes: null }] }));
+    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null });
+  });
+
+  it("defaults safely to a zero finite balance when no cliente row exists", async () => {
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [] }));
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0 });
   });
 });

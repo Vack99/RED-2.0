@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { getAgendaSemanaMiembro } from "@gym/data/server/agenda-miembro";
+import { getAgendaSemanaMiembro, getSaldoMiembro } from "@gym/data/server/agenda-miembro";
 import { createClient } from "@gym/data/server/supabase";
 
 import { ReservarSemana } from "./_components/reservar-semana";
@@ -22,12 +22,12 @@ function iniciales(nombre: string): string {
 }
 
 /**
- * Reservar — the member's booking home (PRD #49 S3, slice #56), read-only this
- * slice: the Lun–Sáb week of real sessions with derived estados + occupancy. A
- * page-level auth gate (getClaims, never getSession — ADR-0001) redirects a
- * signed-out visitor to /entrar; the agenda read itself is RLS-scoped to the
- * member's gym (agenda-miembro's seam). Paint is token-driven, so RED hosts render
- * RED and Forge hosts render Forge with no brand import here.
+ * Reservar — the member's booking home (PRD #49 S3, slice #57): the Lun–Sáb week of
+ * real sessions with live derived occupancy, and real booking through the summary
+ * sheet. A page-level auth gate (getClaims, never getSession — ADR-0001) redirects a
+ * signed-out visitor to /entrar; the agenda + saldo reads are RLS-scoped to the
+ * member's own gym/row. Paint is token-driven, so RED hosts render RED and Forge
+ * hosts render Forge with no brand import here.
  */
 export default async function ReservarPage() {
   const supabase = await createClient();
@@ -35,9 +35,9 @@ export default async function ReservarPage() {
   const claims = data?.claims;
   if (!claims?.sub) redirect("/entrar");
 
-  const semana = await getAgendaSemanaMiembro();
+  const [semana, saldo] = await Promise.all([getAgendaSemanaMiembro(), getSaldoMiembro()]);
   const meta = claims.user_metadata as { full_name?: string } | undefined;
   const nombre = meta?.full_name ?? (typeof claims.email === "string" ? claims.email : "");
 
-  return <ReservarSemana semana={semana} iniciales={iniciales(nombre)} />;
+  return <ReservarSemana semana={semana} saldo={saldo} iniciales={iniciales(nombre)} />;
 }

@@ -853,6 +853,64 @@ export type Database = {
           },
         ]
       }
+      reservation: {
+        Row: {
+          cancelled_at: string | null
+          checked_at: string | null
+          class_session_id: string
+          created_at: string
+          gym_id: string
+          id: string
+          is_walk_in: boolean
+          member_id: string
+          status: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          checked_at?: string | null
+          class_session_id: string
+          created_at?: string
+          gym_id: string
+          id?: string
+          is_walk_in?: boolean
+          member_id: string
+          status?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          checked_at?: string | null
+          class_session_id?: string
+          created_at?: string
+          gym_id?: string
+          id?: string
+          is_walk_in?: boolean
+          member_id?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "reservation_class_session_id_fkey"
+            columns: ["class_session_id"]
+            isOneToOne: false
+            referencedRelation: "class_session"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "reservation_member_id_fkey"
+            columns: ["member_id"]
+            isOneToOne: false
+            referencedRelation: "clientes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       room: {
         Row: {
           capacity: number | null
@@ -1144,6 +1202,13 @@ export type Database = {
         Args: { p_session_id: string }
         Returns: undefined
       }
+      contar_reservas_activas: {
+        Args: { p_session_ids: string[] }
+        Returns: {
+          activos: number
+          session_id: string
+        }[]
+      }
       crear_plantilla: {
         Args: { p_body: string; p_nombre: string }
         Returns: string
@@ -1220,6 +1285,13 @@ export type Database = {
         Returns: {
           cliente_id: string
           folio: number
+        }[]
+      }
+      reservar_clase: {
+        Args: { p_session_id: string }
+        Returns: {
+          clases_restantes: number
+          reservation_id: string
         }[]
       }
       sembrar_plantillas_default: { Args: never; Returns: undefined }
