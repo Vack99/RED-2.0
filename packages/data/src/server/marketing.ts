@@ -102,3 +102,126 @@ export const getFaqsPublicas = cache(
     return (data ?? []).map((f) => ({ id: f.id, question: f.question, answer: f.answer }));
   },
 );
+
+/** One "quiénes somos" value card (about_value) as the Nosotros page renders it. */
+export interface ValorPublicoDTO {
+  id: string;
+  title: string;
+  description: string;
+}
+
+/** A gym's values in the operator's display order, anon + gym-scoped. Best-effort []. Memoized. */
+export const getValoresPublicos = cache(
+  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<ValorPublicoDTO[]> => {
+    const { data } = await client
+      .from("about_value")
+      .select("id, title, description")
+      .eq("gym_id", gymId)
+      .order("sort_order");
+    return (data ?? []).map((v) => ({ id: v.id, title: v.title, description: v.description }));
+  },
+);
+
+/** One instalación card (facility) — name + one-line description. */
+export interface InstalacionPublicaDTO {
+  id: string;
+  name: string;
+  description: string;
+}
+
+/** A gym's facilities in display order, anon + gym-scoped. Best-effort []. Memoized. */
+export const getInstalacionesPublicas = cache(
+  async (
+    gymId: string,
+    client: SupabaseServer = createAnonClient(),
+  ): Promise<InstalacionPublicaDTO[]> => {
+    const { data } = await client
+      .from("facility")
+      .select("id, name, description")
+      .eq("gym_id", gymId)
+      .order("sort_order");
+    return (data ?? []).map((f) => ({ id: f.id, name: f.name, description: f.description }));
+  },
+);
+
+/** One marketing stat tile — a label + free-text value ("Coaches" / "3", "Taller" / "320 m²"). */
+export interface StatPublicaDTO {
+  id: string;
+  label: string;
+  value: string;
+}
+
+/** A gym's stat tiles in display order, anon + gym-scoped. Best-effort []. Memoized. */
+export const getStatsPublicas = cache(
+  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<StatPublicaDTO[]> => {
+    const { data } = await client
+      .from("stat")
+      .select("id, label, value")
+      .eq("gym_id", gymId)
+      .order("sort_order");
+    return (data ?? []).map((s) => ({ id: s.id, label: s.label, value: s.value }));
+  },
+);
+
+/** One coach as the public roster renders it (specialty/bio are operator-optional → nullable). */
+export interface CoachPublicoDTO {
+  id: string;
+  name: string;
+  initials: string;
+  role: string;
+  specialty: string | null;
+  bio: string | null;
+}
+
+/** A gym's ACTIVE coach roster in display order, anon + gym-scoped. The anon `using(true)` policy would
+ *  expose deactivated coaches too, so the active filter is a QUERY concern here. Best-effort []. Memoized. */
+export const getCoachesPublicos = cache(
+  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<CoachPublicoDTO[]> => {
+    const { data } = await client
+      .from("coach")
+      .select("id, name, initials, role, specialty, bio")
+      .eq("gym_id", gymId)
+      .eq("is_active", true)
+      .order("sort_order");
+    return (data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      initials: c.initials,
+      role: c.role,
+      specialty: c.specialty ?? null,
+      bio: c.bio ?? null,
+    }));
+  },
+);
+
+/** One class format (tipo de clase) as the Nosotros "cómo entrenamos" section renders it. level,
+ *  description, and duration are operator-optional → nullable; the page composes a subtitle from them. */
+export interface FormatoPublicoDTO {
+  id: string;
+  name: string;
+  level: string | null;
+  description: string | null;
+  durationMin: number | null;
+}
+
+/** A gym's class formats, anon + gym-scoped, ordered by name (class_type carries no sort_order).
+ *  Best-effort []. Memoized. */
+export const getFormatosPublicos = cache(
+  async (
+    gymId: string,
+    client: SupabaseServer = createAnonClient(),
+  ): Promise<FormatoPublicoDTO[]> => {
+    const { data } = await client
+      .from("class_type")
+      .select("id, name, level, description, default_duration_min")
+      .eq("gym_id", gymId)
+      .order("name");
+    return (data ?? []).map((t) => ({
+      id: t.id,
+      name: t.name,
+      level: t.level ?? null,
+      description: t.description ?? null,
+      durationMin: t.default_duration_min ?? null,
+    }));
+  },
+);

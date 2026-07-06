@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 
-import { getFaqsPublicas, getMarketingGym, getPlanesPublicos } from "./marketing";
+import {
+  getCoachesPublicos,
+  getFaqsPublicas,
+  getFormatosPublicos,
+  getInstalacionesPublicas,
+  getMarketingGym,
+  getPlanesPublicos,
+  getStatsPublicas,
+  getValoresPublicos,
+} from "./marketing";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -15,6 +24,11 @@ interface TableRows {
   paquetes?: Record<string, unknown>[];
   plan_feature?: Record<string, unknown>[];
   faq?: Record<string, unknown>[];
+  about_value?: Record<string, unknown>[];
+  facility?: Record<string, unknown>[];
+  stat?: Record<string, unknown>[];
+  coach?: Record<string, unknown>[];
+  class_type?: Record<string, unknown>[];
 }
 
 interface EqCall {
@@ -137,5 +151,98 @@ describe("marketing DAL — public anon reads", () => {
     const faqs = await getFaqsPublicas(GYM, fake.client);
     expect(faqs).toEqual([{ id: "q1", question: "¿Puedo congelar?", answer: "Sí." }]);
     expect(fake.eqCalls).toEqual([{ table: "faq", col: "gym_id", val: GYM }]);
+  });
+
+  it("getValoresPublicos maps the three values and scopes the read to the gym", async () => {
+    const fake = makeFake({
+      about_value: [
+        { id: "v1", title: "Fuerza", description: "La base de todo." },
+        { id: "v2", title: "Disciplina", description: "Te trae a las 05:30." },
+      ],
+    });
+    const valores = await getValoresPublicos(GYM, fake.client);
+    expect(valores).toEqual([
+      { id: "v1", title: "Fuerza", description: "La base de todo." },
+      { id: "v2", title: "Disciplina", description: "Te trae a las 05:30." },
+    ]);
+    expect(fake.eqCalls).toEqual([{ table: "about_value", col: "gym_id", val: GYM }]);
+  });
+
+  it("getInstalacionesPublicas maps rows and scopes the read to the gym", async () => {
+    const fake = makeFake({
+      facility: [{ id: "f1", name: "Racks y barras", description: "12 estaciones" }],
+    });
+    const facs = await getInstalacionesPublicas(GYM, fake.client);
+    expect(facs).toEqual([{ id: "f1", name: "Racks y barras", description: "12 estaciones" }]);
+    expect(fake.eqCalls).toEqual([{ table: "facility", col: "gym_id", val: GYM }]);
+  });
+
+  it("getStatsPublicas maps the label/value pairs and scopes the read to the gym", async () => {
+    const fake = makeFake({
+      stat: [{ id: "s1", label: "Coaches", value: "3" }],
+    });
+    const stats = await getStatsPublicas(GYM, fake.client);
+    expect(stats).toEqual([{ id: "s1", label: "Coaches", value: "3" }]);
+    expect(fake.eqCalls).toEqual([{ table: "stat", col: "gym_id", val: GYM }]);
+  });
+
+  it("getCoachesPublicos maps every field (nullable bio/specialty), filters to active + gym", async () => {
+    const fake = makeFake({
+      coach: [
+        {
+          id: "c1",
+          name: "Marisa Peña",
+          initials: "MP",
+          role: "Coach",
+          specialty: "Fuerza",
+          bio: "Diseña los metcons.",
+        },
+        { id: "c2", name: "Paty Ruiz", initials: "PR", role: "Coach", specialty: null, bio: null },
+      ],
+    });
+    const coaches = await getCoachesPublicos(GYM, fake.client);
+    expect(coaches).toEqual([
+      {
+        id: "c1",
+        name: "Marisa Peña",
+        initials: "MP",
+        role: "Coach",
+        specialty: "Fuerza",
+        bio: "Diseña los metcons.",
+      },
+      { id: "c2", name: "Paty Ruiz", initials: "PR", role: "Coach", specialty: null, bio: null },
+    ]);
+    // Roster is gym-scoped AND limited to active coaches (anon `using(true)` shows all rows).
+    expect(fake.eqCalls).toEqual([
+      { table: "coach", col: "gym_id", val: GYM },
+      { table: "coach", col: "is_active", val: true },
+    ]);
+  });
+
+  it("getFormatosPublicos maps class types (nullable level/description/duration) scoped to the gym", async () => {
+    const fake = makeFake({
+      class_type: [
+        {
+          id: "t1",
+          name: "Fuerza",
+          level: "Todos los niveles",
+          description: null,
+          default_duration_min: 60,
+        },
+        {
+          id: "t2",
+          name: "Open",
+          level: null,
+          description: "Entrena a tu ritmo",
+          default_duration_min: null,
+        },
+      ],
+    });
+    const formatos = await getFormatosPublicos(GYM, fake.client);
+    expect(formatos).toEqual([
+      { id: "t1", name: "Fuerza", level: "Todos los niveles", description: null, durationMin: 60 },
+      { id: "t2", name: "Open", level: null, description: "Entrena a tu ritmo", durationMin: null },
+    ]);
+    expect(fake.eqCalls).toEqual([{ table: "class_type", col: "gym_id", val: GYM }]);
   });
 });
