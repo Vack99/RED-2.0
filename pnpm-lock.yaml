@@ -147,6 +147,9 @@ importers:
       '@gym/data':
         specifier: workspace:*
         version: link:../../packages/data
+      '@gym/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@gym/format':
         specifier: workspace:*
         version: link:../../packages/format

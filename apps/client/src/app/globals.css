@@ -33,6 +33,10 @@
      the contract key stays `yellow` by name, carrying each brand's accent value (ADR-0012 §4). */
   --color-accent: var(--yellow);
   --color-accent-soft: var(--yellow-soft);
+  /* The semantic error role (contract key `red`, unchanged across brands): the
+     Reservar card's "Lleno" state. */
+  --color-danger: var(--red);
+  --color-danger-soft: var(--red-soft);
 }
 
 * {
