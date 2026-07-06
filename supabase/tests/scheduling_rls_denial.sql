@@ -10,7 +10,9 @@
 -- Vectors proved:
 --   1) staff of gym A: reads all 4 tables + create_class_session RPC lands a session in gym A.
 --   2) anon reads class_session/class_session_coach/schedule_template (decision b discharged in #50),
---      but NOT schedule_template_coach (excluded from the anon set).
+--      but NOT schedule_template_coach (excluded from the anon set), and — slice #56 — NOT
+--      gym_membership: the member AGENDA is membership-scoped, so anon has no anchor to read it from
+--      even though the raw catalog is public.
 --   3) cross-tenant operator (staff of gym B only): reads 0 of gym A's rows; direct update affects 0;
 --      direct insert denied by with-check; create_class_session referencing gym A's class_type RAISES;
 --      edit/cancel of gym A's session RAISE (RLS scopes the row out → "not found"); delete on gym A's
@@ -88,6 +90,11 @@ begin
   select count(*) into n from public.class_session_coach;     if n < 1 then raise exception 'ANON READ FAIL: class_session_coach % rows (public since #50)', n; end if;
   select count(*) into n from public.schedule_template;       if n < 1 then raise exception 'ANON READ FAIL: schedule_template % rows (public since #50)', n; end if;
   select count(*) into n from public.schedule_template_coach; if n <> 0 then raise exception 'ANON DENIAL FAIL: schedule_template_coach % rows visible (must stay non-anon)', n; end if;
+  -- slice #56 member-agenda anchor: gym_membership's policies are `to authenticated`, so anon reads
+  -- ZERO membership rows. getAgendaSemanaMiembro resolves the member's gym from THIS table, so an anon
+  -- caller has no gym to scope a member agenda to — the public catalog is readable, the member agenda
+  -- is not. (The fixture block above already seeded 3 memberships, so a leak would read 3, not 0.)
+  select count(*) into n from public.gym_membership; if n <> 0 then raise exception 'ANON DENIAL FAIL: anon sees % gym_membership rows (member-agenda anchor must be anon-invisible)', n; end if;
 end $$;
 reset role;
 
