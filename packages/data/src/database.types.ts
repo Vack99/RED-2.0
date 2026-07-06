@@ -489,6 +489,47 @@ export type Database = {
           },
         ]
       }
+      contact_message: {
+        Row: {
+          correo: string
+          created_at: string
+          gym_id: string
+          id: string
+          ip: string | null
+          mensaje: string
+          nombre: string
+          read_at: string | null
+        }
+        Insert: {
+          correo: string
+          created_at?: string
+          gym_id: string
+          id?: string
+          ip?: string | null
+          mensaje: string
+          nombre: string
+          read_at?: string | null
+        }
+        Update: {
+          correo?: string
+          created_at?: string
+          gym_id?: string
+          id?: string
+          ip?: string | null
+          mensaje?: string
+          nombre?: string
+          read_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contact_message_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       facility: {
         Row: {
           created_at: string
@@ -594,6 +635,53 @@ export type Database = {
           token_overrides?: Json
         }
         Relationships: []
+      }
+      gym_contact: {
+        Row: {
+          address_line: string | null
+          address_note: string | null
+          email: string | null
+          gym_id: string
+          hours: Json
+          instagram: string | null
+          latitude: number | null
+          longitude: number | null
+          updated_at: string
+          whatsapp: string | null
+        }
+        Insert: {
+          address_line?: string | null
+          address_note?: string | null
+          email?: string | null
+          gym_id: string
+          hours?: Json
+          instagram?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          address_line?: string | null
+          address_note?: string | null
+          email?: string | null
+          gym_id?: string
+          hours?: Json
+          instagram?: string | null
+          latitude?: number | null
+          longitude?: number | null
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gym_contact_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: true
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       gym_domain: {
         Row: {
@@ -1191,6 +1279,16 @@ export type Database = {
       ensure_week_materialized: {
         Args: { p_week_start: string }
         Returns: number
+      }
+      enviar_mensaje_contacto: {
+        Args: {
+          p_correo: string
+          p_gym_slug: string
+          p_ip?: string
+          p_mensaje: string
+          p_nombre: string
+        }
+        Returns: undefined
       }
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }

@@ -21,6 +21,7 @@ import type { CoachDTO } from "@gym/data/server/coach";
 import type { CobroDTO } from "@gym/data/server/cobro";
 import type { FacilityDTO } from "@gym/data/server/facilities";
 import type { FaqDTO } from "@gym/data/server/faqs";
+import type { MensajeDTO } from "@gym/data/server/mensajes";
 import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
@@ -31,6 +32,7 @@ import { ClassTypesSheet } from "./class-types-sheet";
 import { CoachesSheet } from "./coaches-sheet";
 import { GymContentSheet } from "./gym-content-sheet";
 import { LogoutButton } from "./logout-button";
+import { MensajesSheet } from "./mensajes-sheet";
 import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
 
@@ -50,6 +52,7 @@ interface CuentaScreenProps {
   facilities: FacilityDTO[];
   stats: StatDTO[];
   faqs: FaqDTO[];
+  mensajes: MensajeDTO[];
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -106,12 +109,15 @@ export function CuentaScreen({
   facilities,
   stats,
   faqs,
+  mensajes,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
   const [coachesOpen, setCoachesOpen] = React.useState(false);
   const [classTypesOpen, setClassTypesOpen] = React.useState(false);
   const [contenidoOpen, setContenidoOpen] = React.useState(false);
+  const [mensajesOpen, setMensajesOpen] = React.useState(false);
+  const sinLeer = mensajes.filter((m) => !m.leido).length;
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
   // a null-perfil guard (the perfil row may not be seeded yet).
@@ -162,6 +168,17 @@ export function CuentaScreen({
       sub: "Valores, instalaciones, stats y FAQ",
       onClick: () => setContenidoOpen(true),
     },
+    {
+      icon: "wa",
+      label: "MENSAJES",
+      sub:
+        mensajes.length === 0
+          ? "Sin mensajes"
+          : sinLeer > 0
+            ? `${sinLeer} sin leer · ${mensajes.length} total`
+            : `${mensajes.length} mensaje${mensajes.length === 1 ? "" : "s"}`,
+      onClick: () => setMensajesOpen(true),
+    },
     { icon: "bell", label: "NOTIFICACIONES", sub: "Próximamente", onClick: () => proximamente("Notificaciones") },
     { icon: "card", label: "DATOS DE COBRO", sub: cobroSub, onClick: () => proximamente("Datos de cobro") },
     { icon: "user", label: "EDITAR PERFIL", sub: "Nombre, teléfono, contraseña", onClick: () => proximamente("Editar perfil") },
@@ -191,6 +208,8 @@ export function CuentaScreen({
         stats={stats}
         faqs={faqs}
       />
+
+      <MensajesSheet open={mensajesOpen} onClose={() => setMensajesOpen(false)} mensajes={mensajes} />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 

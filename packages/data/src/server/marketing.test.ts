@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { getFaqsPublicas, getMarketingGym, getPlanesPublicos } from "./marketing";
+import {
+  getContacto,
+  getFaqsPublicas,
+  getMarketingGym,
+  getPlanesPublicos,
+  parseHorarios,
+} from "./marketing";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -15,6 +21,7 @@ interface TableRows {
   paquetes?: Record<string, unknown>[];
   plan_feature?: Record<string, unknown>[];
   faq?: Record<string, unknown>[];
+  gym_contact?: Record<string, unknown>[];
 }
 
 interface EqCall {
@@ -137,5 +144,60 @@ describe("marketing DAL — public anon reads", () => {
     const faqs = await getFaqsPublicas(GYM, fake.client);
     expect(faqs).toEqual([{ id: "q1", question: "¿Puedo congelar?", answer: "Sí." }]);
     expect(fake.eqCalls).toEqual([{ table: "faq", col: "gym_id", val: GYM }]);
+  });
+
+  it("getContacto maps the row (coercing numeric lat/long), parses hours, and scopes by gym_id", async () => {
+    const fake = makeFake({
+      gym_contact: [
+        {
+          address_line: "Av. de la Fragua 124",
+          address_note: "Portón de acero",
+          latitude: "25.686600", // Postgres numeric serializes as a string over PostgREST
+          longitude: "-100.316100",
+          whatsapp: "528112345678",
+          email: "hola@red-demo.mx",
+          instagram: "red.demo",
+          hours: [
+            { day: "Lunes", opens: "05:30", closes: "22:00" },
+            { day: "Domingo", closed: true },
+          ],
+        },
+      ],
+    });
+    const contacto = await getContacto(GYM, fake.client);
+    expect(contacto).toEqual({
+      addressLine: "Av. de la Fragua 124",
+      addressNote: "Portón de acero",
+      latitude: 25.6866,
+      longitude: -100.3161,
+      whatsapp: "528112345678",
+      email: "hola@red-demo.mx",
+      instagram: "red.demo",
+      horarios: [
+        { day: "Lunes", opens: "05:30", closes: "22:00", closed: false },
+        { day: "Domingo", opens: null, closes: null, closed: true },
+      ],
+    });
+    expect(fake.eqCalls).toEqual([{ table: "gym_contact", col: "gym_id", val: GYM }]);
+  });
+
+  it("getContacto returns null when no gym_contact row exists", async () => {
+    const fake = makeFake({ gym_contact: [] });
+    expect(await getContacto(GYM, fake.client)).toBeNull();
+  });
+
+  it("parseHorarios skips malformed entries and non-arrays", () => {
+    expect(parseHorarios(null)).toEqual([]);
+    expect(parseHorarios("nope")).toEqual([]);
+    expect(
+      parseHorarios([
+        { day: "Lunes", opens: "05:30", closes: "22:00" },
+        { opens: "07:00" }, // no day → skipped
+        { day: "Domingo", closed: true },
+      ]),
+    ).toEqual([
+      { day: "Lunes", opens: "05:30", closes: "22:00", closed: false },
+      { day: "Domingo", opens: null, closes: null, closed: true },
+    ]);
   });
 });

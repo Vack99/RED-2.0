@@ -20,6 +20,7 @@
     "./server/faqs": "./src/server/faqs.ts",
     "./server/gym": "./src/server/gym.ts",
     "./server/marketing": "./src/server/marketing.ts",
+    "./server/mensajes": "./src/server/mensajes.ts",
     "./server/paquetes": "./src/server/paquetes.ts",
     "./server/perfil": "./src/server/perfil.ts",
     "./server/plantillas": "./src/server/plantillas.ts",
