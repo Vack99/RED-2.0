@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { instanteEnZona } from "@gym/format";
 
-import { getAgendaSemanaMiembro, getSaldoMiembro } from "./agenda-miembro";
+import { getAgendaSemanaMiembro, getPerfilResumenMiembro, getSaldoMiembro } from "./agenda-miembro";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -38,6 +38,7 @@ interface Rows {
   reservation?: Record<string, unknown>[];
   clientes?: Record<string, unknown>[];
   gymTimezone?: string;
+  marca?: string;
 }
 
 function makeFake(
@@ -93,7 +94,8 @@ function makeFake(
   const client = {
     from: (table: string) => {
       if (table === "gym_membership") return builder(membership);
-      if (table === "gym") return builder([{ id: "gym-1", timezone: rows.gymTimezone ?? TZ }]);
+      if (table === "gym")
+        return builder([{ id: "gym-1", timezone: rows.gymTimezone ?? TZ, brand_name: rows.marca ?? "RED" }]);
       return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },
     rpc: (name: string, args: Record<string, unknown>) =>
@@ -296,5 +298,35 @@ describe("getSaldoMiembro", () => {
   it("defaults safely to a zero finite balance when no cliente row exists", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [] }));
     expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0 });
+  });
+});
+
+describe("getPerfilResumenMiembro", () => {
+  it("formats 'miembro desde' in the gym tz and surfaces the notifications preference + marca", async () => {
+    const perfil = await getPerfilResumenMiembro(
+      makeFake({
+        clientes: [{ created_at: iso(new Date(2024, 2, 10), "12:00"), notificaciones_activadas: true }],
+        marca: "RED",
+        reservation: [],
+      }),
+    );
+    expect(perfil.desde).toBe("marzo 2024");
+    expect(perfil.notificaciones).toBe(true);
+    expect(perfil.marca).toBe("RED");
+    expect(perfil.reservas).toEqual([]);
+  });
+
+  it("passes a disabled notifications preference through", async () => {
+    const perfil = await getPerfilResumenMiembro(
+      makeFake({ clientes: [{ created_at: null, notificaciones_activadas: false }], reservation: [] }),
+    );
+    expect(perfil.notificaciones).toBe(false);
+    expect(perfil.desde).toBeNull();
+  });
+
+  it("defaults the preference to opted-in when no cliente row exists", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake({ clientes: [], reservation: [] }));
+    expect(perfil.notificaciones).toBe(true);
+    expect(perfil.desde).toBeNull();
   });
 });

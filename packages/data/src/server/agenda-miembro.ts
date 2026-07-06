@@ -102,10 +102,12 @@ interface SesionMiembroRaw {
   coaches: string[];
 }
 
-/** The member's gym (id + tz) from their `gym_membership` self-read — the RLS gate.
- *  One membership per login (one login = one gym); an anon/non-member caller reads
- *  none, so the reader throws and the page renders its signed-out state. */
-async function resolverMiembroTz(supabase: SupabaseServer): Promise<string> {
+/** The member's gym (tz + brand display name) from their `gym_membership` self-read —
+ *  the RLS gate. One membership per login (one login = one gym); an anon/non-member
+ *  caller reads none, so the reader throws and the page renders its signed-out state.
+ *  `marca` (gym.brand_name) is the brand-neutral display name the perfil footer renders
+ *  from real data — never a hardcoded brand string. */
+async function resolverMiembroGym(supabase: SupabaseServer): Promise<{ tz: string; marca: string }> {
   const { data: membership } = await supabase
     .from("gym_membership")
     .select("gym_id")
@@ -115,12 +117,12 @@ async function resolverMiembroTz(supabase: SupabaseServer): Promise<string> {
 
   const { data: gym } = await supabase
     .from("gym")
-    .select("timezone")
+    .select("timezone, brand_name")
     .eq("id", membership.gym_id)
     .maybeSingle();
   if (!gym) throw new Error("Gimnasio no encontrado");
 
-  return gym.timezone;
+  return { tz: gym.timezone, marca: gym.brand_name };
 }
 
 /** Non-cancelled sessions in `[low, high)` (an absolute UTC range), joined to
@@ -232,7 +234,7 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
 export const getAgendaSemanaMiembro = cache(
   async (fechaIso?: string, client?: SupabaseServer): Promise<AgendaSemanaMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const tz = await resolverMiembroTz(supabase);
+    const { tz } = await resolverMiembroGym(supabase);
 
     const hoy = hoyEnZona(tz);
     const dia = fechaIso ? parseDay(fechaIso) : hoy;
@@ -314,20 +316,28 @@ export interface ProximaReservaDTO {
  * their own reservation rows (reservation_member_select), the same own-only surface the
  * agenda's `miReserva` flag uses. Occupancy is irrelevant here (these are the member's
  * own held spots), so this reader does NOT touch the contarActivos seam.
+ *
+ * `notificaciones` (slice #62) is the socio's in-app notifications PREFERENCE, read from
+ * their own clientes row through the existing member SELECT policy — a preference only,
+ * no delivery channel. `marca` is the gym's brand display name for the perfil footer.
  */
 export interface PerfilResumenMiembroDTO {
   desde: string | null;
   reservas: ProximaReservaDTO[];
+  /** In-app notifications preference (default true / opted-in). */
+  notificaciones: boolean;
+  /** Brand display name (gym.brand_name) for the perfil footer — real data, brand-neutral. */
+  marca: string;
 }
 
 export const getPerfilResumenMiembro = cache(
   async (client?: SupabaseServer): Promise<PerfilResumenMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const tz = await resolverMiembroTz(supabase);
+    const { tz, marca } = await resolverMiembroGym(supabase);
 
     const { data: cli } = await supabase
       .from("clientes")
-      .select("created_at")
+      .select("created_at, notificaciones_activadas")
       .limit(1)
       .maybeSingle();
     const desde = cli?.created_at
@@ -337,7 +347,12 @@ export const getPerfilResumenMiembro = cache(
         })()
       : null;
 
-    return { desde, reservas: await fetchProximasReservas(supabase, tz) };
+    return {
+      desde,
+      reservas: await fetchProximasReservas(supabase, tz),
+      notificaciones: cli?.notificaciones_activadas ?? true,
+      marca,
+    };
   },
 );
 
