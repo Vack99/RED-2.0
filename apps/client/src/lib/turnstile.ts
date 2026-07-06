@@ -1,9 +1,10 @@
 import "server-only";
 
 /**
- * Cloudflare Turnstile server-side verification — the captcha half of the contact-form abuse posture
- * (the per-IP limit is the DB half, enforced in enviar_mensaje_contacto). The server action calls this
- * BEFORE the intake RPC; a false result blocks the submission.
+ * Cloudflare Turnstile server-side verification — the captcha half of the public-write abuse posture,
+ * shared by the contact-form intake (#53; its DB half is the per-IP limit in enviar_mensaje_contacto)
+ * and registration (#55; it protects the shared-project signUp quota). The server action calls this
+ * BEFORE the write (the intake RPC / the Phase-3 signUp); a false result blocks the submission.
  *
  * Keyed entirely off env vars: the secret is `TURNSTILE_SECRET_KEY`, defaulting to Cloudflare's
  * documented ALWAYS-PASSES test secret so dev + tests succeed without real keys (production keys are the

@@ -31,7 +31,7 @@ const NAV: { href: Href; label: string; tag?: string }[] = [
 // it hides itself there. A client island (it needs the pathname); the brand logo
 // is resolved on the server and passed in as an already-rendered node, so no brand
 // import crosses into this file.
-const RUTAS_SIN_HEADER = new Set(["/entrar", "/restablecer"]);
+const RUTAS_SIN_HEADER = new Set(["/entrar", "/registro", "/restablecer"]);
 
 /**
  * The shared public header + slide-in nav drawer (the mock's `cm-head` + `cm-drawer`), the single chrome

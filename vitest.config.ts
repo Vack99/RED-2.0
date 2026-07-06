@@ -84,10 +84,11 @@ export default defineConfig({
       },
       {
         // apps/client — the socio's panel: app-local pure logic (auth-form
-        // validation) plus server helpers (the Turnstile captcha verifier that
-        // guards the contact-form intake). Node env; the captcha helper keeps the
-        // `import 'server-only'` poison-pill (it holds the captcha secret), stubbed
-        // via the same empty module the @gym/data project uses.
+        // validation) plus the server-only Turnstile captcha verifier that guards
+        // the public writes (contact-form intake + registration). Node env; the
+        // verifier keeps the `import 'server-only'` poison-pill (it holds the
+        // captcha secret), stubbed via the same empty module the @gym/data project
+        // uses.
         test: {
           name: "client",
           environment: "node",
