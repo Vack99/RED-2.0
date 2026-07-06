@@ -15,12 +15,17 @@ import {
   Tnum,
 } from "@gym/ui/forge/ui";
 import type { ResumenMes } from "@gym/domain/types";
+import type { AboutValueDTO } from "@gym/data/server/about-values";
 import type { CobroDTO } from "@gym/data/server/cobro";
+import type { FacilityDTO } from "@gym/data/server/facilities";
+import type { FaqDTO } from "@gym/data/server/faqs";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
+import type { StatDTO } from "@gym/data/server/stats";
 import { pesos } from "@gym/format";
 
+import { GymContentSheet } from "./gym-content-sheet";
 import { LogoutButton } from "./logout-button";
 import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
@@ -35,6 +40,10 @@ interface CuentaScreenProps {
   mesLabel: string;
   /** Resolved marca name — the "negocio" fallback when the perfil row has none (grill lock (c)). */
   brandName: string;
+  aboutValues: AboutValueDTO[];
+  facilities: FacilityDTO[];
+  stats: StatDTO[];
+  faqs: FaqDTO[];
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -85,9 +94,14 @@ export function CuentaScreen({
   plantillas,
   mesLabel,
   brandName,
+  aboutValues,
+  facilities,
+  stats,
+  faqs,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
+  const [contenidoOpen, setContenidoOpen] = React.useState(false);
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
   // a null-perfil guard (the perfil row may not be seeded yet).
@@ -120,6 +134,12 @@ export function CuentaScreen({
       sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`,
       onClick: () => setPlantillasOpen(true),
     },
+    {
+      icon: "flame",
+      label: "CONTENIDO DEL GIMNASIO",
+      sub: "Valores, instalaciones, stats y FAQ",
+      onClick: () => setContenidoOpen(true),
+    },
     { icon: "bell", label: "NOTIFICACIONES", sub: "Próximamente", onClick: () => proximamente("Notificaciones") },
     { icon: "card", label: "DATOS DE COBRO", sub: cobroSub, onClick: () => proximamente("Datos de cobro") },
     { icon: "user", label: "EDITAR PERFIL", sub: "Nombre, teléfono, contraseña", onClick: () => proximamente("Editar perfil") },
@@ -136,6 +156,15 @@ export function CuentaScreen({
       />
 
       <PaquetesSheet open={paquetesOpen} onClose={() => setPaquetesOpen(false)} paquetes={paquetes} />
+
+      <GymContentSheet
+        open={contenidoOpen}
+        onClose={() => setContenidoOpen(false)}
+        aboutValues={aboutValues}
+        facilities={facilities}
+        stats={stats}
+        faqs={faqs}
+      />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 
