@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actualizarPaquete } from "./paquetes";
+import { actualizarPaquete, actualizarPaqueteMarketing, setPlanFeatures } from "./paquetes";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -160,6 +160,126 @@ describe("paquetes DAL — actualizarPaquete write orchestration (injected fake)
   it("throws 'No autenticado' when getClaims returns no sub", async () => {
     const fake = makeFake({ sub: null });
     await expect(actualizarPaquete(valid(), fake.client)).rejects.toThrow("No autenticado");
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+});
+
+// ── Marketing edit (slice #38): a SEPARATE RPC from the money/grant editor above, so the tested
+//    money-path write stays untouched. Marketing fields are display-only free-text (ADR-0007: no path
+//    to the derived nombre); an empty field clears the column (the RPC nulls it).
+describe("paquetes DAL — actualizarPaqueteMarketing write orchestration (injected fake)", () => {
+  const mkt = (over: Record<string, unknown> = {}) => ({
+    id: ID,
+    code: "PRO",
+    name: "Plan Pro",
+    subtitle: "Lo mejor para ti",
+    badge: "MÁS VENDIDO",
+    cadence: "por mes",
+    ...over,
+  });
+
+  it("calls actualizar_paquete_marketing with the full p_* payload", async () => {
+    const fake = makeFake();
+    await actualizarPaqueteMarketing(mkt(), fake.client);
+    expect(fake.rpcCalls).toEqual([
+      {
+        name: "actualizar_paquete_marketing",
+        args: {
+          p_id: ID,
+          p_code: "PRO",
+          p_name: "Plan Pro",
+          p_subtitle: "Lo mejor para ti",
+          p_badge: "MÁS VENDIDO",
+          p_cadence: "por mes",
+        },
+      },
+    ]);
+  });
+
+  it("sends empty strings for omitted marketing fields (the RPC nulls them)", async () => {
+    const fake = makeFake();
+    await actualizarPaqueteMarketing({ id: ID }, fake.client);
+    expect(fake.rpcCalls[0].args).toEqual({
+      p_id: ID,
+      p_code: "",
+      p_name: "",
+      p_subtitle: "",
+      p_badge: "",
+      p_cadence: "",
+    });
+  });
+
+  it("never sends p_nombre (nombre stays derived — no free-text path)", async () => {
+    const fake = makeFake();
+    await actualizarPaqueteMarketing(mkt(), fake.client);
+    expect("p_nombre" in fake.rpcCalls[0].args).toBe(false);
+  });
+
+  it("maps a code unique-violation (23505 paquetes_code_gym_uq) to a friendly es-MX message", async () => {
+    const fake = makeFake({
+      error: { code: "23505", message: 'duplicate key value violates unique constraint "paquetes_code_gym_uq"' },
+    });
+    await expect(actualizarPaqueteMarketing(mkt(), fake.client)).rejects.toThrow(
+      "Ya tienes un paquete con ese código",
+    );
+  });
+
+  it("throws a generic es-MX error on any other RPC failure", async () => {
+    const fake = makeFake({ error: { message: "boom", code: "P0001" } });
+    await expect(actualizarPaqueteMarketing(mkt(), fake.client)).rejects.toThrow(
+      "No se pudo actualizar el paquete",
+    );
+  });
+
+  it("rejects a non-uuid id (zod) before any write", async () => {
+    const fake = makeFake();
+    await expect(actualizarPaqueteMarketing(mkt({ id: "not-a-uuid" }), fake.client)).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("throws 'No autenticado' when getClaims returns no sub", async () => {
+    const fake = makeFake({ sub: null });
+    await expect(actualizarPaqueteMarketing(mkt(), fake.client)).rejects.toThrow("No autenticado");
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+});
+
+// ── Feature list (slice #38): the editor sends the full desired-state list; the RPC replaces the whole
+//    plan_feature set (add/remove/reorder in one write). The array position IS the display order.
+describe("paquetes DAL — setPlanFeatures write orchestration (injected fake)", () => {
+  it("calls set_plan_features with p_plan_id + the ordered labels", async () => {
+    const fake = makeFake();
+    await setPlanFeatures({ planId: ID, features: ["Acceso total", "Vestidor"] }, fake.client);
+    expect(fake.rpcCalls).toEqual([
+      { name: "set_plan_features", args: { p_plan_id: ID, p_labels: ["Acceso total", "Vestidor"] } },
+    ]);
+  });
+
+  it("drops blank labels and trims (partially-filled rows are tolerated)", async () => {
+    const fake = makeFake();
+    await setPlanFeatures({ planId: ID, features: ["  A  ", "   ", "B"] }, fake.client);
+    expect(fake.rpcCalls[0].args.p_labels).toEqual(["A", "B"]);
+  });
+
+  it("rejects a label over 80 chars (zod) before any write", async () => {
+    const fake = makeFake();
+    await expect(
+      setPlanFeatures({ planId: ID, features: ["x".repeat(81)] }, fake.client),
+    ).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("rejects a non-uuid planId (zod) before any write", async () => {
+    const fake = makeFake();
+    await expect(setPlanFeatures({ planId: "nope", features: [] }, fake.client)).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("throws 'No autenticado' when getClaims returns no sub", async () => {
+    const fake = makeFake({ sub: null });
+    await expect(setPlanFeatures({ planId: ID, features: ["A"] }, fake.client)).rejects.toThrow(
+      "No autenticado",
+    );
     expect(fake.rpcCalls).toHaveLength(0);
   });
 });

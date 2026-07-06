@@ -290,38 +290,53 @@ export type Database = {
       }
       paquetes: {
         Row: {
+          badge: string | null
+          cadence: string | null
           clases: number | null
+          code: string | null
           created_at: string
           gym_id: string
           id: string
+          name: string | null
           nombre: string
           orden: number
           popular: boolean
           precio: number
+          subtitle: string | null
           vigencia_dias: number | null
           vigencia_tipo: string
         }
         Insert: {
+          badge?: string | null
+          cadence?: string | null
           clases?: number | null
+          code?: string | null
           created_at?: string
           gym_id: string
           id?: string
+          name?: string | null
           nombre: string
           orden?: number
           popular?: boolean
           precio: number
+          subtitle?: string | null
           vigencia_dias?: number | null
           vigencia_tipo?: string
         }
         Update: {
+          badge?: string | null
+          cadence?: string | null
           clases?: number | null
+          code?: string | null
           created_at?: string
           gym_id?: string
           id?: string
+          name?: string | null
           nombre?: string
           orden?: number
           popular?: boolean
           precio?: number
+          subtitle?: string | null
           vigencia_dias?: number | null
           vigencia_tipo?: string
         }
@@ -369,6 +384,48 @@ export type Database = {
             columns: ["gym_id"]
             isOneToOne: true
             referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      plan_feature: {
+        Row: {
+          created_at: string
+          gym_id: string
+          id: string
+          label: string
+          orden: number
+          plan_id: string
+        }
+        Insert: {
+          created_at?: string
+          gym_id: string
+          id?: string
+          label: string
+          orden: number
+          plan_id: string
+        }
+        Update: {
+          created_at?: string
+          gym_id?: string
+          id?: string
+          label?: string
+          orden?: number
+          plan_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "plan_feature_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "plan_feature_plan_id_fkey"
+            columns: ["plan_id"]
+            isOneToOne: false
+            referencedRelation: "paquetes"
             referencedColumns: ["id"]
           },
         ]
@@ -483,6 +540,17 @@ export type Database = {
         }
         Returns: undefined
       }
+      actualizar_paquete_marketing: {
+        Args: {
+          p_badge: string
+          p_cadence: string
+          p_code: string
+          p_id: string
+          p_name: string
+          p_subtitle: string
+        }
+        Returns: undefined
+      }
       actualizar_plantilla: {
         Args: { p_body: string; p_id: string; p_nombre: string }
         Returns: undefined
@@ -523,6 +591,10 @@ export type Database = {
         }[]
       }
       sembrar_plantillas_default: { Args: never; Returns: undefined }
+      set_plan_features: {
+        Args: { p_labels: string[]; p_plan_id: string }
+        Returns: undefined
+      }
       staff_gym: { Args: never; Returns: string }
       toggle_pase: {
         Args: { p_cliente_id: string; p_fecha: string }
