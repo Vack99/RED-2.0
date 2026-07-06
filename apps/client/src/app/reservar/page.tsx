@@ -1,7 +1,11 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { getAgendaSemanaMiembro, getSaldoMiembro } from "@gym/data/server/agenda-miembro";
+import {
+  getAgendaSemanaMiembro,
+  getPerfilResumenMiembro,
+  getSaldoMiembro,
+} from "@gym/data/server/agenda-miembro";
 import { createClient } from "@gym/data/server/supabase";
 
 import { ReservarSemana } from "./_components/reservar-semana";
@@ -35,9 +39,21 @@ export default async function ReservarPage() {
   const claims = data?.claims;
   if (!claims?.sub) redirect("/entrar");
 
-  const [semana, saldo] = await Promise.all([getAgendaSemanaMiembro(), getSaldoMiembro()]);
+  const [semana, saldo, perfil] = await Promise.all([
+    getAgendaSemanaMiembro(),
+    getSaldoMiembro(),
+    getPerfilResumenMiembro(),
+  ]);
   const meta = claims.user_metadata as { full_name?: string } | undefined;
   const nombre = meta?.full_name ?? (typeof claims.email === "string" ? claims.email : "");
 
-  return <ReservarSemana semana={semana} saldo={saldo} iniciales={iniciales(nombre)} />;
+  return (
+    <ReservarSemana
+      semana={semana}
+      saldo={saldo}
+      nombre={nombre}
+      iniciales={iniciales(nombre)}
+      perfil={perfil}
+    />
+  );
 }

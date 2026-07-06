@@ -12,6 +12,8 @@ import {
   hoyEnZona,
   inicioSemana,
   instanteEnZona,
+  MON,
+  MONTHS_FULL,
   parseDay,
   sameDay,
   semanaLunSab,
@@ -277,3 +279,136 @@ export const getSaldoMiembro = cache(
     return { ilimitado: data.clases_restantes === null, clasesRestantes: data.clases_restantes };
   },
 );
+
+/**
+ * One of the signed-in member's upcoming bookings, display-ready for the Perfil
+ * overlay's "Próximas reservas" card (mock: mr-card). `sessionId` drives the cancel
+ * RPC + the .ics calendar action; `inicioIso` / `finIso` are the absolute UTC bounds
+ * that action needs. hora / date / duración are formatted server-side in the gym tz.
+ */
+export interface ProximaReservaDTO {
+  sessionId: string;
+  tipo: string;
+  /** Coach names joined " · ", or "Por asignar". */
+  coaches: string;
+  /** Gym-local "HH:MM" start. */
+  hora: string;
+  /** "60 min". */
+  duracionLabel: string;
+  /** Card date rail line 1: "MIÉ 17" (gym-local weekday + day-of-month). */
+  fechaCorta: string;
+  /** Card date rail line 2: "JUN" (gym-local month). */
+  mesCorto: string;
+  /** Absolute UTC start / end — the calendar (.ics) action's DTSTART/DTEND. */
+  inicioIso: string;
+  finIso: string;
+  /** Room label for the .ics location, or null. */
+  sala: string | null;
+}
+
+/**
+ * The Perfil overlay's member data (slice #58): the identity "miembro desde" line and
+ * the upcoming bookings. `desde` is the gym-local month-year the member's cliente row
+ * was created (null when unknown). `reservas` are the member's own ACTIVE (reservada)
+ * bookings for sessions that have NOT yet started, soonest first — a plain RLS read of
+ * their own reservation rows (reservation_member_select), the same own-only surface the
+ * agenda's `miReserva` flag uses. Occupancy is irrelevant here (these are the member's
+ * own held spots), so this reader does NOT touch the contarActivos seam.
+ */
+export interface PerfilResumenMiembroDTO {
+  desde: string | null;
+  reservas: ProximaReservaDTO[];
+}
+
+export const getPerfilResumenMiembro = cache(
+  async (client?: SupabaseServer): Promise<PerfilResumenMiembroDTO> => {
+    const supabase = client ?? (await createClient());
+    const tz = await resolverMiembroTz(supabase);
+
+    const { data: cli } = await supabase
+      .from("clientes")
+      .select("created_at")
+      .limit(1)
+      .maybeSingle();
+    const desde = cli?.created_at
+      ? (() => {
+          const d = fechaEnZona(cli.created_at, tz);
+          return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`;
+        })()
+      : null;
+
+    return { desde, reservas: await fetchProximasReservas(supabase, tz) };
+  },
+);
+
+/** The member's own reservada bookings for not-yet-started sessions, soonest first,
+ *  joined to class_type + coaches — the same three-plain-reads assembly the week reader
+ *  uses, keyed here off the reservation rows instead of a week window. */
+async function fetchProximasReservas(
+  supabase: SupabaseServer,
+  tz: string,
+): Promise<ProximaReservaDTO[]> {
+  const { data: reservas, error } = await supabase
+    .from("reservation")
+    .select("class_session_id")
+    .eq("status", "reservada");
+  if (error) throw error;
+  const sessionIds = [...new Set((reservas ?? []).map((r) => r.class_session_id))];
+  if (sessionIds.length === 0) return [];
+
+  const { data: sesiones, error: sesErr } = await supabase
+    .from("class_session")
+    .select("id, class_type_id, starts_at, duration_min")
+    .in("id", sessionIds)
+    .is("cancelled_at", null)
+    .gte("starts_at", new Date().toISOString())
+    .order("starts_at");
+  if (sesErr) throw sesErr;
+  const rows = sesiones ?? [];
+  if (rows.length === 0) return [];
+
+  const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
+  const [tiposRes, joinsRes] = await Promise.all([
+    supabase.from("class_type").select("id, name, sala").in("id", tipoIds),
+    supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", rows.map((r) => r.id)),
+  ]);
+  if (tiposRes.error) throw tiposRes.error;
+  if (joinsRes.error) throw joinsRes.error;
+
+  const tipoById = new Map((tiposRes.data ?? []).map((t) => [t.id, t]));
+  const joins = joinsRes.data ?? [];
+  const coachIds = [...new Set(joins.map((j) => j.coach_id))];
+  const coachesRes = coachIds.length
+    ? await supabase.from("coach").select("id, name").in("id", coachIds)
+    : { data: [] as { id: string; name: string }[], error: null };
+  if (coachesRes.error) throw coachesRes.error;
+  const coachById = new Map((coachesRes.data ?? []).map((c) => [c.id, c.name]));
+
+  const coachesBySession = new Map<string, string[]>();
+  for (const j of joins) {
+    const nombre = coachById.get(j.coach_id);
+    if (!nombre) continue;
+    const list = coachesBySession.get(j.session_id) ?? [];
+    list.push(nombre);
+    coachesBySession.set(j.session_id, list);
+  }
+
+  return rows.map((r) => {
+    const inicio = new Date(r.starts_at);
+    const local = fechaEnZona(r.starts_at, tz);
+    const tipo = tipoById.get(r.class_type_id);
+    const coaches = coachesBySession.get(r.id) ?? [];
+    return {
+      sessionId: r.id,
+      tipo: tipo?.name ?? "—",
+      coaches: coaches.length ? coaches.join(" · ") : "Por asignar",
+      hora: horaEnZona(inicio, tz),
+      duracionLabel: `${r.duration_min} min`,
+      fechaCorta: `${DOW[local.getDay()]} ${local.getDate()}`,
+      mesCorto: MON[local.getMonth()],
+      inicioIso: inicio.toISOString(),
+      finIso: new Date(inicio.getTime() + r.duration_min * 60_000).toISOString(),
+      sala: tipo?.sala ?? null,
+    };
+  });
+}
