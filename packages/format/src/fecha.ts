@@ -61,6 +61,33 @@ export function fechaEnZona(isoTimestamp: string, tz: string): Date {
   return new Date(get("year"), get("month") - 1, get("day"));
 }
 
+// One "HH:MM" formatter per distinct zone (js-hoist-intl), same cache discipline
+// as ymdFormatterFor. `hourCycle: "h23"` pins midnight to 00:00 (never 24:00).
+const hmFormatters = new Map<string, Intl.DateTimeFormat>();
+function hmFormatterFor(tz: string): Intl.DateTimeFormat {
+  let fmt = hmFormatters.get(tz);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    });
+    hmFormatters.set(tz, fmt);
+  }
+  return fmt;
+}
+
+/** The gym-local "HH:MM" wall clock for an absolute instant — the read-side
+ *  sibling of instanteEnZona (a `class_session.starts_at` → the Agenda card's
+ *  hora). Never reads a gym row: `tz` is the caller's resolved zone. */
+export function horaEnZona(instante: Date, tz: string): string {
+  const parts = hmFormatterFor(tz).formatToParts(instante);
+  const hh = parts.find((p) => p.type === "hour")!.value;
+  const mm = parts.find((p) => p.type === "minute")!.value;
+  return `${hh}:${mm}`;
+}
+
 // ── Agenda write-side tz math (Phase 5, ADR-0010 §k) ─────────────────────
 // The Agenda DAL resolves EVERY absolute instant it sends to a scheduling RPC —
 // and every reader window bound — through instanteEnZona, never re-deriving the

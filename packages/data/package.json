@@ -9,6 +9,7 @@
     "./server/_auth": "./src/server/_auth.ts",
     "./server/agenda": "./src/server/agenda.ts",
     "./server/asistencia": "./src/server/asistencia.ts",
+    "./server/catalog": "./src/server/catalog.ts",
     "./server/clientes": "./src/server/clientes.ts",
     "./server/cobro": "./src/server/cobro.ts",
     "./server/derive": "./src/server/derive.ts",

@@ -40,7 +40,8 @@ so Next compiles them in its own boundary (ADR-0011 §1). This is load-bearing f
 | inicio | `inicio` | Dashboard / home metrics |
 | asistencia | `asistencia` | Pase de lista (attendance) |
 | clientes | `clientes` | Roster + ficha (`clientes/[id]`) |
-| vender | `vender` | Venta + recibo (sell/renew) |
+| agenda | `agenda` | Class schedule — DÍA + SEMANA + editor (ADR-0010) |
+| vender | `vender` | Venta + recibo (sell/renew) — off the tab bar; reached from ficha + inicio |
 | cuenta | `cuenta` | Perfil + ajustes + respaldo |
 
 No screen imports another screen's `_components`; cross-sector composition happens at the route.
