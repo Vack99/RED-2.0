@@ -367,6 +367,7 @@ export type Database = {
           gym_id: string
           id: string
           nombre: string
+          notificaciones_activadas: boolean
           paquete_nombre: string | null
           phone_e164: string | null
           privacy_accepted_at: string | null
@@ -384,6 +385,7 @@ export type Database = {
           gym_id: string
           id?: string
           nombre: string
+          notificaciones_activadas?: boolean
           paquete_nombre?: string | null
           phone_e164?: string | null
           privacy_accepted_at?: string | null
@@ -401,6 +403,7 @@ export type Database = {
           gym_id?: string
           id?: string
           nombre?: string
+          notificaciones_activadas?: boolean
           paquete_nombre?: string | null
           phone_e164?: string | null
           privacy_accepted_at?: string | null
@@ -1443,6 +1446,7 @@ export type Database = {
         }[]
       }
       sembrar_plantillas_default: { Args: never; Returns: undefined }
+      set_notificaciones: { Args: { p_enabled: boolean }; Returns: boolean }
       set_plan_features: {
         Args: { p_labels: string[]; p_plan_id: string }
         Returns: undefined

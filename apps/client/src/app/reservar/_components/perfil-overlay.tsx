@@ -1,28 +1,36 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { type ReactNode, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
+import { createClient } from "@gym/data/client";
 import type { ProximaReservaDTO } from "@gym/data/server/agenda-miembro";
 
 import { buildIcs } from "../../../lib/ics";
-import { cancelarReservaAction } from "../actions";
+import { cancelarReservaAction, setNotificacionesAction } from "../actions";
 
 /**
  * The consolidated Perfil overlay (PRD #49 Implementation Decisions: ONE component with
- * modes). This slice (#58) ships its SHELL — the full-screen right-to-left slide-in
- * opened from Reservar's avatar — plus the "Próximas reservas" section: the member's
- * upcoming bookings as cards with cancel + calendar actions, and the designed empty
- * state. Later slices add the membresía (#61) and perfil-hub (#62) sections as further
- * regions of THIS same overlay. Cancelling calls the atomic `cancelar_reserva` RPC then
- * refreshes so the freed spot re-derives on the week behind. Brand-neutral: every color
- * is a contract token.
+ * modes). The SHELL + "Próximas reservas" landed in #58; THIS slice (#62) completes the
+ * hub: the identity block (already present), the Cuenta settings list — a notifications
+ * PREFERENCE toggle (in-app, no delivery channel; persisted via a self-scoped DEFINER
+ * toggle), Términos y privacidad → the legal texts, Ayuda y contacto → the marketing
+ * Contacto page, and Cerrar sesión with its confirm sheet returning the signed-out socio
+ * to the landing — plus the footer app-version line. The mock's "Datos personales" stub
+ * is dropped (no dead controls). Brand-neutral: every color is a contract token, and the
+ * footer brand name is real data (gym.brand_name), never a hardcoded string.
  */
 
 const backArrow = (
   <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M12 4l-6 6 6 6" />
+  </svg>
+);
+
+const chevron = (
+  <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 5l5 5-5 5" />
   </svg>
 );
 
@@ -136,6 +144,121 @@ function EmptyReservas({ onReservar }: { onReservar: () => void }) {
   );
 }
 
+/** The mock's pf-toggle: an accent pill knob. Reflects the persisted preference; the
+ *  parent owns the optimistic flip + the action call. */
+function Toggle({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      aria-label="Notificaciones"
+      onClick={onToggle}
+      disabled={disabled}
+      className={`relative h-6 w-[42px] flex-none rounded-full transition-colors disabled:opacity-70 ${
+        on ? "bg-accent/40" : "bg-sunk"
+      }`}
+    >
+      <span
+        className={`absolute top-[3px] h-[18px] w-[18px] rounded-full transition-transform ${
+          on ? "translate-x-[21px] bg-accent" : "translate-x-[3px] bg-muted-soft"
+        }`}
+      />
+    </button>
+  );
+}
+
+/** A Cuenta list row: a label plus a trailing control (chevron for links, the toggle for
+ *  the preference). `danger` tints the label accent for Cerrar sesión. */
+function Row({
+  label,
+  trailing,
+  danger,
+  onClick,
+  href,
+}: {
+  label: string;
+  trailing?: ReactNode;
+  danger?: boolean;
+  onClick?: () => void;
+  href?: string;
+}) {
+  const inner = (
+    <>
+      <span className={`flex-1 text-sm ${danger ? "font-semibold text-accent" : "text-fg"}`}>{label}</span>
+      {trailing}
+    </>
+  );
+  const cls = "flex w-full items-center gap-3.5 border-t border-line py-4 text-left";
+  if (href) {
+    return (
+      <Link href={href} onClick={onClick} className={cls}>
+        {inner}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} className={cls}>
+      {inner}
+    </button>
+  );
+}
+
+/** The shared bottom-sheet confirm (the mock's pconf), reused by cancel-reserva and
+ *  cerrar-sesión: a scrim + a slide-up card with a title, body, optional error, and a
+ *  keep/confirm button pair. */
+function ConfirmSheet({
+  title,
+  body,
+  error,
+  cancelLabel,
+  confirmLabel,
+  danger,
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  title: string;
+  body: string;
+  error: string | null;
+  cancelLabel: string;
+  confirmLabel: string;
+  danger?: boolean;
+  pending: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <>
+      <button type="button" aria-label="Cerrar" onClick={onCancel} className="absolute inset-0 z-[5] bg-black/60" />
+      <div className="absolute inset-x-0 bottom-0 z-[6] border-t border-line bg-canvas px-6 pb-8 pt-6">
+        <h4 className="text-[17px] font-bold text-fg">{title}</h4>
+        <p className="mt-2 text-xs leading-relaxed text-muted">{body}</p>
+        {error && <p className="mt-2.5 text-[11px] font-semibold text-danger">{error}</p>}
+        <div className="mt-4 flex gap-2.5">
+          <button
+            type="button"
+            onClick={onCancel}
+            className="flex-1 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted"
+          >
+            {cancelLabel}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={pending}
+            className={`flex-1 rounded-xl py-3.5 text-[11px] font-bold uppercase tracking-wider text-white disabled:opacity-70 ${
+              danger ? "bg-danger" : "bg-accent"
+            }`}
+          >
+            {pending ? "Un momento…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function PerfilOverlay({
   open,
   onClose,
@@ -143,6 +266,8 @@ export function PerfilOverlay({
   iniciales,
   desde,
   reservas,
+  notificaciones,
+  marca,
 }: {
   open: boolean;
   onClose: () => void;
@@ -150,9 +275,18 @@ export function PerfilOverlay({
   iniciales: string;
   desde: string | null;
   reservas: ProximaReservaDTO[];
+  notificaciones: boolean;
+  marca: string;
 }) {
   const [shown, setShown] = useState(false);
   const [confirm, setConfirm] = useState<ProximaReservaDTO | null>(null);
+  const [logout, setLogout] = useState(false);
+  const [logoutPending, setLogoutPending] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
+  // The toggle is the sole writer of this preference and the overlay stays mounted across
+  // the post-flip revalidation, so local state seeded from the prop needs no sync effect;
+  // a successful flip already matches the re-read server value, a failed one reverts.
+  const [notif, setNotif] = useState(notificaciones);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -170,6 +304,8 @@ export function PerfilOverlay({
 
   function close() {
     setConfirm(null);
+    setLogout(false);
+    setLogoutError(null);
     setError(null);
     onClose();
   }
@@ -187,6 +323,30 @@ export function PerfilOverlay({
         setError(res.error);
       }
     });
+  }
+
+  /** Optimistic preference flip: paint the new state immediately, persist behind it, and
+   *  roll back to the DB truth on failure (a preference, so no blocking spinner). */
+  function toggleNotif() {
+    const next = !notif;
+    setNotif(next);
+    startTransition(async () => {
+      const res = await setNotificacionesAction(next);
+      if (!res.ok) setNotif(!next);
+    });
+  }
+
+  async function cerrarSesion() {
+    setLogoutPending(true);
+    setLogoutError(null);
+    const { error: signOutError } = await createClient().auth.signOut();
+    if (signOutError) {
+      setLogoutError("No se pudo cerrar sesión. Inténtalo de nuevo.");
+      setLogoutPending(false);
+      return;
+    }
+    router.replace("/");
+    router.refresh();
   }
 
   return (
@@ -239,41 +399,55 @@ export function PerfilOverlay({
               <EmptyReservas onReservar={close} />
             )}
           </section>
+
+          <section className="mt-8">
+            <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Cuenta</div>
+            <Row label="Notificaciones" trailing={<Toggle on={notif} onToggle={toggleNotif} disabled={pending} />} />
+            <Row
+              label="Términos y privacidad"
+              trailing={<span className="text-muted-soft">{chevron}</span>}
+              href="/legal"
+              onClick={close}
+            />
+            <Row
+              label="Ayuda y contacto"
+              trailing={<span className="text-muted-soft">{chevron}</span>}
+              href="/contacto"
+              onClick={close}
+            />
+            <Row label="Cerrar sesión" danger onClick={() => { setLogoutError(null); setLogout(true); }} />
+          </section>
+
+          <footer className="mt-8 text-center">
+            <div className="text-[9px] uppercase tracking-[0.16em] text-muted-soft">{marca} App v1.0</div>
+          </footer>
         </div>
 
         {confirm && (
-          <>
-            <button
-              type="button"
-              aria-label="Cerrar"
-              onClick={() => { setConfirm(null); setError(null); }}
-              className="absolute inset-0 z-[5] bg-black/60"
-            />
-            <div className="absolute inset-x-0 bottom-0 z-[6] border-t border-line bg-canvas px-6 pb-8 pt-6">
-              <h4 className="text-[17px] font-bold text-fg">¿Cancelar esta reserva?</h4>
-              <p className="mt-2 text-xs leading-relaxed text-muted">
-                Liberarás tu lugar. Puedes volver a reservar si hay cupo.
-              </p>
-              {error && <p className="mt-2.5 text-[11px] font-semibold text-danger">{error}</p>}
-              <div className="mt-4 flex gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => { setConfirm(null); setError(null); }}
-                  className="flex-1 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted"
-                >
-                  Conservar lugar
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelar}
-                  disabled={pending}
-                  className="flex-1 rounded-xl bg-danger py-3.5 text-[11px] font-bold uppercase tracking-wider text-white disabled:opacity-70"
-                >
-                  {pending ? "Cancelando…" : "Sí, cancelar"}
-                </button>
-              </div>
-            </div>
-          </>
+          <ConfirmSheet
+            title="¿Cancelar esta reserva?"
+            body="Liberarás tu lugar. Puedes volver a reservar si hay cupo."
+            error={error}
+            cancelLabel="Conservar lugar"
+            confirmLabel="Sí, cancelar"
+            danger
+            pending={pending}
+            onCancel={() => { setConfirm(null); setError(null); }}
+            onConfirm={cancelar}
+          />
+        )}
+
+        {logout && (
+          <ConfirmSheet
+            title="¿Cerrar sesión?"
+            body="Tendrás que volver a entrar para reservar."
+            error={logoutError}
+            cancelLabel="Cancelar"
+            confirmLabel="Cerrar sesión"
+            pending={logoutPending}
+            onCancel={() => { setLogout(false); setLogoutError(null); }}
+            onConfirm={cerrarSesion}
+          />
         )}
       </div>
     </div>
