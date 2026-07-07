@@ -130,11 +130,12 @@ declare
 begin
   select * into r from public.reclamar_o_crear_cliente(g);
   if r.reclamado then raise exception 'V2 FAIL: no matching email should NOT claim'; end if;
-  select nombre, tel, gym_id, auth_user_id into rec from public.clientes where id = r.cliente_id;
+  select nombre, tel, gym_id, auth_user_id, clases_restantes into rec from public.clientes where id = r.cliente_id;
   if rec.auth_user_id <> un then raise exception 'V2 FAIL: fresh cliente not owned by the registrant'; end if;
   if rec.gym_id <> g then raise exception 'V2 FAIL: fresh cliente not scoped to the resolved gym'; end if;
   if rec.nombre <> 'Nora Nueva' then raise exception 'V2 FAIL: nombre not carried from signup metadata (%)', rec.nombre; end if;
   if rec.tel <> '6142223344' then raise exception 'V2 FAIL: tel not derived from phone_e164 (%)', rec.tel; end if;
+  if rec.clases_restantes is distinct from 0 then raise exception 'V2 FAIL: fresh self-registrant must start at 0 clases (finite), got % — NULL means Ilimitado = free booking', rec.clases_restantes; end if;
 end $$;
 reset role;
 
