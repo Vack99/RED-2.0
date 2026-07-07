@@ -1446,6 +1446,7 @@ export type Database = {
           p_clases?: number
           p_clases_restantes?: number
           p_cliente_id?: string
+          p_email?: string
           p_metodo: string
           p_monto: number
           p_nombre: string
