@@ -4,7 +4,9 @@
 -- (20260705082018) except the NEW-cliente INSERT now stores clientes.email = p_email. SECURITY INVOKER,
 -- search_path='' preserved. p_email is nullable (DEFAULT NULL) so cash-only walk-ins and Forge stay green.
 -- Note: PostgREST resolves named-arg calls that omit p_email to this single overload, so old app code calling
--- the 11 named args keeps working through the deploy window (no coordinated deploy needed).
+-- the 11 named args keeps working once this migration is applied. IMPORTANT: apply this migration to live
+-- BEFORE the app deploys — the reverse (new app code forwarding p_email against the still-11-arg live
+-- function) fails new-client-with-email sales with PGRST202.
 drop function if exists public.registrar_venta(text, text, text, text, integer, text, uuid, integer, date, integer, integer);
 
 create function public.registrar_venta(
