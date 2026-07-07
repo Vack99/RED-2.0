@@ -14,11 +14,17 @@
 
 begin;
 
--- Resolve the operator at runtime (the only env-dependent value): perfil.user_id is a real auth.users
--- id; registrar_venta keys writes to auth.uid() and RLS scopes clientes/ventas to it.
+-- Resolve the operator at runtime (the only env-dependent value): the forge gym's owner/operator
+-- gym_membership row carries a real auth.users id (perfil.user_id was dropped by Contract-B,
+-- 20260705082018). staff_gym() resolves the caller's gym from this same (user_id, role in
+-- ('owner','operator')) predicate, so the session is staff of forge and RLS scopes clientes/ventas to it.
 select set_config(
   'app.op',
-  (select user_id::text from public.perfil order by created_at limit 1),
+  (select user_id::text from public.gym_membership
+     where gym_id = (select id from public.gym where slug = 'forge')
+       and role in ('owner', 'operator')
+     order by created_at
+     limit 1),
   true
 );
 select set_config(
