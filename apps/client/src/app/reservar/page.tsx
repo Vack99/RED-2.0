@@ -33,7 +33,12 @@ function iniciales(nombre: string): string {
  * member's own gym/row. Paint is token-driven, so RED hosts render RED and Forge
  * hosts render Forge with no brand import here.
  */
-export default async function ReservarPage() {
+export default async function ReservarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ perfil?: string }>;
+}) {
+  const { perfil: perfilParam } = await searchParams;
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
@@ -54,6 +59,7 @@ export default async function ReservarPage() {
       nombre={nombre}
       iniciales={iniciales(nombre)}
       perfil={perfil}
+      perfilInicial={perfilParam === "1"}
     />
   );
 }

@@ -10,6 +10,7 @@ import type {
   SesionMiembroDTO,
 } from "@gym/data/server/agenda-miembro";
 
+import { descargarIcs } from "../../../lib/ics";
 import { presentarEstadoReserva, type TonoReserva } from "../../../lib/reserva-vista";
 import { reservarClaseAction } from "../actions";
 import { PerfilOverlay } from "./perfil-overlay";
@@ -26,7 +27,8 @@ import { PerfilOverlay } from "./perfil-overlay";
 
 const NUM_TONE: Record<TonoReserva, string> = {
   open: "text-accent",
-  full: "text-danger",
+  // Full is an amber WARNING in the mock (--danger = #e8902a), not the error red.
+  full: "text-warning",
   finished: "text-muted",
 };
 
@@ -57,33 +59,34 @@ const CONFETTI = Array.from({ length: 20 }, (_, i) => {
   };
 });
 
-function OccupancyBar({ pct, finished }: { pct: number; finished: boolean }) {
+/** The mock's ember occupancy bar (.rcard-pips): a continuous fill whose width is the
+ *  derived occupancy %, glowing on the track (RED dark) and calm (Forge light). `.ignited`
+ *  plays the fill sweep on mount; `--card-i` desyncs each card's idle breathe. State drives
+ *  the fill color: full → amber (.s-full), past → dead (.s-finished), else accent. */
+function OccupancyBar({ pct, tono, idx }: { pct: number; tono: TonoReserva; idx: number }) {
+  const estado = tono === "finished" ? "s-finished" : tono === "full" ? "s-full" : "";
   return (
-    <div className="mt-3 h-[3px] overflow-hidden rounded-full bg-sunk">
-      <div
-        className={`h-full rounded-full ${finished ? "bg-muted/40" : "bg-accent"}`}
-        style={{ width: `${pct}%` }}
-      />
+    <div className={`rcard-pips ignited ${estado}`} style={{ "--card-i": idx } as CSSProperties}>
+      <i style={{ width: `${pct}%` }} />
     </div>
   );
 }
 
-function ClassCard({ sesion, onOpen }: { sesion: SesionMiembroDTO; onOpen: () => void }) {
+function ClassCard({ sesion, idx, onOpen }: { sesion: SesionMiembroDTO; idx: number; onOpen: () => void }) {
   const vista = presentarEstadoReserva(sesion.estado, sesion.disponibles, sesion.miReserva);
 
   return (
     <button
       type="button"
       onClick={onOpen}
-      className={`flex w-full overflow-hidden rounded-2xl border text-left transition-colors ${
-        vista.reservada ? "border-accent/50" : "border-line"
-      } bg-surface ${vista.atenuada ? "opacity-60" : ""}`}
+      style={{ "--notch-x": "calc(100% - 104px)", border: "none" } as CSSProperties}
+      className={`ticket w-full text-left ${vista.atenuada ? "opacity-60" : ""}`}
     >
       <div className="flex min-w-0 flex-1 flex-col p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
-              <span className="truncate text-lg font-bold uppercase tracking-wide text-fg">
+              <span className="text-lg font-bold uppercase tracking-wide text-fg">
                 {sesion.tipo}
               </span>
               {sesion.favorita && (
@@ -95,6 +98,11 @@ function ClassCard({ sesion, onOpen }: { sesion: SesionMiembroDTO; onOpen: () =>
             <div className="mt-1.5 text-[11px] font-medium uppercase tracking-wide text-muted">
               {sesion.coaches} · {sesion.duracionLabel}
             </div>
+            {sesion.favorita && (
+              <span className="mt-2 inline-flex items-center gap-1 rounded-full border border-accent/40 px-2 py-0.5 text-[8.5px] font-bold uppercase tracking-wider text-accent">
+                Tu favorita
+              </span>
+            )}
           </div>
           <div className="flex flex-none items-baseline gap-1.5">
             <span className="max-w-[3rem] text-right text-[9px] font-bold uppercase leading-tight tracking-wide text-muted">
@@ -105,10 +113,14 @@ function ClassCard({ sesion, onOpen }: { sesion: SesionMiembroDTO; onOpen: () =>
             </span>
           </div>
         </div>
-        <OccupancyBar pct={sesion.ocupacionPct} finished={vista.tono === "finished"} />
+        <OccupancyBar pct={sesion.ocupacionPct} tono={vista.tono} idx={idx} />
       </div>
 
-      <div className="flex w-24 flex-none flex-col items-center justify-center gap-3 bg-sunk px-2.5 py-4">
+      <span className="ticket-perf" />
+      <span className="ticket-notch top" />
+      <span className="ticket-notch bottom" />
+
+      <div className="flex w-[104px] flex-none flex-col items-center justify-center gap-3 bg-sunk px-2.5 py-4">
         <span className="text-lg font-extrabold tabular-nums text-fg">{sesion.hora}</span>
         {vista.reservable ? (
           <span className="bg-accent px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white">
@@ -125,7 +137,7 @@ function ClassCard({ sesion, onOpen }: { sesion: SesionMiembroDTO; onOpen: () =>
           <span
             className={`px-2.5 py-2 text-[8.5px] font-bold uppercase tracking-wide ${
               vista.tono === "full"
-                ? "border border-danger/40 bg-danger-soft text-danger"
+                ? "border border-warning/40 bg-warning-soft text-warning"
                 : "border border-line bg-surface text-muted"
             }`}
           >
@@ -141,9 +153,9 @@ type Badge = { texto: string; clase: string };
 function badgeDe(sesion: SesionMiembroDTO): Badge {
   if (sesion.estado === "termino") return { texto: "Terminada", clase: "border-line bg-sunk text-muted" };
   if (sesion.miReserva) return { texto: "Reservada", clase: "border-accent/40 bg-accent-soft text-accent" };
-  if (sesion.estado === "lleno") return { texto: "Llena", clase: "border-danger/40 bg-danger-soft text-danger" };
+  if (sesion.estado === "lleno") return { texto: "Llena", clase: "border-warning/40 bg-warning-soft text-warning" };
   if (sesion.estado === "casi_lleno")
-    return { texto: "Pocos lugares", clase: "border-danger/40 bg-danger-soft text-danger" };
+    return { texto: "Pocos lugares", clase: "border-warning/40 bg-warning-soft text-warning" };
   return { texto: "Disponible", clase: "border-accent/40 bg-accent-soft text-accent" };
 }
 
@@ -151,7 +163,7 @@ function Cell({ k, v, few }: { k: string; v: string; few?: boolean }) {
   return (
     <div className="bg-surface px-3.5 py-3">
       <div className="text-[8px] font-bold uppercase tracking-[0.12em] text-muted">{k}</div>
-      <div className={`mt-1 text-sm font-bold ${few ? "text-danger" : "text-fg"}`}>{v}</div>
+      <div className={`mt-1 text-sm font-bold ${few ? "text-warning" : "text-fg"}`}>{v}</div>
     </div>
   );
 }
@@ -161,6 +173,25 @@ const arrow = (
     <path d="M5 10h10M11 6l4 4-4 4" />
   </svg>
 );
+
+const calIcon = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="5" width="16" height="16" rx="1" />
+    <path d="M8 3v4M16 3v4M4 10h16" />
+  </svg>
+);
+
+/** Client-side .ics download for the just-booked session (the confirmed sheet's
+ *  "Añadir al calendario" action). */
+function descargarIcsSesion(sesion: SesionMiembroDTO) {
+  descargarIcs({
+    uid: sesion.id,
+    title: sesion.tipo,
+    inicioIso: sesion.inicioIso,
+    finIso: sesion.finIso,
+    sala: sesion.sala,
+  });
+}
 
 function SummarySheet({
   sesion,
@@ -214,7 +245,7 @@ function SummarySheet({
   } else {
     const nota =
       sesion.estado === "casi_lleno" ? (
-        <p className="mb-2.5 text-center text-[11px] font-semibold text-danger">
+        <p className="mb-2.5 text-center text-[11px] font-semibold text-warning">
           Solo {sesion.disponibles} libre{sesion.disponibles === 1 ? "" : "s"} · asegura tu lugar
         </p>
       ) : saldo.ilimitado ? (
@@ -308,10 +339,12 @@ function SummarySheet({
 function ConfirmedSheet({
   sesion,
   diaLabel,
+  onVerReservas,
   onClose,
 }: {
   sesion: SesionMiembroDTO;
   diaLabel: string;
+  onVerReservas: () => void;
   onClose: () => void;
 }) {
   return (
@@ -350,13 +383,31 @@ function ConfirmedSheet({
           {diaLabel} · <b className="font-semibold text-muted">{sesion.sala ?? "Estudio"}</b> · termina {sesion.horaFin}
         </p>
       </div>
-      <button
-        type="button"
-        onClick={onClose}
-        className="mt-6 flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
-      >
-        Reservar otra
-      </button>
+      <div className="mt-6 flex flex-col gap-2.5">
+        <button
+          type="button"
+          onClick={onVerReservas}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+        >
+          Ver mis reservas
+          {arrow}
+        </button>
+        <button
+          type="button"
+          onClick={() => descargarIcsSesion(sesion)}
+          className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted"
+        >
+          {calIcon}
+          Añadir al calendario
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="w-full py-2 text-[11px] font-semibold uppercase tracking-wider text-muted-soft"
+        >
+          Reservar otra
+        </button>
+      </div>
     </>
   );
 }
@@ -369,18 +420,21 @@ export function ReservarSemana({
   nombre,
   iniciales,
   perfil,
+  perfilInicial = false,
 }: {
   semana: AgendaSemanaMiembroDTO;
   saldo: SaldoMiembroDTO;
   nombre: string;
   iniciales: string;
   perfil: PerfilResumenMiembroDTO;
+  /** Deep-link: /reservar?perfil=1 (from /confirmada) opens the Perfil overlay on load. */
+  perfilInicial?: boolean;
 }) {
   const hoyIdx = semana.dias.findIndex((d) => d.esHoy);
   const [sel, setSel] = useState(hoyIdx >= 0 ? hoyIdx : 0);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [shown, setShown] = useState(false);
-  const [perfilOpen, setPerfilOpen] = useState(false);
+  const [perfilOpen, setPerfilOpen] = useState(perfilInicial);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -463,7 +517,9 @@ export function ReservarSemana({
 
       <section className="mt-4 flex flex-col gap-3 px-1">
         {dia.sesiones.length > 0 ? (
-          dia.sesiones.map((s) => <ClassCard key={s.id} sesion={s} onOpen={() => openSheet(s)} />)
+          dia.sesiones.map((s, i) => (
+            <ClassCard key={s.id} sesion={s} idx={i} onOpen={() => openSheet(s)} />
+          ))
         ) : (
           <div className="px-6 py-12 text-center">
             <div className="text-base font-bold uppercase tracking-wide text-fg">Sin clases este día</div>
@@ -490,7 +546,15 @@ export function ReservarSemana({
             }`}
           >
             {sheet.mode === "confirmed" ? (
-              <ConfirmedSheet sesion={sheet.sesion} diaLabel={`${dia.weekday} ${dia.dnum}`} onClose={closeSheet} />
+              <ConfirmedSheet
+                sesion={sheet.sesion}
+                diaLabel={`${dia.weekday} ${dia.dnum}`}
+                onVerReservas={() => {
+                  closeSheet();
+                  setPerfilOpen(true);
+                }}
+                onClose={closeSheet}
+              />
             ) : (
               <SummarySheet
                 sesion={sheet.sesion}

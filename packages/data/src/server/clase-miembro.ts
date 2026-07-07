@@ -61,8 +61,8 @@ export interface ClaseDetalleDTO {
   nivel: string | null;
   descripcion: string | null;
   coaches: CoachDetalleDTO[];
-  /** Ordered "qué trabajamos" segment labels. */
-  bloques: string[];
+  /** Ordered "qué trabajamos" segments — mono label + optional detail (2-column). */
+  bloques: { etiqueta: string; valor: string | null }[];
   /** Ordered "qué traer" checklist labels. */
   porTraer: string[];
   capacidad: number;
@@ -94,6 +94,8 @@ export interface ConfirmacionReservaDTO {
   horaFin: string;
   duracionLabel: string;
   sala: string | null;
+  /** The gym's street address (gym_contact.address_line), or null when unset. */
+  direccion: string | null;
   favorita: boolean;
   /** Absolute UTC bounds for the .ics calendar action. */
   inicioIso: string;
@@ -114,9 +116,11 @@ function fechaLargaEnZona(local: Date): string {
   return `${capitalizar(WEEKDAYS_FULL[local.getDay()])} ${local.getDate()} de ${MONTHS_FULL[local.getMonth()]}`;
 }
 
-/** The member's gym timezone from their `gym_membership` self-read — the RLS gate (an
- *  anon/non-member reads none and every reader below returns null). */
-async function resolverMiembroTz(supabase: SupabaseServer): Promise<string | null> {
+/** The member's gym id + timezone from their `gym_membership` self-read — the RLS gate
+ *  (an anon/non-member reads none and every reader below returns null). */
+async function resolverMiembroGym(
+  supabase: SupabaseServer,
+): Promise<{ gymId: string; tz: string } | null> {
   const { data: membership } = await supabase
     .from("gym_membership")
     .select("gym_id")
@@ -128,7 +132,18 @@ async function resolverMiembroTz(supabase: SupabaseServer): Promise<string | nul
     .select("timezone")
     .eq("id", membership.gym_id)
     .maybeSingle();
-  return gym?.timezone ?? null;
+  if (!gym?.timezone) return null;
+  return { gymId: membership.gym_id, tz: gym.timezone };
+}
+
+/** The gym's street address (gym_contact.address_line), or null when unset/no row. */
+async function fetchDireccion(supabase: SupabaseServer, gymId: string): Promise<string | null> {
+  const { data } = await supabase
+    .from("gym_contact")
+    .select("address_line")
+    .eq("gym_id", gymId)
+    .maybeSingle();
+  return data?.address_line ?? null;
 }
 
 /** The signed-in member's favorite class-type id (self-read of their own clientes row). */
@@ -178,8 +193,9 @@ export const getClaseDetalleMiembro = cache(
   async (rawSessionId: string, client?: SupabaseServer): Promise<ClaseDetalleDTO | null> => {
     if (!sessionIdSchema.safeParse(rawSessionId).success) return null;
     const supabase = client ?? (await createClient());
-    const tz = await resolverMiembroTz(supabase);
-    if (!tz) return null;
+    const miembro = await resolverMiembroGym(supabase);
+    if (!miembro) return null;
+    const { tz } = miembro;
 
     const { data: sesion } = await supabase
       .from("class_session")
@@ -200,7 +216,7 @@ export const getClaseDetalleMiembro = cache(
       await Promise.all([
         supabase
           .from("class_type_workblock")
-          .select("label")
+          .select("label, value")
           .eq("class_type_id", tipo.id)
           .order("sort_order"),
         supabase
@@ -243,7 +259,7 @@ export const getClaseDetalleMiembro = cache(
       nivel: tipo.level,
       descripcion: tipo.description,
       coaches,
-      bloques: (bloquesRes.data ?? []).map((b) => b.label),
+      bloques: (bloquesRes.data ?? []).map((b) => ({ etiqueta: b.label, valor: b.value })),
       porTraer: (traerRes.data ?? []).map((b) => b.label),
       capacidad: sesion.capacity,
       disponibles: disponibles(sesion.capacity, ocupados),
@@ -266,8 +282,9 @@ export const getConfirmacionReserva = cache(
   async (rawSessionId: string, client?: SupabaseServer): Promise<ConfirmacionReservaDTO | null> => {
     if (!sessionIdSchema.safeParse(rawSessionId).success) return null;
     const supabase = client ?? (await createClient());
-    const tz = await resolverMiembroTz(supabase);
-    if (!tz) return null;
+    const miembro = await resolverMiembroGym(supabase);
+    if (!miembro) return null;
+    const { gymId, tz } = miembro;
 
     // The member's OWN active booking for this session (plain RLS read of their own rows).
     const { data: reserva } = await supabase
@@ -287,10 +304,11 @@ export const getConfirmacionReserva = cache(
       .maybeSingle();
     if (!sesion) return null;
 
-    const [{ data: tipo }, coaches, favoritoId] = await Promise.all([
+    const [{ data: tipo }, coaches, favoritoId, direccion] = await Promise.all([
       supabase.from("class_type").select("id, name, sala").eq("id", sesion.class_type_id).maybeSingle(),
       fetchCoaches(supabase, sesion.id),
       fetchFavoritoId(supabase),
+      fetchDireccion(supabase, gymId),
     ]);
     if (!tipo) return null;
 
@@ -309,6 +327,7 @@ export const getConfirmacionReserva = cache(
       horaFin: horaEnZona(fin, tz),
       duracionLabel: `${sesion.duration_min} min`,
       sala: tipo.sala,
+      direccion,
       favorita: favoritoId === tipo.id,
       inicioIso: inicio.toISOString(),
       finIso: fin.toISOString(),

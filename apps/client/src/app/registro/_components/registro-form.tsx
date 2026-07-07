@@ -43,7 +43,7 @@ const HELP = "mt-1.5 text-[10.5px] text-muted";
  * valid submit `new FormData(form)` carries the token to the action's server-side verifier. No prefilled
  * credentials, no dead controls (the terms/privacy names are emphasized text, not stub links).
  */
-export function RegistroForm() {
+export function RegistroForm({ brandName }: { readonly brandName: string }) {
   const [state, dispatch, pending] = useActionState(registrarAction, INICIAL);
 
   const [nombre, setNombre] = useState("");
@@ -100,8 +100,12 @@ export function RegistroForm() {
       <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
       <form onSubmit={onSubmit} className="flex w-full flex-col" style={{ maxWidth: 340, gap: 22 }}>
         <div className="text-center">
-          <h1 className="text-[22px] font-light uppercase tracking-[6px] text-fg">Crear cuenta</h1>
-          <p className="mt-2 text-[13px] text-muted">Reserva tu clase y empieza a entrenar.</p>
+          <h1 className="text-[30px] font-light uppercase tracking-[5px] text-fg" style={{ textIndent: 5, lineHeight: 1 }}>
+            Crear cuenta
+          </h1>
+          <p className="mt-3.5 text-[13px] text-muted">
+            Únete a {brandName}. Reserva tu clase y empieza a entrenar.
+          </p>
         </div>
 
         {state.status === "error" && (
@@ -131,7 +135,7 @@ export function RegistroForm() {
             onBlur={() => setErrNombre(validarNombreCompleto(nombre))}
             placeholder="Tu nombre y apellido"
             className={INPUT}
-            style={{ borderColor: errNombre ? "var(--red)" : "var(--line)" }}
+            style={{ borderColor: errNombre ? "var(--red)" : "var(--line-soft)" }}
           />
           {errNombre && <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errNombre}</p>}
         </div>
@@ -150,7 +154,7 @@ export function RegistroForm() {
             onBlur={() => setErrCorreo(validarCorreo(email))}
             placeholder="tu@correo.com"
             className={INPUT}
-            style={{ borderColor: errCorreo ? "var(--red)" : "var(--line)" }}
+            style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
           />
           {errCorreo ? (
             <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
@@ -165,7 +169,7 @@ export function RegistroForm() {
           </label>
           <div
             className="flex items-center border-b transition-colors focus-within:border-accent"
-            style={{ borderColor: errTelefono ? "var(--red)" : "var(--line)" }}
+            style={{ borderColor: errTelefono ? "var(--red)" : "var(--line-soft)" }}
           >
             <span className="pr-2 text-[15px] font-semibold text-muted">+52</span>
             <input
@@ -193,7 +197,7 @@ export function RegistroForm() {
           </label>
           <div
             className="flex items-center border-b transition-colors focus-within:border-accent"
-            style={{ borderColor: errPassword ? "var(--red)" : "var(--line)" }}
+            style={{ borderColor: errPassword ? "var(--red)" : "var(--line-soft)" }}
           >
             <input
               name="password"
@@ -261,11 +265,11 @@ export function RegistroForm() {
           )}
         </button>
 
-        <div className="flex flex-col items-center gap-3 text-[13px]">
+        <div className="flex flex-col items-center gap-3 text-center text-[13px]">
           <p className="text-muted">
-            ¿Ya tienes cuenta?{" "}
+            ¿Ya eres miembro?{" "}
             <Link href="/entrar" className="font-semibold text-accent">
-              Entrar
+              Inicia sesión
             </Link>
           </p>
           <Link href="/" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">

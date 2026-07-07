@@ -56,6 +56,9 @@ export interface SesionMiembroDTO {
   horaFin: string;
   /** "60 min". */
   duracionLabel: string;
+  /** Absolute UTC bounds — the confirmed-sheet ".ics" calendar action (slice #57). */
+  inicioIso: string;
+  finIso: string;
   estado: EstadoSesion;
   disponibles: number;
   capacidad: number;
@@ -237,6 +240,8 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
     hora: horaEnZona(s.startsAt, tz),
     horaFin: horaEnZona(new Date(s.startsAt.getTime() + s.duracionMin * 60_000), tz),
     duracionLabel: `${s.duracionMin} min`,
+    inicioIso: s.startsAt.toISOString(),
+    finIso: new Date(s.startsAt.getTime() + s.duracionMin * 60_000).toISOString(),
     estado,
     disponibles: disponibles(s.capacidad, s.activos),
     capacidad: s.capacidad,

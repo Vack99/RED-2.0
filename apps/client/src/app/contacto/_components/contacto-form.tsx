@@ -19,11 +19,13 @@ type TurnstileWindow = typeof window & {
   onContactoTurnstileError?: () => void;
 };
 
-function fieldClass(invalid: boolean | undefined): string {
-  return `w-full rounded-xl border bg-surface px-4 py-3 text-sm text-fg placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-accent ${
-    invalid ? "border-accent" : "border-line"
-  }`;
-}
+// Underline field styling (the mock's `.field`), identical to the entrar/registro screens:
+// uppercase micro-label, a bottom-ruled input/textarea that turns accent on focus and the
+// semantic `--red` when invalid (no Tailwind utility maps the hairline `--line-soft`, so it
+// rides inline, as the auth forms do).
+const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] transition-colors";
+const INPUT =
+  "w-full border-b bg-transparent py-3 text-[15px] text-fg outline-none transition-colors focus:border-accent";
 
 /**
  * The contact-form island — a native `<form action>` over the server action (`useActionState`), plus the
@@ -45,8 +47,8 @@ export function ContactoForm() {
   if (state.status === "success") {
     return (
       <div className="rounded-3xl border border-line bg-surface p-6 text-center" role="status">
-        <h3 className="text-lg font-bold text-fg">Mensaje enviado</h3>
-        <p className="mt-2 text-sm text-muted">Gracias por escribirnos. Te contestamos el mismo día.</p>
+        <h3 className="text-lg font-extrabold uppercase tracking-tight text-fg">Mensaje enviado</h3>
+        <p className="mt-2 text-xs text-muted">Gracias por escribirnos. Te contestamos el mismo día.</p>
       </div>
     );
   }
@@ -54,29 +56,70 @@ export function ContactoForm() {
   return (
     <>
       <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
-      <form action={action} className="flex flex-col gap-4">
+      <form action={action} className="flex flex-col gap-6">
         {state.status === "error" && (
-          <p role="alert" className="rounded-xl border border-accent bg-accent-soft px-4 py-3 text-sm text-accent">
-            {state.error}
-          </p>
+          <div
+            role="alert"
+            className="flex items-start gap-2 border px-4 py-3 text-[12.5px] font-medium"
+            style={{ color: "var(--red)", borderColor: "var(--red)", background: "var(--red-soft)" }}
+          >
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="mt-0.5 shrink-0">
+              <path d="M10 3l8 14H2z" />
+              <path d="M10 9v3M10 14v.5" />
+            </svg>
+            <span>{state.error}</span>
+          </div>
         )}
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-fg">Nombre</span>
-          <input name="nombre" type="text" autoComplete="name" placeholder="Tu nombre" className={fieldClass(invalid?.nombre)} />
-          {invalid?.nombre && <span className="text-xs text-accent">Escribe tu nombre.</span>}
+        <label className="group flex flex-col gap-0">
+          <span className={`${LABEL} text-muted group-focus-within:text-accent`} style={invalid?.nombre ? { color: "var(--red)" } : undefined}>
+            Nombre
+          </span>
+          <input
+            name="nombre"
+            type="text"
+            autoComplete="name"
+            placeholder="Tu nombre"
+            className={INPUT}
+            style={{ borderColor: invalid?.nombre ? "var(--red)" : "var(--line-soft)" }}
+          />
+          {invalid?.nombre && (
+            <span className="mt-2 block text-[10.5px]" style={{ color: "var(--red)" }}>Escribe tu nombre.</span>
+          )}
         </label>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-fg">Correo</span>
-          <input name="correo" type="email" autoComplete="email" placeholder="tucorreo@ejemplo.com" className={fieldClass(invalid?.correo)} />
-          {invalid?.correo && <span className="text-xs text-accent">Correo no válido.</span>}
+        <label className="group flex flex-col gap-0">
+          <span className={`${LABEL} text-muted group-focus-within:text-accent`} style={invalid?.correo ? { color: "var(--red)" } : undefined}>
+            Correo
+          </span>
+          <input
+            name="correo"
+            type="email"
+            autoComplete="email"
+            inputMode="email"
+            placeholder="tucorreo@ejemplo.com"
+            className={INPUT}
+            style={{ borderColor: invalid?.correo ? "var(--red)" : "var(--line-soft)" }}
+          />
+          {invalid?.correo && (
+            <span className="mt-2 block text-[10.5px]" style={{ color: "var(--red)" }}>Correo no válido.</span>
+          )}
         </label>
 
-        <label className="flex flex-col gap-1.5">
-          <span className="text-sm font-medium text-fg">Mensaje</span>
-          <textarea name="mensaje" rows={3} placeholder="Cuéntanos qué necesitas…" className={fieldClass(invalid?.mensaje)} />
-          {invalid?.mensaje && <span className="text-xs text-accent">Escribe tu mensaje.</span>}
+        <label className="group flex flex-col gap-0">
+          <span className={`${LABEL} text-muted group-focus-within:text-accent`} style={invalid?.mensaje ? { color: "var(--red)" } : undefined}>
+            Mensaje
+          </span>
+          <textarea
+            name="mensaje"
+            rows={3}
+            placeholder="Cuéntanos qué necesitas…"
+            className={`${INPUT} resize-none leading-relaxed`}
+            style={{ borderColor: invalid?.mensaje ? "var(--red)" : "var(--line-soft)" }}
+          />
+          {invalid?.mensaje && (
+            <span className="mt-2 block text-[10.5px]" style={{ color: "var(--red)" }}>Escribe tu mensaje.</span>
+          )}
         </label>
 
         <div
@@ -90,7 +133,7 @@ export function ContactoForm() {
         <button
           type="submit"
           disabled={!turnstileToken || pending}
-          className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+          className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-white transition hover:brightness-105 disabled:opacity-40"
         >
           {pending ? "Enviando…" : "Enviar mensaje"}
         </button>

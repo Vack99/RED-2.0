@@ -36,6 +36,7 @@ export default async function Home() {
       ? (stampedBrand as BrandId)
       : DEFAULT_BRAND;
   const Logo = brands[brandId].logo;
+  const { tagline } = brands[brandId].copy;
 
   const gym = slug ? await getMarketingGym(slug) : null;
   const [planes, horario] = gym
@@ -48,18 +49,28 @@ export default async function Home() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col pb-14">
-      <section className="flex flex-col items-center px-7 pt-14 text-center">
+      <section className="cm-hero flex flex-col items-center px-7 pt-14 text-center">
         <Logo size={200} animate />
-        <p className="mt-6 text-xs font-medium uppercase tracking-[0.22em] text-muted">
-          Entrenamiento funcional
-        </p>
-        <p className="mt-4 text-sm font-semibold uppercase tracking-[0.14em] text-accent">
-          Reserva. Entrena. Avanza.
-        </p>
+        <div className="cm-sub mt-6 flex w-full items-center justify-center gap-3.5">
+          <div className="ln h-px max-w-[46px] flex-1 bg-line" aria-hidden />
+          <span className="text-xs font-medium uppercase tracking-[0.2em] text-muted">
+            Entrenamiento funcional
+          </span>
+          <div className="ln h-px max-w-[46px] flex-1 bg-line" aria-hidden />
+        </div>
+        {tagline ? (
+          <div className="cm-vals mt-[18px]">
+            <span>{tagline}</span>
+          </div>
+        ) : (
+          <p className="mt-4 text-sm font-semibold uppercase tracking-[0.14em] text-accent">
+            Reserva. Entrena. Avanza.
+          </p>
+        )}
 
         <Link
           href="/registro"
-          className="mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-white hover:opacity-90"
+          className="btn-primary mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-white hover:opacity-90"
         >
           Reservar clase
           <span aria-hidden>→</span>
@@ -68,8 +79,8 @@ export default async function Home() {
 
       <PricingTeaser planes={planes} />
 
-      <section className="mt-12 px-7">
-        <h2 className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
+      <section className="cm-sched mt-12 px-7">
+        <h2 className="h text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
           Hoy en {brandName}
         </h2>
         {horario.length > 0 ? (
@@ -78,10 +89,10 @@ export default async function Home() {
               <Link
                 key={s.id}
                 href="/registro"
-                className="flex items-baseline justify-between border-t border-line py-3.5 last:border-b"
+                className="cm-srow flex items-baseline justify-between border-t border-line py-3.5 last:border-b"
               >
-                <span className="flex items-baseline gap-4">
-                  <span className="min-w-[46px] text-sm font-bold tabular-nums text-accent">
+                <span className="flex items-baseline gap-[18px]">
+                  <span className="min-w-[46px] text-[13px] font-bold tabular-nums text-accent">
                     {s.hora}
                   </span>
                   <span className="text-[15px] font-medium text-fg">
@@ -101,8 +112,8 @@ export default async function Home() {
         )}
       </section>
 
-      <footer className="mt-14 px-7 text-center">
-        <p className="text-[15px] font-medium text-fg">{brandName}</p>
+      <footer className="cm-foot mt-14 px-7 text-center">
+        <p className="text-[15px] font-medium text-fg">{brandName} — estudio funcional</p>
         <p className="mt-1.5 text-[11px] text-muted">
           Lun a Sáb · desde las 05:30
         </p>

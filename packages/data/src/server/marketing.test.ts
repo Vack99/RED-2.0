@@ -80,12 +80,28 @@ const GYM = "gym-red-demo";
 const TZ = "America/Mexico_City";
 
 describe("marketing DAL — public anon reads", () => {
-  it("getMarketingGym maps the row (incl. timezone) and filters by slug", async () => {
+  it("getMarketingGym maps the row (incl. timezone + about_* fields) and filters by slug", async () => {
     const fake = makeFake({
-      gym: [{ id: GYM, brand_name: "RED Demo", timezone: TZ }],
+      gym: [
+        {
+          id: GYM,
+          brand_name: "RED Demo",
+          timezone: TZ,
+          about_story: "En 2019 abrimos la fragua.\n\nHoy somos familia.",
+          about_pull_quote: "No competimos con nadie más que con quienes fuimos ayer.",
+          about_tagline: "Fuerza · Disciplina · Resultado",
+        },
+      ],
     });
     const gym = await getMarketingGym("red-demo", fake.client);
-    expect(gym).toEqual({ id: GYM, brandName: "RED Demo", timezone: TZ });
+    expect(gym).toStrictEqual({
+      id: GYM,
+      brandName: "RED Demo",
+      timezone: TZ,
+      aboutStory: "En 2019 abrimos la fragua.\n\nHoy somos familia.",
+      aboutPullQuote: "No competimos con nadie más que con quienes fuimos ayer.",
+      aboutTagline: "Fuerza · Disciplina · Resultado",
+    });
     expect(fake.eqCalls).toEqual([
       { table: "gym", col: "slug", val: "red-demo" },
     ]);
@@ -96,7 +112,7 @@ describe("marketing DAL — public anon reads", () => {
     expect(await getMarketingGym("no-such-gym", fake.client)).toBeNull();
   });
 
-  it("getPlanesPublicos maps marketing copy, groups features by plan, and scopes both reads to the gym", async () => {
+  it("getPlanesPublicos maps marketing copy (incl. clases + nota), groups features by plan, and scopes both reads to the gym", async () => {
     const fake = makeFake({
       paquetes: [
         {
@@ -109,6 +125,8 @@ describe("marketing DAL — public anon reads", () => {
           subtitle: "El plan estándar",
           badge: "Estándar",
           cadence: "/ al mes",
+          clases: 8,
+          nota: "Se paga por sesión.",
         },
         {
           id: "p2",
@@ -120,6 +138,8 @@ describe("marketing DAL — public anon reads", () => {
           subtitle: null,
           badge: "Más popular",
           cadence: "/ al mes",
+          clases: null,
+          nota: null,
         },
       ],
       plan_feature: [
@@ -131,7 +151,7 @@ describe("marketing DAL — public anon reads", () => {
 
     const planes = await getPlanesPublicos(GYM, fake.client);
 
-    expect(planes).toEqual([
+    expect(planes).toStrictEqual([
       {
         id: "p1",
         nombre: "8 clases",
@@ -139,8 +159,10 @@ describe("marketing DAL — public anon reads", () => {
         subtitle: "El plan estándar",
         precio: 700,
         cadence: "/ al mes",
+        clases: 8,
         badge: "Estándar",
         popular: false,
+        nota: "Se paga por sesión.",
         features: ["8 clases al mes", "Reserva desde la app"],
       },
       {
@@ -150,8 +172,10 @@ describe("marketing DAL — public anon reads", () => {
         subtitle: null,
         precio: 1400,
         cadence: "/ al mes",
+        clases: null,
         badge: "Más popular",
         popular: true,
+        nota: null,
         features: ["Clases ilimitadas"],
       },
     ]);

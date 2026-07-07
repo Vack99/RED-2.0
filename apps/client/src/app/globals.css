@@ -37,6 +37,13 @@
      Reservar card's "Lleno" state. */
   --color-danger: var(--red);
   --color-danger-soft: var(--red-soft);
+  /* The amber WARNING role (contract key `warning`, §3.1) — few/full/cancel states.
+     Deliberately NOT a second red: keeps the accent/warning contrast the mock has. */
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  /* Near-black overlay ink (contract key `ink`, #0a0a0a across every brand) — dark text
+     on the amber warning fill (the mock's `.sheet-danger` cancel-confirm), where white can't sit. */
+  --color-ink: var(--ink);
 
   /* The mock's type system (§3.2): Outfit for UI, JetBrains Mono for data/badges/
      eyebrows. The vars come from layout.tsx's next/font/google self-host. */
@@ -446,6 +453,171 @@
   }
   50% {
     box-shadow: 0 0 6px #ff3a26, 0 0 14px #e21500;
+  }
+}
+
+/* Ticket · perforated receipt card (§3.4) — the ONE shared receipt behind reservar,
+   confirmada, mis-reservas, and membresía (a single token-driven set, not four per-screen
+   copies). Every color is a contract token — var(--surface) card, var(--line) perforation +
+   border, var(--canvas) notch — so BOTH brands paint tickets that recolor; a ticket carries
+   no neon literal, so there is NO `.dark` layer. Screens set `--notch-x` to the x of their
+   side-column fold so the punched notches meet the perforation (e.g. `96px`, or
+   `calc(100% - 104px)` when the stub column sits on the right, as on reservar). Reservar's
+   flush list card drops the hairline with `border: none`. */
+.ticket {
+  position: relative;
+  display: flex;
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+.ticket-perf {
+  flex: none;
+  width: 0;
+  border-left: 1.5px dashed var(--line);
+  margin: 10px 0;
+}
+.ticket-notch {
+  position: absolute;
+  left: var(--notch-x);
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--canvas);
+}
+.ticket-notch.top {
+  top: -7px;
+}
+.ticket-notch.bottom {
+  bottom: -7px;
+}
+
+/* Confirmada · confirmed-check (§3.3) — the square-OUTLINE check that pops in with an
+   overshoot when a booking lands. DISTINCT from the `.rvc*` booking-morph ring above (that's
+   the reservar success draw — left untouched). Box border + tick stroke ride var(--yellow)
+   (the accent); the box is outline-only like the mock, so it is entirely contract-token /
+   colorless and recolors per brand with no `.dark` layer. `cfpop` is a colorless overshoot;
+   the `both` fill parks it fully-popped when the global reduced-motion collapse fast-forwards
+   it. Membresía's success tile reuses `@keyframes cfpop`. */
+.cf-check {
+  width: 84px;
+  height: 84px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--yellow);
+  animation: cfpop 0.5s cubic-bezier(0.2, 0.8, 0.2, 1.2) both;
+}
+.cf-check svg {
+  fill: none;
+  stroke: var(--yellow);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+@keyframes cfpop {
+  from {
+    transform: scale(0.6);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Clase · roster occupancy pips (§3.4) — the class-detail signature: one pip per seat that
+   flickers on like neon. The BASE below is brand-neutral + token-driven: each pip is a thin
+   token bar (empty var(--line) / lit var(--yellow)), UNSCOPED so Forge/base paint calm,
+   static pips. The RED NEON LAYER right after is scoped under `.dark` (RED is the only dark
+   brand): the literal-red drop-shadow glow on lit pips, the `pipFlick` strobe on screen-enter
+   (`.ignited`, staggered by the per-pip `--i` × `--rp-step`), and the leading `.tip` pip's
+   idle breathe (reusing `@keyframes pipBreathe` from the ember bars, driven by the same
+   `--rp-*` glow vars). `pipFlick` is a colorless opacity strobe modeled on the logo's neon
+   flicker but screen-local. `both` fill everywhere so the reduced-motion collapse lands every
+   pip lit. */
+.cd-roster .pips {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 12px;
+  --rp-step: 30ms;
+}
+.cd-roster .pips i {
+  flex: 1;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--line);
+}
+.cd-roster .pips i.lit {
+  background: var(--yellow);
+}
+.cd-roster .pips.s-full i.lit {
+  background: var(--warning);
+}
+.dark .cd-roster .pips {
+  --rp-glow: #ff2c19;
+  --rp-glowD: #cc0f00;
+  --rp-glowH: #ff3a26;
+  --rp-glowHD: #e21500;
+}
+.dark .cd-roster .pips i.lit {
+  box-shadow: 0 0 3px var(--rp-glow), 0 0 6px var(--rp-glowD);
+}
+.dark .cd-roster .pips i.tip {
+  animation: pipBreathe 4.2s ease-in-out 2.4s infinite both;
+}
+.dark .cd-roster .pips.ignited i.lit {
+  animation: pipFlick 0.5s both;
+  animation-delay: calc(var(--i, 0) * var(--rp-step, 30ms));
+}
+.dark .cd-roster .pips.ignited i.tip {
+  animation: pipFlick 0.5s both, pipBreathe 4.2s ease-in-out infinite both;
+  animation-delay: calc(var(--i, 0) * var(--rp-step, 30ms)),
+    calc(var(--i, 0) * var(--rp-step, 30ms) + 0.9s);
+}
+.dark .cd-roster .pips.s-full {
+  --rp-glow: #c98a14;
+  --rp-glowD: #6a4a08;
+  --rp-glowH: #d49418;
+  --rp-glowHD: #6a4a08;
+}
+.dark .cd-roster .pips.s-finished i.lit {
+  box-shadow: none;
+}
+.dark .cd-roster .pips.s-finished i.tip {
+  animation: none;
+  box-shadow: none;
+}
+@keyframes pipFlick {
+  0% {
+    opacity: 0;
+  }
+  7% {
+    opacity: 0.75;
+  }
+  11% {
+    opacity: 0.08;
+  }
+  17% {
+    opacity: 0.9;
+  }
+  24% {
+    opacity: 0.15;
+  }
+  33% {
+    opacity: 1;
+  }
+  44% {
+    opacity: 0.45;
+  }
+  55% {
+    opacity: 1;
+  }
+  70% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 1;
   }
 }
 

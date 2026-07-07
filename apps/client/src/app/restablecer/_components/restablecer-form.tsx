@@ -33,8 +33,10 @@ export function RestablecerForm() {
   return (
     <form onSubmit={onSubmit} className="flex w-full flex-col" style={{ maxWidth: 340, gap: 24 }}>
       <div className="text-center">
-        <h1 className="text-[22px] font-light uppercase tracking-[6px] text-fg">Nueva contraseña</h1>
-        <p className="mt-2 text-[13px] text-muted">Elige una contraseña de al menos 8 caracteres.</p>
+        <h1 className="text-[27px] font-light uppercase tracking-[5px] text-fg" style={{ textIndent: 5, lineHeight: 1.05 }}>
+          Nueva contraseña
+        </h1>
+        <p className="mt-3.5 text-[13px] text-muted">Elige una contraseña de al menos 8 caracteres.</p>
       </div>
 
       {state.status === "error" && (
@@ -56,7 +58,7 @@ export function RestablecerForm() {
         </label>
         <div
           className="flex items-center border-b transition-colors focus-within:border-accent"
-          style={{ borderColor: errPassword ? "var(--red)" : "var(--line)" }}
+          style={{ borderColor: errPassword ? "var(--red)" : "var(--line-soft)" }}
         >
           <input
             type={showPass ? "text" : "password"}

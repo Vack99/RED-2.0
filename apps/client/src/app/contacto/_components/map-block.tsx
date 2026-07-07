@@ -48,13 +48,13 @@ export function MapBlock({
           <div className="absolute bottom-0 top-0 left-1/3 w-px bg-line" />
         </div>
         <div className="relative flex flex-col items-center gap-2">
-          <span className="flex h-9 items-center rounded-full bg-accent px-3 text-xs font-bold text-white">
+          <span className="flex h-9 items-center rounded-full bg-accent px-3 font-mono text-[10px] font-bold tracking-wide text-white">
             {label}
           </span>
           <span className="h-2 w-2 rounded-full bg-accent ring-4 ring-accent-soft" />
         </div>
         {hasPin && (
-          <span className="absolute bottom-3 right-4 rounded-full bg-surface/80 px-2 py-1 text-[11px] font-medium text-muted">
+          <span className="absolute bottom-3 right-4 rounded-full bg-surface/80 px-2 py-1 font-mono text-[10px] tabular-nums tracking-wide text-muted">
             {fmtCoord(latitude!, "N", "S")} · {fmtCoord(longitude!, "E", "W")}
           </span>
         )}
@@ -65,9 +65,10 @@ export function MapBlock({
           href={href}
           target="_blank"
           rel="noopener noreferrer"
-          className="inline-flex w-fit items-center gap-2 rounded-full border border-line px-4 py-2.5 text-sm font-semibold text-fg hover:border-accent hover:text-accent"
+          className="flex w-full items-center justify-center gap-2 border bg-transparent py-4 text-[12px] font-bold uppercase tracking-[1.4px] text-fg transition hover:bg-surface"
+          style={{ borderColor: "var(--line-soft)" }}
         >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-accent">
             <path d="M12 21s-7-6.3-7-11a7 7 0 0 1 14 0c0 4.7-7 11-7 11z" />
             <circle cx="12" cy="10" r="2.5" />
           </svg>

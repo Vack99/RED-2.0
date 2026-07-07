@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import Link from "next/link";
 
 import type { ConfirmacionReservaDTO } from "@gym/data/server/clase-miembro";
 
-import { buildIcs } from "../../../../lib/ics";
+import { descargarIcs } from "../../../../lib/ics";
 
 /**
  * The Confirmada view (slice #59), a faithful translation of the mock's `confirmada` slot:
@@ -62,53 +62,54 @@ function TicketRow({ k, v, accent }: { k: string; v: string; accent?: boolean })
 }
 
 export function ConfirmadaVista({ confirmacion }: { confirmacion: ConfirmacionReservaDTO }) {
-  function descargarIcs() {
-    const ics = buildIcs({
+  function onDescargarIcs() {
+    descargarIcs({
       uid: confirmacion.sessionId,
       title: confirmacion.tipo,
       inicioIso: confirmacion.inicioIso,
       finIso: confirmacion.finIso,
       sala: confirmacion.sala,
     });
-    const href = `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
-    const a = document.createElement("a");
-    a.href = href;
-    a.download = `${confirmacion.tipo.toLowerCase().replace(/\s+/g, "-")}.ics`;
-    a.click();
   }
 
   return (
     <main className="mx-auto w-full max-w-md px-6 pb-10">
       <div className="pt-10 text-center">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-accent text-white">
-          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+        <div className="cf-check">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
             <path d="M20 6L9 17l-5-5" />
           </svg>
         </div>
-        <div className="mt-4 text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Reserva confirmada</div>
-        <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-fg">¡Estás dentro!</h1>
+        <div className="mt-4 font-mono text-[10px] font-bold uppercase tracking-[0.2em] text-accent">Reserva confirmada</div>
+        <h1 className="mt-2 text-3xl font-extrabold uppercase tracking-tight text-fg">¡Estás dentro!</h1>
         <p className="mt-2 text-xs leading-relaxed text-muted">
           Te esperamos. No faltes — tu lugar está apartado.
         </p>
       </div>
 
       {/* Ticket */}
-      <div className="mt-7 flex overflow-hidden rounded-2xl border border-line bg-surface">
-        <div className="flex w-[92px] flex-none flex-col items-center justify-center gap-1.5 bg-sunk px-2 py-5">
+      <div className="ticket mt-7" style={{ "--notch-x": "96px" } as CSSProperties}>
+        <div className="ticket-notch top" />
+        <div className="ticket-notch bottom" />
+        <div className="flex w-[96px] flex-none flex-col items-center justify-center gap-1.5 bg-sunk px-2 py-5">
           <span className="text-2xl font-extrabold tabular-nums text-accent">{confirmacion.hora}</span>
-          <span className="text-center text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted">
+          <span className="text-center font-mono text-[9px] font-semibold uppercase leading-tight tracking-wide text-muted">
             {confirmacion.fechaCorta}
             <br />
             {confirmacion.mesCorto}
           </span>
         </div>
-        <div className="min-w-0 flex-1 border-l border-dashed border-line p-4">
+        <div className="ticket-perf" />
+        <div className="min-w-0 flex-1 p-4">
           <div className="text-xl font-extrabold uppercase tracking-wide text-fg">{confirmacion.tipo}</div>
           <div className="mt-1 text-[11px] uppercase tracking-wide text-muted">{confirmacion.coaches}</div>
           <div className="mt-3">
             <TicketRow k="Día" v={confirmacion.fechaLarga} />
             <TicketRow k="Hora" v={`${confirmacion.hora}–${confirmacion.horaFin} · ${confirmacion.duracionLabel}`} />
-            <TicketRow k="Estudio" v={confirmacion.sala ?? "Estudio"} />
+            <TicketRow
+              k="Estudio"
+              v={confirmacion.direccion ? `${confirmacion.sala ?? "Estudio"} · ${confirmacion.direccion}` : (confirmacion.sala ?? "Estudio")}
+            />
             {confirmacion.favorita && <TicketRow k="Etiqueta" v="Tu favorita" accent />}
           </div>
         </div>
@@ -128,7 +129,7 @@ export function ConfirmadaVista({ confirmacion }: { confirmacion: ConfirmacionRe
       <div className="mt-6 flex flex-col gap-3">
         <button
           type="button"
-          onClick={descargarIcs}
+          onClick={onDescargarIcs}
           className="flex w-full items-center justify-center gap-2 rounded-xl border border-line py-3.5 text-xs font-bold uppercase tracking-wider text-muted"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -138,7 +139,7 @@ export function ConfirmadaVista({ confirmacion }: { confirmacion: ConfirmacionRe
           Añadir al calendario
         </button>
         <Link
-          href="/reservar"
+          href="/reservar?perfil=1"
           className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
         >
           Ver mis reservas

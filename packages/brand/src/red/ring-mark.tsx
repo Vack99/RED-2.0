@@ -2,22 +2,21 @@ import * as React from "react";
 
 // RED's crown-jewel mark: a BROKEN neon ring (two arcs, gaps at the sides)
 // enclosing a stroked "RED" wordmark — the mock's `redLogoSVG` (index.html
-// 1811-1831), rebuilt exactly. This is the animated hero artifact that the
-// landing + both login heroes render; the small chrome lockup uses the flat
-// ring arcs in `./logo` instead.
+// 1811-1831), rebuilt exactly. This is the animated hero artifact the landing +
+// both login heroes render; the small chrome lockup uses the flat ring arcs in
+// `./logo` instead. It always ignites (there is no static caller) — reduced
+// motion is handled globally (`@gym/ui`'s motion.css zeroes durations), and
+// every animation uses `forwards`/`both`, so the collapsed path lands on the
+// fully-drawn, lit ring with no per-component media query.
 //
 // Zero client JS: the ignition is pure CSS keyframes, so this stays a Server
-// Component (no `use client` — client components would still SSR but pay a
-// needless hydration cost for motion that needs no runtime). The three ignition
-// keyframes (ringDraw/redFlick/redBreathe) live LOCAL to this file in an inline
-// SVG `<style>`; the screen-level neon-copy keyframes live in the apps' own
-// globals.css, so there is no overlap.
-//
-// Gradient + keyframe ids are made unique per instance via a deterministic
-// `idSuffix` prop (NOT `useId`, which would buy nothing here and only muddies
-// the zero-JS story): the landing paints the static chrome lockup AND this
-// animated ring in one DOM, so shared `url(#…)` ids would collapse to the first
-// match. Callers pass a stable suffix (`"hero"`).
+// Component (no `use client` — it would only add a needless hydration cost for
+// motion that needs no runtime). The three ignition keyframes (ringDraw/
+// redFlick/redBreathe) live LOCAL to this file in an inline SVG `<style>`; the
+// screen-level neon-copy keyframes live in the apps' globals.css, so there is
+// no overlap. Only one animated ring ever renders per DOM (chrome uses the flat
+// `RedMark`, which carries no gradient defs), so the gradient/keyframe ids are
+// plain constants.
 //
 // Colors are the mock's bespoke neon hexes, inline (the admin app does not
 // `@source`-scan `@gym/brand`, so Tailwind classes would tree-shake there). The
@@ -57,43 +56,26 @@ const LETTERS: readonly {
   },
 ];
 
+/** Each arc draws in from hidden (dashoffset 1410 → 0), staggered top then bottom. */
+const ringStyle = (delay: number): React.CSSProperties => ({
+  strokeDasharray: 1410,
+  strokeDashoffset: 1410,
+  animation: `ringDraw .9s cubic-bezier(.45,.05,.35,1) ${delay}s forwards`,
+});
+
+/** Each letter strobes on like a neon tube turning on, staggered R/E/D. */
+const flickStyle = (delay: number): React.CSSProperties => ({
+  opacity: 0,
+  animation: `redFlick .6s ${delay}s forwards`,
+});
+
 /**
- * The RED neon broken-ring lockup. `animate` gates the ignition (arcs draw in,
- * letters strobe on, then an idle breathe); static renders the fully-lit ring.
- * Reduced motion is handled globally (`@gym/ui`'s motion.css zeroes durations +
- * delays) — every animation uses `forwards`/`both`, so the collapsed path lands
- * on the fully-drawn, lit ring with no per-component media query.
+ * The RED neon broken-ring lockup: the arcs draw in, the R/E/D letters strobe
+ * on, then an idle breathe. Reduced motion is handled globally (see the file
+ * header) — every animation uses `forwards`, so the collapsed path lands
+ * fully-drawn and lit.
  */
-export function RedRingMark({
-  size = 200,
-  animate = false,
-  idSuffix = "red",
-}: {
-  readonly size?: number;
-  readonly animate?: boolean;
-  readonly idSuffix?: string;
-}) {
-  const ringGrad = `ringGrad_${idSuffix}`;
-  const redBody = `redBody_${idSuffix}`;
-
-  const svgStyle: React.CSSProperties = {
-    display: "block",
-    filter: BASE_GLOW,
-    ...(animate ? { animation: `redBreathe_${idSuffix} 4.2s ease-in-out 2.4s infinite` } : {}),
-  };
-
-  const ringStyle = (delay: number): React.CSSProperties =>
-    animate
-      ? {
-          strokeDasharray: 1410,
-          strokeDashoffset: 1410,
-          animation: `ringDraw_${idSuffix} .9s cubic-bezier(.45,.05,.35,1) ${delay}s forwards`,
-        }
-      : {};
-
-  const flickStyle = (delay: number): React.CSSProperties =>
-    animate ? { opacity: 0, animation: `redFlick_${idSuffix} .6s ${delay}s forwards` } : { opacity: 1 };
-
+export function RedRingMark({ size = 200 }: { readonly size?: number }) {
   return (
     <svg
       width={size}
@@ -101,43 +83,31 @@ export function RedRingMark({
       viewBox="0 0 1254 1254"
       role="img"
       aria-label="RED"
-      style={svgStyle}
+      style={{
+        display: "block",
+        filter: BASE_GLOW,
+        animation: "redBreathe 4.2s ease-in-out 2.4s infinite",
+      }}
     >
-      {animate ? (
-        <style>{`
-          @keyframes ringDraw_${idSuffix} { from { stroke-dashoffset: 1410; } to { stroke-dashoffset: 0; } }
-          @keyframes redFlick_${idSuffix} {
-            0%{opacity:0} 7%{opacity:.75} 11%{opacity:.08} 17%{opacity:.9} 24%{opacity:.15}
-            33%{opacity:1} 44%{opacity:.45} 55%{opacity:1} 70%{opacity:.7} 100%{opacity:1}
-          }
-          @keyframes redBreathe_${idSuffix} {
-            0%,100% { filter: ${BASE_GLOW}; }
-            50%     { filter: drop-shadow(0 0 4px #e23a2a) drop-shadow(0 0 12px #c8161c) drop-shadow(0 0 22px #8e0d0f); }
-          }
-        `}</style>
-      ) : null}
+      <style>{`
+        @keyframes ringDraw { from { stroke-dashoffset: 1410; } to { stroke-dashoffset: 0; } }
+        @keyframes redFlick {
+          0%{opacity:0} 7%{opacity:.75} 11%{opacity:.08} 17%{opacity:.9} 24%{opacity:.15}
+          33%{opacity:1} 44%{opacity:.45} 55%{opacity:1} 70%{opacity:.7} 100%{opacity:1}
+        }
+        @keyframes redBreathe {
+          0%,100% { filter: ${BASE_GLOW}; }
+          50%     { filter: drop-shadow(0 0 4px #e23a2a) drop-shadow(0 0 12px #c8161c) drop-shadow(0 0 22px #8e0d0f); }
+        }
+      `}</style>
 
       <defs>
-        <linearGradient
-          id={ringGrad}
-          gradientUnits="userSpaceOnUse"
-          x1="627"
-          y1="30"
-          x2="627"
-          y2="1224"
-        >
+        <linearGradient id="ringGrad" gradientUnits="userSpaceOnUse" x1="627" y1="30" x2="627" y2="1224">
           <stop offset="0" stopColor="#d92b1f" />
           <stop offset=".5" stopColor="#c8161c" />
           <stop offset="1" stopColor="#8f1014" />
         </linearGradient>
-        <linearGradient
-          id={redBody}
-          gradientUnits="userSpaceOnUse"
-          x1="0"
-          y1="478"
-          x2="0"
-          y2="773"
-        >
+        <linearGradient id="redBody" gradientUnits="userSpaceOnUse" x1="0" y1="478" x2="0" y2="773">
           <stop offset="0" stopColor="#e23222" />
           <stop offset=".35" stopColor="#c8161c" />
           <stop offset="1" stopColor="#7e0d10" />
@@ -146,26 +116,14 @@ export function RedRingMark({
 
       {/* stroke-linejoin:round is load-bearing for the R-bowl/leg corners. */}
       <g fill="none" strokeLinejoin="round">
-        <path
-          d={RING_TOP}
-          stroke={`url(#${ringGrad})`}
-          strokeWidth={14}
-          strokeLinecap="butt"
-          style={ringStyle(0.15)}
-        />
-        <path
-          d={RING_BOT}
-          stroke={`url(#${ringGrad})`}
-          strokeWidth={14}
-          strokeLinecap="butt"
-          style={ringStyle(0.6)}
-        />
+        <path d={RING_TOP} stroke="url(#ringGrad)" strokeWidth={14} strokeLinecap="butt" style={ringStyle(0.15)} />
+        <path d={RING_BOT} stroke="url(#ringGrad)" strokeWidth={14} strokeLinecap="butt" style={ringStyle(0.6)} />
 
         <g transform="translate(0 27)" strokeLinecap="butt">
           {LETTERS.map((letter) => (
             <g key={letter.cls} style={flickStyle(letter.delay)}>
               {letter.d.map((d, i) => (
-                <path key={i} d={d} stroke={`url(#${redBody})`} strokeWidth={37} />
+                <path key={i} d={d} stroke="url(#redBody)" strokeWidth={37} />
               ))}
               {/* Inner neon-tube highlight, offset up-left. */}
               <g transform="translate(-2 -8)" stroke="#ffd8b8" strokeWidth={5} opacity={0.5}>

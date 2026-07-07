@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState, useTransition } from "react";
+import { type CSSProperties, type ReactNode, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -55,7 +55,7 @@ type Badge = { texto: string; clase: string };
 function badgeDe(d: ClaseDetalleDTO): Badge {
   if (d.estado === "termino") return { texto: "Terminada", clase: "border-line bg-sunk text-muted" };
   if (d.miReserva) return { texto: "Reservada", clase: "border-accent/40 bg-accent-soft text-accent" };
-  if (d.estado === "lleno") return { texto: "Llena", clase: "border-danger/40 bg-danger-soft text-danger" };
+  if (d.estado === "lleno") return { texto: "Llena", clase: "border-warning/40 bg-warning-soft text-warning" };
   return { texto: "Disponible", clase: "border-accent/40 bg-accent-soft text-accent" };
 }
 
@@ -63,7 +63,7 @@ function FactRow({ k, v, danger }: { k: string; v: string; danger?: boolean }) {
   return (
     <div className="flex items-center justify-between border-b border-line py-2.5 last:border-0">
       <span className="text-[11px] uppercase tracking-wide text-muted">{k}</span>
-      <span className={`text-[13px] font-bold ${danger ? "text-danger" : "text-fg"}`}>{v}</span>
+      <span className={`text-[13px] font-bold ${danger ? "text-warning" : "text-fg"}`}>{v}</span>
     </div>
   );
 }
@@ -92,23 +92,27 @@ function Roster({ detalle }: { detalle: ClaseDetalleDTO }) {
   const full = detalle.estado === "lleno";
   const avatars = detalle.roster.slice(0, 4);
   const moreN = Math.max(0, detalle.ocupados - avatars.length);
+  const estadoPips = terminada ? " s-finished" : full ? " s-full" : "";
   return (
-    <section className="px-6 py-4">
+    // .cd-roster scopes the shared ember-ignition pip layer (globals.css §3.4): one <i>
+    // per seat, `lit`/`lit tip` on filled/last-lit, `ignited` fires the neon flicker on
+    // mount (staggered by --i × --rp-step, capped so 20+ seats stay snappy).
+    <section className="cd-roster px-6 py-4">
       <SectionLabel>Cupo</SectionLabel>
-      <div className="flex gap-[3px]">
+      <div className={`pips ignited${estadoPips}`}>
         {Array.from({ length: detalle.capacidad }, (_, k) => {
           const lit = k < detalle.ocupados;
+          const tip = lit && k === detalle.ocupados - 1;
           return (
-            <span
+            <i
               key={k}
-              className={`h-1.5 flex-1 rounded-[1px] ${
-                lit ? (full ? "bg-danger/70" : "bg-accent") : "bg-sunk"
-              }`}
+              className={lit ? (tip ? "lit tip" : "lit") : undefined}
+              style={{ "--i": Math.min(k, 16) } as CSSProperties}
             />
           );
         })}
       </div>
-      <div className="mt-3 text-[11px] text-muted">
+      <div className="font-mono text-[11px] tabular-nums tracking-wide text-muted">
         {terminada ? "Clase terminada" : `${detalle.ocupados} de ${detalle.capacidad} lugares tomados`}
       </div>
       {!terminada && detalle.ocupados > 0 && (
@@ -116,13 +120,13 @@ function Roster({ detalle }: { detalle: ClaseDetalleDTO }) {
           {avatars.map((ini, i) => (
             <span
               key={i}
-              className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-sunk text-[9px] font-bold text-muted"
+              className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-line bg-sunk text-[9px] font-bold text-muted"
             >
               {ini}
             </span>
           ))}
           {moreN > 0 && (
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-sunk text-[9px] font-bold text-accent">
+            <span className="flex h-[30px] w-[30px] items-center justify-center rounded-full border border-line bg-sunk text-[9px] font-bold text-accent">
               +{moreN}
             </span>
           )}
@@ -262,11 +266,13 @@ export function ClaseDetalle({
         {detalle.bloques.length > 0 && (
           <section className="border-t border-line px-6 py-4">
             <SectionLabel>Qué trabajamos</SectionLabel>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col">
               {detalle.bloques.map((b, i) => (
-                <div key={i} className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3.5 py-3">
-                  <span className="text-[10px] font-bold tabular-nums text-accent">{String(i + 1).padStart(2, "0")}</span>
-                  <span className="text-[13px] font-semibold text-fg">{b}</span>
+                <div key={i} className="flex gap-3 border-t border-line py-2.5 first:border-t-0 first:pt-0">
+                  <span className="w-[62px] flex-none pt-0.5 font-mono text-[9px] font-bold uppercase tracking-wide text-accent">
+                    {b.etiqueta}
+                  </span>
+                  {b.valor && <span className="text-[13px] leading-snug text-muted">{b.valor}</span>}
                 </div>
               ))}
             </div>
@@ -316,7 +322,7 @@ export function ClaseDetalle({
             <button
               type="button"
               onClick={() => setConfirmCancel(true)}
-              className="w-full rounded-xl border border-danger/50 py-4 text-xs font-bold uppercase tracking-wider text-danger"
+              className="w-full rounded-xl border border-warning/50 py-4 text-xs font-bold uppercase tracking-wider text-warning"
             >
               Cancelar reserva
             </button>
@@ -331,7 +337,7 @@ export function ClaseDetalle({
         ) : (
           <>
             {casiLleno ? (
-              <p className="mb-2.5 text-center text-[11px] font-semibold text-danger">
+              <p className="mb-2.5 text-center text-[11px] font-semibold text-warning">
                 Solo {detalle.disponibles} libre{detalle.disponibles === 1 ? "" : "s"} · asegura tu lugar
               </p>
             ) : saldo.ilimitado ? (
@@ -379,7 +385,7 @@ export function ClaseDetalle({
                 type="button"
                 onClick={cancel}
                 disabled={pending}
-                className="flex-1 rounded-xl bg-danger py-3.5 text-[11px] font-bold uppercase tracking-wider text-white disabled:opacity-70"
+                className="flex-1 rounded-xl bg-warning py-3.5 text-[11px] font-bold uppercase tracking-wider text-ink disabled:opacity-70"
               >
                 {pending ? "Cancelando…" : "Sí, cancelar"}
               </button>

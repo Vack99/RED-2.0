@@ -24,6 +24,12 @@ import { tokensToCss, type BrandTokens } from "./tokens";
 export interface BrandCopy {
   readonly name: string;
   readonly description: string;
+  /**
+   * Optional brand-voice tagline — the neon under-logo line the landing renders in
+   * the RED-only `.dark .cm-vals` slot when present. Part of the brand-voice minimum,
+   * so brands without a signature line simply omit it.
+   */
+  readonly tagline?: string;
 }
 
 /**
@@ -104,7 +110,11 @@ export const brands: Record<BrandId, BrandModule> = {
     id: "red",
     tokens: redTokens,
     css: tokensToCss(redTokens),
-    copy: { name: "RED", description: "RED — administración del gimnasio." },
+    copy: {
+      name: "RED",
+      description: "RED — administración del gimnasio.",
+      tagline: "Con beneficios de luz roja",
+    },
     logo: RedLockup,
     appIcon: redAppIcon,
     loginAnimation: RedLoginHero,

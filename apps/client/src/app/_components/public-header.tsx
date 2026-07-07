@@ -63,11 +63,13 @@ export function PublicHeader({
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
 
   return (
-    // Fragment, not a wrapper: the drawer + backdrop are SIBLINGS of the sticky header, never nested in
-    // it — the header's `backdrop-blur` establishes a containing block, which would re-anchor their
-    // `fixed` positioning to the header instead of the viewport.
+    // Fragment, not a wrapper: the drawer + backdrop are SIBLINGS of the header, never nested in it —
+    // keeps their `fixed` positioning anchored to the viewport regardless of any header treatment
+    // (a blur/transform on an ancestor would otherwise re-anchor it).
     <>
-      <header className="sticky top-0 z-30 flex items-center justify-between border-b border-line bg-canvas/90 px-6 py-4 backdrop-blur">
+      {/* Transparent floating header (mock `cm-head`/`scrhead`: no fill, no border, no blur — it
+          sits in normal flow and scrolls with the page, it doesn't pin itself over it). */}
+      <header className="flex items-center justify-between px-6 py-4">
         <button
           type="button"
           aria-label="Menú"

@@ -106,8 +106,8 @@ function detalleRows(extra: Partial<Rows> = {}): Rows {
       { id: CTID, name: "Metcon", sala: "Sala Brasa", level: "Alta intensidad", description: "Suda." },
     ],
     class_type_workblock: [
-      { class_type_id: CTID, label: "Calentamiento", sort_order: 0 },
-      { class_type_id: CTID, label: "AMRAP", sort_order: 1 },
+      { class_type_id: CTID, label: "Calentamiento", sort_order: 0, value: "Movilidad + activación" },
+      { class_type_id: CTID, label: "AMRAP", sort_order: 1, value: null },
     ],
     class_type_bring_item: [
       { class_type_id: CTID, label: "Toalla", sort_order: 0 },
@@ -137,7 +137,10 @@ describe("getClaseDetalleMiembro", () => {
     expect(d!.coaches).toEqual([
       { nombre: "Dani", iniciales: "DA", especialidad: "HIIT", bio: "Energía pura." },
     ]);
-    expect(d!.bloques).toEqual(["Calentamiento", "AMRAP"]);
+    expect(d!.bloques).toEqual([
+      { etiqueta: "Calentamiento", valor: "Movilidad + activación" },
+      { etiqueta: "AMRAP", valor: null },
+    ]);
     expect(d!.porTraer).toEqual(["Toalla", "Agua"]);
     expect(d!.estado).toBe("normal"); // future session, not full
     expect(d!.ocupados).toBe(2);

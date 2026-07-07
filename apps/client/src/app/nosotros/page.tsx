@@ -43,13 +43,13 @@ function CoachCard({ coach }: { coach: CoachPublicoDTO }) {
 }
 
 /**
- * Public Nosotros screen (PRD #49 S3) — hero, gym story (stat tiles), values, coach roster, class
- * formats, facilities, closing CTA. Every content section is read from the real catalog over the anon
- * marketing readers (stats/values/coaches/formats/facilities); nothing about the gym is hardcoded. The
- * gym is resolved from the proxy's x-gym stamp (never an authz claim — ADR-0012); paint is token-driven,
- * so a RED host renders RED and a Forge host renders Forge with no brand import in this file. The RED
- * mock's brand-voice prose/pull-quote is intentionally NOT reproduced: it would be gym-specific copy the
- * DB does not carry, so the page tells the story through the operator's own stats and roster instead.
+ * Public Nosotros screen (PRD #49 S3) — hero, the gym's own story + pull-quote, stat tiles, values, coach
+ * roster, class formats, facilities, closing CTA. Every content section is read from the real catalog over
+ * the anon marketing readers; nothing about the gym is hardcoded. The brand VOICE (the "la fragua" prose,
+ * the pull-quote, the neon tagline) is the gym's own `about_story`/`about_pull_quote`/`about_tagline` DATA —
+ * so RED reads RED and Forge reads Forge from the same neutral markup; a gym that hasn't authored its story
+ * falls back to telling it through stats + roster. The gym is resolved from the proxy's x-gym stamp (never
+ * an authz claim — ADR-0012); paint is token-driven, no brand import in this file.
  */
 export default async function NosotrosPage() {
   const slug = (await headers()).get("x-gym");
@@ -65,18 +65,30 @@ export default async function NosotrosPage() {
       ])
     : [[], [], [], [], []];
 
-  const tagline = valores.map((v) => v.title).join(" · ");
+  // The neon tagline is the gym's own `about_tagline` data; until an operator authors it, fall back to
+  // stitching their value titles (the mock's "Fuerza · Disciplina · Resultado" IS the three values).
+  const tagline = gym?.aboutTagline ?? valores.map((v) => v.title).join(" · ");
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
-      <section className="mx-auto max-w-2xl text-center">
-        {gym && <SectionLabel>Nosotros · {gym.brandName}</SectionLabel>}
-        <h1 className="mt-3 text-4xl font-bold text-fg">Quiénes somos</h1>
+      <section className="max-w-2xl">
+        {gym && (
+          <span className="font-mono text-xs font-semibold uppercase tracking-widest text-accent">
+            Nosotros · {gym.brandName}
+          </span>
+        )}
+        <h1 className="mt-3 text-4xl font-extrabold uppercase tracking-tight text-fg">
+          Quiénes somos
+        </h1>
         <p className="mt-3 text-base leading-relaxed text-muted">
           Conoce al equipo, los valores y el espacio donde vas a entrenar.
         </p>
-        {tagline && <p className="mt-4 text-sm font-semibold text-accent">{tagline}</p>}
-        <div className="mt-6 flex flex-wrap justify-center gap-3">
+        {tagline && (
+          <p className="cm-vals mt-4">
+            <span className="text-sm font-semibold text-accent">{tagline}</span>
+          </p>
+        )}
+        <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/registro"
             className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
@@ -91,6 +103,24 @@ export default async function NosotrosPage() {
           </Link>
         </div>
       </section>
+
+      {gym?.aboutStory && (
+        <section className="mt-12">
+          <SectionLabel>Nuestra historia</SectionLabel>
+          <div className="mt-4 flex flex-col gap-4">
+            {gym.aboutStory.split(/\n\n+/).map((para, i) => (
+              <p key={i} className="text-sm leading-relaxed text-muted">
+                {para}
+              </p>
+            ))}
+          </div>
+          {gym.aboutPullQuote && (
+            <blockquote className="mt-6 border-l-2 border-accent pl-4 text-lg font-semibold italic leading-snug text-fg">
+              {gym.aboutPullQuote}
+            </blockquote>
+          )}
+        </section>
+      )}
 
       {stats.length > 0 && (
         <section className="mt-12">
@@ -199,7 +229,11 @@ export default async function NosotrosPage() {
         >
           Empezar ahora
         </Link>
-        {tagline && <p className="mt-5 text-xs font-semibold text-muted">{tagline}</p>}
+        {tagline && (
+          <p className="cm-vals mt-5">
+            <span className="text-xs font-semibold text-accent">{tagline}</span>
+          </p>
+        )}
       </section>
     </main>
   );

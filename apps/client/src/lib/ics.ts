@@ -43,3 +43,15 @@ export function buildIcs(evento: IcsEvento): string {
   ];
   return lines.join("\r\n");
 }
+
+/** Build + trigger a browser download of the .ics file for a booking (the "Añadir al
+ *  calendario" action) — a data URL anchor click, no backend. Browser-only (touches
+ *  `document`); call only from client components. */
+export function descargarIcs(evento: IcsEvento): void {
+  const ics = buildIcs(evento);
+  const href = `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
+  const a = document.createElement("a");
+  a.href = href;
+  a.download = `${evento.title.toLowerCase().replace(/\s+/g, "-")}.ics`;
+  a.click();
+}

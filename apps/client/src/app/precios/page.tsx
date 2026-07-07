@@ -4,9 +4,12 @@ import Link from "next/link";
 
 import { pesos } from "@gym/format";
 import {
+  getCoachesPublicos,
+  getContacto,
   getFaqsPublicas,
   getMarketingGym,
   getPlanesPublicos,
+  getValoresPublicos,
   type PlanPublicoDTO,
 } from "@gym/data/server/marketing";
 
@@ -17,14 +20,14 @@ export const metadata: Metadata = {
   description: "Elige cómo entrenas. Sin permanencia, cancelas cuando quieras.",
 };
 
-/** Universal, brand-neutral platform inclusions (true for every gym on the platform) — the mock's
- *  "Todos los planes incluyen" row, kept to facts the platform guarantees rather than gym-specific
- *  claims (coach count / schedule derive from later marketing slices' data). */
-const INCLUYE: { k: string; v: string }[] = [
-  { k: "Equipo y material", v: "Sin costo extra" },
-  { k: "Reserva digital", v: "Desde la app" },
-  { k: "Permanencia", v: "Ninguna" },
-];
+/** The mock's tiered CTA (three distinct labels, not a popular/other binary): a single-session drop-in
+ *  invites a reservation, the popular plan is the hero action, everything else is a plan choice. Keyed on
+ *  the grant model (clases) + popular, so it stays right as the operator's catalog changes. */
+function ctaLabel(plan: PlanPublicoDTO): string {
+  if (plan.popular) return "Empezar ahora";
+  if (plan.clases === 1) return "Reservar clase";
+  return "Elegir este plan";
+}
 
 function Check() {
   return (
@@ -54,7 +57,7 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
     >
       {plan.badge && (
         <span
-          className={`mb-3 inline-flex w-fit rounded-full px-3 py-1 text-xs font-semibold ${
+          className={`mb-3 inline-flex w-fit rounded-full px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wide ${
             plan.popular ? "bg-accent text-white" : "bg-accent-soft text-accent"
           }`}
         >
@@ -64,7 +67,9 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
       <h2 className="text-xl font-bold text-fg">{plan.name}</h2>
       {plan.subtitle && <p className="mt-1 text-sm text-muted">{plan.subtitle}</p>}
       <div className="mt-4 flex items-baseline gap-1">
-        <span className="text-3xl font-bold text-fg">{pesos(plan.precio)}</span>
+        <span className="text-3xl font-extrabold tabular-nums tracking-tight text-fg">
+          {pesos(plan.precio)}
+        </span>
         {plan.cadence && <span className="text-sm text-muted">{plan.cadence}</span>}
       </div>
       <ul className="mt-5 flex flex-1 flex-col gap-3">
@@ -83,8 +88,9 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
             : "border border-line text-fg hover:border-accent hover:text-accent"
         }`}
       >
-        {plan.popular ? "Empezar ahora" : "Elegir plan"}
+        {ctaLabel(plan)}
       </Link>
+      {plan.nota && <p className="mt-3 text-center text-xs text-muted">{plan.nota}</p>}
     </div>
   );
 }
@@ -96,22 +102,63 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
 export default async function PreciosPage() {
   const slug = (await headers()).get("x-gym");
   const gym = slug ? await getMarketingGym(slug) : null;
-  const [planes, faqs] = gym
-    ? await Promise.all([getPlanesPublicos(gym.id), getFaqsPublicas(gym.id)])
-    : [[], []];
+  const [planes, faqs, coaches, contacto, valores] = gym
+    ? await Promise.all([
+        getPlanesPublicos(gym.id),
+        getFaqsPublicas(gym.id),
+        getCoachesPublicos(gym.id),
+        getContacto(gym.id),
+        getValoresPublicos(gym.id),
+      ])
+    : [[], [], [], null, []];
+
+  // Same fallback as Nosotros: until an operator authors about_tagline, stitch the value titles so the
+  // line always renders (the mock's "Fuerza · Disciplina · Resultado" IS the three values).
+  const tagline = gym?.aboutTagline ?? valores.map((v) => v.title).join(" · ");
+
+  // "Todos los planes incluyen" — the mock's coaches/horario rows come from the gym's REAL data (roster
+  // count + weekly hours), then the platform-universal inclusions. Each data row drops out when its
+  // source is empty, so a gym with no roster/hours degrades to the universal-only list.
+  const openDays = contacto?.horarios.filter((h) => !h.closed && h.opens && h.closes) ?? [];
+  const incluye: { k: string; v: string }[] = [
+    ...(coaches.length > 0
+      ? [
+          {
+            k: "Coaches certificados",
+            v: `${coaches.length} ${coaches.length === 1 ? "coach" : "coaches"}`,
+          },
+        ]
+      : []),
+    ...(openDays.length > 0
+      ? [
+          {
+            k: "Horario",
+            v: `${openDays[0].day.slice(0, 3)}–${openDays[openDays.length - 1].day.slice(0, 3)} ${openDays[0].opens}–${openDays[0].closes}`,
+          },
+        ]
+      : []),
+    { k: "Equipo y material", v: "Sin costo extra" },
+    { k: "Reserva digital", v: "Desde la app" },
+    { k: "Permanencia", v: "Ninguna" },
+  ];
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-10">
       <header className="mx-auto max-w-2xl text-center">
         {gym && (
-          <span className="text-xs font-semibold uppercase tracking-widest text-accent">
+          <span className="font-mono text-xs font-semibold uppercase tracking-widest text-accent">
             Precios · {gym.brandName}
           </span>
         )}
-        <h1 className="mt-3 text-4xl font-bold text-fg">Planes</h1>
+        <h1 className="mt-3 text-4xl font-extrabold tracking-tight text-fg">Planes</h1>
         <p className="mt-3 text-base text-muted">
           Elige cómo entrenas. Sin permanencia, sin letras chiquitas. Cancelas cuando quieras.
         </p>
+        {tagline && (
+          <p className="cm-vals mt-4">
+            <span className="text-sm font-semibold text-accent">{tagline}</span>
+          </p>
+        )}
       </header>
 
       {planes.length > 0 ? (
@@ -127,14 +174,14 @@ export default async function PreciosPage() {
       )}
 
       <section className="mx-auto mt-12 max-w-2xl rounded-3xl border border-line bg-surface p-6">
-        <span className="text-xs font-semibold uppercase tracking-widest text-muted">
+        <span className="font-mono text-xs font-semibold uppercase tracking-widest text-muted">
           Todos los planes incluyen
         </span>
         <dl className="mt-4 flex flex-col divide-y divide-line">
-          {INCLUYE.map((row) => (
+          {incluye.map((row) => (
             <div key={row.k} className="flex items-center justify-between py-3">
               <dt className="text-sm text-fg">{row.k}</dt>
-              <dd className="text-sm font-medium text-muted">{row.v}</dd>
+              <dd className="text-sm font-medium tabular-nums text-muted">{row.v}</dd>
             </div>
           ))}
         </dl>
@@ -142,7 +189,7 @@ export default async function PreciosPage() {
 
       {faqs.length > 0 && (
         <section className="mx-auto mt-12 max-w-2xl">
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted">
+          <span className="font-mono text-xs font-semibold uppercase tracking-widest text-muted">
             Preguntas frecuentes
           </span>
           <div className="mt-4">
@@ -156,12 +203,20 @@ export default async function PreciosPage() {
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
           Reserva tu lugar y entrena desde el primer día. Sin permanencia, cancelas cuando quieras.
         </p>
-        <Link
-          href="/registro"
-          className="mt-5 inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
-        >
-          Empezar ahora
-        </Link>
+        <div className="mt-5 flex flex-col items-center gap-3">
+          <Link
+            href="/registro"
+            className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Empezar ahora
+          </Link>
+          <Link
+            href="/reservar"
+            className="inline-flex justify-center rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent"
+          >
+            Ver horarios
+          </Link>
+        </div>
         <p className="mt-5 text-xs text-muted">
           Sin permanencia · Cancela cuando quieras
           <br />

@@ -32,11 +32,11 @@ export default async function RegistroPage() {
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>
-      <RegistroForm />
+      <RegistroForm brandName={brand.copy.name} />
     </LoginHero>
   ) : (
     <AuthShell logo={brand.logo}>
-      <RegistroForm />
+      <RegistroForm brandName={brand.copy.name} />
     </AuthShell>
   );
 }

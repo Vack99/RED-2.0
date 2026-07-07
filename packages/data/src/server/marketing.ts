@@ -25,6 +25,12 @@ export interface MarketingGym {
   id: string;
   brandName: string;
   timezone: string;
+  /** The gym's "quiénes somos" prose (about_story, paragraphs split on blank lines), a signature
+   *  pull-quote, and a short neon tagline ("Fuerza · Disciplina · Resultado"). All operator-optional:
+   *  a gym that hasn't authored them renders the Nosotros/Precios fallbacks. Presentation only. */
+  aboutStory: string | null;
+  aboutPullQuote: string | null;
+  aboutTagline: string | null;
 }
 
 /** Resolve the marketing gym from its slug (the proxy's x-gym stamp). Returns null for an unknown slug
@@ -36,11 +42,18 @@ export const getMarketingGym = cache(
   ): Promise<MarketingGym | null> => {
     const { data } = await client
       .from("gym")
-      .select("id, brand_name, timezone")
+      .select("id, brand_name, timezone, about_story, about_pull_quote, about_tagline")
       .eq("slug", slug)
       .maybeSingle();
     return data
-      ? { id: data.id, brandName: data.brand_name, timezone: data.timezone }
+      ? {
+          id: data.id,
+          brandName: data.brand_name,
+          timezone: data.timezone,
+          aboutStory: data.about_story,
+          aboutPullQuote: data.about_pull_quote,
+          aboutTagline: data.about_tagline,
+        }
       : null;
   },
 );
@@ -56,8 +69,14 @@ export interface PlanPublicoDTO {
   subtitle: string | null;
   precio: number;
   cadence: string | null;
+  /** Grant class-count: a finite allotment (8 / 12…), 1 for a single-session drop-in, or null for an
+   *  unlimited plan. Drives the Precios CTA tiering (drop-in "Reservar clase" vs standard "Elegir este
+   *  plan" vs popular "Empezar ahora"). */
+  clases: number | null;
   badge: string | null;
   popular: boolean;
+  /** Operator's per-plan marketing note ("Se paga por sesión.") — display-only, optional. */
+  nota: string | null;
   features: string[];
 }
 
@@ -75,7 +94,7 @@ export const getPlanesPublicos = cache(
       client
         .from("paquetes")
         .select(
-          "id, nombre, precio, popular, orden, name, subtitle, badge, cadence",
+          "id, nombre, precio, popular, orden, name, subtitle, badge, cadence, clases, nota",
         )
         .eq("gym_id", gymId)
         .order("orden"),
@@ -102,8 +121,10 @@ export const getPlanesPublicos = cache(
       subtitle: p.subtitle,
       precio: p.precio,
       cadence: p.cadence,
+      clases: p.clases,
       badge: p.badge,
       popular: p.popular,
+      nota: p.nota,
       features: byPlan.get(p.id) ?? [],
     }));
   },

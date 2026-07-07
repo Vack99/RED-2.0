@@ -41,7 +41,7 @@ export function RedMark({ size = 28 }: { size?: number }) {
  */
 export function RedLockup({ size = 14, animate = false }: { size?: number; animate?: boolean }) {
   if (animate) {
-    return <RedRingMark size={size} animate idSuffix="hero" />;
+    return <RedRingMark size={size} />;
   }
   return (
     <div className="inline-flex items-center" style={{ gap: 10 }}>

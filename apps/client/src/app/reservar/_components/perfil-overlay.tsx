@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useState, useTransition } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useState, useTransition } from "react";
 import type { Route } from "next";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -12,7 +12,7 @@ import type {
   ProximaReservaDTO,
 } from "@gym/data/server/agenda-miembro";
 
-import { buildIcs } from "../../../lib/ics";
+import { descargarIcs } from "../../../lib/ics";
 import { cancelarReservaAction, setNotificacionesAction } from "../actions";
 
 /**
@@ -47,19 +47,14 @@ const calIcon = (
 );
 
 /** Trigger a client-side .ics download for a booking (the "Añadir al calendario" action). */
-function descargarIcs(r: ProximaReservaDTO) {
-  const ics = buildIcs({
+function descargarIcsReserva(r: ProximaReservaDTO) {
+  descargarIcs({
     uid: r.sessionId,
     title: r.tipo,
     inicioIso: r.inicioIso,
     finIso: r.finIso,
     sala: r.sala,
   });
-  const href = `data:text/calendar;charset=utf-8,${encodeURIComponent(ics)}`;
-  const a = document.createElement("a");
-  a.href = href;
-  a.download = `${r.tipo.toLowerCase().replace(/\s+/g, "-")}.ics`;
-  a.click();
 }
 
 const heartMini = (
@@ -78,12 +73,12 @@ function ReservaCard({
   onOpen: () => void;
 }) {
   return (
-    <div className="mb-3 flex overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="ticket mb-3" style={{ "--notch-x": "92px" } as CSSProperties}>
       <Link
         href={`/clase/${r.sessionId}`}
         onClick={onOpen}
         aria-label={`Ver ${r.tipo}`}
-        className="flex w-[86px] flex-none flex-col items-center justify-center gap-1.5 bg-sunk px-2 py-4"
+        className="flex w-[92px] flex-none flex-col items-center justify-center gap-1.5 bg-sunk px-2 py-4"
       >
         <span className="text-xl font-extrabold tabular-nums text-accent">{r.hora}</span>
         <span className="text-center text-[8.5px] font-semibold uppercase leading-tight tracking-wide text-muted">
@@ -92,7 +87,10 @@ function ReservaCard({
           {r.mesCorto}
         </span>
       </Link>
-      <div className="min-w-0 flex-1 border-l border-dashed border-line p-4">
+      <span className="ticket-notch top" />
+      <span className="ticket-notch bottom" />
+      <span className="ticket-perf" />
+      <div className="min-w-0 flex-1 p-4">
         <Link href={`/clase/${r.sessionId}`} onClick={onOpen} className="block">
           <div className="flex flex-wrap items-center gap-2">
             <span className="truncate text-[17px] font-extrabold uppercase tracking-wide text-fg">{r.tipo}</span>
@@ -114,13 +112,13 @@ function ReservaCard({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 border border-danger/40 py-2.5 text-[9px] font-bold uppercase tracking-wide text-danger"
+            className="flex-1 border border-warning/40 py-2.5 text-[9px] font-bold uppercase tracking-wide text-warning"
           >
             Cancelar
           </button>
           <button
             type="button"
-            onClick={() => descargarIcs(r)}
+            onClick={() => descargarIcsReserva(r)}
             className="flex flex-1 items-center justify-center gap-1.5 border border-line py-2.5 text-[9px] font-bold uppercase tracking-wide text-muted"
           >
             {calIcon}
@@ -252,8 +250,8 @@ function ConfirmSheet({
             type="button"
             onClick={onConfirm}
             disabled={pending}
-            className={`flex-1 rounded-xl py-3.5 text-[11px] font-bold uppercase tracking-wider text-white disabled:opacity-70 ${
-              danger ? "bg-danger" : "bg-accent"
+            className={`flex-1 rounded-xl py-3.5 text-[11px] font-bold uppercase tracking-wider disabled:opacity-70 ${
+              danger ? "bg-warning text-canvas" : "bg-accent text-white"
             }`}
           >
             {pending ? "Un momento…" : confirmLabel}
@@ -305,10 +303,11 @@ function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void 
             )}
           </div>
           {/* The depletion bar only renders when there is a denominator (ilimitado = full; a gauge = fill).
-              A finite plan with no anchor sale shows just the count above. */}
+              A finite plan with no anchor sale shows just the count above. The ember bar (.mb-prog)
+              glows on RED dark and sweeps its fill on mount (.ignited); calm on Forge light. */}
           {(m.ilimitado || m.gauge) && (
-            <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-sunk">
-              <div className="h-full rounded-full bg-accent" style={{ width: barWidth }} />
+            <div className="mb-prog ignited">
+              <i style={{ width: barWidth }} />
             </div>
           )}
         </div>

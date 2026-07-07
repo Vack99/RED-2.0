@@ -94,7 +94,7 @@ export function EntrarForm() {
               onBlur={() => setErrCorreo(validarCorreo(email))}
               placeholder="tu@correo.com"
               className={`${INPUT} focus:border-accent`}
-              style={{ borderColor: errCorreo ? "var(--red)" : "var(--line)" }}
+              style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
             />
             {errCorreo && (
               <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
@@ -125,6 +125,13 @@ export function EntrarForm() {
 
   return (
     <form onSubmit={onSubmitLogin} className="flex w-full flex-col" style={{ maxWidth: 340, gap: 26 }}>
+      <div className="text-center">
+        <h1 className="text-[32px] font-light uppercase tracking-[8px] text-fg" style={{ textIndent: 8, lineHeight: 1 }}>
+          Entrar
+        </h1>
+        <p className="mt-3.5 text-[13px] text-muted">Accede para reservar y ver tu membresía</p>
+      </div>
+
       {loginState.status === "error" && (
         <div
           role="alert"
@@ -152,7 +159,7 @@ export function EntrarForm() {
           onBlur={() => setErrCorreo(validarCorreo(email))}
           placeholder="tu@correo.com"
           className={`${INPUT} focus:border-accent`}
-          style={{ borderColor: errCorreo ? "var(--red)" : "var(--line)" }}
+          style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
         />
         {errCorreo && (
           <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
@@ -174,7 +181,7 @@ export function EntrarForm() {
         </div>
         <div
           className="flex items-center border-b transition-colors focus-within:border-accent"
-          style={{ borderColor: errPassword ? "var(--red)" : "var(--line)" }}
+          style={{ borderColor: errPassword ? "var(--red)" : "var(--line-soft)" }}
         >
           <input
             type={showPass ? "text" : "password"}
@@ -217,11 +224,32 @@ export function EntrarForm() {
         )}
       </button>
 
-      <div className="flex flex-col items-center gap-3 text-[13px]">
+      <div className="flex items-center gap-4">
+        <div className="h-px flex-1 bg-line" />
+        <span className="font-mono text-[10px] font-semibold uppercase tracking-[2px]" style={{ color: "var(--muted-soft)" }}>
+          o
+        </span>
+        <div className="h-px flex-1 bg-line" />
+      </div>
+
+      <Link
+        href="/registro"
+        className="flex w-full items-center justify-center gap-2.5 border bg-transparent py-4 text-[12px] font-bold uppercase tracking-[1.4px] text-fg transition hover:bg-surface"
+        style={{ borderColor: "var(--line-soft)" }}
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-accent">
+          <path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19" />
+          <circle cx="10" cy="8" r="3.2" />
+          <path d="M19 8v6M22 11h-6" />
+        </svg>
+        Crear cuenta
+      </Link>
+
+      <div className="flex flex-col items-center gap-3 text-center text-[13px]">
         <p className="text-muted">
-          ¿No tienes cuenta?{" "}
-          <Link href="/registro" className="font-semibold text-accent">
-            Crear cuenta
+          ¿Aún no entrenas con nosotros?{" "}
+          <Link href="/reservar" className="font-semibold text-accent">
+            Reserva una clase
           </Link>
         </p>
         <Link href="/" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">

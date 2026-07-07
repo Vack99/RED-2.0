@@ -24,7 +24,7 @@ export function PricingTeaser({ planes }: { planes: PlanPublicoDTO[] }) {
         type="button"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-center gap-2 py-2 text-sm font-semibold text-muted hover:text-fg"
+        className="cm-prices-btn flex w-full items-center justify-center gap-2 py-2 text-sm font-semibold text-muted hover:text-fg"
       >
         <span>Ver precios</span>
         <span
@@ -45,7 +45,7 @@ export function PricingTeaser({ planes }: { planes: PlanPublicoDTO[] }) {
             >
               <span>
                 <span
-                  className={`block text-sm ${plan.popular ? "font-bold text-accent" : "text-fg"}`}
+                  className={`block ${plan.popular ? "text-[15px] font-bold text-accent" : "text-sm text-fg"}`}
                 >
                   {plan.name}
                 </span>
@@ -53,7 +53,9 @@ export function PricingTeaser({ planes }: { planes: PlanPublicoDTO[] }) {
                   <span className="mt-0.5 block text-[11px] text-muted">{plan.subtitle}</span>
                 )}
               </span>
-              <span className="text-xl font-extrabold tabular-nums text-fg">{pesos(plan.precio)}</span>
+              <span className="text-[22px] font-extrabold tabular-nums tracking-[-0.5px] text-fg">
+                {pesos(plan.precio)}
+              </span>
             </Link>
           ))}
           <Link

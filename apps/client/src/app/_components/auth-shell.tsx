@@ -17,11 +17,11 @@ export function AuthShell({
 }) {
   return (
     <div
-      className="relative flex min-h-dvh w-full flex-col items-center justify-center overflow-hidden bg-canvas"
-      style={{ padding: 24, gap: 8 }}
+      className="relative flex min-h-dvh w-full flex-col items-center overflow-y-auto bg-canvas"
+      style={{ padding: "44px 24px 36px", gap: 26 }}
     >
       <Logo size={22} />
-      {children}
+      <div className="flex w-full justify-center">{children}</div>
     </div>
   );
 }
