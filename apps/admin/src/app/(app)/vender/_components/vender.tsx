@@ -37,7 +37,7 @@ export function VenderScreen({
   const router = useRouter();
 
   const [mode, setMode] = React.useState<Mode>("new");
-  const [nuevo, setNuevo] = React.useState({ nombre: "", tel: "" });
+  const [nuevo, setNuevo] = React.useState({ nombre: "", tel: "", email: "" });
   const [clientId, setClientId] = React.useState<string | null>(null);
   const [sel, setSel] = React.useState<string | null>(null);
   const [metodo, setMetodo] = React.useState<Metodo | null>(null);
@@ -119,6 +119,7 @@ export function VenderScreen({
         mode,
         nuevoNombre: mode === "new" ? nuevo.nombre : undefined,
         nuevoTel: mode === "new" ? nuevo.tel : undefined,
+        nuevoEmail: mode === "new" ? (nuevo.email.trim() || undefined) : undefined,
         clienteId: mode === "existing" ? (clientId ?? undefined) : undefined,
         paqueteId: sel,
         metodo: METODO_ENUM[metodo],
@@ -133,7 +134,7 @@ export function VenderScreen({
 
   const resetForm = () => {
     setMode("new");
-    setNuevo({ nombre: "", tel: "" });
+    setNuevo({ nombre: "", tel: "", email: "" });
     setClientId(null);
     setSel(null);
     setMetodo(null);
@@ -319,8 +320,8 @@ function ClienteEditor({
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
-  nuevo: { nombre: string; tel: string };
-  setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string }>>;
+  nuevo: { nombre: string; tel: string; email: string };
+  setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string; email: string }>>;
   existing: ClienteLiteDTO | null;
   openPicker: () => void;
   onMaybeValid: (wouldBeValid: boolean) => void;
@@ -347,6 +348,12 @@ function ClienteEditor({
         <div className="flex flex-col" style={{ gap: 12 }}>
           <Input placeholder="Nombre completo" value={nuevo.nombre} onChange={(v) => { setNuevo((n) => ({ ...n, nombre: v })); onMaybeValid(v.trim().length >= 3 && isTelValido(nuevo.tel)); }} autoFocus />
           <Input icon="phone" placeholder="614 000 0000" value={nuevo.tel} onChange={(v) => { setNuevo((n) => ({ ...n, tel: v })); onMaybeValid(nuevo.nombre.trim().length >= 3 && isTelValido(v)); }} suffix="MX" inputMode="tel" />
+          <Input
+            placeholder="Email para la app (opcional)"
+            value={nuevo.email}
+            onChange={(v) => setNuevo((n) => ({ ...n, email: v }))}
+            inputMode="email"
+          />
         </div>
       )}
 
