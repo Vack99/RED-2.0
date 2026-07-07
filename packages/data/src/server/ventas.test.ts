@@ -180,6 +180,20 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(lastRpc(fake).args).toHaveProperty("p_clases", 8);
   });
 
+  // §3.4 — the optional email must NEVER block a sale. Forwarding a MALFORMED value proves it:
+  // it is passed through as entered (it just won't match at claim time — the same harmless
+  // outcome as omitting it), which also regression-guards against a `.email()` format check that
+  // would throw a ZodError from the unguarded `crearVentaSchema.parse` and reject the whole sale.
+  it("forwards the entered email as p_email without validating it (never blocks the sale)", async () => {
+    await crearVenta(input({ mode: "new", nuevoEmail: "maria@" }), fake.client);
+    expect(lastRpc(fake).args).toHaveProperty("p_email", "maria@");
+  });
+
+  it("omits p_email for a new client when no email is provided (spread-guard)", async () => {
+    await crearVenta(input({ mode: "new" }), fake.client);
+    expect(lastRpc(fake).args).not.toHaveProperty("p_email");
+  });
+
   it("throws 'No autenticado' when getClaims returns no sub (requireOperator wired)", async () => {
     fake = makeFake({ paquetes: ILIMITADO }, { sub: null });
 
