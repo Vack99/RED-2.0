@@ -58,6 +58,7 @@ function makeFake(
     const b = {
       select: () => b,
       eq: () => b,
+      not: () => b,
       order: () => b,
       limit: () => b,
       maybeSingle: async () => ({ data: host ? { hostname: host } : null, error: null }),
@@ -185,6 +186,30 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     expect(url).toBe("https://app.plataforma.mx/registro?gym=red-demo&codigo=ZZZ23456");
   });
 
+  it("dev `.localhost` rows are never invite targets, even when older than the public host (live regression 2026-07-09)", async () => {
+    // red-demo's dev row predates its public host; without the not-like filter, oldest-wins
+    // built every demo invite on an unreachable localhost link.
+    const rows = [
+      { hostname: "red-demo-client.localhost", gym_id: "gym-9", app: "client" },
+      { hostname: "red-demo.ibookit.lat", gym_id: "gym-9", app: "client" },
+    ];
+    let filtered: Record<string, unknown>[] = rows;
+    const b = {
+      select: () => b,
+      eq: (col: string, val: unknown) => ((filtered = filtered.filter((r) => r[col] === val)), b),
+      not: (col: string) => ((filtered = filtered.filter((r) => !String(r[col]).endsWith("localhost"))), b),
+      order: () => b,
+      limit: () => b,
+      maybeSingle: async () => ({ data: filtered[0] ?? null, error: null }),
+    };
+    const client = { from: () => b } as unknown as SupabaseServer;
+    const url = await construirUrlInvitacion(
+      { gymId: "gym-9", gymSlug: "red-demo", codigo: "NV9HD6IB" },
+      client,
+    );
+    expect(url).toBe("https://red-demo.ibookit.lat/registro?codigo=NV9HD6IB");
+  });
+
   it("no client host and no fallback env → null (caller reports a clean failure)", async () => {
     delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
     const fake = makeFake({ domainHost: null });
@@ -223,6 +248,12 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
         select: () => b,
         eq: (col: string, val: unknown) => {
           filtered = filtered.filter((r) => r[col] === val);
+          return b;
+        },
+        // Mirrors PostgREST `.not(col, "like", pattern)` for the one pattern the DAL uses
+        // (`%localhost`): keep rows whose col does NOT end with "localhost".
+        not: (col: string, _op: string, _pattern: string) => {
+          filtered = filtered.filter((r) => !String(r[col]).endsWith("localhost"));
           return b;
         },
         order: () => b,

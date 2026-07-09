@@ -79,12 +79,16 @@ export async function construirUrlInvitacion(
   client: SupabaseServer,
 ): Promise<string | null> {
   // A gym may map several client hosts (dev mirror + live); order by created_at so the choice is
-  // deterministic (the earliest-mapped host wins) rather than a plan-order coin flip.
+  // deterministic (the earliest-mapped host wins) rather than a plan-order coin flip. `.localhost`
+  // rows are dev-only tenancy hosts (unreachable from a member's phone) — never an invite target:
+  // red-demo's dev row predates its public host, so without this filter every demo invite carried
+  // an unreachable localhost link (found live 2026-07-09).
   const { data } = await client
     .from("gym_domain")
     .select("hostname")
     .eq("gym_id", gymId)
     .eq("app", "client")
+    .not("hostname", "like", "%localhost")
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();

@@ -116,6 +116,7 @@ function makeInviteFake(row: { email_changed: boolean; unclaimed: boolean }): Fa
       const b = {
         select: () => b,
         eq: () => b,
+        not: () => b,
         order: () => b,
         limit: () => b,
         maybeSingle: async () => ({ data: { hostname: "app.forge.mx" }, error: null }),
