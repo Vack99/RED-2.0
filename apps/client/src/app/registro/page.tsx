@@ -1,5 +1,7 @@
 import { headers } from "next/headers";
 
+import { invitacionInfo, parseCodigoInvitacion } from "@gym/data/server/registro";
+
 import { resolveBrand } from "../../lib/brand";
 import { AuthShell } from "../_components/auth-shell";
 import { RegistroForm } from "./_components/registro-form";
@@ -16,7 +18,11 @@ import { RegistroForm } from "./_components/registro-form";
  * falls back to the static AuthShell. UI only: the form drives the already-shipped
  * Phase-3 registration + claim-by-match flow, now with the Turnstile captcha.
  */
-export default async function RegistroPage() {
+export default async function RegistroPage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<{ codigo?: string }>;
+}) {
   const gym = (await headers()).get("x-gym");
   if (!gym) {
     return (
@@ -27,16 +33,26 @@ export default async function RegistroPage() {
     );
   }
 
+  // An invite code (ADR-0015) shows the "Invitación de {gym} para {nombre}" identity
+  // banner and threads through signup → claim. A dead/unknown code resolves to no
+  // invite, and the code isn't carried, so the form stays a plain signup.
+  const codigo = parseCodigoInvitacion((await searchParams).codigo);
+  const info = codigo ? await invitacionInfo(codigo).catch(() => null) : null;
+  const invitacion = info ? { gym: info.gym_nombre, nombre: info.cliente_nombre } : null;
+
   const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
+  const form = (
+    <RegistroForm
+      brandName={brand.copy.name}
+      codigo={invitacion ? codigo : null}
+      invitacion={invitacion}
+    />
+  );
 
   return LoginHero ? (
-    <LoginHero name={brand.copy.name}>
-      <RegistroForm brandName={brand.copy.name} />
-    </LoginHero>
+    <LoginHero name={brand.copy.name}>{form}</LoginHero>
   ) : (
-    <AuthShell logo={brand.logo}>
-      <RegistroForm brandName={brand.copy.name} />
-    </AuthShell>
+    <AuthShell logo={brand.logo}>{form}</AuthShell>
   );
 }

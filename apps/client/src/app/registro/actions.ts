@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 
-import { registrarSocio } from "@gym/data/server/registro";
+import { parseCodigoInvitacion, registrarSocio } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 
 import { verificarTurnstile } from "../../lib/turnstile";
@@ -43,6 +43,13 @@ export async function registrarAction(
   }
 
   const origin = `${h.get("x-forwarded-proto") ?? "http"}://${host}`;
+  // A valid invite code carries through the confirmation round trip so `/auth/confirm`
+  // (or the confirmation-off path in `registrarSocio`) binds the login to the code's
+  // exact paid row; junk/no code degrades to a plain signup (ADR-0015).
+  const codigo = parseCodigoInvitacion(formData.get("codigo"));
+  const confirmUrl = codigo
+    ? `${origin}/auth/confirm?codigo=${codigo}`
+    : `${origin}/auth/confirm`;
   const result = await registrarSocio(
     {
       nombre: formData.get("nombre"),
@@ -51,7 +58,7 @@ export async function registrarAction(
       telefono: formData.get("telefono"),
       acepta: formData.get("acepta") === "on",
     },
-    { emailRedirectTo: `${origin}/auth/confirm` },
+    { emailRedirectTo: confirmUrl, codigo },
   );
 
   return result.ok ? { status: "success" } : { status: "error", error: result.error };

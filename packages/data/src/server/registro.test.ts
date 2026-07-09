@@ -1,11 +1,20 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { registroSchema, telefonoAE164 } from "./registro";
+import {
+  invitacionInfo,
+  parseCodigoInvitacion,
+  reclamarPorCodigo,
+  registrarSocio,
+  registroSchema,
+  telefonoAE164,
+} from "./registro";
+import type { SupabaseServer } from "./supabase";
 
 // The pure surface of the registration DAL: the zod intake rule (mirrors the form
 // + the DB constraints) and the MX-phone → E.164 normalization the RPC's create
 // path relies on. The claim RPC's eight behaviors are proven in
-// supabase/tests/registro_claim.sql (transaction-local, run via pnpm test:denial).
+// supabase/tests/registro_claim.sql (transaction-local, run via pnpm test:denial);
+// the invite-code claim's DB contract lives in supabase/tests/reclamar_por_codigo.sql.
 
 describe("registroSchema", () => {
   const valido = {
@@ -48,5 +57,119 @@ describe("telefonoAE164", () => {
 
   it("strips every non-digit before prefixing +52", () => {
     expect(telefonoAE164("(614) 111-2233")).toBe("+526141112233");
+  });
+});
+
+describe("parseCodigoInvitacion", () => {
+  it("normalizes a valid code (trim + uppercase)", () => {
+    expect(parseCodigoInvitacion("  abcd2345 ")).toBe("ABCD2345");
+  });
+
+  it("rejects a code of the wrong length", () => {
+    expect(parseCodigoInvitacion("ABCD234")).toBeNull();
+  });
+
+  it("rejects a code with symbols outside A-Z/2-9 (0/1 excluded)", () => {
+    expect(parseCodigoInvitacion("ABCD2301")).toBeNull();
+  });
+
+  it("rejects non-string input (absent query param)", () => {
+    expect(parseCodigoInvitacion(null)).toBeNull();
+    expect(parseCodigoInvitacion(undefined)).toBeNull();
+  });
+});
+
+/** A fake client exposing exactly the `.rpc(name, args).single()/.maybeSingle()`
+ *  chain the invite-code DAL walks — no supabase, no DB (ADR-0001 injectable seam). */
+function fakeRpc(
+  result: { data: unknown; error: unknown },
+  capture?: (name: string, args: unknown) => void,
+): SupabaseServer {
+  return {
+    rpc: (name: string, args: unknown) => {
+      capture?.(name, args);
+      return {
+        single: async () => result,
+        maybeSingle: async () => result,
+      };
+    },
+  } as unknown as SupabaseServer;
+}
+
+describe("reclamarPorCodigo", () => {
+  it("forwards the code as p_codigo and returns the gym slug row", async () => {
+    let seen: { name: string; args: unknown } | null = null;
+    const client = fakeRpc({ data: { gym_slug: "forge" }, error: null }, (name, args) => {
+      seen = { name, args };
+    });
+    const result = await reclamarPorCodigo("ABCD2345", client);
+    expect(result.gym_slug).toBe("forge");
+    expect(seen).toEqual({ name: "reclamar_por_codigo", args: { p_codigo: "ABCD2345" } });
+  });
+
+  it("throws the RPC error message (dead code / already-owned row)", async () => {
+    const client = fakeRpc({ data: null, error: { message: "Código de invitación inválido o ya utilizado" } });
+    await expect(reclamarPorCodigo("ZZZZZZZZ", client)).rejects.toThrow(
+      "Código de invitación inválido o ya utilizado",
+    );
+  });
+});
+
+describe("invitacionInfo", () => {
+  it("returns the {gym, cliente} projection for a valid code", async () => {
+    const client = fakeRpc({
+      data: { gym_nombre: "Forge", gym_slug: "forge", cliente_nombre: "Ana" },
+      error: null,
+    });
+    const info = await invitacionInfo("ABCD2345", client);
+    expect(info).toEqual({ gym_nombre: "Forge", gym_slug: "forge", cliente_nombre: "Ana" });
+  });
+
+  it("returns null for an unknown/dead code (no row, no error)", async () => {
+    const client = fakeRpc({ data: null, error: null });
+    expect(await invitacionInfo("ZZZZZZZZ", client)).toBeNull();
+  });
+
+  it("throws on a real RPC error", async () => {
+    const client = fakeRpc({ data: null, error: { message: "boom" } });
+    await expect(invitacionInfo("ABCD2345", client)).rejects.toThrow("boom");
+  });
+});
+
+describe("registrarSocio invite threading", () => {
+  const intake = {
+    nombre: "Ana López",
+    email: "ana@correo.mx",
+    password: "unbuenpass",
+    telefono: "614 111 2233",
+    acepta: true,
+  };
+
+  /** Fake exposing `.auth.signUp()` (session drives the confirmation-off branch)
+   *  plus the `.rpc().single()` chain the inline claim uses. */
+  function fakeSignup(session: unknown, rpc: (name: string, args: unknown) => void): SupabaseServer {
+    return {
+      auth: { signUp: async () => ({ data: { session }, error: null }) },
+      rpc: (name: string, args: unknown) => {
+        rpc(name, args);
+        return { single: async () => ({ data: { gym_slug: "forge" }, error: null }) };
+      },
+    } as unknown as SupabaseServer;
+  }
+
+  it("runs the invite claim when signUp returns a session (confirmation off)", async () => {
+    const rpc = vi.fn();
+    const client = fakeSignup({ access_token: "x" }, rpc);
+    const result = await registrarSocio(intake, { emailRedirectTo: "x", codigo: "ABCD2345" }, client);
+    expect(result).toEqual({ ok: true, requiereConfirmacion: false });
+    expect(rpc).toHaveBeenCalledWith("reclamar_por_codigo", { p_codigo: "ABCD2345" });
+  });
+
+  it("does NOT claim when confirmation is required (no session yet)", async () => {
+    const rpc = vi.fn();
+    const client = fakeSignup(null, rpc);
+    const result = await registrarSocio(intake, { emailRedirectTo: "x", codigo: "ABCD2345" }, client);
+    expect(result).toEqual({ ok: true, requiereConfirmacion: true });
+    expect(rpc).not.toHaveBeenCalled();
   });
 });

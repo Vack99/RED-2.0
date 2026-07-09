@@ -38,6 +38,19 @@ export function telefonoAE164(telefono: string): string {
   return `+52${telDigits(telefono)}`;
 }
 
+/** An invite code as it rides the `?codigo=` query param: 8 chars from the
+ *  A-Z/2-9 alphabet (ADR-0015), case-normalized. Kept private — the edges below
+ *  validate through `parseCodigoInvitacion`. */
+const codigoInvitacionSchema = z.string().trim().toUpperCase().regex(/^[A-Z2-9]{8}$/);
+
+/** Normalize + validate an invite code from an untrusted query param; `null` when
+ *  it isn't a well-formed code, so every entry point (registro page, confirm route,
+ *  register action) degrades to a plain signup instead of throwing on junk input. */
+export function parseCodigoInvitacion(raw: unknown): string | null {
+  const parsed = codigoInvitacionSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 /** The claim RPC's row DTO, DERIVED from the generated types so it cannot drift
  *  from the migration's `returns table(cliente_id, reclamado)`. */
 export type ReclamoCliente =
@@ -58,7 +71,7 @@ export type RegistroResultado =
  */
 export async function registrarSocio(
   raw: unknown,
-  opts: { emailRedirectTo: string },
+  opts: { emailRedirectTo: string; codigo?: string | null },
   client?: SupabaseServer,
 ): Promise<RegistroResultado> {
   const parsed = registroSchema.safeParse(raw);
@@ -77,7 +90,19 @@ export async function registrarSocio(
     },
   });
   if (error) return { ok: false, error: error.message };
-  return { ok: true, requiereConfirmacion: data.session === null };
+  const requiereConfirmacion = data.session === null;
+
+  // Confirmation-OFF: signUp already established a session (auto-confirmed), so no
+  // `/auth/confirm` round trip runs — bind the invite here on that same client.
+  // Best-effort: a failed claim never fails signup (idempotent claim rerun heals it).
+  if (!requiereConfirmacion && opts.codigo) {
+    try {
+      await reclamarPorCodigo(opts.codigo, supabase);
+    } catch {
+      // swallowed — verified account stands; the code stays live for a retry.
+    }
+  }
+  return { ok: true, requiereConfirmacion };
 }
 
 /**
@@ -98,4 +123,53 @@ export async function reclamarCliente(
     throw new Error(error?.message ?? "No se pudo completar el registro");
   }
   return data;
+}
+
+/** The invite-code claim RPC's row DTO (the gym slug for the post-claim redirect),
+ *  derived from the generated types so it can't drift from the migration. */
+export type ReclamoPorCodigo =
+  Database["public"]["Functions"]["reclamar_por_codigo"]["Returns"][number];
+
+/**
+ * Invite-token claim (ADR-0015 primary rail). Binds the caller's verified login to
+ * the EXACT paid `clientes` row the code names — the code resolves the row, the row
+ * resolves the gym, so no `gymId` (or host) is passed: gym is not an authz input.
+ * The definer RPC re-checks the verified email, overwrites the row email, clears the
+ * code, and upserts membership; it THROWS on a dead code / already-owned row, so the
+ * caller (confirm route) swallows to keep a verified account from stranding.
+ */
+export async function reclamarPorCodigo(
+  codigo: string,
+  client?: SupabaseServer,
+): Promise<ReclamoPorCodigo> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .rpc("reclamar_por_codigo", { p_codigo: codigo })
+    .single();
+  if (error || !data) {
+    throw new Error(error?.message ?? "No se pudo reclamar la invitación");
+  }
+  return data;
+}
+
+/** The pre-signup invite projection DTO ({gym nombre, gym slug, cliente nombre}). */
+export type InvitacionInfo =
+  Database["public"]["Functions"]["invitacion_info"]["Returns"][number];
+
+/**
+ * Pre-signup lookup for `/registro?codigo=` — returns the {gym, member first name}
+ * identity banner for a valid unclaimed code, or `null` for an unknown/dead code
+ * (the page then degrades to a plain signup). Bearer-token disclosure by design
+ * (ADR-0015): holding the code reveals a first name + gym, nothing more.
+ */
+export async function invitacionInfo(
+  codigo: string,
+  client?: SupabaseServer,
+): Promise<InvitacionInfo | null> {
+  const supabase = client ?? (await createClient());
+  const { data, error } = await supabase
+    .rpc("invitacion_info", { p_codigo: codigo })
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data ?? null;
 }
