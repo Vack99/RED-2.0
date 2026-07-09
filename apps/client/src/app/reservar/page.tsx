@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import {
   getAgendaSemanaMiembro,
+  getEsMiembro,
   getPerfilResumenMiembro,
   getSaldoMiembro,
 } from "@gym/data/server/agenda-miembro";
+import { reclamarCliente } from "@gym/data/server/registro";
+import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { createClient } from "@gym/data/server/supabase";
 
 import { ReservarSemana } from "./_components/reservar-semana";
+import { SinMembresia } from "./_components/sin-membresia";
 
 export const metadata: Metadata = {
   title: "Reservar",
@@ -32,6 +37,12 @@ function iniciales(nombre: string): string {
  * signed-out visitor to /entrar; the agenda + saldo reads are RLS-scoped to the
  * member's own gym/row. Paint is token-driven, so RED hosts render RED and Forge
  * hosts render Forge with no brand import here.
+ *
+ * A signed-in caller with no `gym_membership` row yet (audit #10/#15: a swallowed
+ * claim on registro/actions.ts or auth/confirm/route.ts, or a password-reset-first
+ * session that never ran the claim at all) no longer crashes here: the idempotent
+ * `reclamarCliente` re-runs once, and only if membership is STILL missing does the
+ * page render the graceful SinMembresia state instead of the week.
  */
 export default async function ReservarPage({
   searchParams,
@@ -43,6 +54,21 @@ export default async function ReservarPage({
   const { data } = await supabase.auth.getClaims();
   const claims = data?.claims;
   if (!claims?.sub) redirect("/entrar");
+
+  let esMiembro = await getEsMiembro(supabase);
+  if (!esMiembro) {
+    const tenant = await resolveTenant((await headers()).get("host"), null);
+    if (tenant) {
+      try {
+        await reclamarCliente(tenant.id, supabase);
+        esMiembro = await getEsMiembro(supabase);
+      } catch {
+        // Still no membership (no matching invite/sale to claim in this gym) —
+        // fall through to the graceful state below.
+      }
+    }
+  }
+  if (!esMiembro) return <SinMembresia />;
 
   const [semana, saldo, perfil] = await Promise.all([
     getAgendaSemanaMiembro(),
