@@ -13,18 +13,17 @@ import type {
 } from "@gym/data/server/agenda-miembro";
 
 import { descargarIcs } from "../../../lib/ics";
-import { cancelarReservaAction, setNotificacionesAction } from "../actions";
+import { cancelarReservaAction } from "../actions";
 
 /**
  * The consolidated Perfil overlay (PRD #49 Implementation Decisions: ONE component with
  * modes). The SHELL + "Próximas reservas" landed in #58; THIS slice (#62) completes the
- * hub: the identity block (already present), the Cuenta settings list — a notifications
- * PREFERENCE toggle (in-app, no delivery channel; persisted via a self-scoped DEFINER
- * toggle), Términos y privacidad → the legal texts, Ayuda y contacto → the marketing
- * Contacto page, and Cerrar sesión with its confirm sheet returning the signed-out socio
- * to the landing — plus the footer app-version line. The mock's "Datos personales" stub
- * is dropped (no dead controls). Brand-neutral: every color is a contract token, and the
- * footer brand name is real data (gym.brand_name), never a hardcoded string.
+ * hub: the identity block (already present), the Cuenta settings list — Términos y
+ * privacidad → the legal texts, Ayuda y contacto → the marketing Contacto page, and
+ * Cerrar sesión with its confirm sheet returning the signed-out socio to the landing —
+ * plus the footer app-version line. The mock's "Datos personales" stub is dropped (no
+ * dead controls). Brand-neutral: every color is a contract token, and the footer brand
+ * name is real data (gym.brand_name), never a hardcoded string.
  */
 
 const backArrow = (
@@ -147,32 +146,8 @@ function EmptyReservas({ onReservar }: { onReservar: () => void }) {
   );
 }
 
-/** The mock's pf-toggle: an accent pill knob. Reflects the persisted preference; the
- *  parent owns the optimistic flip + the action call. */
-function Toggle({ on, onToggle, disabled }: { on: boolean; onToggle: () => void; disabled: boolean }) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={on}
-      aria-label="Notificaciones"
-      onClick={onToggle}
-      disabled={disabled}
-      className={`relative h-6 w-[42px] flex-none rounded-full transition-colors disabled:opacity-70 ${
-        on ? "bg-accent/40" : "bg-sunk"
-      }`}
-    >
-      <span
-        className={`absolute top-[3px] h-[18px] w-[18px] rounded-full transition-transform ${
-          on ? "translate-x-[21px] bg-accent" : "translate-x-[3px] bg-muted-soft"
-        }`}
-      />
-    </button>
-  );
-}
-
-/** A Cuenta list row: a label plus a trailing control (chevron for links, the toggle for
- *  the preference). `danger` tints the label accent for Cerrar sesión. */
+/** A Cuenta list row: a label plus a trailing control (chevron for links). `danger`
+ *  tints the label accent for Cerrar sesión. */
 function Row({
   label,
   trailing,
@@ -387,7 +362,6 @@ export function PerfilOverlay({
   iniciales,
   desde,
   reservas,
-  notificaciones,
   marca,
   membresia,
   planes,
@@ -398,7 +372,6 @@ export function PerfilOverlay({
   iniciales: string;
   desde: string | null;
   reservas: ProximaReservaDTO[];
-  notificaciones: boolean;
   marca: string;
   membresia: MembresiaDerivada | null;
   planes: PlanMembresiaDTO[];
@@ -412,10 +385,6 @@ export function PerfilOverlay({
   const [logout, setLogout] = useState(false);
   const [logoutPending, setLogoutPending] = useState(false);
   const [logoutError, setLogoutError] = useState<string | null>(null);
-  // The toggle is the sole writer of this preference and the overlay stays mounted across
-  // the post-flip revalidation, so local state seeded from the prop needs no sync effect;
-  // a successful flip already matches the re-read server value, a failed one reverts.
-  const [notif, setNotif] = useState(notificaciones);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -453,17 +422,6 @@ export function PerfilOverlay({
       } else {
         setError(res.error);
       }
-    });
-  }
-
-  /** Optimistic preference flip: paint the new state immediately, persist behind it, and
-   *  roll back to the DB truth on failure (a preference, so no blocking spinner). */
-  function toggleNotif() {
-    const next = !notif;
-    setNotif(next);
-    startTransition(async () => {
-      const res = await setNotificacionesAction(next);
-      if (!res.ok) setNotif(!next);
     });
   }
 
@@ -560,7 +518,6 @@ export function PerfilOverlay({
 
               <section className="mt-8">
                 <div className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.2em] text-muted">Cuenta</div>
-                <Row label="Notificaciones" trailing={<Toggle on={notif} onToggle={toggleNotif} disabled={pending} />} />
                 <Row
                   label="Términos y privacidad"
                   trailing={<span className="text-muted-soft">{chevron}</span>}

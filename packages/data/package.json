@@ -23,7 +23,6 @@
     "./server/gym": "./src/server/gym.ts",
     "./server/marketing": "./src/server/marketing.ts",
     "./server/mensajes": "./src/server/mensajes.ts",
-    "./server/notificaciones": "./src/server/notificaciones.ts",
     "./server/ocupacion": "./src/server/ocupacion.ts",
     "./server/paquetes": "./src/server/paquetes.ts",
     "./server/reservas": "./src/server/reservas.ts",
