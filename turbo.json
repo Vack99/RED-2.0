@@ -13,6 +13,8 @@
       "cache": false,
       "persistent": true
     },
-    "//#lint:src": {}
+    "//#lint:src": {},
+    "typecheck": {},
+    "//#typecheck:root": {}
   }
 }

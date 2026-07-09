@@ -1,11 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
-  "include": [
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.mts",
-    "apps/admin/.next/types/**/*.ts",
-    "apps/admin/.next/dev/types/**/*.ts"
-  ],
-  "exclude": ["node_modules"]
+  "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
+  "exclude": ["node_modules", "apps"]
 }
