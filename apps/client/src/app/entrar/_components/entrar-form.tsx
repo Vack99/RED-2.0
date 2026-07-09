@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useState, type FormEvent } from "react";
 
 import {
   validarCorreo,
@@ -53,7 +53,9 @@ export function EntrarForm() {
     const fd = new FormData();
     fd.set("email", email);
     fd.set("password", password);
-    dispatchLogin(fd);
+    // Dispatch inside a transition: a redirect() thrown by the action only
+    // drives the router when the dispatch runs as a transition (React 19).
+    startTransition(() => dispatchLogin(fd));
   }
 
   function onSubmitReset(e: FormEvent<HTMLFormElement>) {
@@ -63,7 +65,7 @@ export function EntrarForm() {
     if (ce) return;
     const fd = new FormData();
     fd.set("email", email);
-    dispatchReset(fd);
+    startTransition(() => dispatchReset(fd));
   }
 
   if (mode === "reset") {

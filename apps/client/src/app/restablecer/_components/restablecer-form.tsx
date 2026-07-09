@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useActionState, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useState, type FormEvent } from "react";
 
 import { validarPasswordNueva } from "../../../lib/auth-validacion";
 import { restablecerAction, type RestablecerActionState } from "../actions";
@@ -27,7 +27,8 @@ export function RestablecerForm() {
     if (pe) return;
     const fd = new FormData();
     fd.set("password", password);
-    dispatch(fd);
+    // Transition-wrapped so the action's redirect('/reservar') actually navigates.
+    startTransition(() => dispatch(fd));
   }
 
   return (

@@ -2,7 +2,7 @@
 
 import Script from "next/script";
 import Link from "next/link";
-import { useActionState, useEffect, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
 
 import {
   validarCorreo,
@@ -88,7 +88,9 @@ export function RegistroForm({
     setErrPassword(pe);
     if (ne || ce || te || pe) return;
     // Build from the form so Turnstile's injected `cf-turnstile-response` rides along.
-    dispatch(new FormData(e.currentTarget));
+    // Transition-wrapped: the confirmation-off arm redirects from the action.
+    const fd = new FormData(e.currentTarget);
+    startTransition(() => dispatch(fd));
   }
 
   if (state.status === "success") {
