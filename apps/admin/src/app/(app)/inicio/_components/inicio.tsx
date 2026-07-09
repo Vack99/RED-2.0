@@ -17,6 +17,9 @@ interface InicioScreenProps {
   resumen: ResumenMes;
   vigentes: number;
   totalActivos: number;
+  /** Auth-linked (Door 2) members with no active package — the online funnel the
+   *  owner would otherwise miss without scrolling the directory (audit #11). */
+  nuevosOnline: number;
   recientes: AsistenciaHoy[];
   /** Pre-formatted greeting eyebrow (carries the year), built server-side via fmtEyebrow. */
   eyebrow: string;
@@ -28,6 +31,7 @@ export function InicioScreen({
   resumen,
   vigentes,
   totalActivos,
+  nuevosOnline,
   recientes,
   eyebrow,
   lockup,
@@ -139,6 +143,28 @@ export function InicioScreen({
             {pesos(ingresosSemana)}
           </Tnum>
         </Card>
+      </div>
+
+      {/* Nuevos registros online — the Door-2 funnel tile (audit #11). Taps
+          through to the roster with the "Registrados online" filter applied. */}
+      <div style={{ padding: "10px 16px 0" }}>
+        <button
+          onClick={() => router.push("/clientes?online=1")}
+          className="forge-pressable flex w-full items-center border border-line bg-surface text-left"
+          style={{ padding: "14px 16px", gap: 14, cursor: "pointer", color: "var(--fg)" }}
+        >
+          <div className="flex shrink-0 items-center justify-center" style={{ width: 34, height: 34, background: nuevosOnline > 0 ? "var(--green-soft)" : "var(--sunk)" }}>
+            <Icon name="user" size={17} color={nuevosOnline > 0 ? "var(--green)" : "var(--muted)"} />
+          </div>
+          <div className="min-w-0 flex-1">
+            <Eyebrow>NUEVOS REGISTROS ONLINE</Eyebrow>
+            <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, letterSpacing: 0.3 }}>
+              {nuevosOnline > 0 ? "Cóbrales en mostrador como EXISTENTE" : "Sin registros nuevos"}
+            </div>
+          </div>
+          <Tnum className="font-extrabold" style={{ fontSize: 26, lineHeight: 1, color: nuevosOnline > 0 ? "var(--green)" : "var(--muted-soft)" }}>{nuevosOnline}</Tnum>
+          <Icon name="chev" size={14} color="var(--muted)" />
+        </button>
       </div>
 
       {/* Big CTA */}

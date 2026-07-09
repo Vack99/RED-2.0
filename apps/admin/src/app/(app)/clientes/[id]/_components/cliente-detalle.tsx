@@ -167,6 +167,9 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
               <H1 size={24} style={{ letterSpacing: -0.3, lineHeight: 1.05 }}>{c.nombre}</H1>
               <div className="flex flex-wrap items-center" style={{ gap: 8, marginTop: 8, fontSize: 11.5, color: "var(--muted)" }}>
                 <Badge state={c.estado} />
+                <Badge state={ficha.invitacion.estado === "cuenta_activa" ? "success" : "info"}>
+                  {ficha.invitacion.badge}
+                </Badge>
                 {present && (
                   <span className="inline-flex items-center uppercase font-extrabold" style={{ gap: 5, padding: "4px 8px", background: "var(--green)", color: "var(--canvas)", fontSize: 9.5, letterSpacing: 1.1 }}>
                     <Icon name="check" size={11} color="var(--canvas)" strokeWidth={2.6} />

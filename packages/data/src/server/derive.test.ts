@@ -3,15 +3,19 @@ import { describe, expect, it } from "vitest";
 import {
   clasesDenom,
   derivarCliente,
+  derivarInvitacion,
   derivarMembresia,
   derivarPaseCliente,
   diasDenom,
+  esRegistroOnlinePendiente,
+  estadoInvitacion,
   gaugeFill,
   shapeFicha,
   type ClienteFacts,
   type FichaAsistRow,
   type FichaClienteRow,
   type FichaVentaRow,
+  type InvitacionFacts,
   type MembresiaFacts,
 } from "./derive";
 
@@ -479,5 +483,72 @@ describe("derivarMembresia", () => {
     const mem = derivarMembresia(mFacts({ anchorMonto: 800, anchorVigenciaTipo: "dias", anchorVigenciaDias: 20 }), HOY);
     expect(mem.precioDisplay).toBe("$800");
     expect(mem.cadenciaLabel).toBe("20 días");
+  });
+});
+
+// ── Invite lifecycle (derived, never stored) ───────────────────────
+
+function invFacts(over: Partial<InvitacionFacts> = {}): InvitacionFacts {
+  return { email: null, invitacion_enviada_at: null, auth_user_id: null, ...over };
+}
+
+describe("estadoInvitacion — the pure state machine", () => {
+  it("is sin_email when no email is captured", () => {
+    expect(estadoInvitacion(invFacts())).toBe("sin_email");
+  });
+
+  it("is sin_invitar when email is set but no invite has been sent", () => {
+    expect(estadoInvitacion(invFacts({ email: "ana@mail.com" }))).toBe("sin_invitar");
+  });
+
+  it("is invitacion_enviada once the invite has been sent", () => {
+    expect(
+      estadoInvitacion(invFacts({ email: "ana@mail.com", invitacion_enviada_at: "2026-07-08T18:00:00Z" })),
+    ).toBe("invitacion_enviada");
+  });
+
+  it("is cuenta_activa once auth_user_id is sealed — regardless of the invite fields", () => {
+    // auth wins even with no email / no invite sent (claim overwrites email later)
+    expect(estadoInvitacion(invFacts({ auth_user_id: "u-1" }))).toBe("cuenta_activa");
+    expect(
+      estadoInvitacion(
+        invFacts({ email: "ana@mail.com", invitacion_enviada_at: "2026-07-08T18:00:00Z", auth_user_id: "u-1" }),
+      ),
+    ).toBe("cuenta_activa");
+  });
+});
+
+describe("derivarInvitacion — badge copy (es-MX)", () => {
+  it("badges the three non-date states verbatim", () => {
+    expect(derivarInvitacion(invFacts(), TZ_FORGE).badge).toBe("Sin email");
+    expect(derivarInvitacion(invFacts({ email: "ana@mail.com" }), TZ_FORGE).badge).toBe("Sin invitar");
+    expect(derivarInvitacion(invFacts({ auth_user_id: "u-1" }), TZ_FORGE).badge).toBe("Cuenta activa");
+  });
+
+  it("badges 'Invitada {fecha-corta}' with the gym-local send date", () => {
+    // 8 jul 2026 03:00Z is still 7 jul in America/Chihuahua (UTC-6) → date is gym-local
+    const d = derivarInvitacion(
+      invFacts({ email: "ana@mail.com", invitacion_enviada_at: "2026-07-08T03:00:00Z" }),
+      TZ_FORGE,
+    );
+    expect(d.estado).toBe("invitacion_enviada");
+    expect(d.badge).toBe("Invitada 7 jul");
+  });
+});
+
+describe("esRegistroOnlinePendiente — tile/filter population", () => {
+  it("is true only for an auth-linked member with no active package", () => {
+    expect(esRegistroOnlinePendiente("cuenta_activa", "sin_clases")).toBe(true);
+  });
+
+  it("is false for an auth-linked member who has an active package", () => {
+    expect(esRegistroOnlinePendiente("cuenta_activa", "activo")).toBe(false);
+    expect(esRegistroOnlinePendiente("cuenta_activa", "por_vencer")).toBe(false);
+  });
+
+  it("is false for a package-less desk/legacy client with no account", () => {
+    // the exact cohort finding #12 says self-registrants were indistinguishable from
+    expect(esRegistroOnlinePendiente("sin_email", "sin_clases")).toBe(false);
+    expect(esRegistroOnlinePendiente("invitacion_enviada", "sin_clases")).toBe(false);
   });
 });

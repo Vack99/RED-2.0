@@ -3,17 +3,17 @@
 import * as React from "react";
 import Link from "next/link";
 import { Icon } from "@gym/ui/forge/icon";
-import { AppBar, Avatar, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
+import { AppBar, Avatar, Badge, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useFlip } from "@gym/ui/forge/use-flip";
 import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
-import type { ClienteDerivado } from "@gym/data/server/derive";
+import type { ClienteRosterDTO } from "@gym/data/server/clientes";
 import { markInAppNav } from "../../../../lib/nav";
 
 type Sort = "dias" | "nombre" | "asist";
 
 /** The numeric classes a client has left ("ilimitado" → no ceiling). */
-function clasesNum(c: ClienteDerivado): number {
+function clasesNum(c: ClienteRosterDTO): number {
   return c.clasesRest === "ilimitado" ? Infinity : c.clasesRest;
 }
 
@@ -25,10 +25,19 @@ function urgencyColor(nivel: NivelUrgencia) {
     : "var(--muted)";
 }
 
-export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
+export function ClientesScreen({
+  clientes,
+  initialOnline = false,
+}: {
+  clientes: ClienteRosterDTO[];
+  /** Deep-link from the dashboard "Nuevos registros online" tile — opens the
+   *  roster with the "Registrados online" filter already applied. */
+  initialOnline?: boolean;
+}) {
   const [query, setQuery] = React.useState("");
-  const [showFilters, setShowFilters] = React.useState(false);
+  const [showFilters, setShowFilters] = React.useState(initialOnline);
   const [renovar, setRenovar] = React.useState(false);
+  const [online, setOnline] = React.useState(initialOnline);
   const [diasMax, setDiasMax] = React.useState<number | null>(null);
   const [clasesMax, setClasesMax] = React.useState<number | null>(null);
   const [sort, setSort] = React.useState<Sort>("dias");
@@ -38,11 +47,13 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
     [clientes],
   );
   const renovarCount = withU.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente").length;
+  const onlineCount = withU.filter((x) => x.c.pendienteOnline).length;
   const { vigentes } = resumirRoster(clientes.map((c) => c.estado));
 
   const list = React.useMemo(() => {
     let list = withU;
     if (renovar) list = list.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente");
+    if (online) list = list.filter((x) => x.c.pendienteOnline);
     if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
@@ -55,18 +66,19 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
       asist: (a, b) => b.c.asistEsteMes - a.c.asistEsteMes,
     };
     return list.toSorted(sorters[sort]);
-  }, [withU, renovar, diasMax, clasesMax, query, sort]);
+  }, [withU, renovar, online, diasMax, clasesMax, query, sort]);
 
-  const activeCount = (renovar ? 1 : 0) + (diasMax != null ? 1 : 0) + (clasesMax != null ? 1 : 0);
+  const activeCount =
+    (renovar ? 1 : 0) + (online ? 1 : 0) + (diasMax != null ? 1 : 0) + (clasesMax != null ? 1 : 0);
   const anyFilter = activeCount > 0 || !!query;
-  const clearAll = () => { setRenovar(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
+  const clearAll = () => { setRenovar(false); setOnline(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
 
   // FLIP: animate rows to their new spot when the order/contents change.
   // `showFilters` is included not because it reorders rows, but because toggling
   // the filter panel shifts every row vertically; without re-measuring on that
   // commit, the next real reorder would compute deltas from stale pre-panel
   // rects and slide every row a spurious ~panel-height (FLIP fighting layout).
-  const flipRow = useFlip([sort, renovar, diasMax, clasesMax, query, showFilters]);
+  const flipRow = useFlip([sort, renovar, online, diasMax, clasesMax, query, showFilters]);
 
   return (
     <div>
@@ -154,6 +166,22 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
                 <Tnum className="font-extrabold" style={{ fontSize: 22, lineHeight: 1, color: renovar ? "var(--gold)" : "var(--fg)" }}>{renovarCount}</Tnum>
               </button>
             </div>
+            <div style={{ padding: "10px 16px 0" }}>
+              <button
+                onClick={() => setOnline((v) => !v)}
+                className="flex w-full items-center text-left"
+                style={{ gap: 12, padding: "11px 13px", cursor: "pointer", background: online ? "var(--green-soft)" : "var(--surface)", border: `1px solid ${online ? "var(--green)" : "var(--line)"}` }}
+              >
+                <div className="flex shrink-0 items-center justify-center" style={{ width: 30, height: 30, background: online ? "var(--green)" : "transparent", border: online ? "none" : "1px solid var(--line)" }}>
+                  <Icon name="user" size={15} color={online ? "var(--canvas)" : "var(--green)"} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="uppercase font-extrabold" style={{ fontSize: 13, letterSpacing: 0.5, color: "var(--fg)" }}>Registrados online</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>Con cuenta en la app, sin paquete</div>
+                </div>
+                <Tnum className="font-extrabold" style={{ fontSize: 22, lineHeight: 1, color: online ? "var(--green)" : "var(--fg)" }}>{onlineCount}</Tnum>
+              </button>
+            </div>
             <FacetRow label="Días" value={diasMax} onChange={setDiasMax} options={[{ v: null, l: "Todos" }, { v: 14, l: "≤14" }, { v: 7, l: "≤7" }, { v: 3, l: "≤3" }]} />
             <FacetRow label="Clases" value={clasesMax} onChange={setClasesMax} options={[{ v: null, l: "Todas" }, { v: 5, l: "≤5" }, { v: 3, l: "≤3" }, { v: 1, l: "≤1" }]} />
           </div>
@@ -224,6 +252,12 @@ export function ClientesScreen({ clientes }: { clientes: ClienteDerivado[] }) {
                   <span className="uppercase" style={{ letterSpacing: 0.4 }}>{c.paquete}</span>
                   <span style={{ color: "var(--muted-soft)" }}>·</span>
                   <Tnum>{c.tel}</Tnum>
+                  <Badge
+                    state={c.invitacion.estado === "cuenta_activa" ? "success" : "info"}
+                    style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}
+                  >
+                    {c.invitacion.badge}
+                  </Badge>
                 </div>
               </div>
               <div className="shrink-0" style={{ textAlign: "right", minWidth: 56 }}>

@@ -6,7 +6,7 @@ import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
-import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
+import { Avatar, Badge, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, VentaResult } from "@gym/data/server/ventas";
@@ -50,6 +50,26 @@ export function VenderScreen({
   const existing = clientes.find((x) => x.id === clientId) ?? null;
   const paq = sel ? (paquetes.find((p) => p.id === sel) ?? null) : null;
   const vigenciaEnd = paq?.hasta ?? null;
+
+  // Soft (never blocking) NUEVO duplicate warn (audit #7): a NEW sale whose typed
+  // phone or email already matches an existing member in the gym almost certainly
+  // means "sell EXISTENTE onto their row", not "mint a duplicate". Matched entirely
+  // client-side against the already-loaded picker roster — no extra round trip.
+  const [dismissedDupId, setDismissedDupId] = React.useState<string | null>(null);
+  const dupMatch = React.useMemo(() => {
+    if (mode !== "new") return null;
+    const telDigits = nuevo.tel.replace(/\D/g, "");
+    const email = nuevo.email.trim().toLowerCase();
+    if (telDigits.length < 10 && !email) return null;
+    return (
+      clientes.find((c) => {
+        const telHit = telDigits.length >= 10 && c.tel.replace(/\D/g, "") === telDigits;
+        const emailHit = !!email && !!c.email && c.email.toLowerCase() === email;
+        return telHit || emailHit;
+      }) ?? null
+    );
+  }, [mode, nuevo.tel, nuevo.email, clientes]);
+  const showDup = dupMatch && dupMatch.id !== dismissedDupId ? dupMatch : null;
 
   const clienteValid =
     mode === "new"
@@ -184,7 +204,23 @@ export function VenderScreen({
       {/* Accordion — flows into the shell's <main> scroller (no nested scroll container) */}
       <div>
         <AccordionSection label="CLIENTE" summary={clienteSummary} emptyHint="Agregar cliente" complete={clienteValid} open={openSection === "cliente"} onToggle={() => toggle("cliente")}>
-          <ClienteEditor mode={mode} setMode={handleSetMode} nuevo={nuevo} setNuevo={setNuevo} existing={existing} openPicker={() => setPickerOpen(true)} onMaybeValid={maybeAdvanceCliente} />
+          <ClienteEditor
+            mode={mode}
+            setMode={handleSetMode}
+            nuevo={nuevo}
+            setNuevo={setNuevo}
+            existing={existing}
+            openPicker={() => setPickerOpen(true)}
+            onMaybeValid={maybeAdvanceCliente}
+            dup={showDup}
+            onUseExisting={() => {
+              if (!showDup) return;
+              setClientId(showDup.id);
+              setMode("existing");
+              maybeAdvanceCliente(true);
+            }}
+            onDismissDup={() => showDup && setDismissedDupId(showDup.id)}
+          />
         </AccordionSection>
 
         <AccordionSection label="PAQUETE" summary={paqueteSummary} emptyHint="Elegir paquete" complete={!!sel} open={openSection === "paquete"} onToggle={() => toggle("paquete")}>
@@ -252,7 +288,15 @@ export function VenderScreen({
               <Avatar initial={cc.inicial} size={36} />
               <div className="min-w-0 flex-1">
                 <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{cc.nombre}</div>
-                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}><Tnum>{cc.tel}</Tnum> · {cc.paqueteLabel}</div>
+                <div className="flex flex-wrap items-center" style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, gap: 6 }}>
+                  <span><Tnum>{cc.tel}</Tnum> · {cc.paqueteLabel}</span>
+                  <Badge
+                    state={cc.invitacion.estado === "cuenta_activa" ? "success" : "info"}
+                    style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}
+                  >
+                    {cc.invitacion.badge}
+                  </Badge>
+                </div>
               </div>
               {cc.id === clientId && <Icon name="check" size={16} color="var(--gold)" />}
             </button>
@@ -317,6 +361,9 @@ function ClienteEditor({
   existing,
   openPicker,
   onMaybeValid,
+  dup,
+  onUseExisting,
+  onDismissDup,
 }: {
   mode: Mode;
   setMode: (m: Mode) => void;
@@ -325,6 +372,10 @@ function ClienteEditor({
   existing: ClienteLiteDTO | null;
   openPicker: () => void;
   onMaybeValid: (wouldBeValid: boolean) => void;
+  /** A same-gym cliente matching the typed phone/email — the soft duplicate warn. */
+  dup: ClienteLiteDTO | null;
+  onUseExisting: () => void;
+  onDismissDup: () => void;
 }) {
   return (
     <>
@@ -354,6 +405,36 @@ function ClienteEditor({
             onChange={(v) => setNuevo((n) => ({ ...n, email: v }))}
             inputMode="email"
           />
+          {dup && (
+            <div
+              className="flex items-start"
+              style={{ gap: 10, padding: "12px 13px", background: "var(--yellow-soft)", border: "1px solid var(--yellow)" }}
+            >
+              <Icon name="alert" size={16} color="var(--gold)" />
+              <div className="min-w-0 flex-1">
+                <div className="font-bold" style={{ fontSize: 12.5, color: "var(--fg)", letterSpacing: 0.2 }}>¿Es este cliente?</div>
+                <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 2 }}>
+                  Ya existe <span className="font-semibold" style={{ color: "var(--fg)" }}>{dup.nombre}</span> con este teléfono o email. Véndele como EXISTENTE.
+                </div>
+                <div className="flex items-center" style={{ gap: 14, marginTop: 10 }}>
+                  <button
+                    onClick={onUseExisting}
+                    className="uppercase font-bold"
+                    style={{ background: "transparent", border: "none", padding: 0, color: "var(--gold)", fontSize: 10.5, letterSpacing: 1, cursor: "pointer" }}
+                  >
+                    Usar EXISTENTE
+                  </button>
+                  <button
+                    onClick={onDismissDup}
+                    className="uppercase font-bold"
+                    style={{ background: "transparent", border: "none", padding: 0, color: "var(--muted)", fontSize: 10.5, letterSpacing: 1, cursor: "pointer" }}
+                  >
+                    Es otra persona
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
