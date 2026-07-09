@@ -35,6 +35,7 @@ const SUITE = [
   'rekey_gym_scoped.sql',
   'registro_claim.sql',
   'preparar_invitacion_rules.sql',
+  'actualizar_cliente_email_rules.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',
   'catalog_rls_denial.sql',

@@ -1313,8 +1313,16 @@ export type Database = {
     }
     Functions: {
       actualizar_cliente: {
-        Args: { p_cliente_id: string; p_nombre: string; p_tel: string }
-        Returns: undefined
+        Args: {
+          p_cliente_id: string
+          p_email?: string
+          p_nombre: string
+          p_tel: string
+        }
+        Returns: {
+          email_changed: boolean
+          unclaimed: boolean
+        }[]
       }
       actualizar_paquete: {
         Args: {

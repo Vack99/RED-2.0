@@ -23,6 +23,7 @@ import {
 } from "./derive";
 import { getCobro } from "./cobro";
 import { getOperatorGym } from "./gym";
+import { enviarInvitacion, type EnvioResult, type MailTransport } from "./invitaciones";
 import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
 import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
@@ -185,6 +186,9 @@ export type ClienteFichaDTO = FichaDerivada & {
   vecinos: Vecinos;
   /** Derived invite state + es-MX badge for the ficha header (ADR-0015). */
   invitacion: InvitacionDerivada;
+  /** Contact email — the edit sheet's backfill field (S3, issue #71). Hidden/disabled once the row is
+   *  claimed (`invitacion.estado === "cuenta_activa"`): the verified login email owns it then (D5). */
+  email: string | null;
 };
 
 /** The ficha, derived-at-read (ADR-0002): a thin fetch that defers all shaping to
@@ -282,33 +286,82 @@ export const getClienteFicha = cache(
       { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
     );
 
-    return { ...ficha, hoyIso, vecinos, invitacion: derivarInvitacion(c, tz) };
+    return { ...ficha, hoyIso, vecinos, invitacion: derivarInvitacion(c, tz), email: c.email };
   },
 );
 
-/** Identity-edit input (nombre + tel). Trims like crearVenta; tel validity is the canonical
- *  10-digit MX rule (isTelValido), the same rule the DB CHECK (clientes_tel_10_digits_ck) enforces. */
+/** Identity-edit input (nombre + tel + optional email). Trims like crearVenta; tel validity is the
+ *  canonical 10-digit MX rule (isTelValido), the same rule the DB CHECK (clientes_tel_10_digits_ck)
+ *  enforces. `email` is OPTIONAL and `.email()`-VALIDATED (design §4) — unlike the sale-path `nuevoEmail`
+ *  normalizer (ventas.ts, deliberately untouched: cash sale never gated), this surface is an edit, not a
+ *  sale, so validation is safe here. Blank/whitespace-only input means "no change" (preprocessed to
+ *  `undefined`, never forwarded as `''`) — this slice has no explicit "clear the email" arm. */
 export const actualizarClienteSchema = z.object({
   clienteId: z.string().uuid(),
   nombre: z.string().trim().min(3),
   tel: z.string().trim().refine(isTelValido, { message: "Teléfono inválido" }),
+  email: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().email("Correo inválido").optional(),
+  ),
 });
 
 export type ActualizarClienteInput = z.infer<typeof actualizarClienteSchema>;
 
-/** Edit a client's identity (nombre + tel). Injectable client (ADR-0001). The actualizar_cliente
- *  RPC re-checks auth.uid() and RLS scopes the UPDATE to the owner (SECURITY INVOKER), so the sub
- *  from the presence check is discarded here (matches crearVenta). */
-export async function actualizarCliente(raw: unknown, client?: SupabaseServer): Promise<void> {
+/** `actualizarCliente`'s result: the auto-invite outcome (ADR-0015 §3 backfill path — issue #71). `null`
+ *  when no email arm was sent, the email was unchanged, or the row is already claimed; a value otherwise,
+ *  mirroring `enviarInvitacion`'s own best-effort contract (never thrown, always surfaced). */
+export interface ActualizarClienteResult {
+  invite: EnvioResult | null;
+}
+
+/** Edit a client's identity (nombre + tel + optional email backfill). Injectable client (ADR-0001).
+ *  The actualizar_cliente RPC re-checks auth.uid(), RLS scopes the UPDATE to the owner (SECURITY INVOKER),
+ *  and — in the SAME round trip — reports whether the email was newly set/changed AND whether the row was
+ *  unclaimed at write time; only that combination fires the auto-invite (a claimed row's email is guarded
+ *  server-side too, defense in depth). `opts.transport` is the same injectable mail-transport seam
+ *  `enviarInvitacion` exposes (ADR-0001) — its test double is this function's second consumer. */
+export async function actualizarCliente(
+  raw: unknown,
+  client?: SupabaseServer,
+  opts: { transport?: MailTransport } = {},
+): Promise<ActualizarClienteResult> {
   const input = actualizarClienteSchema.parse(raw);
   const supabase = client ?? (await createClient());
 
   await requireOperator(supabase);
 
-  const { error } = await supabase.rpc("actualizar_cliente", {
-    p_cliente_id: input.clienteId,
-    p_nombre: input.nombre,
-    p_tel: input.tel,
-  });
-  if (error) throw new Error("No se pudo actualizar el cliente");
+  const { data, error } = await supabase
+    .rpc("actualizar_cliente", {
+      p_cliente_id: input.clienteId,
+      p_nombre: input.nombre,
+      p_tel: input.tel,
+      ...(input.email ? { p_email: input.email } : {}),
+    })
+    .single();
+  if (error || !data) throw new Error("No se pudo actualizar el cliente");
+
+  const invite =
+    data.email_changed && data.unclaimed
+      ? await enviarInvitacion(
+          { clienteId: input.clienteId },
+          { transport: opts.transport, client: supabase },
+        )
+      : null;
+
+  return { invite };
+}
+
+/** Re-send the SAME invite code from the ficha (design §3 REENVIAR — issue #71). A thin named alias over
+ *  `enviarInvitacion` (no new logic — the RPC chain already IS the re-send: `preparar_invitacion` reuses
+ *  the existing code when one is set): the ficha's REENVIAR button and "enviar invitación" (sin_invitar)
+ *  both call this. `opts.transport` mirrors `enviarInvitacion`'s injectable seam. */
+export async function reenviarInvitacion(
+  clienteId: string,
+  client?: SupabaseServer,
+  opts: { transport?: MailTransport } = {},
+): Promise<EnvioResult> {
+  const supabase = client ?? (await createClient());
+  await requireOperator(supabase);
+  return enviarInvitacion({ clienteId }, { transport: opts.transport, client: supabase });
 }

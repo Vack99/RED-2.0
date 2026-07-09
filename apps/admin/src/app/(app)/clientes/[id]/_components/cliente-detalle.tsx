@@ -20,7 +20,7 @@ import type { ClienteFichaDTO } from "@gym/data/server/clientes";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "../../../../../lib/swipe";
-import { togglePaseAction } from "../actions";
+import { reenviarInvitacionAction, togglePaseAction } from "../actions";
 import { EditarClienteSheet } from "./editar-cliente-sheet";
 
 export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
@@ -32,10 +32,44 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const [busy, setBusy] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
   const [msgOpen, setMsgOpen] = React.useState(false);
+  const [reenviando, setReenviando] = React.useState(false);
   const [dx, setDx] = React.useState(0);
   const swipe = React.useRef<SwipeState>(idleSwipe());
 
   const asistCount = ficha.historial.length + (present ? 1 : 0);
+
+  // REENVIAR (+ "enviar invitación" when sin_invitar) — design §3, issue #71. Only rendered for
+  // sin_invitar/invitacion_enviada: sin_email has nothing to send (backfill the email first, via
+  // EDITAR) and cuenta_activa has no invite action at all (the badge above is the single state display).
+  const reenviar = async () => {
+    if (reenviando) return;
+    setReenviando(true);
+    try {
+      const res = await reenviarInvitacionAction(c.id);
+      if (res.ok) {
+        forgeToast({
+          tone: "success",
+          title: "Invitación enviada",
+          body: `${firstName(c.nombre)} · ${res.email}`,
+        });
+        router.refresh();
+      } else {
+        forgeToast({
+          tone: "warning",
+          title: "No pudimos enviar la invitación",
+          body: "Intenta de nuevo más tarde.",
+        });
+      }
+    } catch {
+      forgeToast({
+        tone: "warning",
+        title: "No pudimos enviar la invitación",
+        body: "Intenta de nuevo más tarde.",
+      });
+    } finally {
+      setReenviando(false);
+    }
+  };
 
   const toggleAsistencia = async () => {
     if (busy) return;
@@ -139,7 +173,13 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
       <EditarClienteSheet
         open={editOpen}
         onClose={() => setEditOpen(false)}
-        cliente={{ id: c.id, nombre: c.nombre, tel: c.tel }}
+        cliente={{
+          id: c.id,
+          nombre: c.nombre,
+          tel: c.tel,
+          email: ficha.email ?? "",
+          cuentaActiva: ficha.invitacion.estado === "cuenta_activa",
+        }}
       />
 
       <MensajePicker
@@ -267,6 +307,29 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             <Icon name="arrow" size={14} color="var(--muted)" />
           </button>
         </div>
+
+        {/* Invitación — REENVIAR (+ "enviar invitación" when sin_invitar). sin_email has nothing to
+            send (backfill via EDITAR first) and cuenta_activa has no invite action (design §3, #71). */}
+        {(ficha.invitacion.estado === "sin_invitar" || ficha.invitacion.estado === "invitacion_enviada") && (
+          <div style={{ padding: "10px 16px 0" }}>
+            <button
+              onClick={reenviar}
+              disabled={reenviando}
+              className="forge-pressable flex w-full items-center"
+              style={{ padding: "12px 14px", background: "transparent", border: "1px solid var(--silver-dim)", color: "var(--fg)", cursor: reenviando ? "default" : "pointer", gap: 10 }}
+            >
+              <Icon name="refresh" size={16} color="var(--muted)" />
+              <span className="uppercase font-bold" style={{ fontSize: 12, letterSpacing: 0.8, flex: 1, textAlign: "left" }}>
+                {reenviando
+                  ? "Enviando…"
+                  : ficha.invitacion.estado === "sin_invitar"
+                    ? "Enviar invitación"
+                    : "Reenviar invitación"}
+              </span>
+              <Icon name="arrow" size={14} color="var(--muted)" />
+            </button>
+          </div>
+        )}
 
         {/* Historial */}
         <SectionHeader trailing={`${asistCount} ASIST.`}>HISTORIAL · ÚLTIMOS 30 DÍAS</SectionHeader>
