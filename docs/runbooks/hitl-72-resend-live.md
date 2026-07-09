@@ -11,15 +11,26 @@ This is an **owner-executed, agent-prepared** runbook: every step is a dashboard
 > **Supersedes `docs/runbooks/smtp-resend.md` (#27).** That runbook covered SMTP-only. This one absorbs it and adds the invite-mail env vars, the migration deploy, and the Auth-URL config that closes the #63 Slice-0 leftover. Where a value was already flagged there, it is re-flagged here.
 
 **Project ref:** `hjppxawglmukfvsgmcog` · **Supabase URL:** `https://hjppxawglmukfvsgmcog.supabase.co`
-**Known hosts:** admin `red-2-0-admin.vercel.app` · client RED `red-2-0-client.vercel.app` · client Forge `forge-red-2-0-client.vercel.app`
+**Sending domain:** `ibookit.lat` (SPF/DKIM/DMARC verified live — §A done)
+**Known hosts** (post-`ibookit.lat` cutover, `6cf921c`; the `*.vercel.app` hosts are no longer in `gym_domain`):
 
-## OWNER-DECIDE inputs (resolve these first — the whole runbook depends on them)
-
-| Placeholder | Used in | Notes |
+| gym | client host | admin host |
 |---|---|---|
-| `<platform-domain>` | A, B, D | The platform-owned, **gym-neutral** sending domain (ADR-0014). Deliberately deferred to this slice. Do **not** reuse a gym's brand domain — one sender serves every gym. |
-| `<sender-name>` | B, D | Gym-neutral display name on the envelope. Proposed `Notificaciones` (es-MX, brand-free). Must carry **no** gym brand. |
-| `PLATFORM_CLIENT_FALLBACK_HOST` value | D | The client host used for **unmapped** gyms via `?gym=`. See §D for the host-wins caveat — this needs a deliberate choice + verify, not a guess. |
+| red | `red.ibookit.lat` | `red-admin.ibookit.lat` |
+| forge | `forge.ibookit.lat` | `forge-admin.ibookit.lat` |
+| red-demo | `red-demo.ibookit.lat` | `red-demo-admin.ibookit.lat` |
+| forge-demo | `forge-demo.ibookit.lat` | `forge-demo-admin.ibookit.lat` |
+
+`app.ibookit.lat` is **unmapped** — the host where `?gym=<slug>` resolves (the fallback funnel).
+
+## OWNER-DECIDE inputs — all RESOLVED (2026-07-09)
+
+| Input | Used in | Value |
+|---|---|---|
+| Platform sending domain | A, B, D | **`ibookit.lat`** — platform-owned, gym-neutral (ADR-0014). SPF/DKIM/DMARC verified live. |
+| Sender name | B, D | **`iBookit`** — the platform brand, never a gym's. Matches the sending domain, so the `From:` line and the link domain agree. |
+| Auth email rate limit | B2 | **`50`/hour** — clears the ~member-#30 wall; one runaway hour still cannot spend more than half Resend's free 100/day. |
+| `PLATFORM_CLIENT_FALLBACK_HOST` | D | **`app.ibookit.lat`** — unmapped in `gym_domain`, which is precisely why `?gym=<slug>` resolves there. |
 
 Execute the sections **in order** (A→G): DNS before SMTP, SMTP before templates, migrations before the verification walk.
 
@@ -29,7 +40,7 @@ Execute the sections **in order** (A→G): DNS before SMTP, SMTP before template
 
 Account exists. Goal: a **verified** gym-neutral sending domain and a send-capable API key.
 
-- [ ] **A1. Add the sending domain.** Resend dashboard → **Domains → Add Domain** → enter `<platform-domain>`.
+- [ ] **A1. Add the sending domain.** Resend dashboard → **Domains → Add Domain** → enter `ibookit.lat`.
   - *Verify:* the domain appears with status **Not Verified** and a DNS-records panel.
 - [ ] **A2. Add the DNS records at your registrar.** Resend shows the exact values — copy them literally (they are per-domain/region). Shape:
 
@@ -41,13 +52,13 @@ Account exists. Goal: a **verified** gym-neutral sending domain and a send-capab
   | TXT  | `_dmarc` | `v=DMARC1; p=none;` | DMARC (recommended) |
 
   - *Where to read the values:* Resend → Domains → your domain → the **DNS Records** table is the source of truth; ignore the shapes above if they differ.
-  - *Verify:* all records saved at the registrar; `dig TXT send.<platform-domain>` (and the DKIM host) return the Resend values. **Typical DNS propagation: minutes to a few hours** (respect the registrar's TTL, often 3600s).
+  - *Verify:* all records saved at the registrar; `dig TXT send.ibookit.lat` (and the DKIM host) return the Resend values. **Typical DNS propagation: minutes to a few hours** (respect the registrar's TTL, often 3600s).
 - [ ] **A3. Verify the domain in Resend.** Domains → your domain → **Verify**. Poll until status = **Verified**.
   - *Verify:* status reads **Verified** (green). **Auth mail and invite mail both bounce until this is green — do not proceed to B/D delivery until verified.**
 - [ ] **A4. Create the API key.** Resend → **API Keys → Create** → permission **Sending access** (send-only; it does not need domain/read scope). Copy the `re_…` secret once.
   - *Verify:* key created, scope shows **Sending access**. Store it for §B (SMTP password) and §D (`RESEND_API_KEY`) — the same key serves both roles.
 
-> **Testing vs real domain:** Resend's shared `onboarding@resend.dev` sender works **only** to your own account address and is unverified — fine for a first smoke test, wrong for the acceptance gate. All real verification in §F must use the **verified `<platform-domain>` sender**, because deliverability + SPF/DKIM headers are exactly what the gate records.
+> **Testing vs real domain:** Resend's shared `onboarding@resend.dev` sender works **only** to your own account address and is unverified — fine for a first smoke test, wrong for the acceptance gate. All real verification in §F must use the **verified `ibookit.lat` sender**, because deliverability + SPF/DKIM headers are exactly what the gate records.
 
 ---
 
@@ -59,8 +70,8 @@ Routes Supabase's signup-confirmation + password-reset mail through Resend's SMT
 
   | Field | Value |
   |-------|-------|
-  | Sender email | `no-reply@<platform-domain>` (ADR-0014 pins the `no-reply` mailbox) |
-  | Sender name | `<sender-name>` — gym-neutral (**OWNER-DECIDE**; proposed `Notificaciones`) |
+  | Sender email | `no-reply@ibookit.lat` (ADR-0014 pins the `no-reply` mailbox) |
+  | Sender name | `iBookit` — the platform brand, gym-neutral by construction |
   | Host | `smtp.resend.com` |
   | Port | `465` |
   | Username | `resend` |
@@ -69,8 +80,8 @@ Routes Supabase's signup-confirmation + password-reset mail through Resend's SMT
 
   - *Verify:* settings save without a validation error; the sender address matches the verified domain from **A3**.
 - [ ] **B2. Raise the auth email rate limit.** Dashboard → **Authentication → Rate Limits → Rate limit for sending emails**. Post-SMTP the default is **30/hour** — raise to a sane production floor.
-  - *Recommended:* **~60–100/hour** (**OWNER-DECIDE** — the audit wall was ~member #30 on the built-in mailer, so 30/hr is a floor, not a ceiling). **Real ceiling is Resend's free tier: 100 emails/day, 3,000/month.** Do not set an hourly limit the daily quota can't honor; at 39 live members this is slack, but note it before a real onboarding burst.
-  - *Verify:* the saved value is above 2/hour and ≤ what Resend's plan can deliver in a day.
+  - **DECIDED: `50`/hour.** Clears the ~member-#30 wall the audit hit, while one runaway hour still cannot spend more than half of Resend's free-tier **100 emails/day, 3,000/month** ceiling. Revisit before a real onboarding burst or a paid Resend plan.
+  - *Verify:* the saved value reads `50` — above 2/hour, and ≤ what Resend's plan can deliver in a day.
 - [ ] **B3. Rewrite the two auth templates (es-MX, gym-neutral, platform-voiced).** Dashboard → **Authentication → Emails → Templates**. Edit **Confirm signup** and **Reset Password**. Per ADR-0014: no gym name, no brand color, plain accessible HTML, keep `{{ .ConfirmationURL }}` intact.
 
   Checklist per template:
@@ -106,11 +117,14 @@ Routes Supabase's signup-confirmation + password-reset mail through Resend's SMT
 
 The confirmation + recovery links Supabase mails must be **allow-listed**, or the click dead-ends. The client app builds each redirect from the **request host** (`${origin}/auth/confirm` — see `apps/client/src/app/registro/actions.ts` + `entrar/actions.ts`), so **every client host** must be listed.
 
-- [ ] **C1. Set the Site URL.** Dashboard → **Authentication → URL Configuration → Site URL**: the primary client host — `https://red-2-0-client.vercel.app`.
-  - *Verify:* saved; it is a client host (never the admin host).
+- [ ] **C1. Set the Site URL.** Dashboard → **Authentication → URL Configuration → Site URL**: the primary client host — `https://red.ibookit.lat`.
+  - *Verify:* saved; it is a client host (never the admin host), and it is **mapped** in `gym_domain` — the old `red-2-0-client.vercel.app` is now unmapped, so a Site-URL fallback landing there resolves **no tenant** (`DEFAULT_BRAND`).
 - [ ] **C2. Add the redirect allow-list.** Same page → **Redirect URLs** → add one wildcard entry per client host:
-  - `https://red-2-0-client.vercel.app/**`
-  - `https://forge-red-2-0-client.vercel.app/**`
+  - `https://red.ibookit.lat/**`
+  - `https://forge.ibookit.lat/**`
+  - `https://red-demo.ibookit.lat/**` — *already verified live*: a recovery click resolved `/verify → 303` from this host (auth logs, 2026-07-09).
+  - `https://forge-demo.ibookit.lat/**`
+  - `https://app.ibookit.lat/**` (unmapped fallback host — the `?gym=<slug>` invite funnel lands here)
   - `http://localhost:3000/**` (client dev — `next dev` default port; keep only if you confirm/reset against local)
   - one `https://<host>/**` line for **each future gym's BYO client domain** as it onboards.
   - *Path pattern in play:* the links resolve to `…/auth/confirm?code=<pkce>` (signup), `…/auth/confirm?codigo=<invite>` (invite claim), and `…/auth/confirm?next=/restablecer` (password reset → lands on `/restablecer`). A single `/**` per host covers all three; if you prefer explicit paths, allow `…/auth/confirm` and `…/restablecer`.
@@ -127,14 +141,14 @@ The confirmation + recovery links Supabase mails must be **allow-listed**, or th
   | Name | Value | Notes |
   |------|-------|-------|
   | `RESEND_API_KEY` | the `re_…` key from **A4** | the invite REST call authenticates with this; missing → a clean `no-configurado` skip (sale unaffected) |
-  | `RESEND_FROM` | `<sender-name> <no-reply@<platform-domain>>` | **"Name &lt;addr&gt;" format** the code parses verbatim (see `resendTransport`); gym-neutral name, same domain as §B |
+  | `RESEND_FROM` | `iBookit <no-reply@ibookit.lat>` | **"Name &lt;addr&gt;" format** the code parses verbatim (see `resendTransport`); gym-neutral name, same domain as §B |
   | `PLATFORM_CLIENT_FALLBACK_HOST` | a client host (see caveat) | hostname only, **no scheme** — the code prepends `https://`; used to build `https://<host>/registro?gym=<slug>&codigo=<code>` for gyms with no mapped client host |
 
   - *Verify:* the three vars show under Production with non-empty values; `RESEND_FROM` matches `Name <addr>` (angle brackets present).
 - [ ] **D2. Redeploy the admin app** so the new env is bound (Vercel env changes need a fresh deploy). Deployments → **Redeploy** the latest Production build.
   - *Verify:* the redeploy shows the new env in its build; a subsequent sale-with-email attempts a send (proven in §F).
 
-> **PLATFORM_CLIENT_FALLBACK_HOST — OWNER-DECIDE + verify.** The fallback is only used when a gym has **no** `gym_domain` client row; the URL relies on `?gym=<slug>` being honored. Per `hitl-28`, **a mapped host wins over `?gym=`** — so the fallback host must be one where `?gym=` actually resolves the intended gym (i.e. an **unmapped** host, or the default-brand host). `red-2-0-client.vercel.app` is mapped to RED, so `?gym=<other>` on it would be ignored. `hitl-63` nonetheless reaches red-demo via `red-2-0-client.vercel.app/?gym=red-demo`; reconcile this before trusting the fallback. **Confirm the exact hostname against `gym_domain` + the `resolveTenant` host-vs-`?gym=` rule, then set it.** Gyms that DO have a mapped client host never hit this var.
+> **PLATFORM_CLIENT_FALLBACK_HOST — RESOLVED: `app.ibookit.lat`.** The fallback is only used when a gym has **no** `gym_domain` client row; the URL relies on `?gym=<slug>` being honored. Per `resolveTenant` (`packages/data/src/server/resolve-tenant.ts`), precedence is **host → `?gym=` → null**, so a *mapped* host makes the override structurally inert. `app.ibookit.lat` is **unmapped** in `gym_domain`, which is exactly why `?gym=` resolves there. Set it as a hostname only, no scheme. Gyms that DO have a mapped client host never hit this var.
 
 ---
 
@@ -165,13 +179,13 @@ Per ADR-0014/#72: deliverability is **observed on a real inbox with headers reco
 
 **Invite mail (Resend API path)**
 - [ ] Record a **real sale with your email** on a test gym in the admin app → the recibo reports the invite state.
-  - *Evidence:* [ ] invite email **received**; **From** = `<sender-name> <no-reply@<platform-domain>>`; body carries the **gym's name** in the copy (ADR-0014); the claim link points at the gym's **own client host** (or `…/registro?gym=<slug>&codigo=…` for an unmapped gym) with the correct `codigo`.
+  - *Evidence:* [ ] invite email **received**; **From** = `iBookit <no-reply@ibookit.lat>`; body carries the **gym's name** in the copy (ADR-0014); the claim link points at the gym's **own client host** (or `…/registro?gym=<slug>&codigo=…` for an unmapped gym) with the correct `codigo`.
 - [ ] Open the claim link → `/registro` shows "Invitación de {gym} para {nombre}" → complete signup.
   - *Evidence:* [ ] the login binds to the paid row (balance/history visible), code is single-use (a second open is dead).
 
 **Signup confirmation (auth SMTP path)**
 - [ ] Self-register a fresh member on a test-gym client host.
-  - *Evidence:* [ ] confirmation email received from `no-reply@<platform-domain>`; [ ] link resolves (allow-listed per §C) and **establishes a session** (lands authenticated on `/reservar`).
+  - *Evidence:* [ ] confirmation email received from `no-reply@ibookit.lat`; [ ] link resolves (allow-listed per §C) and **establishes a session** (lands authenticated on `/reservar`).
 
 **Password reset (auth SMTP path)**
 - [ ] Trigger "forgot password" from `/entrar`.
@@ -201,8 +215,8 @@ The system degrades gracefully by design; no single step here can brick a sale o
 ## Reference (secrets-free)
 
 - **Vendor:** Resend — SMTP `smtp.resend.com:465`, user `resend`; REST `https://api.resend.com/emails`. One mail vendor platform-wide (ADR-0006 + ADR-0014).
-- **Sending domain:** `<platform-domain>` (OWNER-DECIDE, gym-neutral) · **Sender:** `no-reply@<platform-domain>` · **name:** `<sender-name>` (OWNER-DECIDE, proposed `Notificaciones`).
-- **Admin env (Vercel `red-2-0-admin`):** `RESEND_API_KEY` · `RESEND_FROM="<name> <addr>"` · `PLATFORM_CLIENT_FALLBACK_HOST` (hostname only).
-- **Auth rate limit:** post-SMTP ≥30/hr (OWNER-DECIDE ≤ Resend daily cap).
-- **Site URL:** `https://red-2-0-client.vercel.app` · **Redirect allow-list:** one `https://<client-host>/**` per gym.
+- **Sending domain:** `ibookit.lat` (gym-neutral) · **Sender:** `no-reply@ibookit.lat` · **name:** `iBookit` (OWNER-DECIDE).
+- **Admin env (Vercel `red-2-0-admin`):** `RESEND_API_KEY` · `RESEND_FROM="<name> <addr>"` · `PLATFORM_CLIENT_FALLBACK_HOST=app.ibookit.lat` (hostname only).
+- **Auth rate limit:** post-SMTP default is 30/hr; keep ≤ ~50/hr so an hourly burst cannot outrun Resend's free 100/day cap.
+- **Site URL:** `https://red.ibookit.lat` · **Redirect allow-list:** one `https://<client-host>/**` per gym.
 - **Migrations:** the six `20260708…` files, MCP `apply_migration`, then `generate_typescript_types` → `packages/data/src/database.types.ts`.
