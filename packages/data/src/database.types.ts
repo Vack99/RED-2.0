@@ -1518,7 +1518,6 @@ export type Database = {
         }[]
       }
       sembrar_plantillas_default: { Args: never; Returns: undefined }
-      set_notificaciones: { Args: { p_enabled: boolean }; Returns: boolean }
       set_plan_features: {
         Args: { p_labels: string[]; p_plan_id: string }
         Returns: undefined
