@@ -26,6 +26,8 @@ function iso(hhmm: string): string {
 
 interface Rows {
   gym_membership?: Record<string, unknown>[];
+  /** Seed multiple gym rows (id/slug/timezone) for host-reconciliation tests; defaults to gym-1. */
+  gym?: Record<string, unknown>[];
   class_session?: Record<string, unknown>[];
   class_type?: Record<string, unknown>[];
   class_type_workblock?: Record<string, unknown>[];
@@ -82,10 +84,12 @@ function makeFake(
   const membership =
     rows.gym_membership === undefined ? [{ gym_id: "gym-1" }] : rows.gym_membership;
 
+  const gyms = rows.gym ?? [{ id: "gym-1", slug: "gym-1", timezone: TZ }];
+
   const client = {
     from: (table: string) => {
       if (table === "gym_membership") return builder(membership);
-      if (table === "gym") return builder([{ id: "gym-1", timezone: TZ }]);
+      if (table === "gym") return builder(gyms);
       return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },
     rpc: (name: string, args: Record<string, unknown>) =>
@@ -209,6 +213,47 @@ describe("getConfirmacionReserva", () => {
       reservation: [{ id: "r1", class_session_id: SID, status: "cancelada" }],
     });
     expect(await getConfirmacionReserva(SID, makeFake(rows))).toBeNull();
+  });
+});
+
+/**
+ * Host reconciliation (audit #17 / spec §5.5), the clase-miembro twin of resolverMiembroGym.
+ * A member in several gyms reads the HOST gym's data on that gym's site. The observable signal
+ * is the resolved timezone: the two gyms sit one hour apart (both DST-free), so the SAME UTC
+ * session renders a different local `hora` depending on which membership won. Host match wins;
+ * no host / no match falls back to the OLDEST membership (stable, deterministic).
+ */
+describe("getClaseDetalleMiembro — host-tenant reconciliation (audit #17)", () => {
+  const dosGimnasios = (): Rows => ({
+    ...detalleRows(),
+    gym_membership: [
+      { gym_id: "gym-cua", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
+      { gym_id: "gym-her", created_at: "2024-01-01T00:00:00Z" },
+    ],
+    gym: [
+      { id: "gym-cua", slug: "cua", timezone: "America/Chihuahua" }, // UTC-6 → 18:15
+      { id: "gym-her", slug: "her", timezone: "America/Hermosillo" }, // UTC-7 → 17:15
+    ],
+  });
+
+  it("host match → renders in the host gym's timezone (Hermosillo, UTC-7)", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "her");
+    expect(d!.hora).toBe("17:15");
+  });
+
+  it("host match → renders in the host gym's timezone (Chihuahua, UTC-6)", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "cua");
+    expect(d!.hora).toBe("18:15");
+  });
+
+  it("no host tenant → deterministic fallback to the OLDEST membership's gym (Chihuahua)", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), null);
+    expect(d!.hora).toBe("18:15");
+  });
+
+  it("host names a gym the caller is NOT a member of → same oldest-membership fallback", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "otro");
+    expect(d!.hora).toBe("18:15");
   });
 });
 

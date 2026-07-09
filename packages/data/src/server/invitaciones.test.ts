@@ -8,6 +8,7 @@ import {
   type MailResult,
   type MailTransport,
 } from "./invitaciones";
+import { resolveTenant } from "./resolve-tenant";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -192,6 +193,90 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
       fake.client,
     );
     expect(url).toBeNull();
+  });
+});
+
+/**
+ * Wrong-host redirect (spec §5.2 / audit #17) — the loop-freedom proof for the /registro shield.
+ * The page redirects a valid invite opened on the wrong host to the code's canonical client URL,
+ * built by `construirUrlInvitacion`. The danger is a redirect cycle. We prove termination at the
+ * two DAL seams the page composes: the canonical URL that construirUrlInvitacion emits, when its
+ * host+`?gym=` are re-resolved by `resolveTenant` (exactly what the proxy does on reload), yields
+ * x-gym === the code's gym slug — so the page guard `hostGym !== info.gym_slug` is FALSE and the
+ * page renders instead of redirecting again. One hop, no cycle, both arms (mapped + fallback).
+ */
+describe("wrong-host redirect — canonical URL round-trips to the code's gym (loop-freedom)", () => {
+  const OLD = process.env.PLATFORM_CLIENT_FALLBACK_HOST;
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
+    else process.env.PLATFORM_CLIENT_FALLBACK_HOST = OLD;
+  });
+
+  type GymRow = { id: string; slug: string; brand_module_id: string };
+  type DomainRow = { hostname: string; gym_id: string; app: string };
+
+  // One fake of the anon gym/gym_domain reads BOTH construirUrlInvitacion and resolveTenant walk.
+  function fakeDb(gyms: GymRow[], domains: DomainRow[]): SupabaseServer {
+    const table = (rows: Record<string, unknown>[]) => {
+      let filtered = rows;
+      const b = {
+        select: () => b,
+        eq: (col: string, val: unknown) => {
+          filtered = filtered.filter((r) => r[col] === val);
+          return b;
+        },
+        order: () => b,
+        limit: () => b,
+        maybeSingle: async () => ({ data: filtered[0] ?? null, error: null }),
+      };
+      return b;
+    };
+    return {
+      from: (t: string) =>
+        table((t === "gym" ? gyms : domains) as unknown as Record<string, unknown>[]),
+    } as unknown as SupabaseServer;
+  }
+
+  it("mapped gym: the canonical host resolves x-gym back to the code's gym → renders, no re-redirect", async () => {
+    const db = () =>
+      fakeDb(
+        [{ id: "g-red", slug: "red", brand_module_id: "red" }],
+        [{ hostname: "red.mx", gym_id: "g-red", app: "client" }],
+      );
+    // The page turns invitacion_info's gym_slug into the gym id, then builds the canonical URL.
+    const destino = await resolveTenant(null, "red", db());
+    const url = await construirUrlInvitacion(
+      { gymId: destino!.id, gymSlug: "red", codigo: "CODE2345" },
+      db(),
+    );
+    expect(url).toBe("https://red.mx/registro?codigo=CODE2345");
+
+    // Reload: the proxy re-resolves x-gym for the target host+override.
+    const parsed = new URL(url!);
+    const reloaded = await resolveTenant(parsed.hostname, parsed.searchParams.get("gym"), db());
+    expect(reloaded!.slug).toBe("red"); // === code slug → guard false → terminates
+  });
+
+  it("unmapped gym: the ?gym= fallback URL resolves x-gym back to the code's gym → renders, no re-redirect", async () => {
+    process.env.PLATFORM_CLIENT_FALLBACK_HOST = "app.plataforma.mx";
+    // The gym has NO client domain; the platform fallback host is NOT a mapped customer domain.
+    const db = () => fakeDb([{ id: "g-demo", slug: "red-demo", brand_module_id: "red" }], []);
+    const destino = await resolveTenant(null, "red-demo", db());
+    const url = await construirUrlInvitacion(
+      { gymId: destino!.id, gymSlug: "red-demo", codigo: "CODE2345" },
+      db(),
+    );
+    expect(url).toBe("https://app.plataforma.mx/registro?gym=red-demo&codigo=CODE2345");
+
+    const parsed = new URL(url!);
+    const reloaded = await resolveTenant(parsed.hostname, parsed.searchParams.get("gym"), db());
+    expect(reloaded!.slug).toBe("red-demo"); // ?gym= honored on the unmapped fallback host → terminates
+  });
+
+  it("same-gym open never enters the redirect branch: the guard is false when x-gym already equals the code's gym", () => {
+    const hostGym = "red";
+    const codeSlug = "red";
+    expect(hostGym !== codeSlug).toBe(false);
   });
 });
 

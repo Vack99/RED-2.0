@@ -117,23 +117,36 @@ function fechaLargaEnZona(local: Date): string {
 }
 
 /** The member's gym id + timezone from their `gym_membership` self-read — the RLS gate
- *  (an anon/non-member reads none and every reader below returns null). */
+ *  (an anon/non-member reads none and every reader below returns null). Host-reconciled
+ *  twin of agenda-miembro's `resolverMiembroGym` (audit #17 / spec §5.5): prefers the
+ *  membership whose gym matches the host tenant (`hostGymSlug` = the proxy's `x-gym`,
+ *  presentation-only per ADR-0008), else the OLDEST membership (stable, deterministic —
+ *  not the `limit(1)` roulette). Picks only among the caller's OWN memberships; RLS still
+ *  scopes every read, so the host can never surface data the caller doesn't hold. */
 async function resolverMiembroGym(
   supabase: SupabaseServer,
+  hostGymSlug?: string | null,
 ): Promise<{ gymId: string; tz: string } | null> {
-  const { data: membership } = await supabase
+  const { data: memberships } = await supabase
     .from("gym_membership")
-    .select("gym_id")
-    .limit(1)
-    .maybeSingle();
-  if (!membership) return null;
-  const { data: gym } = await supabase
+    .select("gym_id, created_at")
+    .order("created_at", { ascending: true });
+  if (!memberships || memberships.length === 0) return null;
+
+  const gymIds = [...new Set(memberships.map((m) => m.gym_id))];
+  const { data: gyms } = await supabase
     .from("gym")
-    .select("timezone")
-    .eq("id", membership.gym_id)
-    .maybeSingle();
+    .select("id, slug, timezone")
+    .in("id", gymIds);
+  const gymById = new Map((gyms ?? []).map((g) => [g.id, g]));
+
+  const enHost = hostGymSlug
+    ? memberships.find((m) => gymById.get(m.gym_id)?.slug === hostGymSlug)
+    : undefined;
+  const elegido = enHost ?? memberships[0]; // host match, else the oldest (stable fallback)
+  const gym = gymById.get(elegido.gym_id);
   if (!gym?.timezone) return null;
-  return { gymId: membership.gym_id, tz: gym.timezone };
+  return { gymId: elegido.gym_id, tz: gym.timezone };
 }
 
 /** The gym's street address (gym_contact.address_line), or null when unset/no row. */
@@ -190,10 +203,14 @@ const sessionIdSchema = z.string().uuid();
  * `client` injectable (ADR-0001); memoized per request.
  */
 export const getClaseDetalleMiembro = cache(
-  async (rawSessionId: string, client?: SupabaseServer): Promise<ClaseDetalleDTO | null> => {
+  async (
+    rawSessionId: string,
+    client?: SupabaseServer,
+    hostGymSlug?: string | null,
+  ): Promise<ClaseDetalleDTO | null> => {
     if (!sessionIdSchema.safeParse(rawSessionId).success) return null;
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase);
+    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return null;
     const { tz } = miembro;
 
@@ -279,10 +296,14 @@ export const getClaseDetalleMiembro = cache(
  * injectable (ADR-0001); memoized per request.
  */
 export const getConfirmacionReserva = cache(
-  async (rawSessionId: string, client?: SupabaseServer): Promise<ConfirmacionReservaDTO | null> => {
+  async (
+    rawSessionId: string,
+    client?: SupabaseServer,
+    hostGymSlug?: string | null,
+  ): Promise<ConfirmacionReservaDTO | null> => {
     if (!sessionIdSchema.safeParse(rawSessionId).success) return null;
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase);
+    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return null;
     const { gymId, tz } = miembro;
 
