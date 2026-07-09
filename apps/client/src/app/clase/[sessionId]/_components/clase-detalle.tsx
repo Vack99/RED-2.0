@@ -334,6 +334,21 @@ export function ClaseDetalle({
               Lleno
             </button>
           </>
+        ) : !saldo.ilimitado && (saldo.clasesRestantes ?? 0) <= 0 ? (
+          // Finite plan depleted (audit #9): no free/trial class, no online payment
+          // (paga en tu gym) — route to precios instead of a dead-end "Sin clases disponibles".
+          <>
+            <p className="mb-2.5 text-center text-[11px] text-muted">
+              No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.
+            </p>
+            <Link
+              href="/precios"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+            >
+              Ver planes
+              {fwdArrow}
+            </Link>
+          </>
         ) : (
           <>
             {casiLleno ? (
