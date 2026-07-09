@@ -1427,6 +1427,10 @@ export type Database = {
       }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
+      marcar_invitacion_enviada: {
+        Args: { p_cliente_id: string }
+        Returns: undefined
+      }
       mi_membresia: {
         Args: never
         Returns: {
@@ -1446,6 +1450,17 @@ export type Database = {
         Returns: {
           hora: string
           present: boolean
+        }[]
+      }
+      preparar_invitacion: {
+        Args: { p_cliente_id: string }
+        Returns: {
+          codigo: string
+          email: string | null
+          gym_id: string
+          gym_nombre: string
+          gym_slug: string
+          nombre: string
         }[]
       }
       reclamar_o_crear_cliente: {

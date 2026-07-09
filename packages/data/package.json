@@ -21,6 +21,7 @@
     "./server/facilities": "./src/server/facilities.ts",
     "./server/faqs": "./src/server/faqs.ts",
     "./server/gym": "./src/server/gym.ts",
+    "./server/invitaciones": "./src/server/invitaciones.ts",
     "./server/marketing": "./src/server/marketing.ts",
     "./server/mensajes": "./src/server/mensajes.ts",
     "./server/ocupacion": "./src/server/ocupacion.ts",

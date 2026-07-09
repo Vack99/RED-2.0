@@ -4,7 +4,7 @@ import * as React from "react";
 import { Icon } from "@gym/ui/forge/icon";
 import { MensajePicker } from "@gym/ui/forge/mensaje-picker";
 import { Button, Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
-import type { VentaResult } from "@gym/data/server/ventas";
+import type { InviteState, ReciboResult } from "@gym/data/server/ventas";
 import { pesos, waLink } from "@gym/format";
 
 export function Recibo({
@@ -14,15 +14,16 @@ export function Recibo({
   onOtra,
   onVerCliente,
 }: {
-  result: VentaResult;
+  result: ReciboResult;
   /** The resolved marca's lockup, rendered server-side (grill lock (g)). */
   lockup: React.ReactNode;
   onClose: () => void;
   onOtra: () => void;
   onVerCliente: (id: string) => void;
 }) {
-  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, coach } = result;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, coach, invite } = result;
   const isNew = c.isNew;
+  const primerNombre = c.nombre.split(" ")[0];
   const [showCheck, setShowCheck] = React.useState(false);
   const [msgOpen, setMsgOpen] = React.useState(false);
   React.useEffect(() => {
@@ -57,9 +58,10 @@ export function Recibo({
           <H1 size={30}>{isNew ? "CLIENTE Y\nVENTA CREADOS" : "VENTA\nREGISTRADA"}</H1>
           <div style={{ marginTop: 10, fontSize: 13, color: "var(--muted)", maxWidth: 290, marginLeft: "auto", marginRight: "auto" }}>
             {isNew
-              ? `${c.nombre.split(" ")[0]} ya está dado de alta con su primer paquete activo.`
-              : `Folio listo y paquete activo en la ficha de ${c.nombre.split(" ")[0]}.`}
+              ? `${primerNombre} tiene su paquete activo.`
+              : `Folio listo y paquete activo en la ficha de ${primerNombre}.`}
           </div>
+          {isNew && <InviteNote invite={invite} />}
         </div>
 
         {/* Receipt — fixed cream palette in both themes */}
@@ -143,6 +145,39 @@ export function Recibo({
           setMsgOpen(false);
         }}
       />
+    </div>
+  );
+}
+
+/** The post-sale invite state for a NEW client (design §3): the receipt stops implying app access already
+ *  exists and instead states whether the invite was sent, is blocked on a missing email, or failed (re-sendable
+ *  from the ficha). Never rendered for an EXISTENTE sale (`no-aplica`). */
+function InviteNote({ invite }: { invite: InviteState }) {
+  let accent = "var(--muted)";
+  let text: string;
+  switch (invite.estado) {
+    case "enviada":
+      accent = "var(--yellow)";
+      text = `Invitación enviada a ${invite.email}. Al activarla podrá reservar en la app.`;
+      break;
+    case "sin-email":
+      accent = "var(--gold)";
+      text = "Sin email — sin acceso a la app. Agrega su correo en la ficha para invitarlo.";
+      break;
+    case "fallo":
+      accent = "var(--gold)";
+      text = `No pudimos enviar la invitación a ${invite.email}. Puedes reenviarla desde su ficha.`;
+      break;
+    case "no-aplica":
+      return null;
+  }
+  return (
+    <div
+      className="flex items-start"
+      style={{ gap: 8, marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", background: "var(--surface)", maxWidth: 300, marginLeft: "auto", marginRight: "auto", textAlign: "left" }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: 999, background: accent, marginTop: 5, flexShrink: 0 }} />
+      <span style={{ fontSize: 12, lineHeight: 1.45, color: "var(--fg)" }}>{text}</span>
     </div>
   );
 }

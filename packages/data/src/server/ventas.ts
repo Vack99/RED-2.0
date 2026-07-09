@@ -58,7 +58,25 @@ export interface VentaResult {
   ciudad: string;
   coach: string;
   mensajes: MensajeDTO[];
+  /** The email captured for a NEW client — the invite funnel's target (design §3); null otherwise. The
+   *  action reads this to decide whether to auto-send the invite (mode NEW + email) and to render "enviada
+   *  a {email}" on the recibo. Never a `.email()`-validated value (the sale path never gates on email). */
+  emailIngresado: string | null;
 }
+
+/**
+ * The post-sale invite state the recibo renders (design §3). Derived by the ACTION after the best-effort
+ * send — never by `crearVenta` (the send happens in the server-action layer, non-blocking of the sale).
+ * `no-aplica` = an EXISTENTE sale (the invite funnel is the NEW-client door).
+ */
+export type InviteState =
+  | { estado: "enviada"; email: string }
+  | { estado: "fallo"; email: string }
+  | { estado: "sin-email" }
+  | { estado: "no-aplica" };
+
+/** `crearVenta`'s result plus the invite state the action stitches on — the exact shape the recibo reads. */
+export type ReciboResult = VentaResult & { invite: InviteState };
 
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
 const clasesToDb = (c: Clases): number | null => (c === "ilimitado" ? null : c);
@@ -235,5 +253,6 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     ciudad,
     coach,
     mensajes,
+    emailIngresado: isNew ? (input.nuevoEmail || null) : null,
   };
 }

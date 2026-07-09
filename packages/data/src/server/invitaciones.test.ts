@@ -1,0 +1,214 @@
+import { afterEach, describe, expect, it } from "vitest";
+
+import {
+  construirUrlInvitacion,
+  enviarInvitacion,
+  resendTransport,
+  type MailMessage,
+  type MailResult,
+  type MailTransport,
+} from "./invitaciones";
+import type { SupabaseServer } from "./supabase";
+
+/**
+ * The seam this exercises: `enviarInvitacion` takes an injectable Supabase client AND an injectable mail
+ * transport (ADR-0001), so the send ORCHESTRATION — ensure-code → build-URL → send → stamp-on-success — is
+ * testable with a hand-rolled fake and a transport double. No Supabase, no Resend. We assert external
+ * behavior: the result object, WHICH message was sent (URL both arms), and that the send is stamped ONLY on
+ * transport success.
+ */
+
+// The preparar_invitacion payload shape (the RPC's one returned row).
+type Payload = {
+  codigo: string | null;
+  email: string | null;
+  nombre: string;
+  gym_slug: string;
+  gym_nombre: string;
+  gym_id: string;
+};
+
+const PAYLOAD: Payload = {
+  codigo: "ABC23456",
+  email: "socio@correo.mx",
+  nombre: "Andrea Castro",
+  gym_slug: "forge",
+  gym_nombre: "Forge",
+  gym_id: "gym-1",
+};
+
+interface FakeClient {
+  rpcCalls: { name: string; args: Record<string, unknown> }[];
+  client: SupabaseServer;
+}
+
+/**
+ * Minimal fake for exactly the chain `enviarInvitacion` walks: `.rpc("preparar_invitacion", …).single()`,
+ * `.from("gym_domain").select().eq().eq().order().limit().maybeSingle()`, and a bare
+ * `.rpc("marcar_invitacion_enviada", …)` (awaited for its `{error}`).
+ */
+function makeFake(
+  opts: { payload?: Payload | null; prepararError?: string; domainHost?: string | null } = {},
+): FakeClient {
+  const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
+  const host = opts.domainHost;
+
+  const domainBuilder = () => {
+    const b = {
+      select: () => b,
+      eq: () => b,
+      order: () => b,
+      limit: () => b,
+      maybeSingle: async () => ({ data: host ? { hostname: host } : null, error: null }),
+    };
+    return b;
+  };
+
+  const client = {
+    from: (table: string) => {
+      if (table === "gym_domain") return domainBuilder();
+      throw new Error(`unexpected from(${table})`);
+    },
+    rpc: (name: string, args: Record<string, unknown>) => {
+      rpcCalls.push({ name, args });
+      if (name === "preparar_invitacion") {
+        return {
+          single: async () => ({
+            data: opts.payload === undefined ? PAYLOAD : opts.payload,
+            error: opts.prepararError ? { message: opts.prepararError } : null,
+          }),
+        };
+      }
+      // marcar_invitacion_enviada — awaited directly for its {error}.
+      return { then: (resolve: (v: { error: null }) => unknown) => resolve({ error: null }) };
+    },
+  };
+
+  return { rpcCalls, client: client as unknown as SupabaseServer };
+}
+
+/** A transport double that records every message and returns a fixed result. */
+function recordingTransport(result: MailResult): { sent: MailMessage[]; transport: MailTransport } {
+  const sent: MailMessage[] = [];
+  return { sent, transport: { send: async (m) => { sent.push(m); return result; } } };
+}
+
+const stampCalls = (f: FakeClient) => f.rpcCalls.filter((c) => c.name === "marcar_invitacion_enviada");
+
+describe("enviarInvitacion — send orchestration (injected fake + transport double)", () => {
+  it("SUCCESS: sends the invite to the gym's client host and stamps the send", async () => {
+    const fake = makeFake({ domainHost: "app.forge.mx" });
+    const { sent, transport } = recordingTransport({ ok: true });
+
+    const res = await enviarInvitacion({ clienteId: "cli-1" }, { transport, client: fake.client });
+
+    expect(res).toEqual({ ok: true, email: "socio@correo.mx", codigo: "ABC23456" });
+    // The message carries the mapped-host claim URL + the gym name (ADR-0014).
+    expect(sent).toHaveLength(1);
+    expect(sent[0].to).toBe("socio@correo.mx");
+    expect(sent[0].subject).toBe("Tu gimnasio Forge te invita a su app");
+    expect(sent[0].html).toContain("https://app.forge.mx/registro?codigo=ABC23456");
+    expect(sent[0].text).toContain("https://app.forge.mx/registro?codigo=ABC23456");
+    expect(sent[0].html).toContain("Forge");
+    // Stamped exactly once, on success.
+    expect(stampCalls(fake)).toEqual([{ name: "marcar_invitacion_enviada", args: { p_cliente_id: "cli-1" } }]);
+  });
+
+  it("FAILURE: a transport failure never stamps and never throws", async () => {
+    const fake = makeFake({ domainHost: "app.forge.mx" });
+    const { sent, transport } = recordingTransport({ ok: false, error: "resend 500" });
+
+    const res = await enviarInvitacion({ clienteId: "cli-1" }, { transport, client: fake.client });
+
+    expect(res).toEqual({ ok: false, motivo: "envio-fallido", error: "resend 500" });
+    expect(sent).toHaveLength(1); // it tried
+    expect(stampCalls(fake)).toHaveLength(0); // but did NOT record a send
+  });
+
+  it("NOT CONFIGURED: a not-configured transport is a clean failure, no stamp", async () => {
+    const fake = makeFake({ domainHost: "app.forge.mx" });
+    // resendTransport() with missing env returns this exact shape — modeled directly here.
+    const { transport } = recordingTransport({ ok: false, error: "no-configurado" });
+
+    const res = await enviarInvitacion({ clienteId: "cli-1" }, { transport, client: fake.client });
+
+    expect(res).toMatchObject({ ok: false, motivo: "envio-fallido", error: "no-configurado" });
+    expect(stampCalls(fake)).toHaveLength(0);
+  });
+
+  it("SIN EMAIL: a row without an email is a clean sin-email failure — nothing sent, no stamp", async () => {
+    const fake = makeFake({ payload: { ...PAYLOAD, email: null }, domainHost: "app.forge.mx" });
+    const { sent, transport } = recordingTransport({ ok: true });
+
+    const res = await enviarInvitacion({ clienteId: "cli-1" }, { transport, client: fake.client });
+
+    expect(res).toEqual({ ok: false, motivo: "sin-email" });
+    expect(sent).toHaveLength(0);
+    expect(stampCalls(fake)).toHaveLength(0);
+  });
+
+  it("never throws when preparar_invitacion errors — returns a result", async () => {
+    const fake = makeFake({ payload: null, prepararError: "No autorizado" });
+    const { transport } = recordingTransport({ ok: true });
+
+    const res = await enviarInvitacion({ clienteId: "cli-1" }, { transport, client: fake.client });
+
+    expect(res).toMatchObject({ ok: false, motivo: "error", error: "No autorizado" });
+    expect(stampCalls(fake)).toHaveLength(0);
+  });
+});
+
+describe("construirUrlInvitacion — the gym→client-host rule (both arms)", () => {
+  const OLD = process.env.PLATFORM_CLIENT_FALLBACK_HOST;
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
+    else process.env.PLATFORM_CLIENT_FALLBACK_HOST = OLD;
+  });
+
+  it("mapped gym → the gym's own client host (?codigo only)", async () => {
+    const fake = makeFake({ domainHost: "red.example.mx" });
+    const url = await construirUrlInvitacion(
+      { gymId: "gym-1", gymSlug: "red", codigo: "ZZZ23456" },
+      fake.client,
+    );
+    expect(url).toBe("https://red.example.mx/registro?codigo=ZZZ23456");
+  });
+
+  it("unmapped gym → the platform fallback host + ?gym= slug", async () => {
+    process.env.PLATFORM_CLIENT_FALLBACK_HOST = "app.plataforma.mx";
+    const fake = makeFake({ domainHost: null });
+    const url = await construirUrlInvitacion(
+      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456" },
+      fake.client,
+    );
+    expect(url).toBe("https://app.plataforma.mx/registro?gym=red-demo&codigo=ZZZ23456");
+  });
+
+  it("no client host and no fallback env → null (caller reports a clean failure)", async () => {
+    delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
+    const fake = makeFake({ domainHost: null });
+    const url = await construirUrlInvitacion(
+      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456" },
+      fake.client,
+    );
+    expect(url).toBeNull();
+  });
+});
+
+describe("resendTransport — missing env is a clean failure (never a live call)", () => {
+  const keys = ["RESEND_API_KEY", "RESEND_FROM"] as const;
+  const OLD = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  afterEach(() => {
+    for (const k of keys) {
+      if (OLD[k] === undefined) delete process.env[k];
+      else process.env[k] = OLD[k];
+    }
+  });
+
+  it("returns { ok:false, error:'no-configurado' } when env is missing", async () => {
+    delete process.env.RESEND_API_KEY;
+    delete process.env.RESEND_FROM;
+    const res = await resendTransport().send({ to: "x@y.mx", subject: "s", html: "<p>h</p>", text: "t" });
+    expect(res).toEqual({ ok: false, error: "no-configurado" });
+  });
+});

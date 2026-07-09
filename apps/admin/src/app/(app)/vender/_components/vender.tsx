@@ -9,7 +9,7 @@ import { forgeToast } from "@gym/ui/forge/toaster";
 import { Avatar, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
-import type { Metodo as MetodoEnum, VentaResult } from "@gym/data/server/ventas";
+import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
 import { isTelValido, pesos } from "@gym/format";
 import { crearVentaAction } from "../actions";
 import { Recibo } from "./recibo";
@@ -45,7 +45,7 @@ export function VenderScreen({
   const [submitting, setSubmitting] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [pickerQuery, setPickerQuery] = React.useState("");
-  const [recibo, setRecibo] = React.useState<VentaResult | null>(null);
+  const [recibo, setRecibo] = React.useState<ReciboResult | null>(null);
 
   const existing = clientes.find((x) => x.id === clientId) ?? null;
   const paq = sel ? (paquetes.find((p) => p.id === sel) ?? null) : null;

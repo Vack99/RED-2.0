@@ -34,6 +34,7 @@ const SUITE = [
   'folio_per_gym.sql',
   'rekey_gym_scoped.sql',
   'registro_claim.sql',
+  'preparar_invitacion_rules.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',
   'catalog_rls_denial.sql',
