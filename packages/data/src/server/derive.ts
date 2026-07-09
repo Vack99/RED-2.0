@@ -102,6 +102,71 @@ export function derivarPaseCliente(c: ClienteFacts, hoy: Date): PaseClienteDTO {
   };
 }
 
+// ── Invite lifecycle (derived, NEVER stored) ───────────────────────
+// The invite state machine (ADR-0015, CONTEXT 'estados de invitación'): derived at
+// read from email / invitacion_enviada_at / auth_user_id — never a stored enum. One
+// home for the derivation; the roster, Vender picker, and ficha all badge it. NOTE
+// `claim_code` is deliberately NOT a fact here — it is a single-use bearer credential
+// that must never reach a DTO/prop, so the derivation reads only these three columns.
+
+export type EstadoInvitacion =
+  | "sin_email" // email NULL — no way to invite yet
+  | "sin_invitar" // email set, invite not yet sent (rare/transient)
+  | "invitacion_enviada" // invite sent (carries the fecha)
+  | "cuenta_activa"; // auth_user_id sealed — the member has app access
+
+/** The three stored facts the invite state derives from (never `claim_code`). */
+export interface InvitacionFacts {
+  email: string | null;
+  invitacion_enviada_at: string | null; // timestamptz
+  auth_user_id: string | null;
+}
+
+export interface InvitacionDerivada {
+  estado: EstadoInvitacion;
+  /** es-MX badge label; the 'Invitada {fecha}' arm is gym-local (tz). */
+  badge: string;
+}
+
+/** Pure invite-state machine. Precedence: a claimed account (`auth_user_id`) is
+ *  `cuenta_activa` regardless of the invite fields; else no email → `sin_email`;
+ *  else emailed-but-unsent → `sin_invitar`; else `invitacion_enviada`. */
+export function estadoInvitacion(f: InvitacionFacts): EstadoInvitacion {
+  if (f.auth_user_id !== null) return "cuenta_activa";
+  if (f.email === null) return "sin_email";
+  if (f.invitacion_enviada_at === null) return "sin_invitar";
+  return "invitacion_enviada";
+}
+
+const BADGE_INVITACION: Record<EstadoInvitacion, string> = {
+  sin_email: "Sin email",
+  sin_invitar: "Sin invitar",
+  invitacion_enviada: "Invitada", // + fecha appended below
+  cuenta_activa: "Cuenta activa",
+};
+
+/** Derive the invite state + its es-MX badge. `tz` renders the 'Invitada {fecha}'
+ *  date arm gym-local (audit finding 1), like every other timestamptz→day here. */
+export function derivarInvitacion(f: InvitacionFacts, tz: string): InvitacionDerivada {
+  const estado = estadoInvitacion(f);
+  const badge =
+    estado === "invitacion_enviada" && f.invitacion_enviada_at
+      ? `Invitada ${fmtShort(fechaEnZona(f.invitacion_enviada_at, tz))}`
+      : BADGE_INVITACION[estado];
+  return { estado, badge };
+}
+
+/** Tile/filter population — a "registro online pendiente": an auth-linked member
+ *  (Door 2 self-registrant) with no active package. Reuses the existing derived
+ *  `estado` (sin_clases = package-less/expired), NOT a second 'active package'
+ *  rule (CONTEXT 'registro online pendiente'). */
+export function esRegistroOnlinePendiente(
+  invitacion: EstadoInvitacion,
+  estado: EstadoCliente,
+): boolean {
+  return invitacion === "cuenta_activa" && estado === "sin_clases";
+}
+
 // ── Ficha (client detail) derivation ───────────────────────────────
 // The ficha's pure read-shaping, lifted out of the DAL's cache() closure so it
 // is testable through its interface (the closure was the single largest impure

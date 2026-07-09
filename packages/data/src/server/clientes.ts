@@ -11,10 +11,14 @@ import { createClient, type SupabaseServer } from "./supabase";
 import { requireOperator } from "./_auth";
 import {
   derivarCliente,
+  derivarInvitacion,
   derivarPaseCliente,
+  esRegistroOnlinePendiente,
+  estadoInvitacion,
   shapeFicha,
   type ClienteDerivado,
   type FichaDerivada,
+  type InvitacionDerivada,
   type PaseClienteDTO,
 } from "./derive";
 import { getCobro } from "./cobro";
@@ -34,15 +38,22 @@ export interface ClienteLiteDTO {
   inicial: string;
   /** Active package label, or "Sin paquete". */
   paqueteLabel: string;
+  /** Contact email (not the connector) — carried so the Vender NUEVO soft
+   *  duplicate warn can match a typed email against the loaded roster with no
+   *  extra round trip. NEVER the claim_code (bearer credential, never in a DTO). */
+  email: string | null;
+  /** Derived invite state + es-MX badge for the picker (ADR-0015). */
+  invitacion: InvitacionDerivada;
 }
 
 /** Minimal roster for the venta client-picker, ordered by name. */
 export const getClientesLite = cache(
   async (client?: SupabaseServer): Promise<ClienteLiteDTO[]> => {
     const supabase = client ?? (await createClient());
+    const { timezone: tz } = await getOperatorGym(supabase);
     const { data } = await supabase
       .from("clientes")
-      .select("id, nombre, tel, paquete_nombre")
+      .select("id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id")
       .order("nombre");
 
     if (!data) return [];
@@ -53,6 +64,8 @@ export const getClientesLite = cache(
       tel: c.tel,
       inicial: iniciales(c.nombre),
       paqueteLabel: c.paquete_nombre ?? "Sin paquete",
+      email: c.email,
+      invitacion: derivarInvitacion(c, tz),
     }));
   },
 );
@@ -85,9 +98,18 @@ function monthStartIso(hoy: Date): string {
  *  One constant, easy to retune; the directory keeps its own this-month count. */
 const FICHA_VENTANA_DIAS = 30;
 
+/** A roster row plus its derived invite state and the online-pending flag the
+ *  dashboard tile + roster filter share (ADR-0015). Extends the pure ClienteDerivado
+ *  the directory already renders; the invite fields are attached at read. */
+export interface ClienteRosterDTO extends ClienteDerivado {
+  invitacion: InvitacionDerivada;
+  /** Auth-linked (Door 2) member with no active package — the roster filter chip. */
+  pendienteOnline: boolean;
+}
+
 /** Full roster, derived-at-read with this month's attendance count per client. */
 export const getClientesRoster = cache(
-  async (client?: SupabaseServer): Promise<ClienteDerivado[]> => {
+  async (client?: SupabaseServer): Promise<ClienteRosterDTO[]> => {
     const supabase = client ?? (await createClient());
     const { timezone: tz } = await getOperatorGym(supabase);
     const hoy = hoyEnZona(tz);
@@ -95,7 +117,9 @@ export const getClientesRoster = cache(
     const [clientesRes, asistRes] = await Promise.all([
       supabase
         .from("clientes")
-        .select("id, nombre, tel, paquete_nombre, clases_restantes, vence")
+        .select(
+          "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
+        )
         .order("nombre"),
       supabase
         .from("asistencias")
@@ -110,7 +134,15 @@ export const getClientesRoster = cache(
     const counts: Record<string, number> = {};
     for (const a of asistRes.data ?? []) counts[a.cliente_id] = (counts[a.cliente_id] ?? 0) + 1;
 
-    return clientes.map((c) => derivarCliente(c, hoy, counts[c.id] ?? 0));
+    return clientes.map((c) => {
+      const base = derivarCliente(c, hoy, counts[c.id] ?? 0);
+      const invitacion = derivarInvitacion(c, tz);
+      return {
+        ...base,
+        invitacion,
+        pendienteOnline: esRegistroOnlinePendiente(invitacion.estado, base.estado),
+      };
+    });
   },
 );
 
@@ -119,20 +151,30 @@ export const getClientesRoster = cache(
  *  it needs every cliente + asistEsteMes, so it fires a whole-month asistencias
  *  query. The dashboard reads only the two counts, and `estado` never reads
  *  asistencias, so this slim read skips that join and the `.order` entirely. */
+/** The roster headline counts plus `nuevosOnline` — the dashboard's "Nuevos
+ *  registros online" tile: auth-linked (Door 2) members with no active package,
+ *  the same population the roster filter chip surfaces (esRegistroOnlinePendiente). */
+export interface RosterResumenDTO extends ResumenRoster {
+  nuevosOnline: number;
+}
+
 export const getRosterResumen = cache(
-  async (client?: SupabaseServer): Promise<ResumenRoster> => {
+  async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
     const { timezone: tz } = await getOperatorGym(supabase);
     const hoy = hoyEnZona(tz);
 
     const { data } = await supabase
       .from("clientes")
-      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence");
+      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id");
 
-    if (!data) return { vigentes: 0, totalActivos: 0 };
+    if (!data) return { vigentes: 0, totalActivos: 0, nuevosOnline: 0 };
 
     const estados = data.map((c) => derivarCliente(c, hoy, 0).estado);
-    return resumirRoster(estados);
+    const nuevosOnline = data.filter((c, i) =>
+      esRegistroOnlinePendiente(estadoInvitacion(c), estados[i]),
+    ).length;
+    return { ...resumirRoster(estados), nuevosOnline };
   },
 );
 
@@ -141,6 +183,8 @@ export const getRosterResumen = cache(
 export type ClienteFichaDTO = FichaDerivada & {
   hoyIso: string;
   vecinos: Vecinos;
+  /** Derived invite state + es-MX badge for the ficha header (ADR-0015). */
+  invitacion: InvitacionDerivada;
 };
 
 /** The ficha, derived-at-read (ADR-0002): a thin fetch that defers all shaping to
@@ -158,7 +202,9 @@ export const getClienteFicha = cache(
     // the happy path is the accepted cost.
     const { data: c } = await supabase
       .from("clientes")
-      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence, created_at")
+      .select(
+        "id, nombre, tel, paquete_nombre, clases_restantes, vence, created_at, email, invitacion_enviada_at, auth_user_id",
+      )
       .eq("id", id)
       .maybeSingle();
     if (!c) return null;
@@ -236,7 +282,7 @@ export const getClienteFicha = cache(
       { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
     );
 
-    return { ...ficha, hoyIso, vecinos };
+    return { ...ficha, hoyIso, vecinos, invitacion: derivarInvitacion(c, tz) };
   },
 );
 
