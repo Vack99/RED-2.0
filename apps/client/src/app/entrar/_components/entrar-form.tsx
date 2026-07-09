@@ -232,18 +232,25 @@ export function EntrarForm() {
         <div className="h-px flex-1 bg-line" />
       </div>
 
-      <Link
-        href="/registro"
-        className="flex w-full items-center justify-center gap-2.5 border bg-transparent py-4 text-[12px] font-bold uppercase tracking-[1.4px] text-fg transition hover:bg-surface"
-        style={{ borderColor: "var(--line-soft)" }}
-      >
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-accent">
-          <path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19" />
-          <circle cx="10" cy="8" r="3.2" />
-          <path d="M19 8v6M22 11h-6" />
-        </svg>
-        Crear cuenta
-      </Link>
+      {/* Persistent, enumeration-safe nudge (audit #16): never branches on the login
+          error — an admin-registered member who hasn't self-registered yet is told
+          "wrong password" by the opaque anti-enumeration message above, so this
+          affordance stays on-screen unconditionally to point them the right way. */}
+      <div className="flex flex-col items-center gap-2">
+        <p className="text-[11px] font-semibold uppercase tracking-[1px] text-muted">¿Primera vez?</p>
+        <Link
+          href="/registro"
+          className="flex w-full items-center justify-center gap-2.5 border bg-transparent py-4 text-[12px] font-bold uppercase tracking-[1.4px] text-fg transition hover:bg-surface"
+          style={{ borderColor: "var(--line-soft)" }}
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="text-accent">
+            <path d="M16 19v-1.5a3.5 3.5 0 0 0-3.5-3.5h-5A3.5 3.5 0 0 0 4 17.5V19" />
+            <circle cx="10" cy="8" r="3.2" />
+            <path d="M19 8v6M22 11h-6" />
+          </svg>
+          Crea tu cuenta
+        </Link>
+      </div>
 
       <div className="flex flex-col items-center gap-3 text-center text-[13px]">
         <p className="text-muted">
