@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 
 import { instanteEnZona } from "@gym/format";
 
-import { getAgendaSemanaMiembro, getPerfilResumenMiembro, getSaldoMiembro } from "./agenda-miembro";
+import {
+  getAgendaSemanaMiembro,
+  getEsMiembro,
+  getPerfilResumenMiembro,
+  getSaldoMiembro,
+} from "./agenda-miembro";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -292,10 +297,19 @@ describe("getAgendaSemanaMiembro", () => {
     expect(semana.dias.filter((d) => d.esHoy).length).toBeLessThanOrEqual(1);
   });
 
-  it("throws when the caller has no membership (anon / non-member — RLS returns no gym row)", async () => {
-    await expect(
-      getAgendaSemanaMiembro("2020-06-17", makeFake({ gym_membership: [] })),
-    ).rejects.toThrow();
+  it("returns an empty week (never throws) when the caller has no membership yet (audit #10/#15)", async () => {
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake({ gym_membership: [] }));
+    expect(semana).toEqual({ dias: [] });
+  });
+});
+
+describe("getEsMiembro", () => {
+  it("is true when the caller holds a gym_membership row", async () => {
+    expect(await getEsMiembro(makeFake({ gym_membership: [{ gym_id: "gym-1" }] }))).toBe(true);
+  });
+
+  it("is false when the caller holds no gym_membership row (signed in, not yet a member)", async () => {
+    expect(await getEsMiembro(makeFake({ gym_membership: [] }))).toBe(false);
   });
 });
 
@@ -343,5 +357,17 @@ describe("getPerfilResumenMiembro", () => {
     const perfil = await getPerfilResumenMiembro(makeFake({ clientes: [], reservation: [] }));
     expect(perfil.notificaciones).toBe(true);
     expect(perfil.desde).toBeNull();
+  });
+
+  it("returns a safe empty default (never throws) when the caller has no membership yet (audit #10/#15)", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake({ gym_membership: [] }));
+    expect(perfil).toEqual({
+      desde: null,
+      reservas: [],
+      notificaciones: true,
+      marca: "",
+      membresia: null,
+      planes: [],
+    });
   });
 });

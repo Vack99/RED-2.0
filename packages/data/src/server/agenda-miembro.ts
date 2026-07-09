@@ -114,28 +114,43 @@ interface SesionMiembroRaw {
 }
 
 /** The member's gym (tz + brand display name) from their `gym_membership` self-read —
- *  the RLS gate. One membership per login (one login = one gym); an anon/non-member
- *  caller reads none, so the reader throws and the page renders its signed-out state.
- *  `marca` (gym.brand_name) is the brand-neutral display name the perfil footer renders
- *  from real data — never a hardcoded brand string. */
+ *  the RLS gate. One membership per login (one login = one gym). Returns `null` for an
+ *  anon/non-member caller (or an unreadable gym row) INSTEAD of throwing — the
+ *  signed-in-but-not-yet-a-member state (audit #10/#15: a swallowed claim or a
+ *  password-reset-first session must not crash the booking home) — mirroring the
+ *  clase-miembro.ts twin. `marca` (gym.brand_name) is the brand-neutral display name
+ *  the perfil footer renders from real data — never a hardcoded brand string. */
 async function resolverMiembroGym(
   supabase: SupabaseServer,
-): Promise<{ id: string; tz: string; marca: string }> {
+): Promise<{ id: string; tz: string; marca: string } | null> {
   const { data: membership } = await supabase
     .from("gym_membership")
     .select("gym_id")
     .limit(1)
     .maybeSingle();
-  if (!membership) throw new Error("Sin membresía de gimnasio");
+  if (!membership) return null;
 
   const { data: gym } = await supabase
     .from("gym")
     .select("timezone, brand_name")
     .eq("id", membership.gym_id)
     .maybeSingle();
-  if (!gym) throw new Error("Gimnasio no encontrado");
+  if (!gym) return null;
 
   return { id: membership.gym_id, tz: gym.timezone, marca: gym.brand_name };
+}
+
+/**
+ * Whether the signed-in caller currently holds a `gym_membership` row (the same
+ * RLS self-read `resolverMiembroGym` gates on). Deliberately NOT `cache()`-wrapped:
+ * the booking home (`/reservar`) re-checks this AFTER re-running the idempotent
+ * claim within the same request (audit #10/#15's self-heal), so a stale
+ * per-request-memoized `false` would defeat the retry.
+ */
+export async function getEsMiembro(client?: SupabaseServer): Promise<boolean> {
+  const supabase = client ?? (await createClient());
+  const { data } = await supabase.from("gym_membership").select("gym_id").limit(1).maybeSingle();
+  return data != null;
 }
 
 /** Non-cancelled sessions in `[low, high)` (an absolute UTC range), joined to
@@ -264,7 +279,9 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
 export const getAgendaSemanaMiembro = cache(
   async (fechaIso?: string, client?: SupabaseServer): Promise<AgendaSemanaMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const { tz } = await resolverMiembroGym(supabase);
+    const miembro = await resolverMiembroGym(supabase);
+    if (!miembro) return { dias: [] };
+    const { tz } = miembro;
 
     const hoy = hoyEnZona(tz);
     const dia = fechaIso ? parseDay(fechaIso) : hoy;
@@ -410,10 +427,25 @@ async function fetchMembresia(
   return { membresia, paqueteNombre: row.paquete_nombre };
 }
 
+/** Safe default for a signed-in caller with no `gym_membership` row yet (audit #10/#15) —
+ *  mirrors `getSaldoMiembro`'s no-row default rather than throwing. The page renders its
+ *  own "sin membresía" state instead of this DTO in that case, so `marca`/`membresia`
+ *  never need to be real here. */
+const PERFIL_SIN_MEMBRESIA: PerfilResumenMiembroDTO = {
+  desde: null,
+  reservas: [],
+  notificaciones: true,
+  marca: "",
+  membresia: null,
+  planes: [],
+};
+
 export const getPerfilResumenMiembro = cache(
   async (client?: SupabaseServer): Promise<PerfilResumenMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const { id: gymId, tz, marca } = await resolverMiembroGym(supabase);
+    const miembro = await resolverMiembroGym(supabase);
+    if (!miembro) return PERFIL_SIN_MEMBRESIA;
+    const { id: gymId, tz, marca } = miembro;
 
     const { data: cli } = await supabase
       .from("clientes")
