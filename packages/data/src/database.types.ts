@@ -363,12 +363,14 @@ export type Database = {
         Row: {
           auth_user_id: string | null
           birthday: string | null
+          claim_code: string | null
           clases_restantes: number | null
           created_at: string
           email: string | null
           favorite_class_type_id: string | null
           gym_id: string
           id: string
+          invitacion_enviada_at: string | null
           nombre: string
           notificaciones_activadas: boolean
           paquete_nombre: string | null
@@ -381,12 +383,14 @@ export type Database = {
         Insert: {
           auth_user_id?: string | null
           birthday?: string | null
+          claim_code?: string | null
           clases_restantes?: number | null
           created_at?: string
           email?: string | null
           favorite_class_type_id?: string | null
           gym_id: string
           id?: string
+          invitacion_enviada_at?: string | null
           nombre: string
           notificaciones_activadas?: boolean
           paquete_nombre?: string | null
@@ -399,12 +403,14 @@ export type Database = {
         Update: {
           auth_user_id?: string | null
           birthday?: string | null
+          claim_code?: string | null
           clases_restantes?: number | null
           created_at?: string
           email?: string | null
           favorite_class_type_id?: string | null
           gym_id?: string
           id?: string
+          invitacion_enviada_at?: string | null
           nombre?: string
           notificaciones_activadas?: boolean
           paquete_nombre?: string | null
@@ -1411,6 +1417,14 @@ export type Database = {
         Returns: undefined
       }
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
+      invitacion_info: {
+        Args: { p_codigo: string }
+        Returns: {
+          cliente_nombre: string
+          gym_nombre: string
+          gym_slug: string
+        }[]
+      }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
       mi_membresia: {
@@ -1439,6 +1453,12 @@ export type Database = {
         Returns: {
           cliente_id: string
           reclamado: boolean
+        }[]
+      }
+      reclamar_por_codigo: {
+        Args: { p_codigo: string }
+        Returns: {
+          gym_slug: string
         }[]
       }
       registrar_venta: {
