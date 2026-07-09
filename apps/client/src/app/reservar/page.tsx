@@ -70,10 +70,14 @@ export default async function ReservarPage({
   }
   if (!esMiembro) return <SinMembresia />;
 
+  // Host reconciliation (audit #17 / spec §5.5): pass the presentation tenant (x-gym) so a
+  // member in several gyms reads THIS gym's agenda + perfil. Host stays presentation-only —
+  // it only picks among the caller's own memberships; RLS scopes the reads either way.
+  const hostGym = (await headers()).get("x-gym");
   const [semana, saldo, perfil] = await Promise.all([
-    getAgendaSemanaMiembro(),
+    getAgendaSemanaMiembro(undefined, undefined, hostGym),
     getSaldoMiembro(),
-    getPerfilResumenMiembro(),
+    getPerfilResumenMiembro(undefined, hostGym),
   ]);
   const meta = claims.user_metadata as { full_name?: string } | undefined;
   const nombre = meta?.full_name ?? (typeof claims.email === "string" ? claims.email : "");

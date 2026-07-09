@@ -36,6 +36,9 @@ function iso(dia: Date, hhmm: string): string {
 
 interface Rows {
   gym_membership?: Record<string, unknown>[];
+  /** Seed multiple gym rows (id/slug/timezone/brand_name) for host-reconciliation tests;
+   *  defaults to a single gym-1 row honoring gymTimezone/marca. */
+  gym?: Record<string, unknown>[];
   class_session?: Record<string, unknown>[];
   class_type?: Record<string, unknown>[];
   class_session_coach?: Record<string, unknown>[];
@@ -96,11 +99,14 @@ function makeFake(
   const membership =
     rows.gym_membership === undefined ? [{ gym_id: "gym-1" }] : rows.gym_membership;
 
+  const gyms =
+    rows.gym ??
+    [{ id: "gym-1", slug: "gym-1", timezone: rows.gymTimezone ?? TZ, brand_name: rows.marca ?? "RED" }];
+
   const client = {
     from: (table: string) => {
       if (table === "gym_membership") return builder(membership);
-      if (table === "gym")
-        return builder([{ id: "gym-1", timezone: rows.gymTimezone ?? TZ, brand_name: rows.marca ?? "RED" }]);
+      if (table === "gym") return builder(gyms);
       return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },
     rpc: (name: string, args: Record<string, unknown>) =>
@@ -369,5 +375,60 @@ describe("getPerfilResumenMiembro", () => {
       membresia: null,
       planes: [],
     });
+  });
+});
+
+/**
+ * Host reconciliation (audit #17 / spec §5.5): a member who belongs to several gyms must read
+ * the HOST gym's data on that gym's site — not an arbitrary `limit(1)` row. `resolverMiembroGym`
+ * (exercised here through getPerfilResumenMiembro, whose `marca` reports the chosen gym) prefers
+ * the membership whose gym matches the host tenant (x-gym slug), and falls back to the OLDEST
+ * membership (stable) when there is no host or no match. Host is presentation-only (ADR-0008): it
+ * only picks among the caller's OWN memberships — the fake seeds exactly the memberships RLS would.
+ */
+describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", () => {
+  // Two gyms the caller belongs to; forge is the OLDER membership (the deterministic fallback).
+  const dosGimnasios = (): Rows => ({
+    gym_membership: [
+      { gym_id: "gym-forge", created_at: "2020-01-01T00:00:00Z" },
+      { gym_id: "gym-red", created_at: "2024-01-01T00:00:00Z" },
+    ],
+    gym: [
+      { id: "gym-forge", slug: "forge", timezone: TZ, brand_name: "Forge" },
+      { id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" },
+    ],
+    clientes: [],
+    reservation: [],
+  });
+
+  it("host match → the membership in the host gym (newer of the two)", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "red");
+    expect(perfil.marca).toBe("RED");
+  });
+
+  it("host match → the membership in the host gym (older of the two, not just newest)", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "forge");
+    expect(perfil.marca).toBe("Forge");
+  });
+
+  it("no host tenant (unmapped) → deterministic fallback to the OLDEST membership", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), null);
+    expect(perfil.marca).toBe("Forge");
+  });
+
+  it("host names a gym the caller is NOT a member of → same oldest-membership fallback", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "otro-gym");
+    expect(perfil.marca).toBe("Forge");
+  });
+
+  it("single membership → that gym regardless of host (match or not)", async () => {
+    const uno = (): Rows => ({
+      gym_membership: [{ gym_id: "gym-red", created_at: "2024-01-01T00:00:00Z" }],
+      gym: [{ id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" }],
+      clientes: [],
+      reservation: [],
+    });
+    expect((await getPerfilResumenMiembro(makeFake(uno()), "red")).marca).toBe("RED");
+    expect((await getPerfilResumenMiembro(makeFake(uno()), "un-host-cualquiera")).marca).toBe("RED");
   });
 });

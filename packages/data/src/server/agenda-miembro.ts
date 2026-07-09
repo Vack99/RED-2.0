@@ -114,30 +114,43 @@ interface SesionMiembroRaw {
 }
 
 /** The member's gym (tz + brand display name) from their `gym_membership` self-read —
- *  the RLS gate. One membership per login (one login = one gym). Returns `null` for an
- *  anon/non-member caller (or an unreadable gym row) INSTEAD of throwing — the
- *  signed-in-but-not-yet-a-member state (audit #10/#15: a swallowed claim or a
- *  password-reset-first session must not crash the booking home) — mirroring the
- *  clase-miembro.ts twin. `marca` (gym.brand_name) is the brand-neutral display name
- *  the perfil footer renders from real data — never a hardcoded brand string. */
+ *  the RLS gate. Returns `null` for an anon/non-member caller (or an unreadable gym row)
+ *  INSTEAD of throwing — the signed-in-but-not-yet-a-member state (audit #10/#15: a
+ *  swallowed claim or a password-reset-first session must not crash the booking home) —
+ *  mirroring the clase-miembro.ts twin. `marca` (gym.brand_name) is the brand-neutral
+ *  display name the perfil footer renders from real data — never a hardcoded brand string.
+ *
+ *  Host reconciliation (audit #17 / spec §5.5): a member who belongs to several gyms sees
+ *  the HOST gym's data on that gym's site — this prefers the membership whose gym matches
+ *  the host tenant (`hostGymSlug` = the proxy's `x-gym`, presentation-only per ADR-0008),
+ *  falling back to the OLDEST membership (a stable, deterministic choice — never the
+ *  `limit(1)` roulette). It only picks among the caller's OWN memberships; RLS still scopes
+ *  every downstream read, so the host can never surface data the caller doesn't already hold. */
 async function resolverMiembroGym(
   supabase: SupabaseServer,
+  hostGymSlug?: string | null,
 ): Promise<{ id: string; tz: string; marca: string } | null> {
-  const { data: membership } = await supabase
+  const { data: memberships } = await supabase
     .from("gym_membership")
-    .select("gym_id")
-    .limit(1)
-    .maybeSingle();
-  if (!membership) return null;
+    .select("gym_id, created_at")
+    .order("created_at", { ascending: true });
+  if (!memberships || memberships.length === 0) return null;
 
-  const { data: gym } = await supabase
+  const gymIds = [...new Set(memberships.map((m) => m.gym_id))];
+  const { data: gyms } = await supabase
     .from("gym")
-    .select("timezone, brand_name")
-    .eq("id", membership.gym_id)
-    .maybeSingle();
+    .select("id, slug, timezone, brand_name")
+    .in("id", gymIds);
+  const gymById = new Map((gyms ?? []).map((g) => [g.id, g]));
+
+  const enHost = hostGymSlug
+    ? memberships.find((m) => gymById.get(m.gym_id)?.slug === hostGymSlug)
+    : undefined;
+  const elegido = enHost ?? memberships[0]; // host match, else the oldest (stable fallback)
+  const gym = gymById.get(elegido.gym_id);
   if (!gym) return null;
 
-  return { id: membership.gym_id, tz: gym.timezone, marca: gym.brand_name };
+  return { id: elegido.gym_id, tz: gym.timezone, marca: gym.brand_name };
 }
 
 /**
@@ -277,9 +290,13 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
  * staff have already scheduled.
  */
 export const getAgendaSemanaMiembro = cache(
-  async (fechaIso?: string, client?: SupabaseServer): Promise<AgendaSemanaMiembroDTO> => {
+  async (
+    fechaIso?: string,
+    client?: SupabaseServer,
+    hostGymSlug?: string | null,
+  ): Promise<AgendaSemanaMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase);
+    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return { dias: [] };
     const { tz } = miembro;
 
@@ -441,9 +458,12 @@ const PERFIL_SIN_MEMBRESIA: PerfilResumenMiembroDTO = {
 };
 
 export const getPerfilResumenMiembro = cache(
-  async (client?: SupabaseServer): Promise<PerfilResumenMiembroDTO> => {
+  async (
+    client?: SupabaseServer,
+    hostGymSlug?: string | null,
+  ): Promise<PerfilResumenMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase);
+    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return PERFIL_SIN_MEMBRESIA;
     const { id: gymId, tz, marca } = miembro;
 
