@@ -50,9 +50,14 @@ begin
   v_phone := nullif(v_meta ->> 'phone_e164', '');
 
   -- Resolve + lock the unclaimed row by its single-use code. A cleared/absent code resolves to nothing.
+  -- `auth_user_id is null` is defense-in-depth: every mint site already refuses claimed rows
+  -- (registrar_venta mints only on NEW inserts; preparar_invitacion guards 'La cuenta ya está
+  -- activa'), so a claimed row can never carry a code — but if that invariant ever slipped,
+  -- this predicate keeps a re-minted code from re-stamping auth_user_id (account takeover).
   select id, gym_id into v_cli, v_gym
     from public.clientes
     where claim_code = p_codigo
+      and auth_user_id is null
     for update;
   if v_cli is null then
     raise exception 'Código de invitación inválido o ya utilizado';
