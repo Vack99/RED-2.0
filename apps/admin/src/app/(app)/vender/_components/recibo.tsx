@@ -9,12 +9,21 @@ import { pesos, waLink } from "@gym/format";
 
 export function Recibo({
   result,
+  primeraCompra = false,
+  cuentaActiva = false,
   lockup,
   onClose,
   onOtra,
   onVerCliente,
 }: {
   result: ReciboResult;
+  /** The EXISTENTE client's first ever purchase (#77) — snapshotted at finish().
+   *  Retitles the receipt; ignored for a NUEVO sale (its creation copy already
+   *  carries the first-purchase meaning). */
+  primeraCompra?: boolean;
+  /** That client already has an app account — the first-purchase subtitle then
+   *  promises app reservations rather than a desk-only paquete. */
+  cuentaActiva?: boolean;
   /** The resolved marca's lockup, rendered server-side (grill lock (g)). */
   lockup: React.ReactNode;
   onClose: () => void;
@@ -55,11 +64,15 @@ export function Recibo({
         </div>
 
         <div style={{ padding: "0 22px 16px", textAlign: "center" }}>
-          <H1 size={30}>{isNew ? "CLIENTE Y\nVENTA CREADOS" : "VENTA\nREGISTRADA"}</H1>
+          <H1 size={30}>{isNew ? "CLIENTE Y\nVENTA CREADOS" : primeraCompra ? "PRIMERA COMPRA\nCOBRADA" : "VENTA\nREGISTRADA"}</H1>
           <div style={{ marginTop: 10, fontSize: 13, color: "var(--muted)", maxWidth: 290, marginLeft: "auto", marginRight: "auto" }}>
             {isNew
               ? `${primerNombre} tiene su paquete activo.`
-              : `Folio listo y paquete activo en la ficha de ${primerNombre}.`}
+              : primeraCompra
+                ? cuentaActiva
+                  ? `${primerNombre} ya puede reservar desde su app.`
+                  : `Paquete activo en la ficha de ${primerNombre}.`
+                : `Folio listo y paquete activo en la ficha de ${primerNombre}.`}
           </div>
           {isNew && <InviteNote invite={invite} />}
         </div>

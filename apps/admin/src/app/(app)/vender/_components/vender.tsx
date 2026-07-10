@@ -10,9 +10,10 @@ import { Avatar, Badge, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/u
 import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
-import { isTelValido, pesos } from "@gym/format";
+import { pesos } from "@gym/format";
 import { crearVentaAction } from "../actions";
 import { Recibo } from "./recibo";
+import { clienteListo, telError } from "./vender-vm";
 
 type Mode = "new" | "existing";
 type Metodo = "Efectivo" | "Tarjeta" | "Transferencia" | "Por pagar";
@@ -27,18 +28,28 @@ const METODO_ENUM: Record<Metodo, MetodoEnum> = {
 export function VenderScreen({
   paquetes,
   clientes,
+  initialClienteId = null,
   lockup,
 }: {
   paquetes: PaqueteDTO[];
   clientes: ClienteLiteDTO[];
+  /** Preselected cliente id from `/vender?cliente=<id>` (#77). Mount-time only
+   *  (Q3): read once into the initial state; later same-route query changes are
+   *  not a supported flow. */
+  initialClienteId?: string | null;
   /** The resolved marca's lockup for the receipt (grill lock (g)). */
   lockup: React.ReactNode;
 }) {
   const router = useRouter();
 
-  const [mode, setMode] = React.useState<Mode>("new");
+  // Preselect: land on EXISTENTE with this client picked ONLY if the id is a
+  // real member in the loaded roster; an unknown/absent id falls back to the
+  // blank NUEVO form. Read once at mount (deps intentionally omitted).
+  const preselectId = clientes.some((c) => c.id === initialClienteId) ? initialClienteId : null;
+
+  const [mode, setMode] = React.useState<Mode>(preselectId ? "existing" : "new");
   const [nuevo, setNuevo] = React.useState({ nombre: "", tel: "", email: "" });
-  const [clientId, setClientId] = React.useState<string | null>(null);
+  const [clientId, setClientId] = React.useState<string | null>(preselectId);
   const [sel, setSel] = React.useState<string | null>(null);
   const [metodo, setMetodo] = React.useState<Metodo | null>(null);
   const [openSection, setOpenSection] = React.useState<string | null>("cliente");
@@ -46,8 +57,21 @@ export function VenderScreen({
   const [pickerOpen, setPickerOpen] = React.useState(false);
   const [pickerQuery, setPickerQuery] = React.useState("");
   const [recibo, setRecibo] = React.useState<ReciboResult | null>(null);
+  // Snapshotted at finish() (never derived at render — resetForm nulls clientId):
+  // the receipt reads the selected client's first-purchase state from here (#77).
+  const [reciboExtra, setReciboExtra] = React.useState<{ primeraCompra: boolean; cuentaActiva: boolean }>({
+    primeraCompra: false,
+    cuentaActiva: false,
+  });
+  // Clients sold to during THIS mount — their loaded `primeraCompra: true` is now
+  // stale, so treat them as not-first-purchase for the marker/receipt (#77 §7).
+  // State (not a ref) so the marker re-renders and reads are render-safe.
+  const [soldIds, setSoldIds] = React.useState<Set<string>>(() => new Set());
 
   const existing = clientes.find((x) => x.id === clientId) ?? null;
+  /** First purchase, minus this-mount stale flags (a client just sold to). */
+  const esPrimera = (cli: ClienteLiteDTO | null): boolean =>
+    !!cli && cli.primeraCompra && !soldIds.has(cli.id);
   const paq = sel ? (paquetes.find((p) => p.id === sel) ?? null) : null;
   const vigenciaEnd = paq?.hasta ?? null;
 
@@ -71,10 +95,7 @@ export function VenderScreen({
   }, [mode, nuevo.tel, nuevo.email, clientes]);
   const showDup = dupMatch && dupMatch.id !== dismissedDupId ? dupMatch : null;
 
-  const clienteValid =
-    mode === "new"
-      ? nuevo.nombre.trim().length >= 3 && isTelValido(nuevo.tel)
-      : !!existing;
+  const clienteValid = clienteListo(mode, nuevo.nombre, nuevo.tel, !!existing);
   const canSubmit = clienteValid && !!sel && !!metodo && !submitting;
 
   const clienteSummary = (() => {
@@ -116,9 +137,7 @@ export function VenderScreen({
   // with a client already picked, or back to "new" with valid fields.
   const handleSetMode = (m: Mode) => {
     setMode(m);
-    const wouldBeValid =
-      m === "new" ? nuevo.nombre.trim().length >= 3 && isTelValido(nuevo.tel) : !!existing;
-    maybeAdvanceCliente(wouldBeValid);
+    maybeAdvanceCliente(clienteListo(m, nuevo.nombre, nuevo.tel, !!existing));
   };
 
   const selectPaquete = (id: string) => {
@@ -144,6 +163,14 @@ export function VenderScreen({
         paqueteId: sel,
         metodo: METODO_ENUM[metodo],
       });
+      // Snapshot the receipt's first-purchase state from the selected DTO before
+      // resetForm nulls clientId; record the sale so a later OTRA VENTA to the
+      // same client no longer reads its now-stale `primeraCompra` (#77 §6/§7).
+      setReciboExtra({
+        primeraCompra: mode === "existing" && esPrimera(existing),
+        cuentaActiva: mode === "existing" && existing?.invitacion.estado === "cuenta_activa",
+      });
+      if (mode === "existing" && clientId) setSoldIds((s) => new Set(s).add(clientId));
       setRecibo(result);
     } catch {
       forgeToast({ tone: "warning", title: "No se pudo cobrar", body: "Revisa los datos e intenta de nuevo." });
@@ -167,6 +194,8 @@ export function VenderScreen({
     return (
       <Recibo
         result={recibo}
+        primeraCompra={reciboExtra.primeraCompra}
+        cuentaActiva={reciboExtra.cuentaActiva}
         lockup={lockup}
         onClose={resetForm}
         onOtra={resetForm}
@@ -210,8 +239,9 @@ export function VenderScreen({
             nuevo={nuevo}
             setNuevo={setNuevo}
             existing={existing}
+            existingPrimera={esPrimera(existing)}
             openPicker={() => setPickerOpen(true)}
-            onMaybeValid={maybeAdvanceCliente}
+            onContinue={() => setOpenSection("paquete")}
             dup={showDup}
             onUseExisting={() => {
               if (!showDup) return;
@@ -290,6 +320,11 @@ export function VenderScreen({
                 <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{cc.nombre}</div>
                 <div className="flex flex-wrap items-center" style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, gap: 6 }}>
                   <span><Tnum>{cc.tel}</Tnum> · {cc.paqueteLabel}</span>
+                  {cc.email ? (
+                    <span className="min-w-0" style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cc.email}</span>
+                  ) : (
+                    <span className="uppercase font-bold" style={{ background: "var(--yellow-soft)", color: "var(--fg)", padding: "1px 5px", fontSize: 8.5, letterSpacing: 0.6 }}>Sin email</span>
+                  )}
                   <Badge
                     state={cc.invitacion.estado === "cuenta_activa" ? "success" : "info"}
                     style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}
@@ -359,8 +394,9 @@ function ClienteEditor({
   nuevo,
   setNuevo,
   existing,
+  existingPrimera,
   openPicker,
-  onMaybeValid,
+  onContinue,
   dup,
   onUseExisting,
   onDismissDup,
@@ -370,13 +406,20 @@ function ClienteEditor({
   nuevo: { nombre: string; tel: string; email: string };
   setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string; email: string }>>;
   existing: ClienteLiteDTO | null;
+  /** The picked EXISTENTE client is on their first purchase (stale-guarded). */
+  existingPrimera: boolean;
   openPicker: () => void;
-  onMaybeValid: (wouldBeValid: boolean) => void;
+  /** Explicit CONTINUAR advance to PAQUETE — replaces the removed auto-advance (#76). */
+  onContinue: () => void;
   /** A same-gym cliente matching the typed phone/email — the soft duplicate warn. */
   dup: ClienteLiteDTO | null;
   onUseExisting: () => void;
   onDismissDup: () => void;
 }) {
+  // Blur tracking for the inline tel error (#48): a partial 1–9 digit number only
+  // errors once the operator leaves the field; an over-long one errors on sight.
+  const [telBlurred, setTelBlurred] = React.useState(false);
+  const telErr = telError(nuevo.tel, telBlurred);
   return (
     <>
       <div className="flex" style={{ marginBottom: 22, borderBottom: "1px solid var(--line)" }}>
@@ -397,14 +440,24 @@ function ClienteEditor({
 
       {mode === "new" && (
         <div className="flex flex-col" style={{ gap: 12 }}>
-          <Input placeholder="Nombre completo" value={nuevo.nombre} onChange={(v) => { setNuevo((n) => ({ ...n, nombre: v })); onMaybeValid(v.trim().length >= 3 && isTelValido(nuevo.tel)); }} autoFocus />
-          <Input icon="phone" placeholder="614 000 0000" value={nuevo.tel} onChange={(v) => { setNuevo((n) => ({ ...n, tel: v })); onMaybeValid(nuevo.nombre.trim().length >= 3 && isTelValido(v)); }} suffix="MX" inputMode="tel" />
-          <Input
-            placeholder="Email para la app (opcional)"
-            value={nuevo.email}
-            onChange={(v) => setNuevo((n) => ({ ...n, email: v }))}
-            inputMode="email"
-          />
+          <Input placeholder="Nombre completo" value={nuevo.nombre} onChange={(v) => setNuevo((n) => ({ ...n, nombre: v }))} autoFocus />
+          {/* The wrapping div's onBlur (React focusout, which bubbles) tracks the
+              tel field losing focus without touching the shared Input primitive. */}
+          <div onBlur={() => setTelBlurred(true)}>
+            <Input icon="phone" placeholder="614 000 0000" value={nuevo.tel} onChange={(v) => setNuevo((n) => ({ ...n, tel: v }))} suffix="MX" inputMode="tel" />
+            {telErr && (
+              <div role="alert" style={{ marginTop: 6, fontSize: 12, color: "var(--red)", fontWeight: 600, letterSpacing: 0.2 }}>{telErr}</div>
+            )}
+          </div>
+          <div className="flex flex-col" style={{ gap: 6 }}>
+            <Input
+              placeholder="Email para la app (opcional)"
+              value={nuevo.email}
+              onChange={(v) => setNuevo((n) => ({ ...n, email: v }))}
+              inputMode="email"
+            />
+            <div style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.2 }}>Si agregas su correo, recibe la invitación a la app.</div>
+          </div>
           {dup && (
             <div
               className="flex items-start"
@@ -435,6 +488,17 @@ function ClienteEditor({
               </div>
             </div>
           )}
+          {/* Explicit CONTINUAR (#76): the yellow primary stays reserved for
+              COBRAR, so this is secondary. No auto-advance — the operator commits
+              the section themselves. */}
+          <Button
+            variant="secondary"
+            full
+            disabled={!clienteListo("new", nuevo.nombre, nuevo.tel, false)}
+            onClick={onContinue}
+          >
+            CONTINUAR
+          </Button>
         </div>
       )}
 
@@ -444,9 +508,23 @@ function ClienteEditor({
             <Avatar initial={existing.inicial} accent size={40} />
             <div className="min-w-0 flex-1">
               <div className="uppercase font-bold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{existing.nombre}</div>
-              <Tnum style={{ display: "block", fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>{existing.tel}</Tnum>
+              <div className="flex min-w-0 items-center" style={{ gap: 6, marginTop: 3, fontSize: 11.5, color: "var(--muted)" }}>
+                <Tnum className="shrink-0">{existing.tel}</Tnum>
+                <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                {existing.email ? (
+                  <span className="min-w-0" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{existing.email}</span>
+                ) : (
+                  <span className="shrink-0 uppercase font-bold" style={{ background: "var(--yellow-soft)", color: "var(--fg)", padding: "1px 5px", fontSize: 8.5, letterSpacing: 0.6 }}>Sin email</span>
+                )}
+              </div>
+              {existingPrimera && (
+                <span className="inline-flex items-center uppercase font-bold" style={{ marginTop: 6, gap: 4, background: "var(--yellow-soft)", color: "var(--gold)", padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}>
+                  <Icon name="alert" size={10} color="var(--gold)" />
+                  PRIMERA COMPRA
+                </span>
+              )}
             </div>
-            <span className="font-bold" style={{ fontSize: 10, color: "var(--gold)", letterSpacing: 1.2 }}>CAMBIAR</span>
+            <span className="shrink-0 font-bold" style={{ fontSize: 10, color: "var(--gold)", letterSpacing: 1.2 }}>CAMBIAR</span>
           </button>
         ) : (
           <button onClick={openPicker} className="flex w-full items-center justify-center" style={{ padding: "22px 16px", background: "transparent", border: "1px dashed var(--line)", gap: 10, cursor: "pointer", color: "var(--gold)" }}>
