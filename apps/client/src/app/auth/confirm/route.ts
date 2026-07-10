@@ -63,7 +63,12 @@ export async function GET(request: NextRequest) {
   const type = request.nextUrl.searchParams.get("type");
   const codigo = parseCodigoInvitacion(request.nextUrl.searchParams.get("codigo"));
   const nextParam = request.nextUrl.searchParams.get("next");
-  const next = nextParam && nextParam.startsWith("/") ? nextParam : null;
+  // Local path only: "//host" is protocol-relative and "/\" is treated as "//"
+  // by browsers/URL — both would turn `next` into an open redirect.
+  const next =
+    nextParam && nextParam.startsWith("/") && !nextParam.startsWith("//") && !nextParam.startsWith("/\\")
+      ? nextParam
+      : null;
 
   if (code) {
     const supabase = await createClient();

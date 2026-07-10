@@ -25,17 +25,21 @@ Verify the **client** Vercel deployment serving `red-demo.ibookit.lat` (and the 
 
 - *Verify:* the client deployment for the merge commit is **READY**; opening `https://red-demo.ibookit.lat/auth/confirm?token_hash=x&type=email` reaches the route (a redirect to `/entrar?error=confirmacion` is the expected "invalid token" response — it proves the branch runs, not a 404).
 
-### b. Edge Function secrets
+### b. Register the hook + generate its secret — do **NOT** enable yet
 
-Dashboard → project `hjppxawglmukfvsgmcog` → **Edge Functions → send-email → Secrets** (or Project Settings → Edge Functions secrets). Set:
+Dashboard → **Authentication → Hooks (Beta) → Send Email Hook** → type **HTTPS** → URL `https://hjppxawglmukfvsgmcog.supabase.co/functions/v1/send-email` → **Generate Secret**. Copy the secret (`v1,whsec_…`). **Leave the hook DISABLED** — the moment it is enabled, GoTrue routes EVERY gym's signup/recovery mail through the function, and until step c's secret is live the function 401s each call and the mail is silently dropped platform-wide.
+
+- *Verify:* the hook is configured (HTTPS, function URL, secret generated) and still shows **Disabled**.
+
+### c. Set the Edge Function secrets, then enable
+
+Dashboard → project `hjppxawglmukfvsgmcog` → **Edge Functions → send-email → Secrets**. Set:
 - `RESEND_API_KEY` — the `re_…` key from hitl-72 §A4 (the same send-only key).
-- `SEND_EMAIL_HOOK_SECRET` — the secret **generated in step c** (set this after generating it there).
+- `SEND_EMAIL_HOOK_SECRET` — the secret generated in step b.
 
-- *Verify:* both secrets present. (`SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected — do not set them.)
+*Verify:* both secrets present. (`SUPABASE_URL` / `SUPABASE_ANON_KEY` are auto-injected — do not set them.)
 
-### c. Register the hook
-
-Dashboard → **Authentication → Hooks (Beta) → Send Email Hook** → type **HTTPS** → URL `https://hjppxawglmukfvsgmcog.supabase.co/functions/v1/send-email` → **Generate Secret** → **Enable**. Copy the generated secret into `SEND_EMAIL_HOOK_SECRET` (step b).
+**Only now**, back in Authentication → Hooks, toggle the Send Email Hook to **Enabled** — enabling is deliberately the LAST action of this step.
 
 - *Verify:* the hook shows **Enabled**, HTTPS, pointing at the function URL; the secret matches the function's `SEND_EMAIL_HOOK_SECRET`.
 
