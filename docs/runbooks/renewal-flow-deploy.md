@@ -1,5 +1,12 @@
 # Renewal-flow deploy gate (branch `renewal-flow`, 2026-07-10)
 
+> **EXECUTED 2026-07-10 (same session, owner approved):** steps 1, 2 and 4 are DONE — all four
+> migrations applied to live (new 8-param `registrar_venta` verified sole overload), origin/main
+> fast-forwarded `def8434..eea84dd` (Vercel deploy triggered), and both duplicate pairs merged
+> (Jesus Ojeda → 2 ventas/11 asistencias/6 clases/vence 08-06; Teodoro Rodriguez Lopez → 2
+> ventas/14 asistencias/Ilimitado/vence 08-08; zero orphaned children, all guards passed).
+> **Still open: step 3 — the two post-deploy smokes** (need the deployed admin UI + operator login).
+
 Everything on the branch is gate-passed and proven; **only the live mutations remain**, and they
 need you (the session's auto-mode permission boundary blocks live prod DDL/writes — correctly).
 Deploy order is load-bearing: **migrations first, push second** — the new app code calls the new
