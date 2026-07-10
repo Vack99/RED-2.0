@@ -2,8 +2,10 @@
 -- contract for the rewritten money RPC: the client now sends ONLY identity + p_paquete_id + p_metodo +
 -- p_idempotency_key, and the DB re-derives price / balance / vence from the paquete row inside one locked
 -- transaction. This suite is the SQL mirror of packages/domain/src/rules.test.ts — one vector per rules.ts
--- case — and asserts the ROWS the RPC writes (clientes.clases_restantes / vence / paquete_nombre / email
--- and the ventas row's monto / metodo / gym_id / idempotency_key), never just the return value (#78/#80).
+-- case — and asserts the ROWS the RPC writes (clientes.nombre / tel / clases_restantes / vence /
+-- paquete_nombre / email and the ventas row's monto / metodo / gym_id plus the paquete_nombre / clases /
+-- vigencia_* snapshot — mi_membresia anchors the member plan card on exactly those venta columns),
+-- never just the return value (#78/#80).
 --
 -- Vectors: (1) fresh finite, (2) fresh mes = +30 [C1], (3) early mes renewal = old vence +30 [C1],
 -- (4) renewal ON the vence day carries [C9], (5) lapsed base forfeits, (6) active ilimitado + finite =
@@ -103,16 +105,27 @@ declare
   k uuid := gen_random_uuid();
   r record; c record; v record;
 begin
+  -- p_nombre arrives padded so the INSERT's trim(p_nombre) is exercised, not just passed through.
   select * into r from public.registrar_venta(
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
-    p_idempotency_key := k, p_nombre := 'Nuevo Finito', p_tel := '6140000101');
-  select clases_restantes, vence, paquete_nombre, email, gym_id into c from public.clientes where id = r.cliente_id;
+    p_idempotency_key := k, p_nombre := '  Nuevo Finito ', p_tel := '6140000101');
+  select nombre, tel, clases_restantes, vence, paquete_nombre, email, gym_id into c from public.clientes where id = r.cliente_id;
+  if c.nombre is distinct from 'Nuevo Finito' then raise exception 'V1 FAIL: nombre % (expected the trimmed p_nombre)', c.nombre; end if;
+  if c.tel is distinct from '6140000101' then raise exception 'V1 FAIL: tel %', c.tel; end if;
   if c.clases_restantes is distinct from 8 then raise exception 'V1 FAIL: clases_restantes % (expected 8)', c.clases_restantes; end if;
   if c.vence is distinct from today + 20 then raise exception 'V1 FAIL: vence % (expected hoy+20)', c.vence; end if;
   if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V1 FAIL: paquete_nombre %', c.paquete_nombre; end if;
   if c.email is not null then raise exception 'V1 FAIL: email % (expected null — none was sent)', c.email; end if;
   if c.gym_id is distinct from g then raise exception 'V1 FAIL: cliente gym_id %', c.gym_id; end if;
-  select monto, metodo, gym_id, idempotency_key into v from public.ventas where idempotency_key = k;
+  -- The venta's paquete snapshot (paquete_nombre/clases/vigencia_*) must copy the paquete row:
+  -- mi_membresia derives the member-facing plan card from these columns of the latest venta, and its
+  -- suite seeds ventas directly — this is the only readback that pins registrar_venta's write of them.
+  select paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, gym_id
+    into v from public.ventas where idempotency_key = k;
+  if v.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V1 FAIL: venta.paquete_nombre %', v.paquete_nombre; end if;
+  if v.clases is distinct from 8 then raise exception 'V1 FAIL: venta.clases % (expected the paquete row''s 8)', v.clases; end if;
+  if v.vigencia_tipo is distinct from 'dias' then raise exception 'V1 FAIL: venta.vigencia_tipo %', v.vigencia_tipo; end if;
+  if v.vigencia_dias is distinct from 20 then raise exception 'V1 FAIL: venta.vigencia_dias % (expected the paquete row''s 20)', v.vigencia_dias; end if;
   if v.monto is distinct from 800 then raise exception 'V1 FAIL: venta.monto % (expected the paquete precio 800)', v.monto; end if;
   if v.metodo is distinct from 'efectivo' then raise exception 'V1 FAIL: venta.metodo %', v.metodo; end if;
   if v.gym_id is distinct from g then raise exception 'V1 FAIL: venta.gym_id %', v.gym_id; end if;
