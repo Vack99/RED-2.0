@@ -33,7 +33,8 @@ declare
   m_fin  uuid := gen_random_uuid();
   m_ilim uuid := gen_random_uuid();
   m_past uuid := gen_random_uuid();
-  c_fin  uuid; c_ilim uuid; c_past uuid;
+  m_flip uuid := gen_random_uuid();
+  c_fin  uuid; c_ilim uuid; c_past uuid; c_flip uuid;
   s_open uuid; s_unbooked uuid; s_started uuid;
 begin
   select id into v_gym from public.gym where slug = 'forge';
@@ -43,10 +44,11 @@ begin
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', m_fin,  'authenticated', 'authenticated', 'cx-fin@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_ilim, 'authenticated', 'authenticated', 'cx-ilim@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_past, 'authenticated', 'authenticated', 'cx-past@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_past, 'authenticated', 'authenticated', 'cx-past@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_flip, 'authenticated', 'authenticated', 'cx-flip@test.local');
 
   insert into public.gym_membership (user_id, gym_id, role) values
-    (m_fin, v_gym, 'member'), (m_ilim, v_gym, 'member'), (m_past, v_gym, 'member');
+    (m_fin, v_gym, 'member'), (m_ilim, v_gym, 'member'), (m_past, v_gym, 'member'), (m_flip, v_gym, 'member');
 
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
     values ('CX finite', '0000000001', 5, current_date + 20, '8 clases', v_gym, m_fin) returning id into c_fin;
@@ -54,6 +56,10 @@ begin
     values ('CX ilim', '0000000002', null, current_date + 20, 'Ilimitado', v_gym, m_ilim) returning id into c_ilim;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
     values ('CX past', '0000000003', 5, current_date + 20, '8 clases', v_gym, m_past) returning id into c_past;
+  -- C12 flip fixture: books while ILIMITADO (null balance), then the fixture flips it to a finite saldo
+  -- mid-test to simulate C4 purchase-wins between booking and cancel.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('CX flip', '0000000004', null, current_date + 20, 'Ilimitado', v_gym, m_flip) returning id into c_flip;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'CX Metcon') returning id into v_ct;
 
@@ -75,9 +81,11 @@ begin
   perform set_config('t.m_fin',      m_fin::text,      true);
   perform set_config('t.m_ilim',     m_ilim::text,     true);
   perform set_config('t.m_past',     m_past::text,     true);
+  perform set_config('t.m_flip',     m_flip::text,     true);
   perform set_config('t.c_fin',      c_fin::text,      true);
   perform set_config('t.c_ilim',     c_ilim::text,     true);
   perform set_config('t.c_past',     c_past::text,     true);
+  perform set_config('t.c_flip',     c_flip::text,     true);
   perform set_config('t.s_open',     s_open::text,     true);
   perform set_config('t.s_unbooked', s_unbooked::text, true);
   perform set_config('t.s_started',  s_started::text,  true);
@@ -95,7 +103,7 @@ declare
   s_open uuid := current_setting('t.s_open', true)::uuid;
   s_unbooked uuid := current_setting('t.s_unbooked', true)::uuid;
   c_fin  uuid := current_setting('t.c_fin', true)::uuid;
-  v_ret int; v_clases int; v_status text; v_cancelled timestamptz; v_active int; raised boolean;
+  v_ret int; v_clases int; v_status text; v_cancelled timestamptz; v_active int; v_consumio boolean; raised boolean;
 begin
   -- book first (5 → 4), one reservada row, active count = 1
   perform public.reservar_clase(s_open);
@@ -109,10 +117,13 @@ begin
   if v_ret <> 5 then raise exception 'RULE FAIL(refund): RPC returned clases %, expected 5', v_ret; end if;
   select clases_restantes into v_clases from public.clientes where id = c_fin;
   if v_clases <> 5 then raise exception 'RULE FAIL(refund): stored clases %, expected refunded 5', v_clases; end if;
-  select status, cancelled_at into v_status, v_cancelled from public.reservation
+  select status, cancelled_at, consumio into v_status, v_cancelled, v_consumio from public.reservation
     where member_id = c_fin and class_session_id = s_open;
   if v_status <> 'cancelada' then raise exception 'RULE FAIL(refund): row status % (expected cancelada)', v_status; end if;
   if v_cancelled is null then raise exception 'RULE FAIL(refund): cancelled_at not stamped'; end if;
+  -- C12: consumio stays the historical fact on the cancelled row (a finite booking DID consume) — the
+  -- refund fired precisely because this was true.
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(refund): row consumio % (expected true)', v_consumio; end if;
 
   -- the spot frees itself — the derived active count drops to 0 (cancelada excluded)
   select coalesce((select activos from public.contar_reservas_activas(array[s_open])), 0) into v_active;
@@ -150,10 +161,13 @@ do $$
 declare
   s_open uuid := current_setting('t.s_open', true)::uuid;
   c_ilim uuid := current_setting('t.c_ilim', true)::uuid;
-  v_ret int; v_clases int; v_status text;
+  v_ret int; v_clases int; v_status text; v_consumio boolean;
 begin
   -- book (stays NULL), then cancel: RPC returns NULL, stored stays NULL, row cancelada
   perform public.reservar_clase(s_open);
+  -- C12: the ilimitado booking recorded consumio = false — nothing was spent, so nothing may be refunded
+  select consumio into v_consumio from public.reservation where member_id = c_ilim and class_session_id = s_open;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(ilim): booked row consumio % (expected false)', v_consumio; end if;
   select clases_restantes into v_ret from public.cancelar_reserva(s_open);
   if v_ret is not null then raise exception 'RULE FAIL(ilim): RPC returned clases % (expected NULL)', v_ret; end if;
   select clases_restantes into v_clases from public.clientes where id = c_ilim;
@@ -183,6 +197,54 @@ begin
   if v_clases <> 5 then raise exception 'RULE FAIL(started): balance moved to % on rejected cancel', v_clases; end if;
   select status into v_status from public.reservation where member_id = c_past and class_session_id = s_started;
   if v_status <> 'reservada' then raise exception 'RULE FAIL(started): row flipped to % (expected reservada)', v_status; end if;
+end $$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- C12 flip (the phantom-class bug, pinned dead): an ilimitado booking records consumio=false; the plan
+-- then flips ilimitado → finite between booking and cancel (C4 purchase-wins); cancel must refund NOTHING
+-- — the old unconditional +1 would have minted a class the member never paid for.
+-- ════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_flip', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open uuid := current_setting('t.s_open', true)::uuid;
+  c_flip uuid := current_setting('t.c_flip', true)::uuid;
+  v_clases int; v_consumio boolean;
+begin
+  -- book while ilimitado: no consume, the reservation row records consumio = false
+  perform public.reservar_clase(s_open);
+  select clases_restantes into v_clases from public.clientes where id = c_flip;
+  if v_clases is not null then raise exception 'SETUP FAIL(flip): booked balance % (expected NULL ilimitado)', v_clases; end if;
+  select consumio into v_consumio from public.reservation where member_id = c_flip and class_session_id = s_open;
+  if v_consumio is distinct from false then raise exception 'SETUP FAIL(flip): booked row consumio % (expected false)', v_consumio; end if;
+end $$;
+reset role;
+
+-- The plan flips ilimitado → finite between booking and cancel (simulates C4 purchase-wins). Done AS THE
+-- PRIVILEGED (migration) role — a member holds no direct clientes write.
+update public.clientes set clases_restantes = 3, paquete_nombre = '8 clases'
+ where id = current_setting('t.c_flip', true)::uuid;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_flip', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open uuid := current_setting('t.s_open', true)::uuid;
+  c_flip uuid := current_setting('t.c_flip', true)::uuid;
+  v_ret int; v_clases int; v_status text;
+begin
+  -- cancel: the booking consumed NOTHING (consumio=false), so despite the member now being finite the
+  -- refund must NOT fire — the finite balance stays 3, no phantom class minted.
+  select clases_restantes into v_ret from public.cancelar_reserva(s_open);
+  if v_ret <> 3 then raise exception 'RULE FAIL(flip): RPC returned clases % (expected 3, NO phantom refund)', v_ret; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_flip;
+  if v_clases <> 3 then raise exception 'RULE FAIL(flip): stored clases % (expected 3, no phantom credit)', v_clases; end if;
+  select status into v_status from public.reservation where member_id = c_flip and class_session_id = s_open;
+  if v_status <> 'cancelada' then raise exception 'RULE FAIL(flip): row status % (expected cancelada)', v_status; end if;
 end $$;
 reset role;
 

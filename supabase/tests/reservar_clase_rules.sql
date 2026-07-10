@@ -112,7 +112,7 @@ do $$
 declare
   s_open uuid := current_setting('t.s_open', true)::uuid;
   c_fin  uuid := current_setting('t.c_fin', true)::uuid;
-  v_ret  int; v_clases int; v_res uuid; v_n int; raised boolean;
+  v_ret  int; v_clases int; v_res uuid; v_n int; v_consumio boolean; raised boolean;
 begin
   -- book: 5 → 4, one 'reservada' row, RPC returns the new balance
   select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_open);
@@ -122,6 +122,9 @@ begin
   if v_clases <> 4 then raise exception 'RULE FAIL(consume): stored clases %, expected 4', v_clases; end if;
   select count(*) into v_n from public.reservation where member_id = c_fin and class_session_id = s_open and status = 'reservada';
   if v_n <> 1 then raise exception 'RULE FAIL(consume): expected 1 reservada row, got %', v_n; end if;
+  -- C12: a finite booking that decremented records consumio = true on its reservation row
+  select consumio into v_consumio from public.reservation where member_id = c_fin and class_session_id = s_open;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(consume): reservation.consumio % (expected true)', v_consumio; end if;
 
   -- duplicate: booking the same active session again raises; balance stays 4 (no second consume)
   raised := false;
@@ -170,13 +173,17 @@ do $$
 declare
   s_open uuid := current_setting('t.s_open', true)::uuid;
   c_ilim uuid := current_setting('t.c_ilim', true)::uuid;
-  v_ret int; v_clases int; v_res uuid;
+  v_ret int; v_clases int; v_res uuid; v_consumio boolean;
 begin
   select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_open);
   if v_res is null then raise exception 'RULE FAIL(ilim): no reservation returned'; end if;
   if v_ret is not null then raise exception 'RULE FAIL(ilim): RPC returned clases % (expected NULL)', v_ret; end if;
   select clases_restantes into v_clases from public.clientes where id = c_ilim;
   if v_clases is not null then raise exception 'RULE FAIL(ilim): stored clases % (expected NULL, never decremented)', v_clases; end if;
+  -- C12: an ilimitado booking consumes nothing, so its reservation row records consumio = false — this is
+  -- what makes a later cancel refund nothing (no phantom class) even if the plan flips to finite.
+  select consumio into v_consumio from public.reservation where member_id = c_ilim and class_session_id = s_open;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(ilim): reservation.consumio % (expected false)', v_consumio; end if;
 end $$;
 reset role;
 
