@@ -63,9 +63,11 @@ Once the walk passes, the two custom SMTP templates (Confirm signup + Reset Pass
 
 Disable the Send Email Hook (step c toggle). Auth mail immediately resumes through custom SMTP (#72 §B) with the neutral platform templates. No code change, no redeploy. This is why §B3 stays until step e.
 
-### g. Rate limit (documented answer — confirm on the walk)
+### g. Rate limit (documented answer — LIVE-CONFIRMED 2026-07-10)
 
-**Q (AC open question): does Supabase's hourly auth-email rate limit still apply when the hook sends?** **Documented answer: yes.** `GOTRUE_RATE_LIMIT_EMAIL_SENT` (**50/hr**, hitl-72 §B2) gates the auth **action** (the signup/reset that *queues* the mail) **before** the hook is invoked, so it still applies. The hook bypasses only the built-in **dev SMTP** low-volume limit (~2–4/hr), not the configured rate limit. Confirm on the walk if you can trigger the wall; otherwise trust the ordering.
+**Q (AC open question): does Supabase's hourly auth-email rate limit still apply when the hook sends?** **Yes — live-confirmed.** `GOTRUE_RATE_LIMIT_EMAIL_SENT` gates the auth **action** (the signup/reset that *queues* the mail) **before** the hook is invoked (`429 over_email_send_rate_limit` observed with the hook enabled, request never reaching the function).
+
+**⚠️ The configured 50/hr exists ONLY while Custom SMTP is enabled.** During the first walk, Custom SMTP was found switched OFF (cause unconfirmed — possibly the dashboard hook-setup flow), which silently reverted the limit to the built-in **~2/hour** and rate-limited the walk after 3 test mails. **Custom SMTP must STAY ON** even though the hook does the sending (Provider ON + Hook ON → hook sends; SMTP holds the editable rate limit AND is the rollback path). If auth mail 429s early: check Auth → Emails → SMTP Settings is ON (hitl-72 §B values) and Auth → Rate Limits → "Email sent per hour" is 50.
 
 ### h. Security dependency (stated)
 
