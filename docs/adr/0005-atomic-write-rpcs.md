@@ -89,3 +89,13 @@ proves (b) and (c) against the deployed function in a rolled-back transaction.
   `supabase/tests/toggle_pase_rules.sql`; the RPC bodies are reviewed against the TS they replace.
 - Single-operator concurrency context (ADR-0004) is unchanged: contention is near-zero, but the
   transaction is now correct under it regardless.
+
+## Amendment — 2026-07-10 (renewal-flow ruling C13)
+
+**The "math stays in TS / the DB does the write, never *that* math" clause above is superseded for `registrar_venta`.** Rulings from `docs/FIndings/2026-07-08-renewal-flow-findings.md` (C13, killing C6 + C5 in the same move) move the money derivation *into* the RPC: the thin-seam design let a direct RPC caller send any `monto`/`clases_restantes`/`vence` (the guard `is_staff_of` admits non-owner operators), and reading the base saldo outside the write transaction left a stale-read race the single-operator premise only *assumed* away.
+
+**What changes (live in migration `20260710121000_registrar_venta_rederive.sql`):** `registrar_venta` now takes identity + `p_paquete_id` + `p_metodo` + `p_idempotency_key` only — never balances, prices, or dates. In one locked transaction it reads the paquete, reads the current saldo `FOR UPDATE`, applies the stack/forfeit/vigencia rules, and writes. Idempotency is a unique `(gym_id, idempotency_key)` on `ventas` (on-conflict returns the existing folio).
+
+**What stays true:** `SECURITY INVOKER` + `set search_path to ''` + EXECUTE-to-`authenticated`-only are unchanged (the sale still runs under the operator's RLS). `toggle_pase` is untouched — its thin-seam carve-out (attendance rules are transaction-inseparable, not freestanding math) still holds.
+
+**Where the math lives now:** `packages/domain/src/rules.ts` remains the **executable spec** — the SQL is not a fork of it but is pinned to it by `supabase/tests/registrar_venta_stacking.sql` (one vector per `rules.ts` case, asserting the *written rows* per the `test:denial` contract). This trades the "one language" ideal for a TS-spec/SQL-impl twin held in sync by that suite; the trust + concurrency correctness is worth it.
