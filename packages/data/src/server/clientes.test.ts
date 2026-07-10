@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { addDays, hoyEnZona, instanteEnZona, toIsoDay } from "@gym/format";
+
 import {
   actualizarCliente,
   getClienteFicha,
@@ -400,23 +402,36 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
 describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", () => {
   const TZ = "America/Chihuahua";
 
+  // Fixtures are anchored to the REAL clock via the same helpers getClienteFicha
+  // itself uses (hoyEnZona/instanteEnZona): the code computes its 30-day window
+  // from `hoyEnZona(tz)` at run time, so a fixed calendar date would silently
+  // migrate from the in-window branch to the head-count branch ~30 days after
+  // being written. HOY_GYM = today's gym-local day; the venta is pinned at 12:00
+  // gym-local so a before (09:00) / after (15:00) hora pair always exists.
+  const HOY_GYM = hoyEnZona(TZ);
+  const VENTA_DIA = toIsoDay(HOY_GYM);
+  const VENTA_INSTANTE = instanteEnZona(HOY_GYM, "12:00", TZ).toISOString();
+  // Deterministically OUTSIDE the 30-day window (head-count branch), same 12:00 anchor.
+  const OLD_DIA_DATE = addDays(HOY_GYM, -60);
+  const OLD_DIA = toIsoDay(OLD_DIA_DATE);
+  const OLD_INSTANTE = instanteEnZona(OLD_DIA_DATE, "12:00", TZ).toISOString();
+
   const FICHA_CLIENTE = {
     id: "cli-ficha",
     nombre: "Diego Herrera",
     tel: "614 555 0100",
     paquete_nombre: "8 clases",
     clases_restantes: 5,
-    vence: "2026-08-10",
+    vence: toIsoDay(addDays(HOY_GYM, 30)),
     created_at: "2026-01-01T00:00:00Z",
     email: null,
     invitacion_enviada_at: null,
     auth_user_id: null,
   };
 
-  // 2026-07-10T18:00:00Z == 2026-07-10 12:00:00 in America/Chihuahua (gym-local).
   const FICHA_VENTA = {
     cliente_id: "cli-ficha",
-    fecha: "2026-07-10T18:00:00Z",
+    fecha: VENTA_INSTANTE,
     paquete_nombre: "8 clases",
     monto: 500,
     metodo: "efectivo",
@@ -425,13 +440,17 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     vigencia_dias: 30,
   };
 
-  function makeFichaFake(asistencias: Record<string, unknown>[]): SupabaseServer {
+  function makeFichaFake(
+    asistencias: Record<string, unknown>[],
+    venta: Record<string, unknown> = FICHA_VENTA,
+  ): { client: SupabaseServer; orCalls: string[] } {
+    const orCalls: string[] = [];
     const rows: Record<string, Record<string, unknown>[]> = {
       clientes: [FICHA_CLIENTE],
       gym_membership: [{ gym_id: "g-1", role: "operator" }],
       gym: [{ id: "g-1", timezone: TZ }],
       asistencias,
-      ventas: [FICHA_VENTA],
+      ventas: [venta],
       perfil: [],
       plantillas: [],
       paquetes: [],
@@ -454,6 +473,13 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
           filtered = filtered.filter((r) => (r[col] as string) >= (val as string));
           return b;
         },
+        // Records the filter string only (no row filtering): the head-count test
+        // asserts the exact nested PostgREST filter the DAL builds, and the count
+        // it feeds back is the rows surviving the eq/is filters.
+        or: (filter: string) => {
+          orCalls.push(filter);
+          return b;
+        },
         order: () => b,
         range: (from: number, to: number) => {
           filtered = filtered.slice(from, to + 1);
@@ -464,8 +490,8 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
           return b;
         },
         maybeSingle: () => Promise.resolve({ data: filtered[0] ?? null, error: null }),
-        then: (resolve: (v: { data: unknown; error: null }) => unknown) =>
-          resolve({ data: filtered, error: null }),
+        then: (resolve: (v: { data: unknown; error: null; count: number }) => unknown) =>
+          resolve({ data: filtered, error: null, count: filtered.length }),
       };
       return b;
     }
@@ -474,15 +500,15 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
       auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
       from: (table: string) => builder(table),
     };
-    return client as unknown as SupabaseServer;
+    return { client: client as unknown as SupabaseServer, orCalls };
   }
 
   it("excludes a same-day check-in that happened BEFORE the venta's gym-local time", async () => {
-    const client = makeFichaFake([
+    const { client } = makeFichaFake([
       // Consumed BEFORE the 12:00 venta (gym-local) — already spent from the prior balance.
       {
         cliente_id: "cli-ficha",
-        fecha: "2026-07-10",
+        fecha: VENTA_DIA,
         hora: "09:00:00",
         consumio: true,
         deleted_at: null,
@@ -490,7 +516,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
       // Consumed AFTER the venta — the only row that should count against the new package.
       {
         cliente_id: "cli-ficha",
-        fecha: "2026-07-10",
+        fecha: VENTA_DIA,
         hora: "15:00:00",
         consumio: true,
         deleted_at: null,
@@ -503,12 +529,33 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
   });
 
   it("counts a null-hora (back-entry) same-day row — no recorded time to prove it preceded the venta", async () => {
-    const client = makeFichaFake([
-      { cliente_id: "cli-ficha", fecha: "2026-07-10", hora: null, consumio: true, deleted_at: null },
+    const { client } = makeFichaFake([
+      { cliente_id: "cli-ficha", fecha: VENTA_DIA, hora: null, consumio: true, deleted_at: null },
     ]);
 
     const ficha = await getClienteFicha("cli-ficha", client);
 
     expect(ficha?.clasesGauge?.usadas).toBe(1);
+  });
+
+  it("old purchase predating the 30-day window: the head-count query carries the same instant anchor", async () => {
+    const { client, orCalls } = makeFichaFake(
+      [
+        // Both rows predate the window, so the in-hand fetch (gte ventanaIso) drops
+        // them; only the head-count query can see them — its count must feed usadas.
+        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "15:00:00", consumio: true, deleted_at: null },
+        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, deleted_at: null },
+      ],
+      { ...FICHA_VENTA, fecha: OLD_INSTANTE },
+    );
+
+    const ficha = await getClienteFicha("cli-ficha", client);
+
+    // The exact nested PostgREST filter: strictly-later days, OR same-day at/after
+    // the venta's gym-local time (null hora counted — no time to disprove).
+    expect(orCalls).toEqual([
+      `fecha.gt.${OLD_DIA},and(fecha.eq.${OLD_DIA},or(hora.gte.12:00:00,hora.is.null))`,
+    ]);
+    expect(ficha?.clasesGauge?.usadas).toBe(2);
   });
 });
