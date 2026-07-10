@@ -53,13 +53,17 @@ Gym-branded auth mail via Resend, retiring Supabase's built-in templates.
 
 Not host-reconciled, unlike the S6 readers. **Latent, verified:** only one member has ever claimed an account, in a single gym. `limit(1)` can only misfire for a member holding `clientes` rows in 2+ gyms. Safe to leave until a member joins two gyms — but it is a silent wrong-answer bug, not a crash, so it will not announce itself.
 
+### 4. #80 — RPC test coverage
+
+Independent of the queue above. **Take it before the next migration-bearing slice**, because its drift guard is what stops the next #78. Three concrete gaps, all evidenced in the issue: 9 of 32 suite files never run; `registro_claim.sql` asserts control flow but not written rows; `pnpm test:denial` is in no gate. The single highest-value item is the drift guard — a test that fails when a `.sql` file is missing from the runner's `SUITE` array.
+
 ---
 
 ## Traps for the next session
 
 - **The client app has no `/membresia` and no `/perfil`.** Real routes: `/`, `/reservar`, `/precios`, `/clase/[sessionId]`, `/confirmada/[sessionId]`, `/nosotros`, `/contacto`, `/legal`. (A prior walk wasted a cycle 404-ing on invented route names.)
 - **The Supabase MCP points at LIVE prod.** `apply_migration` and `execute_sql` hit production. There is no scratch project by default. Free tier has no PITR — capture affected row ids before any data migration.
-- **No DB-level regression harness exists.** The vitest suite (792 tests) tests the data layer through injectable clients; nothing executes RPCs against a real database. #78 was a Postgres function that silently dropped a column from an INSERT — it typechecked, linted, and passed every test. **Every RPC in this system sits in that blind spot.** Worth its own issue.
+- **A DB-level RPC harness DOES exist** — `supabase/tests/` (32 self-asserting SQL suites) + `pnpm test:denial` → `run-denial-suite.mjs`, run against a throwaway scratch project via the Management API. Do not build a second one; the runner's own comment says *"a future slice adds a vector to a file here — not a second harness."* But it is mis-wired, which is why #78 shipped: **9 of the 32 files are absent from the runner's `SUITE` array and execute nowhere** (including `reclamar_por_codigo.sql` and `registrar_venta_email.sql`); `registro_claim.sql` calls `reclamar_o_crear_cliente` 8× but asserts *which row is claimed*, never *what the created row contains*; and `test:denial` is in neither CI nor the pre-commit hook. Tracked as **#80**. The general lesson: **an RPC's return value is not its contract — the rows it writes are.**
 - **Supabase auth template subjects go in the "Subject heading" *field*, not the body.** Pasting the subject into the HTML body ships Supabase's English default subject over Spanish copy.
 - Auth rate limit is **50/hour**; Resend's free tier ceiling is **100/day, 3,000/month**. A `429 over_email_send_rate_limit` on `/recover` within a minute of a prior request is the per-user 60-second cooldown, not the hourly cap.
 - `red-demo` now holds 4 `clientes` rows, all claimed, all with emails, all with one sale. Any future walk needs fresh state — a 0-balance member no longer exists there.
