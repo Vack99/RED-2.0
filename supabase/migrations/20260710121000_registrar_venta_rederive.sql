@@ -143,8 +143,8 @@ begin
 
   if p_cliente_id is not null then
     -- The C7 email backfill can collide with clientes_email_gym_uq (another row in the gym
-    -- already holds p_email): surface a human message, not a raw 23505 — the same guard the
-    -- claim RPCs carry (20260710122000). The whole sale rolls back (no venta row written).
+    -- already holds p_email): surface a human message, not a raw 23505 — the TS write path
+    -- matches this exact string (EMAIL_EN_USO_MSG). The whole sale rolls back (no venta row written).
     begin
       update public.clientes c
         set clases_restantes = v_new_clases,
