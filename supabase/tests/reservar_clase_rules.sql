@@ -122,6 +122,10 @@ begin
   if v_clases <> 4 then raise exception 'RULE FAIL(consume): stored clases %, expected 4', v_clases; end if;
   select count(*) into v_n from public.reservation where member_id = c_fin and class_session_id = s_open and status = 'reservada';
   if v_n <> 1 then raise exception 'RULE FAIL(consume): expected 1 reservada row, got %', v_n; end if;
+  -- The fresh INSERT stamps gym_id from the SESSION (never a client parameter) — assert the stamp (#80 AC4).
+  perform 1 from public.reservation
+    where id = v_res and gym_id = current_setting('t.gym', true)::uuid;
+  if not found then raise exception 'RULE FAIL(consume): reservation.gym_id not stamped with the session gym'; end if;
   -- C12: a finite booking that decremented records consumio = true on its reservation row
   select consumio into v_consumio from public.reservation where member_id = c_fin and class_session_id = s_open;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(consume): reservation.consumio % (expected true)', v_consumio; end if;
@@ -138,8 +142,13 @@ reset role;
 -- Flip the finite member's row to cancelada AS THE PRIVILEGED (migration) role — a member holds no
 -- direct reservation write (reservation_rls_denial.sql proves it); the member-facing cancel RPC proper
 -- is #58's scope. This stands in for it to exercise the re-book-reuses-the-row path.
+--
+-- is_walk_in + checked_at are left DIRTY here so the reuse arm's reset has real state to clear (#80 AC4):
+-- a reused row that kept is_walk_in = true would take pasar_lista_sesion's untoggle walk-in arm
+-- (cancel + REFUND) instead of the booked arm (reservada, no refund) — money drift the old count-only
+-- assertion could not see.
 update public.reservation r
-   set status = 'cancelada', cancelled_at = now()
+   set status = 'cancelada', cancelled_at = now(), is_walk_in = true, checked_at = now()
   from public.clientes c
  where r.member_id = c.id and c.nombre = 'RC finite'
    and r.class_session_id = current_setting('t.s_open', true)::uuid;
@@ -152,14 +161,25 @@ do $$
 declare
   s_open uuid := current_setting('t.s_open', true)::uuid;
   c_fin  uuid := current_setting('t.c_fin', true)::uuid;
-  v_ret  int; v_res uuid; v_n int;
+  v_ret  int; v_res uuid; v_n int; v_clases int; r record;
 begin
   select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_open);
   if v_ret <> 3 then raise exception 'RULE FAIL(rebook): expected clases 3 after re-book, got %', v_ret; end if;
   select count(*) into v_n from public.reservation where member_id = c_fin and class_session_id = s_open;
   if v_n <> 1 then raise exception 'RULE FAIL(rebook): expected 1 row total (reused), got %', v_n; end if;
-  select count(*) into v_n from public.reservation where member_id = c_fin and class_session_id = s_open and status = 'reservada';
-  if v_n <> 1 then raise exception 'RULE FAIL(rebook): reused row not reservada'; end if;
+
+  -- The reuse arm writes FOUR columns (status, is_walk_in, cancelled_at, checked_at). Read the row back
+  -- and assert each — a count-with-filter proves which row, never what it holds (#80 AC4).
+  select status, is_walk_in, cancelled_at, checked_at into r
+    from public.reservation where member_id = c_fin and class_session_id = s_open;
+  if r.status       is distinct from 'reservada' then raise exception 'RULE FAIL(rebook): reused row status = %', r.status; end if;
+  if r.is_walk_in   is distinct from false       then raise exception 'RULE FAIL(rebook): stale is_walk_in survived the reuse (%) — untoggle would refund a booked class', r.is_walk_in; end if;
+  if r.cancelled_at is not null                  then raise exception 'RULE FAIL(rebook): cancelled_at not cleared (%)', r.cancelled_at; end if;
+  if r.checked_at   is not null                  then raise exception 'RULE FAIL(rebook): checked_at not cleared (%)', r.checked_at; end if;
+
+  -- The consume is a WRITE to clientes; the RPC's return value is not proof it persisted.
+  select clases_restantes into v_clases from public.clientes where id = c_fin;
+  if v_clases <> 3 then raise exception 'RULE FAIL(rebook): stored clases % after re-book, expected 3', v_clases; end if;
 end $$;
 reset role;
 

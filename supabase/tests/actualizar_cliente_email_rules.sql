@@ -98,9 +98,12 @@ begin
   if v_email is distinct from 'ya-verificado@test.local' then raise exception 'V4 FAIL: claimed row email was mutated despite the rejected call, got %', v_email; end if;
 
   -- ══ V5 — a CLAIMED row's nombre/tel stay editable when p_email is OMITTED ═════════════════════════
+  -- Both written columns are read back: `tel` is in the RPC's SET list but went unasserted here, so a
+  -- drop of `tel` from the UPDATE would have shipped green while this vector still claimed to cover it.
   perform public.actualizar_cliente(cc, 'Cuenta Activa S3 Editada', '6142220001');
-  select nombre into v_email from public.clientes where id = cc; -- reuse var for nombre check
-  if v_email <> 'Cuenta Activa S3 Editada' then raise exception 'V5 FAIL: nombre not updated on a claimed row, got %', v_email; end if;
+  select nombre, tel into r from public.clientes where id = cc;
+  if r.nombre is distinct from 'Cuenta Activa S3 Editada' then raise exception 'V5 FAIL: nombre not updated on a claimed row, got %', r.nombre; end if;
+  if r.tel is distinct from '6142220001' then raise exception 'V5 FAIL: tel not updated on a claimed row, got %', r.tel; end if;
 
   -- ══ V6 — a non-existent id raises 'Cliente no encontrado' (4-arg call) ════════════════════════════
   begin

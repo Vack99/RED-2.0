@@ -93,11 +93,19 @@ begin
   if v_slug is distinct from 'reclamar-codigo-suite-gym' then
     raise exception 'V1 FAIL: expected the gym slug returned, got %', v_slug;
   end if;
-  select auth_user_id, email, clases_restantes, claim_code into rec from public.clientes where id = ci;
-  if rec.auth_user_id <> uc then raise exception 'V1 FAIL: invited row not bound to the claimant'; end if;
-  if rec.email <> 'real@new.mx' then raise exception 'V1 FAIL: email not overwritten with the verified login email (%)', rec.email; end if;
+  -- The claim UPDATE writes SIX columns; assert every one of them (#80 AC4 — an RPC's return value is
+  -- not its contract, the rows it writes are). phone_e164 + both consent stamps were previously written
+  -- and never read back: exactly the identity-vs-payload seam #78 shipped through.
+  select auth_user_id, email, clases_restantes, claim_code, phone_e164, terms_accepted_at, privacy_accepted_at
+    into rec from public.clientes where id = ci;
+  if rec.auth_user_id is distinct from uc then raise exception 'V1 FAIL: invited row not bound to the claimant (got %)', rec.auth_user_id; end if;
+  if rec.email is distinct from 'real@new.mx' then raise exception 'V1 FAIL: email not overwritten with the verified login email (%)', rec.email; end if;
   if rec.clases_restantes is distinct from 7 then raise exception 'V1 FAIL: paid balance not intact (%)', rec.clases_restantes; end if;
   if rec.claim_code is not null then raise exception 'V1 FAIL: claim_code not cleared (%)', rec.claim_code; end if;
+  -- c_invite is seeded with no phone; u_claim's verified metadata carries one → coalesce writes it.
+  if rec.phone_e164 is distinct from '+526141112233' then raise exception 'V1 FAIL: phone_e164 = % (expected the claimant''s verified metadata phone)', rec.phone_e164; end if;
+  if rec.terms_accepted_at is null then raise exception 'V1 FAIL: terms_accepted_at not stamped on claim'; end if;
+  if rec.privacy_accepted_at is null then raise exception 'V1 FAIL: privacy_accepted_at not stamped on claim'; end if;
   select count(*) into n from public.gym_membership where user_id = uc and gym_id = g and role = 'member';
   if n <> 1 then raise exception 'V1 FAIL: gym_membership(member) row missing (count=%)', n; end if;
 end $$;

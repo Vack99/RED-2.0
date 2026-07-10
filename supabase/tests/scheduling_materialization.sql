@@ -58,6 +58,8 @@ declare
   a_session uuid;
   starts_before timestamptz;
   starts_after  timestamptz;
+  edited_dur int;
+  edited_cap int;
   tmpl uuid;
 begin
   select timezone into tz from public.gym where id = gym_a;
@@ -103,7 +105,20 @@ begin
   --     its week — 0 new sessions, total unchanged. a_session is in THIS week (earliest starts_at),
   --     and its template was re-activated in (4), so a starts_at-keyed guard WOULD regenerate the
   --     vacated slot here; the immutable per-week guard must not.
-  perform public.edit_class_session(a_session, ct_a, starts_before + interval '1 day', 45, 24, array[coach_a]);
+  -- Distinct duration/capacity (60/30, not the created 45/24) so the edit's SET list is actually
+  -- proven below — reusing 45/24 would let a dropped `duration_min =`/`capacity =` pass green (#80 AC6).
+  perform public.edit_class_session(a_session, ct_a, starts_before + interval '1 day', 60, 30, array[coach_a]);
+  -- edit_class_session's WRITTEN ROW, not just the materialization invariant: the count checks below are
+  -- blind to the SET list, so assert the moved instant, the new duration/capacity, and the coach-join
+  -- delete-then-reinsert. This is also the (5) vector's own premise — the slot must really be vacated.
+  select starts_at, duration_min, capacity into starts_after, edited_dur, edited_cap
+    from public.class_session where id = a_session;
+  if starts_after is distinct from starts_before + interval '1 day' then raise exception 'MAT FAIL: edit_class_session did not move starts_at (% -> %)', starts_before, starts_after; end if;
+  if edited_dur is distinct from 60 then raise exception 'MAT FAIL: edit_class_session did not write duration_min (got %)', edited_dur; end if;
+  if edited_cap is distinct from 30 then raise exception 'MAT FAIL: edit_class_session did not write capacity (got %)', edited_cap; end if;
+  select count(*) into n from public.class_session_coach where session_id = a_session;
+  if n <> 1 then raise exception 'MAT FAIL: edit_class_session coach-join replace left % rows (expected 1)', n; end if;
+
   added := public.ensure_week_materialized(today);
   if added <> 0 then raise exception 'MAT FAIL: re-materializing after a session move resurrected % session(s) at the vacated slot', added; end if;
   select count(*) into n from public.class_session where gym_id = gym_a and template_id is not null;

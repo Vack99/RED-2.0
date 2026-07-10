@@ -30,8 +30,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm), the
 // per-package RLS/RPC-rule vectors, and finally gym2_probe — the end-to-end second-gym capstone.
 // Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
-// A future slice adds a vector to a file here — not a second harness. Wiring drift (a .sql that is
-// in neither SUITE nor QUARANTINE) is caught by tools/guards/denial-suite-drift.test.ts (#80).
+// A future slice adds a vector to a file here — not a second harness. Two guards in the normal
+// `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
+// in neither SUITE nor QUARANTINE, and rpc-write-coverage.test.ts fails when a write-bearing RPC
+// (derived from the migrations, not declared) is absent from supabase/tests/rpc-coverage.json.
 export const SUITE = [
   'rls_cross_tenant_denial.sql',
   'gym_tenant_anon_read.sql',
@@ -49,6 +51,7 @@ export const SUITE = [
   'contract_a_denials.sql',
   'contract_b_denials.sql',
   'catalog_rls_denial.sql',
+  'paquete_marketing_rules.sql',
   'scheduling_rls_denial.sql',
   'scheduling_materialization.sql',
   'gym_content_denial.sql',

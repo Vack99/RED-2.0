@@ -126,22 +126,30 @@ declare
   c_bkfin uuid := current_setting('t.c_bkfin', true)::uuid;
   v_present boolean; v_hora text; v_clases int; v_status text; v_walk boolean;
   v_consumio boolean; v_res_id uuid; v_sess uuid;
+  v_checked timestamptz; v_gym_id uuid; v_fecha date; v_stored_hora time;
 begin
   -- pasar lista ON: booked member marked present, NO second consume (balance stays 4)
   select present, hora into v_present, v_hora from public.pasar_lista_sesion(s_id, c_bkfin);
   if v_present is not true then raise exception 'RULE FAIL(bkfin ON): not present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_bkfin;
   if v_clases <> 4 then raise exception 'RULE FAIL(bkfin ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
-  select status into v_status from public.reservation where member_id = c_bkfin and class_session_id = s_id;
+  select status, checked_at into v_status, v_checked from public.reservation where member_id = c_bkfin and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(bkfin ON): reservation status % (expected asistida)', v_status; end if;
+  -- checked_at is stamped on every asistida flip and cleared on every revert — a genuine state-transition
+  -- column the suite proved only via `status` before #80 AC4.
+  if v_checked is null then raise exception 'RULE FAIL(bkfin ON): reservation.checked_at not stamped'; end if;
   -- the attendance row: consumio=false (already consumed at booking) + linked to session + reservation
-  select consumio, reservation_id, class_session_id into v_consumio, v_res_id, v_sess
+  select consumio, reservation_id, class_session_id, gym_id, fecha, hora into v_consumio, v_res_id, v_sess, v_gym_id, v_fecha, v_stored_hora
     from public.asistencias where cliente_id = c_bkfin and class_session_id = s_id and deleted_at is null
     order by created_at desc limit 1;
   if v_consumio is distinct from false then raise exception 'RULE FAIL(bkfin ON): asistencia.consumio % (expected false)', v_consumio; end if;
   if v_res_id is null then raise exception 'RULE FAIL(bkfin ON): asistencia.reservation_id null (expected linked)'; end if;
   if v_sess is distinct from s_id then raise exception 'RULE FAIL(bkfin ON): asistencia.class_session_id mismatch'; end if;
   if v_hora is null then raise exception 'RULE FAIL(bkfin ON): hora null on a session dated today'; end if;
+  -- …and the STORED row, not just the RPC's return: hora/gym_id/fecha were written and never read back.
+  if v_stored_hora is null then raise exception 'RULE FAIL(bkfin ON): stored asistencia.hora null though the RPC returned %', v_hora; end if;
+  if v_gym_id is distinct from current_setting('t.gym', true)::uuid then raise exception 'RULE FAIL(bkfin ON): asistencia.gym_id % not the session gym', v_gym_id; end if;
+  if v_fecha is distinct from current_setting('t.today', true)::date then raise exception 'RULE FAIL(bkfin ON): asistencia.fecha % (expected today in the gym tz)', v_fecha; end if;
 
   -- pasar lista OFF (untoggle): reservation reverts to reservada, balance UNCHANGED (no refund — the
   -- pase consumed nothing; the booking consume stays until a #58 cancel).
@@ -149,8 +157,9 @@ begin
   if v_present is not false then raise exception 'RULE FAIL(bkfin OFF): still present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_bkfin;
   if v_clases <> 4 then raise exception 'RULE FAIL(bkfin OFF): PHANTOM REFUND — balance % (expected 4)', v_clases; end if;
-  select status into v_status from public.reservation where member_id = c_bkfin and class_session_id = s_id;
+  select status, checked_at into v_status, v_checked from public.reservation where member_id = c_bkfin and class_session_id = s_id;
   if v_status <> 'reservada' then raise exception 'RULE FAIL(bkfin OFF): reservation status % (expected reservada)', v_status; end if;
+  if v_checked is not null then raise exception 'RULE FAIL(bkfin OFF): checked_at not cleared on revert (%)', v_checked; end if;
   select count(*) into v_clases from public.asistencias where cliente_id = c_bkfin and class_session_id = s_id and deleted_at is null;
   if v_clases <> 0 then raise exception 'RULE FAIL(bkfin OFF): active asistencia rows % (expected 0)', v_clases; end if;
 end $$;

@@ -190,6 +190,7 @@ declare
   gym_a uuid := current_setting('t.gym_a', true)::uuid;
   ct_a  uuid := current_setting('t.ct_a', true)::uuid;
   new_session uuid;
+  v_cancelled timestamptz;
 begin
   select count(*) into n from public.class_session;           if n <> 1 then raise exception 'STAFF FAIL: operator_a sees % class_session rows (expected 1)', n; end if;
   select count(*) into n from public.class_session_coach;     if n <> 1 then raise exception 'STAFF FAIL: operator_a sees % class_session_coach rows', n; end if;
@@ -200,6 +201,13 @@ begin
   if new_session is null then raise exception 'STAFF FAIL: create_class_session returned null'; end if;
   select count(*) into n from public.class_session where gym_id = gym_a;
   if n <> 2 then raise exception 'STAFF FAIL: after RPC operator_a sees % class_session rows (expected 2)', n; end if;
+
+  -- cancel_class_session success path + WRITTEN ROW (#80 AC6): the RPC's only running-suite call sites
+  -- were denials (operator_b, member_a), so its `cancelled_at` write had zero coverage. Cancel the row
+  -- just minted (an UPDATE, so it does not perturb the exact-count reads above) and assert the stamp.
+  perform public.cancel_class_session(new_session);
+  select cancelled_at into v_cancelled from public.class_session where id = new_session;
+  if v_cancelled is null then raise exception 'STAFF FAIL: cancel_class_session did not stamp cancelled_at'; end if;
 end $$;
 reset role;
 

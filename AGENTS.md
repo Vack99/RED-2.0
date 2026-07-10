@@ -27,13 +27,20 @@ sets it correctly to `.husky/_`.
 
 # Database RPC contract tests (the `test:denial` gate)
 
-The 34 `public` functions (18 `SECURITY DEFINER`, the whole write rail: `registrar_venta`,
-`reclamar_o_crear_cliente`, `reclamar_por_codigo`, `reservar_clase`, `preparar_invitacion`, …) are
-invisible to vitest — `packages/data` mocks the RPC boundary, so a function that drops a column,
+The 34 `public` functions — **25 of them write rows** (`registrar_venta`, `reclamar_o_crear_cliente`,
+`reclamar_por_codigo`, `reservar_clase`, `pasar_lista_sesion`, `toggle_pase`, `preparar_invitacion`, …)
+— are invisible to vitest: `packages/data` mocks the RPC boundary, so a function that drops a column,
 stamps the wrong `gym_id`, or forgets `where auth_user_id is null` passes all of `pnpm test`. #78
 shipped exactly this way (the create path dropped the verified `email`). Their real contract is
 proven by the self-asserting SQL suites in `supabase/tests/`, driven by `pnpm test:denial`
 (`run-denial-suite.mjs`), which each seed transaction-local fixtures, `RAISE` on failure, and roll back.
+
+**Coverage is keyed on WRITES, not on `SECURITY DEFINER`.** `prosecdef` tracks privilege (does the
+body bypass RLS), not write risk. Of the 18 definer functions, 9 write nothing — they are predicates
+(`is_member_of`, `has_role`, `staff_gym`, `mi_membresia`, …). Meanwhile `registrar_venta`, the money
+path, is `SECURITY INVOKER` by design (ADR-0005), as are `toggle_pase`, `pasar_lista_sesion`, and every
+`create_*_session`. Scoping the coverage rule to definer would exempt the money path and demand
+written-row assertions from 9 functions that write nothing. #78 was a *write* bug; writes are the axis.
 
 **The rule (enforced by convention, not a hook):** a migration that changes what an RPC *writes*
 ships in the same change with a suite assertion on the *written rows* — not just on the return value
@@ -41,10 +48,15 @@ or on which row is touched. An RPC's return value is not its contract; the rows 
 #80). Assert `email`/`gym_id`/consent-stamps/balances that the write sets, and the membership rows it
 upserts.
 
-**Wiring is machine-guarded, running is not.** `tools/guards/denial-suite-drift.test.ts` (in the
-normal `pnpm test` gate) fails if any `*.sql` in `supabase/tests/` is in neither the runner's `SUITE`
-(runs) nor its `QUARANTINE` (parked, with a reason) — so a new suite can't be orphaned silently
-(Gap 1 of #80). But `test:denial` itself is **not** in CI or pre-commit, and deliberately so: it needs
+**Wiring is machine-guarded, running is not.** Two guards in the normal `pnpm test` gate:
+`tools/guards/denial-suite-drift.test.ts` fails if any `*.sql` in `supabase/tests/` is in neither the
+runner's `SUITE` (runs) nor its `QUARANTINE` (parked, with a reason), so a new suite can't be orphaned
+silently (Gap 1 of #80); `tools/guards/rpc-write-coverage.test.ts` fails if a write-bearing RPC is
+absent from `supabase/tests/rpc-coverage.json`, so a new write RPC can't land uncovered (AC6). The
+obligation set is **derived** by replaying `supabase/migrations/` and reading each surviving function's
+body — there is no `writes: false` flag to dodge with. What the guard cannot check is whether the named
+suite asserts the *written rows* rather than the return value; that stays the human rule above, enforced
+at review. But `test:denial` itself is **not** in CI or pre-commit, and deliberately so: it needs
 a `SUPABASE_ACCESS_TOKEN` and a throwaway scratch project (preview branching is Pro-gated / 402; the
 free tier fits exactly one scratch beside live), which pre-commit can't provide. **The gate is
 therefore a documented pre-merge convention: any migration-bearing change runs `pnpm test:denial`

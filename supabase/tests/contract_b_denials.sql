@@ -103,6 +103,11 @@ begin
   f := public.next_folio(gym_b);
   -- gym B is fresh (zero ventas) → next_folio seeds its counter to 1000 and returns its first folio 1001.
   if f <> 1001 then raise exception 'B FAIL: staff-of-B first next_folio(gymB) = % (expected 1001)', f; end if;
+  -- next_folio's contract IS the written counter row, not just the returned value: a second draw must
+  -- return 1002, proving the increment PERSISTED (a stateless function returning 1001 twice would pass
+  -- the line above yet be broken). This is the written-row assertion for #80 AC6.
+  f := public.next_folio(gym_b);
+  if f <> 1002 then raise exception 'B FAIL: staff-of-B second next_folio(gymB) = % (expected 1002 — counter did not persist)', f; end if;
 end $$;
 reset role;
 
