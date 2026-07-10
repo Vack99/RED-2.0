@@ -102,6 +102,7 @@ begin
   if c.clases_restantes is distinct from 8 then raise exception 'V1 FAIL: clases_restantes % (expected 8)', c.clases_restantes; end if;
   if c.vence is distinct from today + 20 then raise exception 'V1 FAIL: vence % (expected hoy+20)', c.vence; end if;
   if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V1 FAIL: paquete_nombre %', c.paquete_nombre; end if;
+  if c.email is not null then raise exception 'V1 FAIL: email % (expected null — none was sent)', c.email; end if;
   if c.gym_id is distinct from g then raise exception 'V1 FAIL: cliente gym_id %', c.gym_id; end if;
   select monto, metodo, gym_id, idempotency_key into v from public.ventas where idempotency_key = k;
   if v.monto is distinct from 800 then raise exception 'V1 FAIL: venta.monto % (expected the paquete precio 800)', v.monto; end if;
@@ -131,9 +132,10 @@ end $$;
 do $$
 declare
   ci uuid := current_setting('t.cli_v3', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
   today date := (now() at time zone 'America/Mexico_City')::date;
   k uuid := gen_random_uuid();
-  c record;
+  c record; v record;
 begin
   perform public.registrar_venta(
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_mes', true)::uuid,
@@ -141,15 +143,21 @@ begin
   select clases_restantes, vence into c from public.clientes where id = ci;
   if c.vence is distinct from today + 40 then raise exception 'V3 FAIL: vence % (expected old hoy+10 +30 = hoy+40)', c.vence; end if;
   if c.clases_restantes is distinct from 18 then raise exception 'V3 FAIL: clases % (expected 6 + 12 = 18)', c.clases_restantes; end if;
+  select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V3 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 1000 then raise exception 'V3 FAIL: venta.monto % (expected 1000)', v.monto; end if;
+  if v.metodo is distinct from 'efectivo' then raise exception 'V3 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V3 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
 -- ══ V4 — renewal ON the vence day, base {4, dias 0} + 8/30 pack → 12 clases, vence = hoy + 30 (C9) ═════
 do $$
 declare
   ci uuid := current_setting('t.cli_v4', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
   today date := (now() at time zone 'America/Mexico_City')::date;
   k uuid := gen_random_uuid();
-  c record;
+  c record; v record;
 begin
   perform public.registrar_venta(
     p_metodo := 'transferencia', p_paquete_id := current_setting('t.p_fin8_30', true)::uuid,
@@ -157,15 +165,21 @@ begin
   select clases_restantes, vence into c from public.clientes where id = ci;
   if c.clases_restantes is distinct from 12 then raise exception 'V4 FAIL: clases % (expected 4 + 8 = 12, vence-day carry)', c.clases_restantes; end if;
   if c.vence is distinct from today + 30 then raise exception 'V4 FAIL: vence % (expected hoy+30)', c.vence; end if;
+  select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V4 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 850 then raise exception 'V4 FAIL: venta.monto % (expected 850)', v.monto; end if;
+  if v.metodo is distinct from 'transferencia' then raise exception 'V4 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V4 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
 -- ══ V5 — lapsed base (vence yesterday, 4 clases) + 8/30 pack → 8 clases (forfeit), vence = hoy + 30 ════
 do $$
 declare
   ci uuid := current_setting('t.cli_v5', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
   today date := (now() at time zone 'America/Mexico_City')::date;
   k uuid := gen_random_uuid();
-  c record;
+  c record; v record;
 begin
   perform public.registrar_venta(
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_30', true)::uuid,
@@ -173,31 +187,44 @@ begin
   select clases_restantes, vence into c from public.clientes where id = ci;
   if c.clases_restantes is distinct from 8 then raise exception 'V5 FAIL: clases % (expected forfeit → 0 + 8 = 8)', c.clases_restantes; end if;
   if c.vence is distinct from today + 30 then raise exception 'V5 FAIL: vence % (expected hoy+30)', c.vence; end if;
+  select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V5 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 850 then raise exception 'V5 FAIL: venta.monto % (expected 850)', v.monto; end if;
+  if v.metodo is distinct from 'efectivo' then raise exception 'V5 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V5 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
 -- ══ V6 — active ilimitado + finite pack → clases = pack's count (8), days add (C4 purchase wins) ══════
 do $$
 declare
   ci uuid := current_setting('t.cli_v6', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
   today date := (now() at time zone 'America/Mexico_City')::date;
   k uuid := gen_random_uuid();
-  c record;
+  c record; v record;
 begin
   perform public.registrar_venta(
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci);
-  select clases_restantes, vence into c from public.clientes where id = ci;
+  select clases_restantes, vence, paquete_nombre into c from public.clientes where id = ci;
   if c.clases_restantes is distinct from 8 then raise exception 'V6 FAIL: clases % (expected pack count 8, not ilimitado)', c.clases_restantes; end if;
   if c.vence is distinct from today + 35 then raise exception 'V6 FAIL: vence % (expected base 15 + 20 = hoy+35)', c.vence; end if;
+  if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V6 FAIL: paquete_nombre % (expected the purchased pack''s name after the ilimitado→finite switch)', c.paquete_nombre; end if;
+  select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V6 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 800 then raise exception 'V6 FAIL: venta.monto % (expected 800)', v.monto; end if;
+  if v.metodo is distinct from 'efectivo' then raise exception 'V6 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V6 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
 -- ══ V7 — finite base + ilimitado pack → clases_restantes NULL, days add (C4) ══════════════════════════
 do $$
 declare
   ci uuid := current_setting('t.cli_v7', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
   today date := (now() at time zone 'America/Mexico_City')::date;
   k uuid := gen_random_uuid();
-  c record;
+  c record; v record;
 begin
   perform public.registrar_venta(
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_ilim', true)::uuid,
@@ -206,6 +233,11 @@ begin
   if c.clases_restantes is not null then raise exception 'V7 FAIL: clases_restantes % (expected NULL ilimitado)', c.clases_restantes; end if;
   if c.vence is distinct from today + 33 then raise exception 'V7 FAIL: vence % (expected base 3 + 30 = hoy+33)', c.vence; end if;
   if c.paquete_nombre is distinct from 'Ilimitado 30d' then raise exception 'V7 FAIL: paquete_nombre %', c.paquete_nombre; end if;
+  select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V7 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 1500 then raise exception 'V7 FAIL: venta.monto % (expected 1500)', v.monto; end if;
+  if v.metodo is distinct from 'efectivo' then raise exception 'V7 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V7 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
 -- ══ V8 — idempotent replay: call twice with the same key → ONE venta, same folio, saldo written once (C6) ══
@@ -261,15 +293,23 @@ begin
   end if;
   select count(*) into n from public.clientes where gym_id = current_setting('t.gym_stk', true)::uuid and tel = '6140000109';
   if n <> 2 then raise exception 'V9 FAIL: expected 2 rows on tel 6140000109 (original + forced), got %', n; end if;
+  -- Written ventas rows: one per successful sale (k1, k3); the BLOCKED attempt (k2) wrote none.
+  select count(*) into n from public.ventas
+    where idempotency_key in (k1, k3) and monto = 800 and metodo = 'efectivo'
+      and gym_id = current_setting('t.gym_stk', true)::uuid;
+  if n <> 2 then raise exception 'V9 FAIL: expected 2 ventas rows (k1 + forced k3) with monto 800/efectivo/gym-scoped, got %', n; end if;
+  select count(*) into n from public.ventas where idempotency_key = k2;
+  if n <> 0 then raise exception 'V9 FAIL: the dup-blocked attempt wrote % ventas rows (expected 0)', n; end if;
 end $$;
 
 -- ══ V10 — C7 email backfill: existing sale with p_email writes it; a later null p_email keeps it ══════
 do $$
 declare
   ci uuid := current_setting('t.cli_v10', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
   k1 uuid := gen_random_uuid();
   k2 uuid := gen_random_uuid();
-  c record;
+  c record; n int;
 begin
   perform public.registrar_venta(
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
@@ -282,19 +322,24 @@ begin
     p_idempotency_key := k2, p_cliente_id := ci);
   select email into c from public.clientes where id = ci;
   if c.email is distinct from 'v10new@stk.mx' then raise exception 'V10 FAIL: prior email lost on a null-email sale (%)', c.email; end if;
+  -- Written ventas rows: both sales landed, each fully stamped.
+  select count(*) into n from public.ventas
+    where idempotency_key in (k1, k2) and cliente_id = ci and monto = 800 and metodo = 'efectivo' and gym_id = g;
+  if n <> 2 then raise exception 'V10 FAIL: expected 2 fully-stamped ventas rows (k1 + k2), got %', n; end if;
 end $$;
 
 -- ══ V11 — 'pendiente' is not a method (C2): the RPC rejects it ════════════════════════════════════════
 do $$
-declare got_error boolean := false;
+declare got_error boolean := false; msg text;
 begin
   begin
     perform public.registrar_venta(
       p_metodo := 'pendiente', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
       p_idempotency_key := gen_random_uuid(), p_nombre := 'Pendiente Nope', p_tel := '6140000111');
-  exception when others then got_error := true;
+  exception when others then got_error := true; msg := sqlerrm;
   end;
   if not got_error then raise exception 'V11 FAIL: p_metodo = pendiente was accepted (C2 not enforced)'; end if;
+  if msg is distinct from 'Método inválido' then raise exception 'V11 FAIL: wrong error for pendiente (%)', msg; end if;
 end $$;
 
 -- ══ V12 — a paquete from ANOTHER gym is out of scope → 'Paquete no encontrado' ═══════════════════════
