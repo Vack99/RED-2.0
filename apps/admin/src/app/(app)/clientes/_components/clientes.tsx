@@ -230,46 +230,52 @@ export function ClientesScreen({
           const clsLabel = c.clasesRestLabel;
           const bindingIsDias = u.vinculante === "dias";
           return (
-            <Link
+            <div
               key={c.id}
               ref={flipRow(c.id)}
-              href={`/clientes/${c.id}`}
-              // Arm the in-app breadcrumb so the ficha's back button returns here
-              // (restoring scroll) instead of risking a leave-the-app back.
-              onClick={markInAppNav}
-              // No explicit `prefetch`: this roster can be long and `prefetch`
-              // (=== true) opts into a FULL-route prefetch of every in-viewport
-              // row, each running getClienteFicha's ~7-call fan-out. The default
-              // 'auto' partial-prefetch plus loading.tsx already make the tap
-              // feel instant. Explicit prefetch is reserved for the singular
-              // header CTA below.
-              className="forge-pressable relative flex w-full items-center text-left"
-              style={{ gap: 14, padding: "14px 22px", background: "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer" }}
+              className="relative flex w-full items-center"
+              style={{ gap: 14, borderBottom: "1px solid var(--line)" }}
             >
               <span className="absolute" style={{ left: 0, top: 0, bottom: 0, width: 3, background: showBar ? col : "transparent" }} />
-              <Avatar initial={c.inicial} size={42} />
-              <div className="min-w-0 flex-1">
-                <div className="uppercase font-semibold" style={{ fontSize: 14, color: "var(--fg)", letterSpacing: 0.4 }}>{c.nombre}</div>
-                <div className="flex flex-wrap items-center" style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, gap: 6 }}>
-                  <span className="uppercase" style={{ letterSpacing: 0.4 }}>{c.paquete}</span>
-                  <span style={{ color: "var(--muted-soft)" }}>·</span>
-                  <Tnum>{c.tel}</Tnum>
-                  <Badge
-                    state={c.invitacion.estado === "cuenta_activa" ? "success" : "info"}
-                    style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}
-                  >
-                    {c.invitacion.badge}
-                  </Badge>
+              <Link
+                href={`/clientes/${c.id}`}
+                // Arm the in-app breadcrumb so the ficha's back button returns here
+                // (restoring scroll) instead of risking a leave-the-app back.
+                onClick={markInAppNav}
+                // No explicit `prefetch`: this roster can be long and `prefetch`
+                // (=== true) opts into a FULL-route prefetch of every in-viewport
+                // row, each running getClienteFicha's ~7-call fan-out. The default
+                // 'auto' partial-prefetch plus loading.tsx already make the tap
+                // feel instant. Explicit prefetch is reserved for the singular
+                // header CTA below.
+                // COBRAR sits OUTSIDE this Link (sibling, not descendant): an <a>
+                // may contain no interactive content, and AT should reach the
+                // button as its own control.
+                className="forge-pressable flex min-w-0 flex-1 items-center text-left"
+                style={{ gap: 14, padding: "14px 0 14px 22px", background: "transparent", border: "none", cursor: "pointer" }}
+              >
+                <Avatar initial={c.inicial} size={42} />
+                <div className="min-w-0 flex-1">
+                  <div className="uppercase font-semibold" style={{ fontSize: 14, color: "var(--fg)", letterSpacing: 0.4 }}>{c.nombre}</div>
+                  <div className="flex flex-wrap items-center" style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, gap: 6 }}>
+                    <span className="uppercase" style={{ letterSpacing: 0.4 }}>{c.paquete}</span>
+                    <span style={{ color: "var(--muted-soft)" }}>·</span>
+                    <Tnum>{c.tel}</Tnum>
+                    <Badge
+                      state={c.invitacion.estado === "cuenta_activa" ? "success" : "info"}
+                      style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}
+                    >
+                      {c.invitacion.badge}
+                    </Badge>
+                  </div>
                 </div>
-              </div>
-              <div className="shrink-0" style={{ textAlign: "right", minWidth: 56 }}>
+              </Link>
+              <div className="shrink-0" style={{ textAlign: "right", minWidth: 56, padding: "14px 22px 14px 0" }}>
                 {c.pendienteOnline ? (
                   // Online-pending rows have meaningless días/clases zeros; swap the
-                  // numbers for a one-tap COBRAR deep-link to Vender (#77). preventDefault
-                  // + stopPropagation cancel the enclosing row Link so it goes to the
-                  // sale, not the ficha (the forge Button can't forward the event).
+                  // numbers for a one-tap COBRAR deep-link to Vender (#77).
                   <button
-                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/vender?cliente=${c.id}`); }}
+                    onClick={() => router.push(`/vender?cliente=${c.id}`)}
                     className="forge-pressable uppercase font-extrabold"
                     style={{ padding: "10px 14px", background: "transparent", color: "var(--fg)", border: "1px solid var(--silver-dim)", fontSize: 12, letterSpacing: 1.3, cursor: "pointer" }}
                   >
@@ -293,7 +299,7 @@ export function ClientesScreen({
                   </>
                 )}
               </div>
-            </Link>
+            </div>
           );
         })}
       </div>
