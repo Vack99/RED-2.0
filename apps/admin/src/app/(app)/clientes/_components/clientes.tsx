@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Icon } from "@gym/ui/forge/icon";
 import { AppBar, Avatar, Badge, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useFlip } from "@gym/ui/forge/use-flip";
@@ -34,6 +35,7 @@ export function ClientesScreen({
    *  roster with the "Registrados online" filter already applied. */
   initialOnline?: boolean;
 }) {
+  const router = useRouter();
   const [query, setQuery] = React.useState("");
   const [showFilters, setShowFilters] = React.useState(initialOnline);
   const [renovar, setRenovar] = React.useState(false);
@@ -261,7 +263,19 @@ export function ClientesScreen({
                 </div>
               </div>
               <div className="shrink-0" style={{ textAlign: "right", minWidth: 56 }}>
-                {bindingIsDias ? (
+                {c.pendienteOnline ? (
+                  // Online-pending rows have meaningless días/clases zeros; swap the
+                  // numbers for a one-tap COBRAR deep-link to Vender (#77). preventDefault
+                  // + stopPropagation cancel the enclosing row Link so it goes to the
+                  // sale, not the ficha (the forge Button can't forward the event).
+                  <button
+                    onClick={(e) => { e.preventDefault(); e.stopPropagation(); router.push(`/vender?cliente=${c.id}`); }}
+                    className="forge-pressable uppercase font-extrabold"
+                    style={{ padding: "10px 14px", background: "transparent", color: "var(--fg)", border: "1px solid var(--silver-dim)", fontSize: 12, letterSpacing: 1.3, cursor: "pointer" }}
+                  >
+                    COBRAR
+                  </button>
+                ) : bindingIsDias ? (
                   <>
                     <div className="flex items-baseline justify-end" style={{ gap: 3 }}>
                       <Tnum className="font-extrabold" style={{ fontSize: 17, lineHeight: 1, color: col }}>{c.diasRest}</Tnum>

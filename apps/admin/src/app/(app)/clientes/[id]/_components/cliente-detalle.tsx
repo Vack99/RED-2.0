@@ -37,6 +37,9 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const swipe = React.useRef<SwipeState>(idleSwipe());
 
   const asistCount = ficha.historial.length + (present ? 1 : 0);
+  const cuentaActiva = ficha.invitacion.estado === "cuenta_activa";
+  const compraLabel = ficha.primeraCompra ? "COBRAR PRIMERA COMPRA" : "RENOVAR";
+  const irAVender = () => router.push(`/vender?cliente=${c.id}`);
 
   // REENVIAR (+ "enviar invitación" when sin_invitar) — design §3, issue #71. Only rendered for
   // sin_invitar/invitacion_enviada: sin_email has nothing to send (backfill the email first, via
@@ -216,17 +219,61 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
                     ASISTIÓ HOY{horaHoy ? " · " : ""}{horaHoy && <Tnum style={{ fontWeight: 800 }}>{horaHoy}</Tnum>}
                   </span>
                 )}
-                <Tnum>{c.tel}</Tnum>
+              </div>
+              {/* Contact line (#79): tel + email on one line under the badges. The
+                  email — or a "Sin email" chip when null — taps through to EDITAR. */}
+              <div className="flex min-w-0 items-center" style={{ gap: 7, marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
+                <Tnum className="shrink-0">{c.tel}</Tnum>
+                <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                {ficha.email ? (
+                  <button
+                    onClick={() => setEditOpen(true)}
+                    className="min-w-0"
+                    style={{ background: "transparent", border: "none", padding: 0, cursor: "pointer", color: "var(--muted)", fontSize: 12, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                  >
+                    {ficha.email}
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setEditOpen(true)}
+                    className="shrink-0 uppercase font-bold"
+                    style={{ background: "var(--yellow-soft)", color: "var(--fg)", border: "none", padding: "3px 7px", cursor: "pointer", fontSize: 9.5, letterSpacing: 0.8 }}
+                  >
+                    Sin email
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Paquete activo — both gauges deplete from the moment of the last
+        {ficha.primeraCompra ? (
+          /* First-purchase statement card (#77): replaces the PAQUETE ACTIVO card
+             for a member with no sales yet. Amber attention idiom (NOT the green
+             "active" look), copy adapted per door (online self-reg vs desk). */
+          <Card style={{ margin: "8px 16px 0" }}>
+            <div className="flex items-center" style={{ gap: 8 }}>
+              <Icon name="alert" size={15} color="var(--gold)" />
+              <Eyebrow color="var(--gold)">PRIMERA COMPRA PENDIENTE</Eyebrow>
+            </div>
+            <div className="font-bold" style={{ fontSize: 15, color: "var(--fg)", letterSpacing: 0.2, marginTop: 12 }}>
+              {cuentaActiva ? "Se registró online." : "Nunca ha comprado un paquete."}
+            </div>
+            <div style={{ fontSize: 12.5, color: "var(--muted)", marginTop: 4, lineHeight: 1.45 }}>
+              {cuentaActiva
+                ? "Cobra su primera compra para que pueda reservar en la app."
+                : "Cóbrale su primer paquete para activarlo."}
+            </div>
+            <div className="flex" style={{ marginTop: 16, fontSize: 11.5, color: "var(--muted)" }}>
+              <span>ALTA <Tnum style={{ color: "var(--fg)" }}>{ficha.altaDisplay.toUpperCase()}</Tnum></span>
+            </div>
+          </Card>
+        ) : (
+          /* Paquete activo — both gauges deplete from the moment of the last
             purchase: clases by attendance, días by calendar time (ADR-0002).
             A stacked balance has no single-package denominator, so the gauge is
-            "how much of your current run is left," not "X of one package." */}
-        <Card style={{ margin: "8px 16px 0" }}>
+            "how much of your current run is left," not "X of one package." */
+          <Card style={{ margin: "8px 16px 0" }}>
           <Eyebrow>PAQUETE ACTIVO</Eyebrow>
           <H1 size={22} style={{ marginTop: 8 }}>{c.paquete}</H1>
 
@@ -266,7 +313,8 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             <span>COMPRADO <Tnum style={{ color: "var(--fg)" }}>{ficha.compradoDisplay.toUpperCase()}</Tnum></span>
             <span>ALTA <Tnum style={{ color: "var(--fg)" }}>{ficha.altaDisplay.toUpperCase()}</Tnum></span>
           </div>
-        </Card>
+          </Card>
+        )}
 
         {/* Attendance control = today indicator */}
         <div style={{ padding: "14px 16px 0" }}>
@@ -288,13 +336,13 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
                 </button>
               </div>
               <div style={{ marginTop: 8 }}>
-                <Button variant="secondary" full onClick={() => router.push("/vender")}>RENOVAR</Button>
+                <Button variant={ficha.primeraCompra ? "primary" : "secondary"} full onClick={irAVender}>{compraLabel}</Button>
               </div>
             </>
           ) : (
             <div className="flex" style={{ gap: 8 }}>
-              <Button variant="primary" full icon="check" disabled={busy} onClick={toggleAsistencia}>ASISTENCIA</Button>
-              <Button variant="secondary" full onClick={() => router.push("/vender")}>RENOVAR</Button>
+              <Button variant={ficha.primeraCompra ? "secondary" : "primary"} full icon="check" disabled={busy} onClick={toggleAsistencia}>ASISTENCIA</Button>
+              <Button variant={ficha.primeraCompra ? "primary" : "secondary"} full onClick={irAVender}>{compraLabel}</Button>
             </div>
           )}
         </div>
