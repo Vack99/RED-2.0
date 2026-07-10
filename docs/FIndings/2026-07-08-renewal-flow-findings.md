@@ -4,7 +4,9 @@ Reported symptom: gym owners renewing a member's membership are forced to re-ent
 
 **Verdict legend:** `BUG` = defect to fix · `OWNER` = real behavior, product ruling needed before touching · `INTENDED` = correct, do not change · `NOT_AN_ISSUE` = investigated, no defect.
 
-> **Status 2026-07-08 (end of session): COMPLETE + RULED.** Coverage was closed by a 22-agent completeness sweep (Part C), and every `OWNER` item plus C1/C9 was ruled in a grill session — the **"Owner rulings"** table near the end is authoritative and supersedes the per-finding "Decision:" prompts. Nothing blocks planning. **Next step: run `/to-spec` on this doc, then `/to-tickets`.**
+> **Status 2026-07-08 (end of session): COMPLETE + RULED.** Coverage was closed by a 22-agent completeness sweep (Part C), and every `OWNER` item plus C1/C9 was ruled in a grill session — the **"Owner rulings"** table near the end is authoritative and supersedes the per-finding "Decision:" prompts.
+>
+> **Status 2026-07-10: EXECUTED.** Every ruling implemented on branch `renewal-flow` (plan: `docs/superpowers/plans/2026-07-10-renewal-flow.md`); 31/31 denial suites green on scratch; Elegance + Senior Dev gates passed. D1 had already shipped with #76–79; C11 needed no change (counts already derive from `clases_restantes`). **Remaining owner gate: `docs/runbooks/renewal-flow-deploy.md`** (apply migrations → push → smokes → duplicate merge).
 
 ## Scope table
 
