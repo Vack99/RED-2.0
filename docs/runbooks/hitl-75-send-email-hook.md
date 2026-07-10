@@ -49,15 +49,15 @@ Use an address you control; run against a **test gym** (red-demo, or forge-demo)
 
 - **Signup:** `/registro` on `red-demo.ibookit.lat` → confirmation mail arrives **From `{brand_name} <no-reply@ibookit.lat>`** (e.g. `RED <no-reply@ibookit.lat>`), es-MX copy carrying the gym name; the link host is `red-demo.ibookit.lat` (NOT `…supabase.co`); click → lands authenticated on `/reservar`, the invite/email claim runs.
 - **Recovery:** `/entrar` → "forgot password" → recovery mail (subject *Restablece tu contraseña*) → link → `/restablecer` with a live recovery session → new password works.
-- **Unmapped host:** a signup on `app.ibookit.lat` (unmapped fallback) → mail degrades to neutral **`Notificaciones <no-reply@ibookit.lat>`** copy, still delivers + confirms.
+- **Unmapped host:** a bare signup on `app.ibookit.lat` correctly REFUSES ("Este dominio no está asociado a ningún gimnasio…") — registration requires a resolvable gym. The neutral-mail path needs `app.ibookit.lat/registro?gym=<slug>` (redirect_to's host then resolves no gym → `Notificaciones <no-reply@ibookit.lat>` copy). Walk of 2026-07-09 verified the refusal; the neutral rendering is unit-covered (`correo.test.ts`) — live-verify opportunistically if a fallback-host signup ever matters.
 - **Headers:** raw headers on any received message show `spf=pass`, `dkim=pass`, `d=ibookit.lat`; inbox, not spam.
 - **Built-in templates never render** — every auth mail is ours (the #72 §B3 templates no longer fire).
 
 - *Open item to confirm on the walk (AC): does `type=email` verify a **signup** confirmation?* The link uses `type=email` per Supabase's `token_hash` recipe. If GoTrue rejects it for signup confirmations, the fallback is mapping signup → `type=signup` in `correo.ts` `tipoOtp`. This is the one path a unit test can't prove — verify it here.
 
-### e. Retire the #72 §B3 dashboard templates (ONLY after step d is green)
+### e. The #72 §B3 dashboard templates — RETAINED (owner decision, walk of 2026-07-09)
 
-Once the walk passes, the two custom SMTP templates (Confirm signup + Reset Password, hitl-72 §B3) are **dead config** — the hook renders every auth mail now. Delete them in Dashboard → Authentication → Emails → Templates (or reset to default), and mark §B3 **superseded by #75** in `hitl-72-resend-live.md` (the pointer note is already in place). Do this **only** after d — until then they are the rollback path.
+The walk passed and the templates were **kept, deliberately**: Supabase offers no template delete (only reset-to-default), and while the hook is enabled they never fire — so they cost nothing and remain the **rollback rendering** (step f: disable the hook → SMTP + these es-MX templates resume, instead of English defaults). §B3 in `hitl-72-resend-live.md` is marked superseded-but-retained.
 
 ### f. Rollback
 
