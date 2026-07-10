@@ -36,8 +36,9 @@ export interface ResumenRoster {
   totalActivos: number;
 }
 
-/** Payment method. "pendiente" == "por pagar" (optional, brief Q7). */
-export type MetodoPago = "efectivo" | "transferencia" | "tarjeta" | "pendiente";
+/** Payment method. Every sale collects at COBRAR — there is no "por pagar"
+ *  credit sale (ruling C2; prod had zero such rows, so the narrowing is clean). */
+export type MetodoPago = "efectivo" | "transferencia" | "tarjeta";
 
 /** Validity window: a fixed number of days, or the remainder of the
  *  purchase calendar month ("mes", used by Ilimitado — brief Q1). */

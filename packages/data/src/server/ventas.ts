@@ -1,13 +1,11 @@
 import "server-only";
 
-import { randomUUID } from "node:crypto";
-
 import { z } from "zod";
 
-import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@gym/domain/rules";
-import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@gym/domain/types";
+import { diasRestantes } from "@gym/domain/rules";
+import type { Clases, MetodoPago, PlantillaContext } from "@gym/domain/types";
 import { asClienteId, asPaqueteId, type ClienteId, type PaqueteId } from "@gym/domain/ids";
-import { addDays, firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay } from "@gym/format";
+import { firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -25,17 +23,25 @@ export type Metodo = MetodoPago;
 
 // Zod values DERIVED from MetodoPago: `satisfies` makes a value drifting from
 // the canonical type a compile error, not a silent runtime divergence.
-const METODOS = ["efectivo", "transferencia", "tarjeta", "pendiente"] as const satisfies readonly MetodoPago[];
+const METODOS = ["efectivo", "transferencia", "tarjeta"] as const satisfies readonly MetodoPago[];
 
 export const crearVentaSchema = z
   .object({
     mode: z.enum(["new", "existing"]),
     nuevoNombre: z.string().optional(),
     nuevoTel: z.string().optional(),
-    nuevoEmail: z.string().trim().optional(),
+    // Optional contact email — captured in NEW mode (invite target) OR backfilled
+    // in EXISTING mode on renewal (C7). Never `.email()`-validated: the sale must
+    // never gate on it (§3.4). Trimmed so a blank field forwards nothing.
+    email: z.string().trim().optional(),
     clienteId: z.string().transform(asClienteId).optional(),
     paqueteId: z.string().min(1).transform(asPaqueteId),
     metodo: z.enum(METODOS),
+    // Submission-stable key (C6): minted once per sale attempt in the vender UI,
+    // so a retry after an error replays the SAME sale instead of double-charging.
+    idempotencyKey: z.string().uuid(),
+    // Explicit operator override of the RPC's duplicate guard (D2).
+    forzarNuevo: z.boolean().optional(),
   })
   .refine(
     (v) =>
@@ -80,6 +86,17 @@ export type InviteState =
 /** `crearVenta`'s result plus the invite state the action stitches on — the exact shape the recibo reads. */
 export type ReciboResult = VentaResult & { invite: InviteState };
 
+/** The RPC's `CLIENTE_DUPLICADO:<id>` raise (D2), surfaced as a typed error so the
+ *  vender UI can switch on it to open the "¿Usar existente?" dialog — instead of the
+ *  raise being swallowed into the generic failure toast. `existingId` is the matched
+ *  same-gym client the operator can sell to as EXISTENTE. */
+export class DuplicadoError extends Error {
+  constructor(readonly existingId: string) {
+    super(`CLIENTE_DUPLICADO:${existingId}`);
+    this.name = "DuplicadoError";
+  }
+}
+
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
 
 // Unbrand entity ids at the DB edge — kind-checked, so swapping a cliente id and
@@ -93,44 +110,42 @@ function vigenciaDisplay(tipo: string, dias: number | null): string {
 }
 
 /**
- * Register a sale: stack the package onto the client's saldo (brief Q5),
- * persist the mutated running balance (ADR-0004), insert the venta with a
- * DB-generated folio, and return everything the recibo renders.
+ * Register a sale by delegating to the `registrar_venta` RPC (ADR-0005), then
+ * return everything the recibo renders.
  *
- * Auth is checked here (DAL); RLS is the hard boundary. All business math is
- * delegated to src/domain — never reimplemented. `hoy` is the Chihuahua-local
- * calendar day so the domain's local-midnight math is correct (ADR-0003).
+ * Ruling C13/C6: the RPC re-derives price/saldo/vence from the paquete row inside
+ * one locked transaction — this DAL sends ONLY identity + p_paquete_id + p_metodo
+ * + a caller-supplied idempotency key. No money math crosses the write boundary;
+ * the recibo DISPLAY reads the RPC's RETURNED clases_restantes/vence. The reads
+ * here (paquete: nombre/vigencia/precio; existing-client: nombre/tel) are
+ * DISPLAY-only — the RPC's return carries neither identity field.
  *
- * Ruling C13: the `registrar_venta` RPC (ADR-0005) re-derives price/saldo/vence from
- * the paquete row inside one locked transaction — this DAL sends only identity +
- * paquete_id + metodo + an idempotency key (C6). The domain math below feeds the
- * recibo DISPLAY only. (Task 4 landed the RPC + this minimal caller; task 5 finishes
- * the DAL slim-down so the recibo reads the RPC's returned saldo/vence directly.)
+ * Auth is checked here (DAL); RLS is the hard boundary. `hoy` is the Chihuahua-local
+ * calendar day so day-count display math is correct (ADR-0003).
  */
 export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise<VentaResult> {
   const input = crearVentaSchema.parse(raw);
   const supabase = client ?? (await createClient());
 
-  // Presence check only — the RPC stamps the operator server-side (SECURITY
-  // INVOKER), so the sub is discarded here (matches prior behavior).
+  // Presence check only — the RPC stamps the operator server-side, so the sub is
+  // discarded here.
   await requireOperator(supabase);
   const { timezone: tz } = await getOperatorGym(supabase);
 
-  // Package facts come from the DB, never the client. The paquete read and (in
-  // existing mode) the cliente read are independent, so fire them concurrently;
-  // NEW mode has no cliente row to fetch, so its slot resolves to null. The
-  // not-found checks below preserve the exact per-row error messages.
+  // Display-only reads (never cross the write boundary). Paquete + (existing mode)
+  // the client's name/tel are independent, so fire them concurrently; NEW mode has
+  // no cliente row, so its slot resolves to null.
   const isNew = input.mode === "new";
   const [paqRes, cliRes] = await Promise.all([
     supabase
       .from("paquetes")
-      .select("nombre, clases, vigencia_tipo, vigencia_dias, precio")
+      .select("nombre, vigencia_tipo, vigencia_dias, precio")
       .eq("id", forPaquete(input.paqueteId))
       .single(),
     input.mode === "existing"
       ? supabase
           .from("clientes")
-          .select("id, nombre, tel, clases_restantes, vence")
+          .select("nombre, tel")
           .eq("id", forCliente(input.clienteId!))
           .single()
       : Promise.resolve(null),
@@ -139,56 +154,44 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const { data: paq, error: paqErr } = paqRes;
   if (paqErr || !paq) throw new Error("Paquete no encontrado");
 
-  const hoy = hoyEnZona(tz);
-  const compraDias =
-    paq.vigencia_tipo === "mes"
-      ? diasRestantes(calcVigenciaEnd(hoy, "mes"), hoy)
-      : (paq.vigencia_dias ?? 0);
-  const compra: CompraPaquete = { clases: clasesFromDb(paq.clases), dias: compraDias };
-
-  // Resolve the carried-forward base. An existing client's still-valid balance
-  // carries (an expired one is forfeited, brief Q2); a brand-new client starts
-  // from an EMPTY saldo — the purchase is their first balance (slice #3 spec).
-  // Note: a new client's null DB columns must NOT be read as "ilimitado" — that
-  // conflation is the bug this wiring fixes.
-  let saldoActual: Saldo;
   let nombre: string;
   let tel: string;
-
   if (input.mode === "existing") {
     const { data: cli, error } = cliRes!;
     if (error || !cli) throw new Error("Cliente no encontrado");
     nombre = cli.nombre;
     tel = cli.tel;
-    const diasRest = cli.vence ? diasRestantes(parseDay(cli.vence), hoy) : 0;
-    saldoActual = baseParaStack({ clases: clasesFromDb(cli.clases_restantes), dias: diasRest });
   } else {
     nombre = input.nuevoNombre!.trim();
     tel = input.nuevoTel!.trim();
-    saldoActual = { clases: 0, dias: 0 };
   }
 
-  const nuevoSaldo = stackPaquete(saldoActual, compra);
-  const nuevoVence = addDays(hoy, nuevoSaldo.dias);
-
-  // Ruling C13: the RPC re-derives price/balance/vence from the paquete row inside
-  // one locked transaction — the client sends ONLY identity + p_paquete_id + p_metodo
-  // + an idempotency key (C6). The TS saldo math above now feeds the recibo DISPLAY
-  // only; it no longer crosses the write boundary.
-  // NOTE (task 4): this is the minimal contract adjustment to keep the gate green —
-  // task 5 finishes the DAL slim-down (drops the now-display-only math + the recibo
-  // reads the RPC's returned saldo/vence).
+  // Ruling C13/C6: the RPC re-derives price/balance/vence in one locked transaction
+  // — send ONLY identity + p_paquete_id + p_metodo + the submission-stable key. The
+  // email (both modes: NEW invite target / EXISTING C7 backfill) and the explicit
+  // dup-guard override are spread only when present.
   const { data: result, error: rpcErr } = await supabase
     .rpc("registrar_venta", {
       p_metodo: input.metodo,
       p_paquete_id: forPaquete(input.paqueteId),
-      p_idempotency_key: randomUUID(),
+      p_idempotency_key: input.idempotencyKey,
       ...(input.mode === "existing" && { p_cliente_id: forCliente(input.clienteId!) }),
       ...(input.mode === "new" && { p_nombre: nombre, p_tel: tel }),
-      ...(input.mode === "new" && input.nuevoEmail ? { p_email: input.nuevoEmail } : {}),
+      ...(input.email ? { p_email: input.email } : {}),
+      ...(input.forzarNuevo ? { p_forzar_nuevo: true } : {}),
     })
     .single();
-  if (rpcErr || !result) throw new Error("No se pudo registrar la venta");
+  if (rpcErr) {
+    // D2: the RPC's CLIENTE_DUPLICADO:<id> raise is a real decision for the UI, not
+    // a generic failure — surface it typed so vender.tsx can offer the dup dialog.
+    const dup = rpcErr.message?.match(/CLIENTE_DUPLICADO:(\S+)/);
+    if (dup) throw new DuplicadoError(dup[1]);
+    throw new Error("No se pudo registrar la venta");
+  }
+  if (!result) throw new Error("No se pudo registrar la venta");
+
+  const hoy = hoyEnZona(tz);
+  const vence = parseDay(result.vence);
 
   // Best-effort message context, read AFTER the sale RPC already committed. A
   // missing cobro/paquetes only blanks a token (fmt* tolerate null/[]) — it never
@@ -207,9 +210,11 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const coach = id.coach;
   const ciudad = id.ciudad ?? "";
 
-  const venceDisplay = fmtShort(nuevoVence);
+  // Display fields come from the RPC's RETURNED vence/clases_restantes (C13) — never
+  // client-side math. clases_restantes is NULL at runtime for an ilimitado balance.
+  const venceDisplay = fmtShort(vence);
   const fechaDisplay = fmtShort(hoy);
-  const metodoDisplay = input.metodo === "pendiente" ? "POR PAGAR" : input.metodo.toUpperCase();
+  const metodoDisplay = input.metodo.toUpperCase();
 
   // The recibo confirmation is a stored, editable plantilla; renderPlantilla is
   // the single home for message rendering, and the brand comes from the operator's
@@ -217,10 +222,10 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // template is rendered against the sale context so the picker can offer them all.
   const ctx: PlantillaContext = {
     nombre: firstName(nombre),
-    clases: fmtClases(nuevoSaldo.clases),
+    clases: fmtClases(clasesFromDb(result.clases_restantes)),
     paquete: paq.nombre,
     vence: venceDisplay,
-    dias: fmtDias(diasRestantes(nuevoVence, hoy)),
+    dias: fmtDias(diasRestantes(vence, hoy)),
     precios: fmtPrecios(paquetes),
     datos_pago: fmtDatosPago(cobro),
     negocio,
@@ -250,6 +255,6 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     ciudad,
     coach,
     mensajes,
-    emailIngresado: isNew ? (input.nuevoEmail || null) : null,
+    emailIngresado: isNew ? (input.email || null) : null,
   };
 }

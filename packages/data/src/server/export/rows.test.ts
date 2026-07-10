@@ -321,6 +321,8 @@ describe("buildRespaldoRows — Email fallback + Vigencia + metodo labels", () =
           venta({ metodo: "efectivo" }),
           venta({ metodo: "transferencia" }),
           venta({ metodo: "tarjeta" }),
+          // "pendiente" is no longer a method (C2) — an unmapped value now, so it
+          // passes through verbatim like any unknown.
           venta({ metodo: "pendiente" }),
           venta({ metodo: "raro" }),
         ],
@@ -329,7 +331,7 @@ describe("buildRespaldoRows — Email fallback + Vigencia + metodo labels", () =
     expect(r.ventas.rows[0][5]).toBe("Efectivo");
     expect(r.ventas.rows[1][5]).toBe("Transferencia");
     expect(r.ventas.rows[2][5]).toBe("Tarjeta");
-    expect(r.ventas.rows[3][5]).toBe("Por pagar");
+    expect(r.ventas.rows[3][5]).toBe("pendiente");
     expect(r.ventas.rows[4][5]).toBe("raro");
   });
 });

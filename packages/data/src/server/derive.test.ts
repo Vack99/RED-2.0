@@ -197,14 +197,14 @@ describe("shapeFicha", () => {
     expect(f.historial[1].hora).toBeNull();
   });
 
-  it("maps pagos with pesos + metodo label (pendiente -> Por pagar) and reads the active package", () => {
+  it("maps pagos with pesos + metodo label and reads the active package", () => {
     const ventas = [
       venta(),
-      venta({ paquete_nombre: "Ilimitado", monto: 1200, metodo: "pendiente", clases: null, vigencia_tipo: "mes", vigencia_dias: null }),
+      venta({ paquete_nombre: "Ilimitado", monto: 1200, metodo: "transferencia", clases: null, vigencia_tipo: "mes", vigencia_dias: null }),
     ];
     const f = shapeFicha(clienteRow, [], ventas, HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.pagos[0]).toEqual({ fechaDisplay: "20 may", paquete: "8 clases", montoDisplay: "$800", metodo: "Efectivo" });
-    expect(f.pagos[1].metodo).toBe("Por pagar");
+    expect(f.pagos[1].metodo).toBe("Transferencia");
     expect(f.ventasCount).toBe(2);
     expect(f.primeraCompra).toBe(false); // has sales
     expect(f.totalClases).toBe(8); // latest = ventas[0]

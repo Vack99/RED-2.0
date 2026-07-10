@@ -180,7 +180,7 @@ export function esPrimeraCompra(ventasCount: number): boolean {
 // calcularResumenMes and clientes.ts → derivarPaseCliente. ADR-0002.
 
 function metodoLabel(m: string): string {
-  return m === "pendiente" ? "Por pagar" : m.charAt(0).toUpperCase() + m.slice(1);
+  return m.charAt(0).toUpperCase() + m.slice(1);
 }
 
 // ── Saldo-gauge math (pure, unit-tested) ───────────────────────────

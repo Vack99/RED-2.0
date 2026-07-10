@@ -16,13 +16,12 @@ import { Recibo } from "./recibo";
 import { clienteListo, telError } from "./vender-vm";
 
 type Mode = "new" | "existing";
-type Metodo = "Efectivo" | "Tarjeta" | "Transferencia" | "Por pagar";
+type Metodo = "Efectivo" | "Tarjeta" | "Transferencia";
 
 const METODO_ENUM: Record<Metodo, MetodoEnum> = {
   Efectivo: "efectivo",
   Tarjeta: "tarjeta",
   Transferencia: "transferencia",
-  "Por pagar": "pendiente",
 };
 
 export function VenderScreen({
@@ -49,9 +48,20 @@ export function VenderScreen({
 
   const [mode, setMode] = React.useState<Mode>(preselectId ? "existing" : "new");
   const [nuevo, setNuevo] = React.useState({ nombre: "", tel: "", email: "" });
+  // Backfill email for an EXISTENTE renewal (C7) — only surfaced when the picked
+  // member has no email on file; forwarded so registrar_venta coalesces it in.
+  const [backfillEmail, setBackfillEmail] = React.useState("");
   const [clientId, setClientId] = React.useState<string | null>(preselectId);
   const [sel, setSel] = React.useState<string | null>(null);
   const [metodo, setMetodo] = React.useState<Metodo | null>(null);
+  // Submission-stable idempotency key (C6): one key per sale ATTEMPT. A retry after
+  // an error (or the "crear nuevo de todos modos" override) replays the SAME key, so
+  // the RPC returns the already-written sale instead of double-charging. Reset only
+  // when a fresh sale starts (resetForm).
+  const [idemKey, setIdemKey] = React.useState(() => crypto.randomUUID());
+  // The RPC's duplicate guard tripped (D2): the matched existing client id, driving
+  // the "¿usar existente?" dialog.
+  const [duplicado, setDuplicado] = React.useState<{ id: string } | null>(null);
   const [openSection, setOpenSection] = React.useState<string | null>("cliente");
   const [submitting, setSubmitting] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
@@ -107,7 +117,7 @@ export function VenderScreen({
     return existing ? `${existing.nombre} · ${existing.tel}` : null;
   })();
   const paqueteSummary = paq ? `${paq.nombre.toUpperCase()} · ${pesos(paq.precio)}` : null;
-  const pagoSummary = metodo ? (metodo === "Por pagar" ? "POR PAGAR" : metodo.toUpperCase()) : null;
+  const pagoSummary = metodo ? metodo.toUpperCase() : null;
 
   const toggle = (k: string) => setOpenSection((s) => (s === k ? null : k));
 
@@ -150,19 +160,28 @@ export function VenderScreen({
     if (openSection === "metodo") advanceFrom("metodo", null);
   };
 
-  const finish = async () => {
+  const finish = async (opts: { forzarNuevo?: boolean } = {}) => {
     if (!canSubmit || !sel || !metodo) return;
     setSubmitting(true);
     try {
-      const result = await crearVentaAction({
+      const email = (mode === "new" ? nuevo.email : backfillEmail).trim() || undefined;
+      const res = await crearVentaAction({
         mode,
         nuevoNombre: mode === "new" ? nuevo.nombre : undefined,
         nuevoTel: mode === "new" ? nuevo.tel : undefined,
-        nuevoEmail: mode === "new" ? (nuevo.email.trim() || undefined) : undefined,
+        email,
         clienteId: mode === "existing" ? (clientId ?? undefined) : undefined,
         paqueteId: sel,
         metodo: METODO_ENUM[metodo],
+        idempotencyKey: idemKey,
+        forzarNuevo: opts.forzarNuevo,
       });
+      if (!res.ok) {
+        // The RPC's dup guard tripped — open the dialog; keep the same idemKey so
+        // "crear nuevo de todos modos" replays this exact attempt (D2/C6).
+        setDuplicado(res.duplicado);
+        return;
+      }
       // Snapshot the receipt's first-purchase state from the selected DTO before
       // resetForm nulls clientId; record the sale so a later OTRA VENTA to the
       // same client no longer reads its now-stale `primeraCompra` (#77 §6/§7).
@@ -171,7 +190,7 @@ export function VenderScreen({
         cuentaActiva: mode === "existing" && existing?.invitacion.estado === "cuenta_activa",
       });
       if (mode === "existing" && clientId) setSoldIds((s) => new Set(s).add(clientId));
-      setRecibo(result);
+      setRecibo(res.recibo);
     } catch {
       forgeToast({ tone: "warning", title: "No se pudo cobrar", body: "Revisa los datos e intenta de nuevo." });
     } finally {
@@ -182,12 +201,17 @@ export function VenderScreen({
   const resetForm = () => {
     setMode("new");
     setNuevo({ nombre: "", tel: "", email: "" });
+    setBackfillEmail("");
     setClientId(null);
     setSel(null);
     setMetodo(null);
     setOpenSection("cliente");
     advanced.current = { cliente: false, paquete: false, metodo: false };
     setRecibo(null);
+    setDuplicado(null);
+    // A brand-new sale gets a fresh idempotency key (the prior key belonged to the
+    // now-finished sale).
+    setIdemKey(crypto.randomUUID());
   };
 
   if (recibo) {
@@ -238,6 +262,8 @@ export function VenderScreen({
             setMode={handleSetMode}
             nuevo={nuevo}
             setNuevo={setNuevo}
+            backfillEmail={backfillEmail}
+            setBackfillEmail={setBackfillEmail}
             existing={existing}
             existingPrimera={esPrimera(existing)}
             openPicker={() => setPickerOpen(true)}
@@ -247,6 +273,7 @@ export function VenderScreen({
               if (!showDup) return;
               setClientId(showDup.id);
               setMode("existing");
+              setBackfillEmail("");
               maybeAdvanceCliente(true);
             }}
             onDismissDup={() => showDup && setDismissedDupId(showDup.id)}
@@ -280,7 +307,7 @@ export function VenderScreen({
             <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 6, fontWeight: 600 }}>MXN</span>
           </span>
         </div>
-        <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={finish}>
+        <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={() => finish()}>
           {submitting ? "PROCESANDO…" : paq ? `COBRAR ${pesos(paq.precio)}` : "CONFIRMAR VENTA"}
         </Button>
         {missing.length > 0 && (
@@ -311,7 +338,7 @@ export function VenderScreen({
           {filteredClients.map((cc) => (
             <button
               key={cc.id}
-              onClick={() => { setClientId(cc.id); setMode("existing"); setPickerOpen(false); setPickerQuery(""); maybeAdvanceCliente(true); }}
+              onClick={() => { setClientId(cc.id); setMode("existing"); setBackfillEmail(""); setPickerOpen(false); setPickerQuery(""); maybeAdvanceCliente(true); }}
               className="forge-pressable flex w-full items-center text-left"
               style={{ gap: 12, padding: "14px 22px", background: cc.id === clientId ? "var(--surface)" : "transparent", border: "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }}
             >
@@ -336,6 +363,49 @@ export function VenderScreen({
               {cc.id === clientId && <Icon name="check" size={16} color="var(--gold)" />}
             </button>
           ))}
+        </div>
+      </Sheet>
+
+      {/* Duplicate guard (D2): registrar_venta refused a NUEVO whose tel/email already
+          exists. Same visual language as the soft dupMatch banner, raised to a blocking
+          decision here since the sale was actually attempted. */}
+      <Sheet open={!!duplicado} onClose={() => setDuplicado(null)}>
+        <div style={{ padding: "8px 22px 24px" }}>
+          <div className="flex items-start" style={{ gap: 10, padding: "14px 15px", background: "var(--yellow-soft)", border: "1px solid var(--yellow)" }}>
+            <Icon name="alert" size={18} color="var(--gold)" />
+            <div className="min-w-0 flex-1">
+              <div className="font-bold" style={{ fontSize: 13.5, color: "var(--fg)", letterSpacing: 0.2 }}>Ya existe este cliente</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
+                Otro cliente tiene este teléfono o email. Véndele como EXISTENTE para no duplicar su ficha, o crea uno nuevo si de verdad es otra persona.
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-col" style={{ gap: 10, marginTop: 18 }}>
+            <Button
+              variant="primary"
+              full
+              onClick={() => {
+                if (!duplicado) return;
+                setClientId(duplicado.id);
+                setMode("existing");
+                setBackfillEmail("");
+                setDuplicado(null);
+                maybeAdvanceCliente(true);
+              }}
+            >
+              USAR EXISTENTE
+            </Button>
+            <Button
+              variant="secondary"
+              full
+              onClick={() => {
+                setDuplicado(null);
+                void finish({ forzarNuevo: true });
+              }}
+            >
+              CREAR NUEVO DE TODOS MODOS
+            </Button>
+          </div>
         </div>
       </Sheet>
     </div>
@@ -393,6 +463,8 @@ function ClienteEditor({
   setMode,
   nuevo,
   setNuevo,
+  backfillEmail,
+  setBackfillEmail,
   existing,
   existingPrimera,
   openPicker,
@@ -405,6 +477,9 @@ function ClienteEditor({
   setMode: (m: Mode) => void;
   nuevo: { nombre: string; tel: string; email: string };
   setNuevo: React.Dispatch<React.SetStateAction<{ nombre: string; tel: string; email: string }>>;
+  /** EXISTENTE renewal email backfill (C7) — surfaced only when the picked member has no email. */
+  backfillEmail: string;
+  setBackfillEmail: (v: string) => void;
   existing: ClienteLiteDTO | null;
   /** The picked EXISTENTE client is on their first purchase (stale-guarded). */
   existingPrimera: boolean;
@@ -504,28 +579,43 @@ function ClienteEditor({
 
       {mode === "existing" &&
         (existing ? (
-          <button onClick={openPicker} className="flex w-full items-center text-left" style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--line)", gap: 12, cursor: "pointer", color: "var(--fg)" }}>
-            <Avatar initial={existing.inicial} accent size={40} />
-            <div className="min-w-0 flex-1">
-              <div className="uppercase font-bold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{existing.nombre}</div>
-              <div className="flex min-w-0 items-center" style={{ gap: 6, marginTop: 3, fontSize: 11.5, color: "var(--muted)" }}>
-                <Tnum className="shrink-0">{existing.tel}</Tnum>
-                <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
-                {existing.email ? (
-                  <span className="min-w-0" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{existing.email}</span>
-                ) : (
-                  <span className="shrink-0 uppercase font-bold" style={{ background: "var(--yellow-soft)", color: "var(--fg)", padding: "1px 5px", fontSize: 8.5, letterSpacing: 0.6 }}>Sin email</span>
+          <div className="flex flex-col" style={{ gap: 12 }}>
+            <button onClick={openPicker} className="flex w-full items-center text-left" style={{ padding: "14px 16px", background: "var(--surface)", border: "1px solid var(--line)", gap: 12, cursor: "pointer", color: "var(--fg)" }}>
+              <Avatar initial={existing.inicial} accent size={40} />
+              <div className="min-w-0 flex-1">
+                <div className="uppercase font-bold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{existing.nombre}</div>
+                <div className="flex min-w-0 items-center" style={{ gap: 6, marginTop: 3, fontSize: 11.5, color: "var(--muted)" }}>
+                  <Tnum className="shrink-0">{existing.tel}</Tnum>
+                  <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                  {existing.email ? (
+                    <span className="min-w-0" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{existing.email}</span>
+                  ) : (
+                    <span className="shrink-0 uppercase font-bold" style={{ background: "var(--yellow-soft)", color: "var(--fg)", padding: "1px 5px", fontSize: 8.5, letterSpacing: 0.6 }}>Sin email</span>
+                  )}
+                </div>
+                {existingPrimera && (
+                  <span className="inline-flex items-center uppercase font-bold" style={{ marginTop: 6, gap: 4, background: "var(--yellow-soft)", color: "var(--gold)", padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}>
+                    <Icon name="alert" size={10} color="var(--gold)" />
+                    PRIMERA COMPRA
+                  </span>
                 )}
               </div>
-              {existingPrimera && (
-                <span className="inline-flex items-center uppercase font-bold" style={{ marginTop: 6, gap: 4, background: "var(--yellow-soft)", color: "var(--gold)", padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}>
-                  <Icon name="alert" size={10} color="var(--gold)" />
-                  PRIMERA COMPRA
-                </span>
-              )}
-            </div>
-            <span className="shrink-0 font-bold" style={{ fontSize: 10, color: "var(--gold)", letterSpacing: 1.2 }}>CAMBIAR</span>
-          </button>
+              <span className="shrink-0 font-bold" style={{ fontSize: 10, color: "var(--gold)", letterSpacing: 1.2 }}>CAMBIAR</span>
+            </button>
+            {/* C7: a member with no email on file can pick one up on renewal — the
+                RPC coalesces it into their row so the app invite becomes reachable. */}
+            {!existing.email && (
+              <div className="flex flex-col" style={{ gap: 6 }}>
+                <Input
+                  placeholder="Email para la app (opcional)"
+                  value={backfillEmail}
+                  onChange={setBackfillEmail}
+                  inputMode="email"
+                />
+                <div style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.2 }}>Si agregas su correo, recibe la invitación a la app.</div>
+              </div>
+            )}
+          </div>
         ) : (
           <button onClick={openPicker} className="flex w-full items-center justify-center" style={{ padding: "22px 16px", background: "transparent", border: "1px dashed var(--line)", gap: 10, cursor: "pointer", color: "var(--gold)" }}>
             <Icon name="search" size={16} color="var(--gold)" />
@@ -576,35 +666,22 @@ function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo:
     { k: "Tarjeta", icon: "card" },
     { k: "Transferencia", icon: "swap" },
   ];
-  const porPagar = metodo === "Por pagar";
   return (
-    <>
-      <div className="grid grid-cols-3" style={{ gap: 8 }}>
-        {opts.map((o) => {
-          const on = metodo === o.k;
-          return (
-            <button
-              key={o.k}
-              onClick={() => setMetodo(o.k)}
-              className="forge-pressable flex flex-col items-center"
-              style={{ padding: "18px 6px", background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: on ? "var(--yellow)" : "var(--fg)", cursor: "pointer", gap: 8, transition: "border-color 140ms ease" }}
-            >
-              <Icon name={o.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
-              <span className="uppercase font-bold" style={{ fontSize: 10.5, letterSpacing: 1.2 }}>{o.k}</span>
-            </button>
-          );
-        })}
-      </div>
-      <button
-        onClick={() => setMetodo(porPagar ? "Efectivo" : "Por pagar")}
-        className="forge-pressable flex items-center uppercase font-bold"
-        style={{ marginTop: 16, padding: "12px 0", background: "transparent", border: "none", color: porPagar ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.2, cursor: "pointer", gap: 8 }}
-      >
-        <span className="flex items-center justify-center" style={{ width: 20, height: 20, border: `1.5px solid ${porPagar ? "var(--yellow)" : "var(--line)"}`, background: porPagar ? "var(--yellow)" : "transparent" }}>
-          {porPagar && <Icon name="check" size={12} color="var(--ink)" />}
-        </span>
-        Registrar como por pagar
-      </button>
-    </>
+    <div className="grid grid-cols-3" style={{ gap: 8 }}>
+      {opts.map((o) => {
+        const on = metodo === o.k;
+        return (
+          <button
+            key={o.k}
+            onClick={() => setMetodo(o.k)}
+            className="forge-pressable flex flex-col items-center"
+            style={{ padding: "18px 6px", background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: on ? "var(--yellow)" : "var(--fg)", cursor: "pointer", gap: 8, transition: "border-color 140ms ease" }}
+          >
+            <Icon name={o.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
+            <span className="uppercase font-bold" style={{ fontSize: 10.5, letterSpacing: 1.2 }}>{o.k}</span>
+          </button>
+        );
+      })}
+    </div>
   );
 }

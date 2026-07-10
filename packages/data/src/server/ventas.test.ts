@@ -1,15 +1,19 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { crearVenta, crearVentaSchema } from "./ventas";
+import { crearVenta, crearVentaSchema, DuplicadoError } from "./ventas";
 import type { SupabaseServer } from "./supabase";
 
 /**
  * The seam this exercises: `crearVenta` takes an injectable client (ADR-0001,
- * audit cluster 4), so the write ORCHESTRATION — the stacked saldo, the
- * object-spread guard on the `registrar_venta` args, the auth gate — is testable
- * with a hand-rolled fake. No supabase, no DB. We assert the RPC payload the DAL
- * hands the (separately smoke-tested, ADR-0005) transaction.
+ * audit cluster 4), so the write ORCHESTRATION — the arg-spread guard on the
+ * `registrar_venta` args, the auth gate, the CLIENTE_DUPLICADO → DuplicadoError
+ * surfacing — is testable with a hand-rolled fake. No supabase, no DB.
+ *
+ * Ruling C13/C6: the DAL sends ONLY identity + p_paquete_id + p_metodo + a
+ * caller-supplied idempotency key. All money/saldo/vence math is re-derived
+ * inside the RPC (pinned by the registrar_venta_stacking SQL suite); the recibo
+ * reads the RPC's RETURNED clases_restantes/vence for display.
  */
 
 interface FakeRows {
@@ -30,15 +34,29 @@ interface FakeClient {
   client: SupabaseServer;
 }
 
+/** The RPC's returned row shape (Task 4 contract). clases_restantes is NULL at
+ *  runtime for ilimitado even though the generated type says `number`. */
+const RPC_ROW = {
+  folio: 1001,
+  cliente_id: "cli-1",
+  clases_restantes: 8,
+  vence: "2026-12-31",
+  paquete_nombre: "8 clases",
+  monto: 800,
+};
+
 /**
  * Minimal fake satisfying exactly the chain `crearVenta` walks:
  * `.from(t).select().eq().single()`, `.maybeSingle()`, an awaitable `.select()`
- * (for plantillas), `.rpc(name, args).single()`, and `.auth.getClaims()`. A
- * per-table query builder is a thenable so `await supabase.from(...).select(...)`
- * resolves to `{ data }`; `.single`/`.maybeSingle` resolve a single row.
+ * (for plantillas), `.rpc(name, args).single()`, and `.auth.getClaims()`. The rpc
+ * result is configurable so the CLIENTE_DUPLICADO path (an rpc `error`) is testable.
  */
-function makeFake(rows: FakeRows, opts: { sub?: string | null } = {}): FakeClient {
+function makeFake(
+  rows: FakeRows,
+  opts: { sub?: string | null; rpcData?: Record<string, unknown> | null; rpcError?: { message: string } } = {},
+): FakeClient {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
+  const rpcData = opts.rpcData === undefined ? RPC_ROW : opts.rpcData;
   const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
 
   const builder = (single: unknown, list: unknown[]) => {
@@ -87,7 +105,10 @@ function makeFake(rows: FakeRows, opts: { sub?: string | null } = {}): FakeClien
     },
     rpc: (name: string, args: Record<string, unknown>) => {
       rpcCalls.push({ name, args });
-      return { single: async () => ({ data: { folio: 1001, cliente_id: "cli-1" }, error: null }) };
+      return {
+        single: async () =>
+          opts.rpcError ? { data: null, error: opts.rpcError } : { data: rpcData, error: null },
+      };
     },
   };
 
@@ -114,6 +135,8 @@ const FINITO = {
 // raw `unknown` and parses, branding the ids itself, so tests build raw input.
 type RawVentaInput = z.input<typeof crearVentaSchema>;
 
+const KEY = "11111111-1111-4111-8111-111111111111";
+
 const input = (over: Partial<RawVentaInput> = {}): RawVentaInput =>
   ({
     mode: "new",
@@ -121,6 +144,7 @@ const input = (over: Partial<RawVentaInput> = {}): RawVentaInput =>
     nuevoTel: "614 218 3401",
     paqueteId: "p1",
     metodo: "efectivo",
+    idempotencyKey: KEY,
     ...over,
   }) as RawVentaInput;
 
@@ -133,31 +157,31 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     fake = makeFake({ paquetes: ILIMITADO, plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }] });
   });
 
-  it("sends only identity + paquete_id + metodo + an idempotency key for a new client (C13 re-derivation)", async () => {
+  it("sends only identity + paquete_id + metodo + the idempotency key for a new client (C13 re-derivation)", async () => {
     await crearVenta(input({ mode: "new" }), fake.client);
 
     const { name, args } = lastRpc(fake);
     expect(name).toBe("registrar_venta");
 
     // Ruling C13: client-computed saldo / price / vence are GONE — the RPC re-derives
-    // them from the paquete row. The client sends only identity + paquete_id + metodo
-    // + an idempotency key (C6).
+    // them. The client sends only identity + paquete_id + metodo + the idempotency key.
     expect(args).not.toHaveProperty("p_cliente_id"); // new client → no id
     expect(args).not.toHaveProperty("p_clases_restantes");
     expect(args).not.toHaveProperty("p_monto");
     expect(args).not.toHaveProperty("p_vence");
     expect(args).not.toHaveProperty("p_email"); // none provided (spread-guard)
+    expect(args).not.toHaveProperty("p_forzar_nuevo"); // not overriding the dup guard
 
     expect(Object.keys(args).sort()).toEqual(
       ["p_idempotency_key", "p_metodo", "p_nombre", "p_paquete_id", "p_tel"].sort(),
     );
-    expect(typeof args.p_idempotency_key).toBe("string"); // a fresh key per sale
+    expect(args.p_idempotency_key).toBe(KEY); // the caller's key, passed through
   });
 
   it("sends p_cliente_id + paquete_id (no client saldo) for an existing-client sale", async () => {
     fake = makeFake({
       paquetes: FINITO,
-      clientes: { id: "cli-1", nombre: "Andrea", tel: "614 000 0000", clases_restantes: 2, vence: "2020-01-01" },
+      clientes: { nombre: "Andrea", tel: "614 000 0000" },
       plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }],
     });
 
@@ -169,8 +193,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(args).toHaveProperty("p_metodo", "efectivo");
     // The RPC re-derives the stack in a locked txn — no saldo crosses the boundary.
     expect(args).not.toHaveProperty("p_clases_restantes");
-    expect(args).not.toHaveProperty("p_clases");
-    expect(args).not.toHaveProperty("p_vigencia_dias");
+    expect(args).not.toHaveProperty("p_vence");
   });
 
   it("sends a new finite client's identity + paquete_id only (empty-base derivation now lives in the RPC)", async () => {
@@ -178,9 +201,6 @@ describe("crearVenta — write orchestration (injected fake)", () => {
 
     await crearVenta(input({ mode: "new" }), fake.client);
 
-    // The wiring bug (a new finite buy must start from an EMPTY base, never conflated
-    // with ilimitado) is now enforced structurally in registrar_venta + pinned by the
-    // registrar_venta_stacking SQL suite. Here we only assert the payload shape.
     const { args } = lastRpc(fake);
     expect(args).toHaveProperty("p_paquete_id", "p1");
     expect(args).toHaveProperty("p_nombre", "Andrea Castro");
@@ -188,13 +208,62 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(args).not.toHaveProperty("p_clases_restantes");
   });
 
+  it("passes the caller's idempotency key through unchanged, and a replay reuses the SAME key", async () => {
+    const raw = input({ mode: "new", idempotencyKey: "abcabc00-0000-4000-8000-000000000001" });
+    await crearVenta(raw, fake.client);
+    await crearVenta(raw, fake.client); // a retry after an error keeps the same key — the point of C6
+
+    expect(fake.rpcCalls).toHaveLength(2);
+    expect(fake.rpcCalls[0].args.p_idempotency_key).toBe("abcabc00-0000-4000-8000-000000000001");
+    expect(fake.rpcCalls[1].args.p_idempotency_key).toBe("abcabc00-0000-4000-8000-000000000001");
+  });
+
+  it("forwards p_forzar_nuevo only when the operator overrides the duplicate guard (D2)", async () => {
+    await crearVenta(input({ mode: "new", forzarNuevo: true }), fake.client);
+    expect(lastRpc(fake).args).toHaveProperty("p_forzar_nuevo", true);
+  });
+
+  it("surfaces the RPC's CLIENTE_DUPLICADO raise as DuplicadoError carrying the existing id (D2)", async () => {
+    fake = makeFake(
+      { paquetes: FINITO, plantillas: [{ id: "t1", nombre: "Recibo", body: "x" }] },
+      { rpcError: { message: "CLIENTE_DUPLICADO:cli-existing-9" } },
+    );
+
+    const err = await crearVenta(input({ mode: "new" }), fake.client).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(DuplicadoError);
+    expect((err as DuplicadoError).existingId).toBe("cli-existing-9");
+  });
+
+  it("rejects metodo 'pendiente' at schema parse — Por pagar is removed (C2)", () => {
+    expect(() =>
+      crearVentaSchema.parse({
+        mode: "new",
+        nuevoNombre: "Andrea Castro",
+        nuevoTel: "614 218 3401",
+        paqueteId: "p1",
+        metodo: "pendiente",
+        idempotencyKey: KEY,
+      } as unknown),
+    ).toThrow();
+  });
+
   // §3.4 — the optional email must NEVER block a sale. Forwarding a MALFORMED value proves it:
   // it is passed through as entered (it just won't match at claim time — the same harmless
   // outcome as omitting it), which also regression-guards against a `.email()` format check that
   // would throw a ZodError from the unguarded `crearVentaSchema.parse` and reject the whole sale.
   it("forwards the entered email as p_email without validating it (never blocks the sale)", async () => {
-    await crearVenta(input({ mode: "new", nuevoEmail: "maria@" }), fake.client);
+    await crearVenta(input({ mode: "new", email: "maria@" }), fake.client);
     expect(lastRpc(fake).args).toHaveProperty("p_email", "maria@");
+  });
+
+  it("forwards the entered email as p_email in existing mode too (C7 backfill on renewal)", async () => {
+    fake = makeFake({
+      paquetes: FINITO,
+      clientes: { nombre: "Andrea", tel: "614 000 0000" },
+      plantillas: [{ id: "t1", nombre: "Recibo", body: "x" }],
+    });
+    await crearVenta(input({ mode: "existing", clienteId: "cli-1", email: "nuevo@correo.mx" }), fake.client);
+    expect(lastRpc(fake).args).toHaveProperty("p_email", "nuevo@correo.mx");
   });
 
   it("omits p_email for a new client when no email is provided (spread-guard)", async () => {
@@ -211,7 +280,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
 
   it("renders the recibo mensajes with the FULL token set resolved (clases/dias/precios/datos_pago)", async () => {
     fake = makeFake({
-      paquetes: FINITO, // 8 clases, 30 días → new client saldo = 8 clases / 30 días
+      paquetes: FINITO,
       paquetesList: [
         { id: "p1", nombre: "8 clases", vigencia_tipo: "dias", vigencia_dias: 30, precio: 800, popular: false, orden: 1 },
         { id: "p2", nombre: "Ilimitado", vigencia_tipo: "mes", vigencia_dias: null, precio: 1200, popular: true, orden: 2 },
@@ -237,8 +306,9 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     const res = await crearVenta(input({ mode: "new" }), fake.client);
 
     const texto = res.mensajes[0].texto;
+    // clases/dias come from the RPC's RETURNED clases_restantes/vence (RPC_ROW), not client math.
     expect(texto).toContain("Quedan 8 clases");
-    expect(texto).toContain("vence en 30 días");
+    expect(texto).toMatch(/vence en \d+ días/);
     expect(texto).toContain("• 8 clases — $800");
     expect(texto).toContain("• Ilimitado — $1,200");
     expect(texto).toContain("BBVA");
@@ -247,6 +317,16 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     for (const tok of ["{clases}", "{dias}", "{precios}", "{datos_pago}"]) {
       expect(texto).not.toContain(tok);
     }
+  });
+
+  it("maps a null RPC clases_restantes to Ilimitado in the recibo ctx (ilimitado renewal)", async () => {
+    fake = makeFake(
+      { paquetes: ILIMITADO, plantillas: [{ id: "t1", nombre: "Recibo", body: "Quedan {clases}" }] },
+      { rpcData: { ...RPC_ROW, clases_restantes: null, paquete_nombre: "Ilimitado" } },
+    );
+
+    const res = await crearVenta(input({ mode: "new" }), fake.client);
+    expect(res.mensajes[0].texto).toBe("Quedan clases ilimitadas"); // fmtClases("ilimitado")
   });
 
   it("does not break the recibo when cobro/paquetes are unconfigured ({datos_pago} blank)", async () => {
