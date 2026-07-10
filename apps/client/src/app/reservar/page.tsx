@@ -76,7 +76,7 @@ export default async function ReservarPage({
   const hostGym = (await headers()).get("x-gym");
   const [semana, saldo, perfil] = await Promise.all([
     getAgendaSemanaMiembro(undefined, undefined, hostGym),
-    getSaldoMiembro(),
+    getSaldoMiembro(undefined, hostGym),
     getPerfilResumenMiembro(undefined, hostGym),
   ]);
   const meta = claims.user_metadata as { full_name?: string } | undefined;

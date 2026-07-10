@@ -176,6 +176,7 @@ async function fetchSesionesMiembro(
   supabase: SupabaseServer,
   low: Date,
   high: Date,
+  gymId: string,
 ): Promise<SesionMiembroRaw[]> {
   const { data: sesiones, error } = await supabase
     .from("class_session")
@@ -201,7 +202,7 @@ async function fetchSesionesMiembro(
       .select("class_session_id")
       .in("class_session_id", sessionIds)
       .in("status", ["reservada", "asistida"]),
-    fetchFavoritoId(supabase),
+    fetchFavoritoId(supabase, gymId),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
@@ -250,11 +251,15 @@ async function fetchSesionesMiembro(
 
 /** The signed-in member's favorite class-type id (self-read of their own clientes row);
  *  null when unset or the row is unreadable. Drives the "Tu favorita" tag across the week,
- *  the summary sheet, and mis reservas. */
-async function fetchFavoritoId(supabase: SupabaseServer): Promise<string | null> {
+ *  the summary sheet, and mis reservas. Scoped to the host-reconciled `gymId` (#74): a member
+ *  with clientes rows in several gyms reads the row of the SAME gym the agenda resolved — never
+ *  the `limit(1)` roulette. RLS still scopes the read; `gym_id` only disambiguates among the
+ *  caller's own rows. */
+async function fetchFavoritoId(supabase: SupabaseServer, gymId: string): Promise<string | null> {
   const { data } = await supabase
     .from("clientes")
     .select("favorite_class_type_id")
+    .eq("gym_id", gymId)
     .limit(1)
     .maybeSingle();
   return data?.favorite_class_type_id ?? null;
@@ -298,7 +303,7 @@ export const getAgendaSemanaMiembro = cache(
     const supabase = client ?? (await createClient());
     const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return { dias: [] };
-    const { tz } = miembro;
+    const { id: gymId, tz } = miembro;
 
     const hoy = hoyEnZona(tz);
     const dia = fechaIso ? parseDay(fechaIso) : hoy;
@@ -306,7 +311,7 @@ export const getAgendaSemanaMiembro = cache(
 
     const low = instanteEnZona(lunes, "00:00", tz);
     const high = instanteEnZona(addDays(lunes, 6), "00:00", tz);
-    const crudas = await fetchSesionesMiembro(supabase, low, high);
+    const crudas = await fetchSesionesMiembro(supabase, low, high, gymId);
 
     const ahora = new Date();
     const dias = semanaLunSab(lunes).map((fechaDia) => {
@@ -331,13 +336,25 @@ export const getAgendaSemanaMiembro = cache(
  * auth_user_id = auth.uid()); `clases_restantes IS NULL` = ilimitado (ADR-0004). A
  * caller with no cliente row (edge) reads as ilimitado-safe `{ ilimitado: false,
  * clasesRestantes: 0 }`. `client` injectable (ADR-0001); memoized per request.
+ *
+ * Host reconciliation (#74, audit #17 / spec §5.5): resolves the SAME gym the agenda
+ * readers do (`resolverMiembroGym` — host-tenant match, else the oldest membership) and
+ * scopes the balance read to that gym's clientes row, so a member holding rows in several
+ * gyms reads THIS gym's saldo — never the `limit(1)` roulette. No membership → the same
+ * safe default. `hostGymSlug` is the proxy's `x-gym` (presentation-only, ADR-0008).
  */
 export const getSaldoMiembro = cache(
-  async (client?: SupabaseServer): Promise<SaldoMiembroDTO> => {
+  async (
+    client?: SupabaseServer,
+    hostGymSlug?: string | null,
+  ): Promise<SaldoMiembroDTO> => {
     const supabase = client ?? (await createClient());
+    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+    if (!miembro) return { ilimitado: false, clasesRestantes: 0 };
     const { data, error } = await supabase
       .from("clientes")
       .select("clases_restantes")
+      .eq("gym_id", miembro.id)
       .limit(1)
       .maybeSingle();
     if (error) throw error;
@@ -470,6 +487,7 @@ export const getPerfilResumenMiembro = cache(
     const { data: cli } = await supabase
       .from("clientes")
       .select("created_at, notificaciones_activadas")
+      .eq("gym_id", gymId) // host-reconciled clientes row (#74), consistent with the saldo/favorito reads
       .limit(1)
       .maybeSingle();
     const desde = cli?.created_at
@@ -480,7 +498,7 @@ export const getPerfilResumenMiembro = cache(
       : null;
 
     const [reservas, { membresia, paqueteNombre }, catalogo] = await Promise.all([
-      fetchProximasReservas(supabase, tz),
+      fetchProximasReservas(supabase, tz, gymId),
       fetchMembresia(supabase, tz),
       // The member reads their own gym's catalog through their session (paquetes_/plan_feature_member_
       // _select, is_member_of); the anon reader is reused with the member client + their gym id.
@@ -516,6 +534,7 @@ export const getPerfilResumenMiembro = cache(
 async function fetchProximasReservas(
   supabase: SupabaseServer,
   tz: string,
+  gymId: string,
 ): Promise<ProximaReservaDTO[]> {
   const { data: reservas, error } = await supabase
     .from("reservation")
@@ -540,7 +559,7 @@ async function fetchProximasReservas(
   const [tiposRes, joinsRes, favoritoId] = await Promise.all([
     supabase.from("class_type").select("id, name, sala").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", rows.map((r) => r.id)),
-    fetchFavoritoId(supabase),
+    fetchFavoritoId(supabase, gymId),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;

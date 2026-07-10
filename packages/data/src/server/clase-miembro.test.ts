@@ -168,7 +168,7 @@ describe("getClaseDetalleMiembro", () => {
   it("flags miReserva + favorita from the member's own rows", async () => {
     const rows = detalleRows({
       reservation: [{ id: "r1", class_session_id: SID, status: "reservada" }],
-      clientes: [{ favorite_class_type_id: CTID }],
+      clientes: [{ gym_id: "gym-1", favorite_class_type_id: CTID }],
     });
     const d = await getClaseDetalleMiembro(SID, makeFake(rows));
     expect(d!.miReserva).toBe(true);
@@ -254,6 +254,44 @@ describe("getClaseDetalleMiembro — host-tenant reconciliation (audit #17)", ()
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback", async () => {
     const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "otro");
     expect(d!.hora).toBe("18:15");
+  });
+});
+
+/**
+ * favorita host reconciliation (#74): fetchFavoritoId now reads the host-reconciled gym's clientes
+ * row, so a member with rows in several gyms reads THIS gym's favorite — never the `limit(1)` roulette.
+ * Each gym favors a different type; only the gym whose row favors the session's type flags favorita.
+ */
+describe("getClaseDetalleMiembro — favorita host reconciliation (#74)", () => {
+  const dosGimnasios = (): Rows => ({
+    ...detalleRows(),
+    gym_membership: [
+      { gym_id: "gym-cua", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
+      { gym_id: "gym-her", created_at: "2024-01-01T00:00:00Z" },
+    ],
+    gym: [
+      { id: "gym-cua", slug: "cua", timezone: TZ },
+      { id: "gym-her", slug: "her", timezone: TZ },
+    ],
+    clientes: [
+      { gym_id: "gym-cua", favorite_class_type_id: "otro-tipo" }, // NOT the session's type
+      { gym_id: "gym-her", favorite_class_type_id: CTID }, // the session's type
+    ],
+  });
+
+  it("host match → favorita from the host gym's clientes row (her favors this type → true)", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "her");
+    expect(d!.favorita).toBe(true);
+  });
+
+  it("host match → false when the host gym's row favors a different type (cua)", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "cua");
+    expect(d!.favorita).toBe(false);
+  });
+
+  it("no host tenant → oldest-membership fallback (cua favors a different type → false)", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), null);
+    expect(d!.favorita).toBe(false);
   });
 });
 

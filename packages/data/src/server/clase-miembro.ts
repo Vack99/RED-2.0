@@ -159,11 +159,15 @@ async function fetchDireccion(supabase: SupabaseServer, gymId: string): Promise<
   return data?.address_line ?? null;
 }
 
-/** The signed-in member's favorite class-type id (self-read of their own clientes row). */
-async function fetchFavoritoId(supabase: SupabaseServer): Promise<string | null> {
+/** The signed-in member's favorite class-type id (self-read of their own clientes row),
+ *  scoped to the host-reconciled `gymId` (#74) so a member with clientes rows in several gyms
+ *  reads THIS gym's row — the same gym `resolverMiembroGym` picked — never the `limit(1)`
+ *  roulette. RLS still scopes the read; `gym_id` only disambiguates among the caller's own rows. */
+async function fetchFavoritoId(supabase: SupabaseServer, gymId: string): Promise<string | null> {
   const { data } = await supabase
     .from("clientes")
     .select("favorite_class_type_id")
+    .eq("gym_id", gymId)
     .limit(1)
     .maybeSingle();
   return data?.favorite_class_type_id ?? null;
@@ -212,7 +216,7 @@ export const getClaseDetalleMiembro = cache(
     const supabase = client ?? (await createClient());
     const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return null;
-    const { tz } = miembro;
+    const { gymId, tz } = miembro;
 
     const { data: sesion } = await supabase
       .from("class_session")
@@ -248,7 +252,7 @@ export const getClaseDetalleMiembro = cache(
           .eq("class_session_id", sesion.id)
           .in("status", ["reservada", "asistida"]),
         contarActivos(supabase, [sesion.id]),
-        fetchFavoritoId(supabase),
+        fetchFavoritoId(supabase, gymId),
         supabase.rpc("roster_clase", { p_session_id: sesion.id }),
       ]);
 
@@ -328,7 +332,7 @@ export const getConfirmacionReserva = cache(
     const [{ data: tipo }, coaches, favoritoId, direccion] = await Promise.all([
       supabase.from("class_type").select("id, name, sala").eq("id", sesion.class_type_id).maybeSingle(),
       fetchCoaches(supabase, sesion.id),
-      fetchFavoritoId(supabase),
+      fetchFavoritoId(supabase, gymId),
       fetchDireccion(supabase, gymId),
     ]);
     if (!tipo) return null;

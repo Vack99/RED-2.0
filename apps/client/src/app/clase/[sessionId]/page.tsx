@@ -36,7 +36,7 @@ export default async function ClasePage({
   const hostGym = (await headers()).get("x-gym");
   const [detalle, saldo] = await Promise.all([
     getClaseDetalleMiembro(sessionId, undefined, hostGym),
-    getSaldoMiembro(),
+    getSaldoMiembro(undefined, hostGym),
   ]);
   if (!detalle) notFound();
 

@@ -234,7 +234,7 @@ describe("getAgendaSemanaMiembro", () => {
 
   it("flags favorita on sessions whose class type is the member's favorite (else false)", async () => {
     const rows = pastRows();
-    rows.clientes = [{ favorite_class_type_id: "ct2" }]; // ct2 = Metcon (wed1)
+    rows.clientes = [{ gym_id: "gym-1", favorite_class_type_id: "ct2" }]; // ct2 = Metcon (wed1)
     const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows));
     const wed = semana.dias[2].sesiones[0]; // ct2
     const mon = semana.dias[0].sesiones[0]; // ct1
@@ -321,12 +321,12 @@ describe("getEsMiembro", () => {
 
 describe("getSaldoMiembro", () => {
   it("reads a finite balance from the member's own cliente row", async () => {
-    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ clases_restantes: 7 }] }));
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: 7 }] }));
     expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7 });
   });
 
   it("reports ilimitado when clases_restantes is null", async () => {
-    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ clases_restantes: null }] }));
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: null }] }));
     expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null });
   });
 
@@ -340,7 +340,7 @@ describe("getPerfilResumenMiembro", () => {
   it("formats 'miembro desde' in the gym tz and surfaces the notifications preference + marca", async () => {
     const perfil = await getPerfilResumenMiembro(
       makeFake({
-        clientes: [{ created_at: iso(new Date(2024, 2, 10), "12:00"), notificaciones_activadas: true }],
+        clientes: [{ gym_id: "gym-1", created_at: iso(new Date(2024, 2, 10), "12:00"), notificaciones_activadas: true }],
         marca: "RED",
         reservation: [],
       }),
@@ -353,7 +353,7 @@ describe("getPerfilResumenMiembro", () => {
 
   it("passes a disabled notifications preference through", async () => {
     const perfil = await getPerfilResumenMiembro(
-      makeFake({ clientes: [{ created_at: null, notificaciones_activadas: false }], reservation: [] }),
+      makeFake({ clientes: [{ gym_id: "gym-1", created_at: null, notificaciones_activadas: false }], reservation: [] }),
     );
     expect(perfil.notificaciones).toBe(false);
     expect(perfil.desde).toBeNull();
@@ -430,5 +430,84 @@ describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", (
     });
     expect((await getPerfilResumenMiembro(makeFake(uno()), "red")).marca).toBe("RED");
     expect((await getPerfilResumenMiembro(makeFake(uno()), "un-host-cualquiera")).marca).toBe("RED");
+  });
+});
+
+/**
+ * getSaldoMiembro host reconciliation (#74): a member with clientes rows in several gyms must read
+ * the balance of the SAME gym the agenda resolves — not the `limit(1)` roulette. The two gyms hold
+ * different balances; the host tenant (x-gym) picks its own, else the OLDEST membership (deterministic).
+ */
+describe("getSaldoMiembro — host-tenant reconciliation (#74)", () => {
+  const dosGimnasios = (): Rows => ({
+    gym_membership: [
+      { gym_id: "gym-forge", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
+      { gym_id: "gym-red", created_at: "2024-01-01T00:00:00Z" },
+    ],
+    gym: [
+      { id: "gym-forge", slug: "forge", timezone: TZ, brand_name: "Forge" },
+      { id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" },
+    ],
+    clientes: [
+      { gym_id: "gym-forge", clases_restantes: 3 },
+      { gym_id: "gym-red", clases_restantes: 8 },
+    ],
+  });
+
+  it("host match → the balance of the host gym's clientes row (red → 8)", async () => {
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "red")).toEqual({ ilimitado: false, clasesRestantes: 8 });
+  });
+
+  it("host match → the other gym's row when that gym is the host (forge → 3)", async () => {
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "forge")).toEqual({ ilimitado: false, clasesRestantes: 3 });
+  });
+
+  it("no host tenant → deterministic fallback to the OLDEST membership's row (forge → 3)", async () => {
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), null)).toEqual({ ilimitado: false, clasesRestantes: 3 });
+  });
+
+  it("host names a gym the caller is NOT a member of → same oldest-membership fallback (forge → 3)", async () => {
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "otro-gym")).toEqual({ ilimitado: false, clasesRestantes: 3 });
+  });
+});
+
+/**
+ * favorita host reconciliation (#74) through the agenda's favorita flag: fetchFavoritoId now reads
+ * the host-reconciled gym's clientes row. Each gym favors a DIFFERENT class type, so the flag on a
+ * given session flips with the resolved gym. Host match wins; no host / no match → OLDEST membership.
+ */
+describe("getAgendaSemanaMiembro — favorita host reconciliation (#74)", () => {
+  const dosGimnasios = (): Rows => ({
+    ...pastRows(),
+    gym_membership: [
+      { gym_id: "gym-forge", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
+      { gym_id: "gym-red", created_at: "2024-01-01T00:00:00Z" },
+    ],
+    gym: [
+      { id: "gym-forge", slug: "forge", timezone: TZ, brand_name: "Forge" },
+      { id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" },
+    ],
+    clientes: [
+      { gym_id: "gym-forge", favorite_class_type_id: "ct1" }, // Fuerza → mon1
+      { gym_id: "gym-red", favorite_class_type_id: "ct2" }, // Metcon → wed1
+    ],
+  });
+
+  it("host match → favorita follows the host gym's favorite (red → Metcon/wed1)", async () => {
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), "red");
+    expect(semana.dias[2].sesiones[0].favorita).toBe(true); // wed1 = ct2
+    expect(semana.dias[0].sesiones[0].favorita).toBe(false); // mon1 = ct1
+  });
+
+  it("host match → the other gym's favorite when that gym is the host (forge → Fuerza/mon1)", async () => {
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), "forge");
+    expect(semana.dias[0].sesiones[0].favorita).toBe(true); // mon1 = ct1
+    expect(semana.dias[2].sesiones[0].favorita).toBe(false); // wed1 = ct2
+  });
+
+  it("no host tenant → deterministic fallback to the OLDEST membership's favorite (forge → Fuerza)", async () => {
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), null);
+    expect(semana.dias[0].sesiones[0].favorita).toBe(true); // forge → ct1
+    expect(semana.dias[2].sesiones[0].favorita).toBe(false);
   });
 });
