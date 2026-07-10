@@ -28,7 +28,7 @@ This is an **owner-executed, agent-prepared** runbook: every step is a dashboard
 | Input | Used in | Value |
 |---|---|---|
 | Platform sending domain | A, B, D | **`ibookit.lat`** — platform-owned, gym-neutral (ADR-0014). SPF/DKIM/DMARC verified live. |
-| Sender name | B, D | **`iBookit`** — the platform brand, never a gym's. Matches the sending domain, so the `From:` line and the link domain agree. |
+| Sender name | B, D | **`Notificaciones`** — gym-neutral (ADR-0014). Must match `RESEND_FROM`'s name in §D: one mailbox, **one** display name across both rails, or a member sees two senders seconds apart. |
 | Auth email rate limit | B2 | **`50`/hour** — clears the ~member-#30 wall; one runaway hour still cannot spend more than half Resend's free 100/day. |
 | `PLATFORM_CLIENT_FALLBACK_HOST` | D | **`app.ibookit.lat`** — unmapped in `gym_domain`, which is precisely why `?gym=<slug>` resolves there. |
 
@@ -71,7 +71,7 @@ Routes Supabase's signup-confirmation + password-reset mail through Resend's SMT
   | Field | Value |
   |-------|-------|
   | Sender email | `no-reply@ibookit.lat` (ADR-0014 pins the `no-reply` mailbox) |
-  | Sender name | `iBookit` — the platform brand, gym-neutral by construction |
+  | Sender name | `Notificaciones` — gym-neutral; **must equal** the name in `RESEND_FROM` (§D1) |
   | Host | `smtp.resend.com` |
   | Port | `465` |
   | Username | `resend` |
@@ -82,34 +82,47 @@ Routes Supabase's signup-confirmation + password-reset mail through Resend's SMT
 - [ ] **B2. Raise the auth email rate limit.** Dashboard → **Authentication → Rate Limits → Rate limit for sending emails**. Post-SMTP the default is **30/hour** — raise to a sane production floor.
   - **DECIDED: `50`/hour.** Clears the ~member-#30 wall the audit hit, while one runaway hour still cannot spend more than half of Resend's free-tier **100 emails/day, 3,000/month** ceiling. Revisit before a real onboarding burst or a paid Resend plan.
   - *Verify:* the saved value reads `50` — above 2/hour, and ≤ what Resend's plan can deliver in a day.
-- [ ] **B3. Rewrite the two auth templates (es-MX, gym-neutral, platform-voiced).** Dashboard → **Authentication → Emails → Templates**. Edit **Confirm signup** and **Reset Password**. Per ADR-0014: no gym name, no brand color, plain accessible HTML, keep `{{ .ConfirmationURL }}` intact.
+- [ ] **B3. Rewrite the two auth templates (es-MX, gym-neutral, platform-voiced).** Dashboard → **Authentication → Emails → Templates**. Edit **Confirm signup** and **Reset Password**. Per ADR-0014: no gym name, no brand color, accessible HTML, keep `{{ .ConfirmationURL }}` intact.
+
+  > **The subject goes in the "Subject heading" field, NOT in the body.** Each template has a Subject field above the HTML box. Paste only the `<div>…</div>` below into the body. (Getting this wrong ships Supabase's English default subject — *"Confirm your email address"* — over Spanish copy, which is itself a spam signal. It happened on the first pass, 2026-07-09.)
+
+  Styling matches `mensajeInvitacion` (`packages/data/src/server/invitaciones.ts:121-129`) on purpose: the invite mail and the auth mail must read as **one platform**. Inline styles only — Gmail strips `<style>` blocks. The hidden first `<div>` is the inbox preview line.
 
   Checklist per template:
-  - [ ] Subject rewritten es-MX, brand-free.
+  - [ ] Subject set in the **Subject heading field**, es-MX, brand-free.
   - [ ] Body es-MX, addresses the member neutrally ("Hola,"), no gym name/logo.
   - [ ] `{{ .ConfirmationURL }}` present as both a button and a copy-paste link.
   - [ ] "If you didn't request this" reassurance line included.
 
-  **Confirm signup** — Subject `Confirma tu cuenta`:
+  **Confirm signup** — Subject heading: `Confirma tu cuenta`
   ```html
-  <p>Hola,</p>
-  <p>Recibimos una solicitud para crear tu cuenta con este correo. Para activarla, confirma tu dirección:</p>
-  <p><a href="{{ .ConfirmationURL }}">Confirmar mi cuenta</a></p>
-  <p>Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
-  <p>{{ .ConfirmationURL }}</p>
-  <p>Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
+  <div style="display:none;max-height:0;overflow:hidden">Confirma tu dirección para activar tu cuenta.</div>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;background:#ffffff">
+    <p style="font-size:16px;margin:0 0 16px">Hola,</p>
+    <p style="font-size:15px;line-height:1.55;margin:0 0 24px">Recibimos una solicitud para crear tu cuenta con este correo. Para activarla, confirma tu dirección:</p>
+    <p style="margin:0 0 24px">
+      <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:14px 28px;font-weight:700;letter-spacing:0.4px;font-size:14px">CONFIRMAR MI CUENTA</a>
+    </p>
+    <p style="font-size:13px;line-height:1.5;color:#78716c;margin:0 0 20px">Si el botón no funciona, copia y pega este enlace en tu navegador:<br><a href="{{ .ConfirmationURL }}" style="color:#78716c;word-break:break-all">{{ .ConfirmationURL }}</a></p>
+    <p style="font-size:12px;line-height:1.5;color:#a8a29e;margin:0">Si no creaste esta cuenta, puedes ignorar este mensaje.</p>
+  </div>
   ```
 
-  **Reset Password** — Subject `Restablece tu contraseña`:
+  **Reset Password** — Subject heading: `Restablece tu contraseña`
   ```html
-  <p>Hola,</p>
-  <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta. Para elegir una nueva, abre este enlace:</p>
-  <p><a href="{{ .ConfirmationURL }}">Restablecer mi contraseña</a></p>
-  <p>Si el botón no funciona, copia y pega este enlace en tu navegador:</p>
-  <p>{{ .ConfirmationURL }}</p>
-  <p>Si no solicitaste este cambio, ignora este mensaje; tu contraseña seguirá igual.</p>
+  <div style="display:none;max-height:0;overflow:hidden">Elige una nueva contraseña para tu cuenta.</div>
+  <div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;background:#ffffff">
+    <p style="font-size:16px;margin:0 0 16px">Hola,</p>
+    <p style="font-size:15px;line-height:1.55;margin:0 0 24px">Recibimos una solicitud para restablecer la contraseña de tu cuenta. Para elegir una nueva, abre este enlace:</p>
+    <p style="margin:0 0 24px">
+      <a href="{{ .ConfirmationURL }}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:14px 28px;font-weight:700;letter-spacing:0.4px;font-size:14px">RESTABLECER MI CONTRASEÑA</a>
+    </p>
+    <p style="font-size:13px;line-height:1.5;color:#78716c;margin:0 0 20px">Si el botón no funciona, copia y pega este enlace en tu navegador:<br><a href="{{ .ConfirmationURL }}" style="color:#78716c;word-break:break-all">{{ .ConfirmationURL }}</a></p>
+    <p style="font-size:12px;line-height:1.5;color:#a8a29e;margin:0">Si no solicitaste este cambio, ignora este mensaje; tu contraseña seguirá igual.</p>
+  </div>
   ```
-  - *Verify:* both templates saved; a "send test email" (if the dashboard offers it) lands with the new copy. Full delivery is checked in §F.
+  - *Verify:* both templates saved; the received mail shows the **es-MX subject** (not "Confirm your email address") and the body opens at "Hola,". Full delivery is checked in §F.
+  - *Note:* the raw `{{ .ConfirmationURL }}` resolves to `…supabase.co/auth/v1/verify?…`, which does **not** match the `ibookit.lat` sender. That mismatch is a spam signal no template can fix — **#75** (Send Email Hook) mints the link on the gym's own host and retires these two templates.
 
 ---
 
@@ -141,7 +154,7 @@ The confirmation + recovery links Supabase mails must be **allow-listed**, or th
   | Name | Value | Notes |
   |------|-------|-------|
   | `RESEND_API_KEY` | the `re_…` key from **A4** | the invite REST call authenticates with this; missing → a clean `no-configurado` skip (sale unaffected) |
-  | `RESEND_FROM` | `iBookit <no-reply@ibookit.lat>` | **"Name &lt;addr&gt;" format** the code parses verbatim (see `resendTransport`); gym-neutral name, same domain as §B |
+  | `RESEND_FROM` | `Notificaciones <no-reply@ibookit.lat>` | **"Name &lt;addr&gt;" format** the code parses verbatim (see `resendTransport`); gym-neutral name, same domain as §B |
   | `PLATFORM_CLIENT_FALLBACK_HOST` | a client host (see caveat) | hostname only, **no scheme** — the code prepends `https://`; used to build `https://<host>/registro?gym=<slug>&codigo=<code>` for gyms with no mapped client host |
 
   - *Verify:* the three vars show under Production with non-empty values; `RESEND_FROM` matches `Name <addr>` (angle brackets present).
@@ -179,7 +192,7 @@ Per ADR-0014/#72: deliverability is **observed on a real inbox with headers reco
 
 **Invite mail (Resend API path)**
 - [ ] Record a **real sale with your email** on a test gym in the admin app → the recibo reports the invite state.
-  - *Evidence:* [ ] invite email **received**; **From** = `iBookit <no-reply@ibookit.lat>`; body carries the **gym's name** in the copy (ADR-0014); the claim link points at the gym's **own client host** (or `…/registro?gym=<slug>&codigo=…` for an unmapped gym) with the correct `codigo`.
+  - *Evidence:* [ ] invite email **received**; **From** = `Notificaciones <no-reply@ibookit.lat>`; body carries the **gym's name** in the copy (ADR-0014); the claim link points at the gym's **own client host** (or `…/registro?gym=<slug>&codigo=…` for an unmapped gym) with the correct `codigo`.
 - [ ] Open the claim link → `/registro` shows "Invitación de {gym} para {nombre}" → complete signup.
   - *Evidence:* [ ] the login binds to the paid row (balance/history visible), code is single-use (a second open is dead).
 
