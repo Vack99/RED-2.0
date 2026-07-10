@@ -61,13 +61,17 @@ begin
   end if;
 end $$;
 
--- Counts BEFORE (record them).
-select
-  (select count(*) from public.ventas       where cliente_id = '<dup_id>')      as dup_ventas,
-  (select count(*) from public.asistencias  where cliente_id = '<dup_id>')      as dup_asis,
-  (select count(*) from public.reservation  where member_id  = '<dup_id>')      as dup_resv,
-  (select count(*) from public.ventas       where cliente_id = '<survivor_id>') as surv_ventas,
-  (select count(*) from public.asistencias  where cliente_id = '<survivor_id>') as surv_asis;
+-- Counts BEFORE, captured as transaction-local settings so the post-repoint
+-- guard below can enforce equality (not just advise).
+do $$
+begin
+  perform set_config('merge.dup_ventas',  (select count(*) from public.ventas      where cliente_id = '<dup_id>')::text,      true);
+  perform set_config('merge.dup_asis',    (select count(*) from public.asistencias where cliente_id = '<dup_id>')::text,      true);
+  perform set_config('merge.dup_resv',    (select count(*) from public.reservation where member_id  = '<dup_id>')::text,      true);
+  perform set_config('merge.surv_ventas', (select count(*) from public.ventas      where cliente_id = '<survivor_id>')::text, true);
+  perform set_config('merge.surv_asis',   (select count(*) from public.asistencias where cliente_id = '<survivor_id>')::text, true);
+  perform set_config('merge.surv_resv',   (select count(*) from public.reservation where member_id  = '<survivor_id>')::text, true);
+end $$;
 
 -- Repoint children to the survivor FIRST (never delete first).
 update public.ventas      set cliente_id = '<survivor_id>' where cliente_id = '<dup_id>';
@@ -94,17 +98,27 @@ end $$;
 -- Emptied row → delete (cascade deletes nothing; children already repointed).
 delete from public.clientes where id = '<dup_id>';
 
--- Post-verify: survivor now holds the summed children + the newest balance.
-select
-  (select count(*) from public.ventas      where cliente_id = '<survivor_id>') as surv_ventas_after,
-  (select count(*) from public.asistencias where cliente_id = '<survivor_id>') as surv_asis_after,
-  c.clases_restantes, c.vence, c.paquete_nombre
+-- Hard guard: the survivor's children must equal the before-sums EXACTLY, or abort.
+do $$
+begin
+  if (select count(*) from public.ventas where cliente_id = '<survivor_id>')
+       <> current_setting('merge.surv_ventas')::int + current_setting('merge.dup_ventas')::int
+  or (select count(*) from public.asistencias where cliente_id = '<survivor_id>')
+       <> current_setting('merge.surv_asis')::int + current_setting('merge.dup_asis')::int
+  or (select count(*) from public.reservation where member_id = '<survivor_id>')
+       <> current_setting('merge.surv_resv')::int + current_setting('merge.dup_resv')::int then
+    raise exception 'HALT: post-repoint child counts do not sum — rolling back';
+  end if;
+end $$;
+
+-- Post-verify: the survivor's merged balance (informational; the guards above enforce).
+select c.clases_restantes, c.vence, c.paquete_nombre
   from public.clientes c where c.id = '<survivor_id>';
 
 commit;
 ```
 
-`surv_ventas_after` must equal `surv_ventas + dup_ventas`; `surv_asis_after` must equal `surv_asis + dup_asis`. If either mismatches, `ROLLBACK`.
+When run via one-shot MCP `execute_sql`, the intermediate SELECTs may not surface in the result — that is fine: the `DO`/`RAISE` guards do the enforcing (any failure aborts the whole transaction). When run interactively (SQL editor), record the snapshot + count outputs as you go.
 
 ## The two 2026-07-10 RED pairs (worked examples)
 

@@ -1,12 +1,16 @@
-# Runbook — correcting a mis-sold venta (service role)
+# Runbook — correcting a mis-sold venta (authenticated gym owner)
 
-**Date authored:** 2026-07-10 · **Ruling:** C8, "Runbook now, RPC later" (`docs/FIndings/2026-07-08-renewal-flow-findings.md`). An `anular_venta` RPC ships only if mis-sales prove frequent; until then, correction is a service-role recipe.
+**Date authored:** 2026-07-10 · **Ruling:** C8, "Runbook now, RPC later" (`docs/FIndings/2026-07-08-renewal-flow-findings.md`). An `anular_venta` RPC ships only if mis-sales prove frequent; until then, correction is an owner-run SQL recipe.
 
 ## The one rule: the ventas ledger is append-only
 
 `ventas` RLS is **select + insert only** — no update, no delete policy (ADR-0005; the revenue aggregations in `resumen.ts`/`derive.ts` sum every `monto` and assume no row ever mutates or vanishes). **Never `UPDATE` or `DELETE` a `ventas` row.** A correction is a **compensating negative `ventas` row** (the reversal, so `Σ monto` stays truthful) plus a **`saldo` fix on `clientes`**, both in **one transaction**.
 
-Run as **service role** (Supabase SQL editor / MCP `execute_sql` / `postgres`): the `clientes` saldo `UPDATE` and the negative-`monto` insert both bypass the operator RLS (staff can only insert positive sales through `registrar_venta`; there is no `metodo`/`monto` sign gate at the DB, but there is no operator UPDATE path to saldo either).
+Run **authenticated as the gym owner** — no service role needed, and none would work:
+- Nothing is deleted, and the staff RLS policies already permit the whole correction: `ventas_staff_insert` covers the negative-`monto` row (there is no sign gate) and `clientes_staff_update` grants staff direct UPDATE on the saldo columns (`20260702173309_gym_scoped_rls_policies.sql:40-50`).
+- The folio draw **requires** staff: `next_folio()` raises unless `is_staff_of(p_gym)` (`20260705082018`), which is false when `auth.uid()` is NULL — so a raw service-role / `postgres` session fails at step 1.
+
+From the SQL editor or MCP `execute_sql` (which connect as `postgres`), impersonate the owner **inside the transaction** — the same pattern the SQL test suites use (the worked example below opens with it). From an already-authenticated owner session, skip those two lines.
 
 ## What the correction touches
 
@@ -28,6 +32,12 @@ The clean correction is **reverse, then re-sell correctly through the normal flo
 
 ```sql
 begin;
+
+-- Authenticate as the gym owner (only needed from a postgres/SQL-editor/MCP session;
+-- <owner_auth_uid> = the owner's auth.users id). next_folio + RLS then pass.
+select set_config('request.jwt.claims',
+  json_build_object('sub', '<owner_auth_uid>', 'role', 'authenticated')::text, true);
+set local role authenticated;
 
 -- 0. Confirm current state (record the output; abort if it isn't what you expect).
 select id, clases_restantes, vence, paquete_nombre

@@ -1,6 +1,6 @@
 # ADR-0003 — Stacking, forfeit & the date model
 
-**Status:** Accepted — 2026-05-29
+**Status:** Accepted — 2026-05-29 · **Amended:** 2026-07-10 (rulings C1 flat-30 `mes`, C4 purchase-wins, C9 vence-day-valid; see Amendment below)
 
 ## Context
 The brief answers several domain questions (Q1, Q2, Q3, Q5, Q6) that define how

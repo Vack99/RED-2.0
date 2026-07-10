@@ -1,6 +1,6 @@
 # ADR-0005 — Atomic write seam: Postgres RPCs for the money path
 
-**Status:** Accepted · **Date:** 2026-06-01 · **Realizes:** the atomicity consequence-clause of [ADR-0004](0004-saldo-stored-running-balance.md); builds on [ADR-0001](0001-supabase-rls-no-orm.md)
+**Status:** Accepted · **Date:** 2026-06-01 · **Amended:** 2026-07-10 (ruling C13 — `registrar_venta` re-derives in a locked txn; see Amendment below) · **Realizes:** the atomicity consequence-clause of [ADR-0004](0004-saldo-stored-running-balance.md); builds on [ADR-0001](0001-supabase-rls-no-orm.md)
 
 ## Context
 
