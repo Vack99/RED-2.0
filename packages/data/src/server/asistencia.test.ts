@@ -51,18 +51,31 @@ describe("getMarcadas — full attendance map (injected fake)", () => {
     ]);
   });
 
-  it("reads only active FRONT-DESK rows — soft-delete AND class_session_id filters (slice #60)", async () => {
-    // The map drives the pase screen's toggle_pase taps, which own only front-desk
-    // rows (class_session_id null) — a session pase surfacing here would render a
-    // mark whose tap writes a second, consuming row.
+  it("reads ALL surfaces — soft-delete only, NO class_session_id filter (ruling C15)", async () => {
+    // C15: one attended class = one consumed class regardless of surface, so the map
+    // must surface session-linked rows too (a member marked via the Agenda now shows
+    // checked here). toggle_pase refuses the mistap instead of double-consuming, so
+    // the class_session_id filter that used to hide those rows is gone.
     const { client, isCalls } = makeFake({ asistencias: [asistencia()] });
 
     await getMarcadas(client);
 
-    expect(isCalls["asistencias"]).toEqual([
-      ["deleted_at", null],
-      ["class_session_id", null],
-    ]);
+    expect(isCalls["asistencias"]).toEqual([["deleted_at", null]]);
+  });
+
+  it("marks BOTH a front-desk row and a session-linked row (ruling C15)", async () => {
+    // A front-desk row (class_session_id null) and a session/Agenda row (class_session_id
+    // set) on the same day — both cliente_ids must appear; neither surface is hidden.
+    const { client } = makeFake({
+      asistencias: [
+        asistencia({ fecha: "2026-05-20", cliente_id: "front-desk", class_session_id: null }),
+        asistencia({ fecha: "2026-05-20", cliente_id: "session", class_session_id: "sess-1" }),
+      ],
+    });
+
+    const map = await getMarcadas(client);
+
+    expect(map).toEqual({ "2026-05-20": ["front-desk", "session"] });
   });
 
   it("groups rows by fecha → correct per-day cliente_id lists (map shape)", async () => {

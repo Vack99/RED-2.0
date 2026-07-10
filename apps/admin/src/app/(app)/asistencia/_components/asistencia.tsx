@@ -79,10 +79,13 @@ export function AsistenciaScreen({
             body: `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
           });
         }
-      } catch {
+      } catch (err) {
         // Roll the optimistic flip back to its pre-tap value.
         setMarcadas((m) => setMarcada(m, selIso, c.id, !willBePresent));
-        forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
+        // Show the RPC's reason when it has one (e.g. "Paquete vencido", or the C15 already-marked-on-a-
+        // -session guard) so the operator learns WHY, not a blind "try again".
+        const body = err instanceof Error && err.message ? err.message : "Intenta de nuevo.";
+        forgeToast({ tone: "warning", title: "No se pudo registrar", body });
       } finally {
         inFlight.current.delete(key);
       }

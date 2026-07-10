@@ -17,11 +17,11 @@
 --                                                   (5->4), asistencia consumio=true, hora stamped (session today).
 --   * walk-in untoggle is symmetric               — reverts reservation to cancelada and refunds exactly one (finite).
 --   * hora-today-only                             — hora stamped only when the session's date is gym-today.
---   * cross-seam ownership                        — the date-keyed front-desk toggle_pase must NEVER touch a
---                                                   session-linked asistencia (its active-row lookup is scoped
---                                                   class_session_id IS NULL): a front-desk toggle on the session's
---                                                   date leaves the session pase active + its reservation asistida,
---                                                   and can never refund-without-revert (ADR-0004 drift).
+--   * cross-seam C15 (one visit one consume)      — a member already marked on a session (class_session_id-linked
+--                                                   asistencia) now shows checked on the front desk too; a front-desk
+--                                                   toggle_pase on the session's date REFUSES ('Asistencia de clase
+--                                                   ya registrada') and consumes nothing — no second row, balance
+--                                                   unchanged, session pase + reservation whole (ADR-0004 drift closed).
 --
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row. BEGIN/ROLLBACK, so
 -- it touches no row permanently. Zero hardcoded prod UUIDs (gym members/operator/clientes seeded tx-local).
@@ -206,51 +206,51 @@ begin
   if v_clases <> 0 then raise exception 'RULE FAIL(walk OFF): active asistencia rows % (expected 0)', v_clases; end if;
 end $$;
 
--- ── (4) cross-seam ownership: front-desk toggle_pase never touches a session pase ─
--- The Gate-2 scenario: a session walk-in is marked via pasar_lista_sesion, then front-desk staff
--- toggle that cliente on the session's DATE through the old date-keyed seam. Unscoped, toggle_pase
--- would soft-delete the SESSION row and refund WITHOUT reverting the reservation — leaving an
--- asistida/is_walk_in reservation with no attendance and a refunded balance, whose next Agenda pase
--- takes the booked branch (free attended class + inflated occupancy). Scoped (class_session_id IS
--- NULL), the front desk owns only front-desk rows: its toggle runs today's independent front-desk
--- semantics on a FRESH row and the session pase + reservation are untouched.
+-- ── (4) cross-seam C15: front-desk toggle_pase REFUSES a member already marked on a session ─
+-- Ruling C15 (owner): one attended class = one consumed class regardless of surface. A member marked
+-- present via the Agenda (pasar_lista_sesion writes a class_session_id-linked asistencia) now shows
+-- CHECKED on the front-desk pase too (getMarcadas surfaces session rows). A front-desk tap on that member
+-- is therefore a MISTAP: toggle_pase RAISES the session-managed error and consumes NOTHING — it does NOT
+-- insert a second front-desk row (the old double-consume this block used to assert as correct). The
+-- session pase + reservation stay whole; the written-rows rule is balance UNCHANGED at 4 and no new row.
 do $$
 declare
   s_id   uuid := current_setting('t.s_id', true)::uuid;
   c_walk uuid := current_setting('t.c_walk', true)::uuid;
   v_fecha date := current_setting('t.today', true)::date;   -- the session's date (seeded today 18:00)
-  v_present boolean; v_clases int; v_status text; v_n int;
+  v_present boolean; v_clases int; v_status text; v_n int; v_raised boolean := false;
 begin
-  -- Arrange: session walk-in marked again via the session seam (5 -> 4; asistida/is_walk_in).
+  -- Arrange: mark the walk-in via the SESSION seam (5 -> 4; asistida/is_walk_in, session-linked row).
   select present into v_present from public.pasar_lista_sesion(s_id, c_walk);
   if v_present is not true then raise exception 'SEED FAIL(xseam): session pase ON failed'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_walk;
   if v_clases <> 4 then raise exception 'SEED FAIL(xseam): expected 4 after session pase, got %', v_clases; end if;
 
-  -- Act: the FRONT-DESK toggle on the session's date. It must NOT see the session row — it toggles
-  -- ON a fresh front-desk attendance (today's independent semantics: one more consume, 4 -> 3).
-  select present into v_present from public.toggle_pase(c_walk, v_fecha);
-  if v_present is not true then
-    raise exception 'RULE FAIL(xseam): toggle_pase consumed the SESSION pase (returned absent) — refund-without-revert';
+  -- Act: the FRONT-DESK toggle on the session's date MUST refuse (C15 mistap guard), not consume.
+  begin
+    select present into v_present from public.toggle_pase(c_walk, v_fecha);
+  exception when others then
+    v_raised := true;
+    if sqlerrm not like 'Asistencia de clase ya registrada%' then
+      raise exception 'RULE FAIL(xseam): wrong raise from front-desk toggle: %', sqlerrm;
+    end if;
+  end;
+  if not v_raised then
+    raise exception 'RULE FAIL(xseam): front-desk toggle DID NOT refuse a session-marked member (DOUBLE CONSUME)';
   end if;
-  select count(*) into v_n from public.asistencias
-   where cliente_id = c_walk and class_session_id = s_id and deleted_at is null;
-  if v_n <> 1 then raise exception 'RULE FAIL(xseam): session asistencia gone (% active) after front-desk toggle', v_n; end if;
-  select status into v_status from public.reservation where member_id = c_walk and class_session_id = s_id;
-  if v_status <> 'asistida' then raise exception 'RULE FAIL(xseam): reservation drifted to % after front-desk toggle', v_status; end if;
-  select clases_restantes into v_clases from public.clientes where id = c_walk;
-  if v_clases <> 3 then raise exception 'RULE FAIL(xseam): balance % after front-desk ON (expected 3 — its own consume only)', v_clases; end if;
 
-  -- Reverse: front-desk toggle OFF refunds ONLY its own row (3 -> 4); the session pase stays whole.
-  select present into v_present from public.toggle_pase(c_walk, v_fecha);
-  if v_present is not false then raise exception 'RULE FAIL(xseam): front-desk toggle OFF did not unmark its own row'; end if;
+  -- Written-rows rule: balance untouched (still 4 — no second consume); session pase + reservation whole;
+  -- NO front-desk row written.
   select clases_restantes into v_clases from public.clientes where id = c_walk;
-  if v_clases <> 4 then raise exception 'RULE FAIL(xseam): balance % after front-desk OFF (expected 4)', v_clases; end if;
+  if v_clases <> 4 then raise exception 'RULE FAIL(xseam): balance % after refused front-desk toggle (expected 4)', v_clases; end if;
   select count(*) into v_n from public.asistencias
    where cliente_id = c_walk and class_session_id = s_id and deleted_at is null;
-  if v_n <> 1 then raise exception 'RULE FAIL(xseam): session asistencia lost on front-desk OFF (% active)', v_n; end if;
+  if v_n <> 1 then raise exception 'RULE FAIL(xseam): session asistencia disturbed (% active, expected 1)', v_n; end if;
+  select count(*) into v_n from public.asistencias
+   where cliente_id = c_walk and fecha = v_fecha and deleted_at is null and class_session_id is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(xseam): a second front-desk row was written (% , expected 0)', v_n; end if;
   select status into v_status from public.reservation where member_id = c_walk and class_session_id = s_id;
-  if v_status <> 'asistida' then raise exception 'RULE FAIL(xseam): reservation % after front-desk OFF (expected asistida)', v_status; end if;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(xseam): reservation drifted to % (expected asistida)', v_status; end if;
 end $$;
 
 reset role;

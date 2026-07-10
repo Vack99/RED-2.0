@@ -20,15 +20,18 @@ import { getOperatorGym } from "./gym";
 const PAGE = 1000;
 
 /**
- * Active FRONT-DESK attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
+ * Active attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
  * Chihuahua date (ADR-0003) — the offset grid is gone.
  *
- * Front-desk rows ONLY (`class_session_id` null — slice #60): this map drives the
- * pase screen's presence marks and its `toggle_pase` taps, and that RPC now owns
- * only front-desk rows (a session pase's untoggle must also revert its reservation,
- * which only `pasar_lista_sesion` does). Showing a session pase here would render a
- * mark whose tap writes a SECOND, consuming row — display and toggle must read the
- * same row set. Session pases still appear in the read-only feeds (getAsistenciasHoy).
+ * ALL surfaces (ruling C15): this reads front-desk AND session-linked rows. One
+ * attended class = one consumed class regardless of surface, so a member marked via
+ * the Agenda / app booking (a `class_session_id`-linked row) must show CHECKED here
+ * too — otherwise the operator taps them present and `toggle_pase` writes a SECOND
+ * consuming row. `toggle_pase` no longer blindly consumes on a tap: reaching a
+ * session-marked member is a mistap it refuses ('Asistencia de clase ya registrada'),
+ * and a still-active booking marks with no re-consume — so display and toggle agree
+ * without this map hiding the session rows. (Session pases also appear in the
+ * read-only feeds, getAsistenciasHoy.)
  *
  * Paginated (see PAGE above) so PostgREST's per-response cap can't silently drop
  * attendance. If check-in volume grows very large, a date-windowed read (only the
@@ -48,7 +51,6 @@ export const getMarcadas = cache(
         .from("asistencias")
         .select("fecha, cliente_id")
         .is("deleted_at", null)
-        .is("class_session_id", null)
         .order("fecha")
         .range(from, from + PAGE - 1);
       const page = data ?? [];
@@ -96,7 +98,12 @@ export async function togglePase(
   const { data, error } = await supabase
     .rpc("toggle_pase", { p_cliente_id: input.clienteId, p_fecha: input.fecha })
     .single();
-  if (error || !data) throw new Error("No se pudo registrar la asistencia");
+  // Surface the RPC's OWN message: every toggle_pase failure is a deliberate, operator-facing Spanish
+  // raise ('Paquete vencido'; 'Asistencia de clase ya registrada — gestiónala en la clase'; C15/C9), so
+  // the pase screen can toast the reason instead of a blind "try again". Generic fallback only when the
+  // failure carried no message (e.g. an empty result).
+  if (error) throw new Error(error.message || "No se pudo registrar la asistencia");
+  if (!data) throw new Error("No se pudo registrar la asistencia");
 
   return { present: data.present, hora: data.hora };
 }

@@ -58,6 +58,8 @@ export const SUITE = [
   'reservar_clase_rules.sql',
   'cancelar_reserva_rules.sql',
   'pasar_lista_sesion_rules.sql',
+  'toggle_pase_rules.sql',
+  'toggle_pase_gym2_timezone.sql',
   'favorito_rules.sql',
   'roster_clase_rules.sql',
   'mi_membresia_rules.sql',
@@ -66,19 +68,18 @@ export const SUITE = [
 
 // QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason
 // (satisfies #80 AC "run OR deleted with a stated reason; nothing sits on disk pretending to be a
-// test"). These five predate Contract-B (20260705082018), which dropped the `user_id` columns from
+// test"). These predate Contract-B (20260705082018), which dropped the `user_id` columns from
 // clientes/paquetes/plantillas/perfil; every one still resolves its operator via the dropped
 // `perfil.user_id` AND seeds rows with the dropped `user_id` columns, so each errors at its first
 // INSERT/DELETE against the current schema. They encode real RPC write-rules (single-popular +
-// derived-name, refund-iff-consumed, the 4-plantilla cap, identity-only edits) worth keeping, so
-// they are quarantined for a per-gym rewrite + scratch validation — NOT deleted — and tracked here
-// so the drift guard still fails on any NEW unwired file. See #80.
+// derived-name, the 4-plantilla cap, identity-only edits) worth keeping, so they are quarantined for
+// a per-gym rewrite + scratch validation — NOT deleted — and tracked here so the drift guard still
+// fails on any NEW unwired file. See #80. (toggle_pase_rules + toggle_pase_gym2_timezone were
+// un-quarantined per-gym alongside the C15/C9 toggle_pase rewrite, 20260710124000.)
 export const QUARANTINE = [
   'actualizar_cliente_rules.sql',
   'actualizar_paquete_rules.sql',
   'plantillas_rules.sql',
-  'toggle_pase_rules.sql',
-  'toggle_pase_gym2_timezone.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
