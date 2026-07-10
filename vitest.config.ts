@@ -106,6 +106,16 @@ export default defineConfig({
         },
       },
       {
+        // supabase/functions — the Send Email Hook's pure decision core (#75).
+        // `correo.ts` has zero imports and no Deno APIs, so node env covers it; the
+        // Deno shell `index.ts` is excluded from tsc/eslint and carries no test.
+        test: {
+          name: "hooks",
+          environment: "node",
+          include: ["supabase/functions/**/*.test.ts"],
+        },
+      },
+      {
         // Repo-structure guards (audit 2026-06-30): manifest/catalog consistency,
         // turbo-task implementation, docs-as-tests, public-asset orphans, and the
         // client→server seam convention. Pure fs reads, node env, no aliases.

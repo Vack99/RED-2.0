@@ -48,6 +48,10 @@ const eslintConfig = defineConfig([
     "**/next-env.d.ts",
     // Claude Code scratch: nested git worktrees carry their own node_modules + .next build output
     ".claude/**",
+    // The Send Email Hook's Deno shell (#75): Deno runtime + esm.sh URL imports —
+    // not resolvable by the monorepo toolchain. Its pure core (correo.ts) + tests
+    // stay linted; only this thin shell is ignored.
+    "supabase/functions/**/index.ts",
   ]),
 ]);
 

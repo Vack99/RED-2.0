@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.base.json",
   "include": ["**/*.ts", "**/*.tsx", "**/*.mts"],
-  "exclude": ["node_modules", "apps"]
+  "exclude": ["node_modules", "apps", "supabase/functions/**/index.ts"]
 }
