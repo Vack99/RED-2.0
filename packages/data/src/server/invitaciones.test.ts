@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   construirUrlInvitacion,
   enviarInvitacion,
+  remitenteConNombre,
   resendTransport,
   type MailMessage,
   type MailResult,
@@ -157,6 +158,46 @@ describe("enviarInvitacion — send orchestration (injected fake + transport dou
 
     expect(res).toMatchObject({ ok: false, motivo: "error", error: "No autorizado" });
     expect(stampCalls(fake)).toHaveLength(0);
+  });
+});
+
+describe("remitenteConNombre — per-gym From display name over the shared address (#75)", () => {
+  it("extracts the address from a `Name <addr>` RESEND_FROM and swaps in the gym name", () => {
+    expect(remitenteConNombre("Forge", "Notificaciones <no-reply@ibookit.lat>")).toBe(
+      "Forge <no-reply@ibookit.lat>",
+    );
+  });
+
+  it("treats a bare-address RESEND_FROM as the address", () => {
+    expect(remitenteConNombre("RED", "no-reply@ibookit.lat")).toBe("RED <no-reply@ibookit.lat>");
+  });
+
+  it("no RESEND_FROM → undefined (the transport reports no-configurado)", () => {
+    expect(remitenteConNombre("Forge", undefined)).toBeUndefined();
+  });
+
+  it("empty gym name → the neutral RESEND_FROM unchanged", () => {
+    expect(remitenteConNombre("", "Notificaciones <no-reply@ibookit.lat>")).toBe(
+      "Notificaciones <no-reply@ibookit.lat>",
+    );
+  });
+});
+
+describe("enviarInvitacion — threads the per-gym From onto the message (#75)", () => {
+  const OLD = process.env.RESEND_FROM;
+  afterEach(() => {
+    if (OLD === undefined) delete process.env.RESEND_FROM;
+    else process.env.RESEND_FROM = OLD;
+  });
+
+  it("sets msg.from to `${gym_nombre} <addr>` from RESEND_FROM", async () => {
+    process.env.RESEND_FROM = "Notificaciones <no-reply@ibookit.lat>";
+    const fake = makeFake({ domainHost: "app.forge.mx" });
+    const { sent, transport } = recordingTransport({ ok: true });
+
+    await enviarInvitacion({ clienteId: "cli-1" }, { transport, client: fake.client });
+
+    expect(sent[0].from).toBe("Forge <no-reply@ibookit.lat>");
   });
 });
 

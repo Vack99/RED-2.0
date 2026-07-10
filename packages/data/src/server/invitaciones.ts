@@ -16,12 +16,15 @@ import { createClient, type SupabaseServer } from "./supabase";
  * home for the gym→client-host rule that S6's re-send reuses).
  */
 
-/** A ready-to-send email. `to` is the recipient; `html`/`text` are the two bodies Resend accepts. */
+/** A ready-to-send email. `to` is the recipient; `html`/`text` are the two bodies Resend accepts.
+ *  `from` overrides the transport's default sender with a per-gym display name (#75 / ADR-0014
+ *  amendment): the same one-domain address, the gym's name on the envelope. */
 export interface MailMessage {
   to: string;
   subject: string;
   html: string;
   text: string;
+  from?: string;
 }
 
 /** Transport result — a discriminated object so a bad send is a value, never a throw. */
@@ -37,14 +40,14 @@ export interface MailTransport {
  * The production transport: a plain `fetch` to the Resend REST API — no new npm dependency. Reads its
  * config from fixed env names the S7 runbook provisions: `RESEND_API_KEY` and `RESEND_FROM` (e.g.
  * "RED <no-reply@example.com>"). Missing env → a clean 'no-configurado' failure (the sale is unaffected;
- * nothing is sent). One platform sender for every gym (ADR-0014) — the gym's name rides the copy, never
- * the envelope.
+ * nothing is sent). One platform sending DOMAIN for every gym (ADR-0014, amended #75); the gym's name
+ * rides the `From:` display name (`msg.from`) as well as the copy — one address, per-gym display name.
  */
 export function resendTransport(): MailTransport {
   return {
     async send(msg: MailMessage): Promise<MailResult> {
       const apiKey = process.env.RESEND_API_KEY;
-      const from = process.env.RESEND_FROM;
+      const from = msg.from ?? process.env.RESEND_FROM;
       if (!apiKey || !from) return { ok: false, error: "no-configurado" };
       try {
         const res = await fetch("https://api.resend.com/emails", {
@@ -140,6 +143,22 @@ Este enlace es personal: al usarlo, tu cuenta queda ligada a tu registro en ${gy
   return { to: email, subject, html, text };
 }
 
+/**
+ * Per-gym `From:` display name (#75 / ADR-0014 amendment). The sending ADDRESS is
+ * shared — extracted from `RESEND_FROM`'s `Name <addr>` shape (the `<…>` part, else the
+ * whole string) — while the DISPLAY NAME becomes the gym's, so the invite mail and the
+ * hook's auth mail read as one platform per gym (no two-senders split). No `RESEND_FROM`
+ * → `undefined` (the transport reports `no-configurado`); empty gym name → the neutral
+ * `RESEND_FROM` unchanged.
+ */
+export function remitenteConNombre(gymNombre: string, resendFrom: string | undefined): string | undefined {
+  if (!resendFrom) return undefined;
+  if (!gymNombre) return resendFrom;
+  const match = resendFrom.match(/<(.+)>/);
+  const address = match ? match[1] : resendFrom;
+  return `${gymNombre} <${address}>`;
+}
+
 /** enviarInvitacion outcome — a value, never a throw. `ok:false` carries a machine `motivo` the caller
  *  maps to the recibo's invite state (design §3). */
 export type EnvioResult =
@@ -172,7 +191,9 @@ export async function enviarInvitacion(
     const url = await construirUrlInvitacion({ gymId: gym_id, gymSlug: gym_slug, codigo }, supabase);
     if (!url) return { ok: false, motivo: "sin-host" };
 
-    const envio = await transport.send(mensajeInvitacion({ nombre, gymNombre: gym_nombre, email, url }));
+    const mensaje = mensajeInvitacion({ nombre, gymNombre: gym_nombre, email, url });
+    mensaje.from = remitenteConNombre(gym_nombre, process.env.RESEND_FROM);
+    const envio = await transport.send(mensaje);
     if (!envio.ok) return { ok: false, motivo: "envio-fallido", error: envio.error };
 
     // Transport confirmed → record the send (best-effort: a stamp hiccup only re-invites later).
