@@ -24,15 +24,20 @@ import type {
 } from "./types";
 
 /**
- * Buying a package early STACKS onto the current one (brief Q5):
- * classes add, days add. Ilimitado classes stay ilimitado.
+ * Buying a package early STACKS onto the current one: paid days always carry
+ * and add. Ruling C4 (2026-07-08) — the PURCHASED package's type takes effect
+ * immediately ("purchase wins"): classes add only when both sides are finite;
+ * buying finite over an active ilimitado yields the pack's own count (not ∞),
+ * and buying ilimitado makes the stack unlimited.
  * Example: {clases:5, dias:3} + {clases:8, dias:20} => {clases:13, dias:23}.
  */
 export function stackPaquete(actual: Saldo, nuevo: CompraPaquete): Saldo {
   const clases: Clases =
-    actual.clases === "ilimitado" || nuevo.clases === "ilimitado"
+    nuevo.clases === "ilimitado"
       ? "ilimitado"
-      : actual.clases + nuevo.clases;
+      : actual.clases === "ilimitado"
+        ? nuevo.clases
+        : actual.clases + nuevo.clases;
   return { clases, dias: actual.dias + nuevo.dias };
 }
 
@@ -51,19 +56,13 @@ export function nombrePaquete(clases: number | null): string {
 
 /**
  * End date of a package bought on `fechaCompra`. Fixed-day packages add
- * `vigencia` days; Ilimitado ("mes") runs to the last day of the purchase
- * calendar month (brief Q1). Returns a date at local midnight; the caller
- * owns the timezone of the input (Forge: America/Chihuahua).
+ * `vigencia` days; "mes" is a flat 30 days from the purchase date (ruling C1,
+ * 2026-07-08 — month-end semantics are gone). Returns a date at local midnight;
+ * the caller owns the timezone of the input (Forge: America/Chihuahua).
  */
 export function calcVigenciaEnd(fechaCompra: Date, vigencia: Vigencia): Date {
-  const y = fechaCompra.getFullYear();
-  const m = fechaCompra.getMonth();
-  if (vigencia === "mes") {
-    // Day 0 of next month == last day of this month.
-    return new Date(y, m + 1, 0);
-  }
-  const end = new Date(y, m, fechaCompra.getDate());
-  end.setDate(end.getDate() + vigencia);
+  const end = new Date(fechaCompra.getFullYear(), fechaCompra.getMonth(), fechaCompra.getDate());
+  end.setDate(end.getDate() + (vigencia === "mes" ? 30 : vigencia));
   return end;
 }
 
@@ -81,12 +80,14 @@ export function diasRestantes(vence: Date, hoy: Date): number {
  * Derive a client's lifecycle state from what's left (ADR-0002 — never
  * stored). Replaces the stored `estado` field and the three conflicting
  * threshold checks scattered across the mock screens.
- *  - sin_clases: expired (dias <= 0) OR out of classes (clases <= 0)
+ *  - sin_clases: expired (dias < 0) OR out of classes (clases <= 0)
  *  - por_vencer: <= 5 days left OR <= 2 classes left (not ilimitado)
  *  - activo: otherwise
+ * The vence day (dias === 0) is a valid training day (ruling C9), so it lands
+ * in por_vencer, not sin_clases.
  */
 export function derivarEstado(saldo: Saldo): EstadoCliente {
-  const expirado = saldo.dias <= 0;
+  const expirado = saldo.dias < 0;
   const sinClases = saldo.clases !== "ilimitado" && saldo.clases <= 0;
   if (expirado || sinClases) return "sin_clases";
 
@@ -159,25 +160,29 @@ export function consumirClase(clases: Clases): Clases {
 }
 
 /**
- * On expiry, remaining classes are FORFEITED (brief Q2): returns 0 once
- * `dias` <= 0. Ilimitado has no count to forfeit; otherwise unchanged.
+ * On expiry, remaining classes are FORFEITED: returns 0 once `dias` < 0. The
+ * vence day itself (dias === 0) is a valid training day (ruling C9), so classes
+ * survive it and forfeiture starts the day AFTER. Ilimitado has no count to
+ * forfeit; otherwise unchanged.
  */
 export function forfeit(clases: Clases, dias: number): Clases {
   if (clases === "ilimitado") return "ilimitado";
-  return dias <= 0 ? 0 : clases;
+  return dias < 0 ? 0 : clases;
 }
 
 /**
- * The base a NEW purchase stacks onto (brief Q2 + Q5). A still-valid package
- * (dias > 0) contributes its full saldo; an expired one is forfeited ENTIRELY
- * so a renewal starts clean. Note this differs from read-time `forfeit`: a
- * lapsed *ilimitado* does NOT carry forward as unlimited here — buying a
- * limited package after an unlimited month ended gives the limited count, not
- * perpetual ∞. The single home for "what stacking builds on"; the write path
- * MUST call this instead of re-deriving the expiry check inline.
+ * The base a NEW purchase stacks onto. A still-valid package contributes its
+ * full saldo; an expired one is forfeited ENTIRELY so a renewal starts clean.
+ * The vence day (dias === 0) is a valid training day (ruling C9), so it KEEPS
+ * the saldo — forfeiture starts the day AFTER (dias < 0). Note this differs
+ * from a lapsed read: a lapsed *ilimitado* does NOT carry forward as unlimited
+ * here — buying a limited package after an unlimited month ended gives the
+ * limited count, not perpetual ∞. The single home for "what stacking builds
+ * on"; the write path MUST call this instead of re-deriving the expiry check
+ * inline.
  */
 export function baseParaStack(saldo: Saldo): Saldo {
-  return saldo.dias > 0 ? saldo : { clases: 0, dias: 0 };
+  return saldo.dias >= 0 ? saldo : { clases: 0, dias: 0 };
 }
 
 // ── Date helpers for the resumen (local-field comparisons only; the caller

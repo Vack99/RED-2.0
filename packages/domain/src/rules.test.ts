@@ -2,30 +2,18 @@ import { describe, it, expect } from "vitest";
 import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
-describe("stackPaquete", () => {
-  it("adds classes and days onto the current package (brief Q5)", () => {
-    expect(stackPaquete({ clases: 5, dias: 3 }, { clases: 8, dias: 20 })).toEqual({
-      clases: 13,
-      dias: 23,
-    });
+describe("stackPaquete — purchase wins, days carry (ruling C4)", () => {
+  it("finite + finite adds classes and days", () => {
+    expect(stackPaquete({ clases: 5, dias: 3 }, { clases: 8, dias: 20 })).toEqual({ clases: 13, dias: 23 });
   });
-
-  it("keeps classes ilimitado when the current package is ilimitado", () => {
-    expect(
-      stackPaquete({ clases: "ilimitado", dias: 10 }, { clases: 8, dias: 20 }),
-    ).toEqual({ clases: "ilimitado", dias: 30 });
+  it("ilimitado base + finite purchase: purchase wins — classes become the pack's count, days add", () => {
+    expect(stackPaquete({ clases: "ilimitado", dias: 10 }, { clases: 8, dias: 30 })).toEqual({ clases: 8, dias: 40 });
   });
-
-  it("keeps classes ilimitado when the new package is ilimitado", () => {
-    expect(
-      stackPaquete({ clases: 5, dias: 3 }, { clases: "ilimitado", dias: 30 }),
-    ).toEqual({ clases: "ilimitado", dias: 33 });
+  it("finite base + ilimitado purchase: becomes unlimited, days add", () => {
+    expect(stackPaquete({ clases: 5, dias: 3 }, { clases: "ilimitado", dias: 30 })).toEqual({ clases: "ilimitado", dias: 33 });
   });
-
-  it("keeps classes ilimitado when both packages are ilimitado", () => {
-    expect(
-      stackPaquete({ clases: "ilimitado", dias: 10 }, { clases: "ilimitado", dias: 20 }),
-    ).toEqual({ clases: "ilimitado", dias: 30 });
+  it("ilimitado + ilimitado stays unlimited, days add", () => {
+    expect(stackPaquete({ clases: "ilimitado", dias: 4 }, { clases: "ilimitado", dias: 30 })).toEqual({ clases: "ilimitado", dias: 34 });
   });
 });
 
@@ -53,19 +41,19 @@ describe("calcVigenciaEnd", () => {
     expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 5, 7]); // 7 jun
   });
 
-  it("runs Ilimitado to the last day of the purchase month (brief Q1)", () => {
-    const end = calcVigenciaEnd(new Date(2026, 4, 13), "mes");
-    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 4, 31]); // 31 may
+  it("runs 'mes' a flat 30 days from any date (ruling C1)", () => {
+    const end = calcVigenciaEnd(new Date(2026, 5, 1), "mes"); // 1 jun
+    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 6, 1]); // 1 jul
   });
 
-  it("runs Ilimitado to Dec 31 (year stays the same)", () => {
-    const end = calcVigenciaEnd(new Date(2026, 11, 5), "mes"); // 5 dic
-    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 11, 31]);
+  it("carries 'mes' +30 across a year boundary (no month-end clamp)", () => {
+    const end = calcVigenciaEnd(new Date(2026, 11, 31), "mes"); // 31 dic
+    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2027, 0, 30]); // 30 ene 2027
   });
 
-  it("handles month-end for a short non-leap February", () => {
-    const end = calcVigenciaEnd(new Date(2026, 1, 15), "mes");
-    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 1, 28]);
+  it("adds 'mes' +30 from a short-February date (no month-end semantics)", () => {
+    const end = calcVigenciaEnd(new Date(2026, 1, 28), "mes"); // 28 feb
+    expect([end.getFullYear(), end.getMonth(), end.getDate()]).toEqual([2026, 2, 30]); // 30 mar
   });
 });
 
@@ -98,8 +86,11 @@ describe("derivarEstado", () => {
   it("is sin_clases when out of classes", () => {
     expect(derivarEstado({ clases: 0, dias: 20 })).toBe("sin_clases");
   });
-  it("is sin_clases when expired", () => {
-    expect(derivarEstado({ clases: 5, dias: 0 })).toBe("sin_clases");
+  it("keeps the vence day (dias === 0) valid — por_vencer, not sin_clases (ruling C9)", () => {
+    expect(derivarEstado({ clases: 5, dias: 0 })).toBe("por_vencer");
+  });
+  it("is sin_clases once expired (dias < 0)", () => {
+    expect(derivarEstado({ clases: 5, dias: -1 })).toBe("sin_clases");
     expect(derivarEstado({ clases: 5, dias: -2 })).toBe("sin_clases");
   });
 });
@@ -130,11 +121,11 @@ describe("consumirClase", () => {
 });
 
 describe("forfeit", () => {
-  it("forfeits remaining classes once expired (brief Q2)", () => {
+  it("forfeits remaining classes once expired (dias < 0, ruling C9)", () => {
     expect(forfeit(5, -1)).toBe(0);
   });
-  it("forfeits classes on the expiry day itself (dias === 0)", () => {
-    expect(forfeit(5, 0)).toBe(0);
+  it("keeps classes on the vence day itself (dias === 0 is a valid training day)", () => {
+    expect(forfeit(5, 0)).toBe(5);
   });
   it("keeps classes while still valid", () => {
     expect(forfeit(5, 3)).toBe(5);
@@ -151,8 +142,8 @@ describe("baseParaStack", () => {
   it("forfeits an expired package entirely (dias < 0)", () => {
     expect(baseParaStack({ clases: 5, dias: -1 })).toEqual({ clases: 0, dias: 0 });
   });
-  it("forfeits on the expiry day itself (dias === 0)", () => {
-    expect(baseParaStack({ clases: 5, dias: 0 })).toEqual({ clases: 0, dias: 0 });
+  it("keeps the saldo on the vence day itself (dias === 0 is a valid training day, ruling C9)", () => {
+    expect(baseParaStack({ clases: 4, dias: 0 })).toEqual({ clases: 4, dias: 0 });
   });
   it("drops a lapsed ilimitado — a renewal does NOT carry unlimited forward", () => {
     expect(baseParaStack({ clases: "ilimitado", dias: -1 })).toEqual({ clases: 0, dias: 0 });

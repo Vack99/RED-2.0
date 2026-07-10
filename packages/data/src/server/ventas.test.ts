@@ -155,7 +155,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
   it("includes the finite keys for an existing client + finite paquete", async () => {
     fake = makeFake({
       paquetes: FINITO,
-      clientes: { id: "cli-1", nombre: "Andrea", tel: "614 000 0000", clases_restantes: 2, vence: null },
+      clientes: { id: "cli-1", nombre: "Andrea", tel: "614 000 0000", clases_restantes: 2, vence: "2020-01-01" },
       plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }],
     });
 
@@ -165,7 +165,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(args).toHaveProperty("p_cliente_id", "cli-1");
     expect(args).toHaveProperty("p_clases", 8); // paquete clases (raw)
     expect(args).toHaveProperty("p_vigencia_dias", 30);
-    // Stacked: an expired (vence null → 0 días) base forfeits, so 0 + 8 = 8.
+    // Stacked: an expired (past vence → días < 0) base forfeits, so 0 + 8 = 8.
     expect(args).toHaveProperty("p_clases_restantes", 8);
   });
 
