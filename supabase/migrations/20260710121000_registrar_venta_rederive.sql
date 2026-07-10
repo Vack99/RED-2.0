@@ -7,9 +7,13 @@
 -- the registrar_venta_stacking suite pins this SQL to it.
 --
 -- Signature CHANGE (breaks the old 12-arg overload — dropped first so PostgREST rpc
--- dispatch stays unambiguous). SECURITY INVOKER preserved (ADR-0005): the sale still
--- runs under the operator's RLS; only staff_gym()/next_folio() are definer helpers.
--- `set search_path to ''` preserved — every ref schema-qualified.
+-- dispatch stays unambiguous). DEPLOY WINDOW, stated honestly: between applying this
+-- migration and deploying the matching app build, the OLD app's COBRAR fails loudly
+-- (PostgREST PGRST202 — no function matches the old 12-arg call). That window is
+-- accepted for a solo-operated deploy (apply + deploy back-to-back), not zero-downtime.
+-- SECURITY INVOKER preserved (ADR-0005): the sale still runs under the operator's RLS;
+-- only staff_gym()/next_folio() are definer helpers. `set search_path to ''`
+-- preserved — every ref schema-qualified.
 --
 -- Delta from the task-4 brief (spec-preserving, not money-math): (1) the claim-code
 -- mint from 20260708200001:52-66 is inlined, so v_bytes/i/v_alpha are declared here

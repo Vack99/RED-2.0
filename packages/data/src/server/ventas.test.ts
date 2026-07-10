@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { crearVenta, crearVentaSchema, DuplicadoError } from "./ventas";
+import { crearVenta, crearVentaSchema, DuplicadoError, EMAIL_EN_USO_MSG, EmailEnUsoError } from "./ventas";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -232,6 +232,24 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     const err = await crearVenta(input({ mode: "new" }), fake.client).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(DuplicadoError);
     expect((err as DuplicadoError).existingId).toBe("cli-existing-9");
+  });
+
+  it("surfaces the RPC's backfill-email collision as EmailEnUsoError carrying the exact V13-pinned message (C7)", async () => {
+    fake = makeFake(
+      {
+        paquetes: FINITO,
+        clientes: { nombre: "Andrea", tel: "614 000 0000" },
+        plantillas: [{ id: "t1", nombre: "Recibo", body: "x" }],
+      },
+      { rpcError: { message: EMAIL_EN_USO_MSG } },
+    );
+
+    const err = await crearVenta(
+      input({ mode: "existing", clienteId: "cli-1", email: "otra@x.mx" }),
+      fake.client,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(EmailEnUsoError);
+    expect((err as Error).message).toBe("Este correo ya pertenece a otro registro de este gym");
   });
 
   it("rejects metodo 'pendiente' at schema parse — Por pagar is removed (C2)", () => {

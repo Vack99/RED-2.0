@@ -177,9 +177,15 @@ export function VenderScreen({
         forzarNuevo: opts.forzarNuevo,
       });
       if (!res.ok) {
-        // The RPC's dup guard tripped — open the dialog; keep the same idemKey so
-        // "crear nuevo de todos modos" replays this exact attempt (D2/C6).
-        setDuplicado(res.duplicado);
+        if ("duplicado" in res) {
+          // The RPC's dup guard tripped — open the dialog; keep the same idemKey so
+          // "crear nuevo de todos modos" replays this exact attempt (D2/C6).
+          setDuplicado(res.duplicado);
+        } else {
+          // A message-bearing refusal (C7: the backfill email belongs to another
+          // record) — toast the RPC's own actionable message, not the generic one.
+          forgeToast({ tone: "warning", title: "No se pudo cobrar", body: res.mensaje });
+        }
         return;
       }
       // Snapshot the receipt's first-purchase state from the selected DTO before

@@ -94,9 +94,11 @@ export type TogglePaseOutcome =
 
 /**
  * Toggle a client's attendance for a given (absolute) day. Marking present
- * inserts a row and consumes a class (Ilimitado untouched; brief Q6 — same-day
- * duplicates each consume); unmarking soft-deletes the active row and restores a
- * class ONLY if one was actually consumed. Back-dated days are allowed (no time).
+ * inserts a row and consumes a class (Ilimitado untouched; ruling C15 — one visit
+ * consumes ONCE across surfaces: a member already session-marked that day is
+ * refused, never double-consumed); unmarking soft-deletes the active row and
+ * restores a class ONLY if one was actually consumed. Back-dated days are allowed
+ * (no time).
  *
  * The read-then-write toggle is one atomic transaction via the `toggle_pase`
  * RPC (ADR-0005): it makes the on/off decision, the guarded ±1 decrement, and

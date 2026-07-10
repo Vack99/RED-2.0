@@ -4,16 +4,19 @@ import { enviarInvitacion } from "@gym/data/server/invitaciones";
 import {
   crearVenta,
   DuplicadoError,
+  EmailEnUsoError,
   type InviteState,
   type ReciboResult,
   type VentaResult,
 } from "@gym/data/server/ventas";
 
-/** The vender screen switches on this: a completed sale (recibo) or the RPC's duplicate
- *  guard tripping (D2), so the UI can offer "usar existente / crear nuevo de todos modos". */
+/** The vender screen switches on this: a completed sale (recibo), the RPC's duplicate
+ *  guard tripping (D2 — the UI offers "usar existente / crear nuevo de todos modos"),
+ *  or a message-bearing refusal the UI toasts verbatim (C7 backfill-email collision). */
 export type CrearVentaResult =
   | { ok: true; recibo: ReciboResult }
-  | { ok: false; duplicado: { id: string } };
+  | { ok: false; duplicado: { id: string } }
+  | { ok: false; mensaje: string };
 
 /**
  * Thin write seam (ADR-0001): delegate to the DAL, which Zod-validates, re-auths, and runs the RPC. Then —
@@ -33,6 +36,7 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
     result = await crearVenta(raw);
   } catch (e) {
     if (e instanceof DuplicadoError) return { ok: false, duplicado: { id: e.existingId } };
+    if (e instanceof EmailEnUsoError) return { ok: false, mensaje: e.message };
     throw e;
   }
   return { ok: true, recibo: { ...result, invite: await resolverInvitacion(result) } };

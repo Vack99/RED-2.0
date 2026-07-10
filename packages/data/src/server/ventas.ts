@@ -97,6 +97,21 @@ export class DuplicadoError extends Error {
   }
 }
 
+/** The RPC's C7 backfill-collision raise, verbatim. It IS contract — the
+ *  registrar_venta_stacking suite (V13) pins this exact string. */
+export const EMAIL_EN_USO_MSG = "Este correo ya pertenece a otro registro de este gym";
+
+/** The RPC refused an EXISTENTE sale because its backfill email already belongs to
+ *  another row in the gym (clientes_email_gym_uq). Typed so the operator sees the
+ *  actionable Spanish message instead of the generic failure toast — the same
+ *  channel discipline as DuplicadoError. */
+export class EmailEnUsoError extends Error {
+  constructor() {
+    super(EMAIL_EN_USO_MSG);
+    this.name = "EmailEnUsoError";
+  }
+}
+
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
 
 // Unbrand entity ids at the DB edge — kind-checked, so swapping a cliente id and
@@ -188,6 +203,9 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     // a generic failure — surface it typed so vender.tsx can offer the dup dialog.
     const dup = rpcErr.message?.match(/CLIENTE_DUPLICADO:(\S+)/);
     if (dup) throw new DuplicadoError(dup[1]);
+    // C7: the backfill email already belongs to another row (V13-pinned message) —
+    // a refusal the operator can act on, not a generic failure.
+    if (rpcErr.message === EMAIL_EN_USO_MSG) throw new EmailEnUsoError();
     throw new Error("No se pudo registrar la venta");
   }
   if (!result) throw new Error("No se pudo registrar la venta");
