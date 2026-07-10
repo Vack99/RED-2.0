@@ -16,7 +16,7 @@
 //   (or:    pnpm test:denial  — same thing, wired in package.json)
 
 import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, join } from 'node:path';
 
 const API = 'https://api.supabase.com/v1';
@@ -25,9 +25,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 // Run order: the seeded cross-tenant vectors, then the S0 (gym/gym_domain anon-read) and S1
 // (gym_membership) table vectors, then the S5 per-gym folio + gym-scoped re-key vectors (#24),
-// then the S8 member self-register + verified-email claim vectors.
-// A future slice adds a vector to a file here — not a second harness.
-const SUITE = [
+// then the S8 member self-register + verified-email claim vectors (registro_claim →
+// preparar_invitacion → actualizar_cliente_email → reclamar_por_codigo, the whole claim rail),
+// then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm), the
+// per-package RLS/RPC-rule vectors, and finally gym2_probe — the end-to-end second-gym capstone.
+// Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
+// A future slice adds a vector to a file here — not a second harness. Wiring drift (a .sql that is
+// in neither SUITE nor QUARANTINE) is caught by tools/guards/denial-suite-drift.test.ts (#80).
+export const SUITE = [
   'rls_cross_tenant_denial.sql',
   'gym_tenant_anon_read.sql',
   'gym_membership_rls.sql',
@@ -36,6 +41,9 @@ const SUITE = [
   'registro_claim.sql',
   'preparar_invitacion_rules.sql',
   'actualizar_cliente_email_rules.sql',
+  'reclamar_por_codigo.sql',
+  'registrar_venta_stamps_gym_id.sql',
+  'registrar_venta_email.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',
   'catalog_rls_denial.sql',
@@ -51,6 +59,24 @@ const SUITE = [
   'favorito_rules.sql',
   'roster_clase_rules.sql',
   'mi_membresia_rules.sql',
+  'gym2_probe.sql',
+];
+
+// QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason
+// (satisfies #80 AC "run OR deleted with a stated reason; nothing sits on disk pretending to be a
+// test"). These five predate Contract-B (20260705082018), which dropped the `user_id` columns from
+// clientes/paquetes/plantillas/perfil; every one still resolves its operator via the dropped
+// `perfil.user_id` AND seeds rows with the dropped `user_id` columns, so each errors at its first
+// INSERT/DELETE against the current schema. They encode real RPC write-rules (single-popular +
+// derived-name, refund-iff-consumed, the 4-plantilla cap, identity-only edits) worth keeping, so
+// they are quarantined for a per-gym rewrite + scratch validation — NOT deleted — and tracked here
+// so the drift guard still fails on any NEW unwired file. See #80.
+export const QUARANTINE = [
+  'actualizar_cliente_rules.sql',
+  'actualizar_paquete_rules.sql',
+  'plantillas_rules.sql',
+  'toggle_pase_rules.sql',
+  'toggle_pase_gym2_timezone.sql',
 ];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
@@ -59,14 +85,6 @@ const parentRef = process.env.SUPABASE_PROJECT_REF;
 // provisioning a preview branch — preview branching is paywalled (402). Refuses the live parent ref.
 const targetRef = process.env.SUPABASE_TARGET_REF;
 const LIVE_PARENT_REF = 'hjppxawglmukfvsgmcog';
-if (!token || (!parentRef && !targetRef)) {
-  console.error('FATAL: set SUPABASE_ACCESS_TOKEN and either SUPABASE_PROJECT_REF or SUPABASE_TARGET_REF');
-  process.exit(2);
-}
-if (targetRef && (targetRef === parentRef || targetRef === LIVE_PARENT_REF)) {
-  console.error(`REFUSED: SUPABASE_TARGET_REF (${targetRef}) must not be the live parent or SUPABASE_PROJECT_REF`);
-  process.exit(2);
-}
 
 const auth = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -107,25 +125,42 @@ async function ensureBranch() {
   throw new Error(`branch ${ref} did not become queryable in time`);
 }
 
-try {
-  const ref = targetRef ?? (await ensureBranch());
-  if (targetRef) console.log(`Using target ref "${targetRef}" directly (SUPABASE_TARGET_REF override; branch path skipped).`);
-  let failed = 0;
-  for (const file of SUITE) {
-    const sql = await readFile(join(HERE, file), 'utf8');
-    const { ok, detail } = await runSql(ref, sql);
-    if (ok) {
-      console.log(`  PASS  ${file}`);
-    } else {
-      failed++;
-      console.error(`  FAIL  ${file}\n${detail}`);
-    }
+// Only runs when invoked as a script (pnpm test:denial). Importing this module — the drift guard
+// does, to read SUITE/QUARANTINE — must have no side effects, so the env validation + run loop live
+// here, gated below, not at top level.
+async function main() {
+  if (!token || (!parentRef && !targetRef)) {
+    console.error('FATAL: set SUPABASE_ACCESS_TOKEN and either SUPABASE_PROJECT_REF or SUPABASE_TARGET_REF');
+    process.exit(2);
   }
-  console.log(failed ? `\nDENIAL SUITE: ${failed}/${SUITE.length} file(s) FAILED` : `\nDENIAL SUITE: all ${SUITE.length} files green`);
-  process.exitCode = failed ? 1 : 0;
-} catch (err) {
-  console.error(`FATAL: ${err.message}`);
-  process.exitCode = 1;
+  if (targetRef && (targetRef === parentRef || targetRef === LIVE_PARENT_REF)) {
+    console.error(`REFUSED: SUPABASE_TARGET_REF (${targetRef}) must not be the live parent or SUPABASE_PROJECT_REF`);
+    process.exit(2);
+  }
+  try {
+    const ref = targetRef ?? (await ensureBranch());
+    if (targetRef) console.log(`Using target ref "${targetRef}" directly (SUPABASE_TARGET_REF override; branch path skipped).`);
+    let failed = 0;
+    for (const file of SUITE) {
+      const sql = await readFile(join(HERE, file), 'utf8');
+      const { ok, detail } = await runSql(ref, sql);
+      if (ok) {
+        console.log(`  PASS  ${file}`);
+      } else {
+        failed++;
+        console.error(`  FAIL  ${file}\n${detail}`);
+      }
+    }
+    console.log(failed ? `\nDENIAL SUITE: ${failed}/${SUITE.length} file(s) FAILED` : `\nDENIAL SUITE: all ${SUITE.length} files green`);
+    process.exitCode = failed ? 1 : 0;
+  } catch (err) {
+    console.error(`FATAL: ${err.message}`);
+    process.exitCode = 1;
+  }
+  // Set exitCode + let the loop drain rather than process.exit(): a synchronous exit races undici's
+  // socket teardown and aborts the process with a libuv assertion on some platforms.
 }
-// Set exitCode + let the loop drain rather than process.exit(): a synchronous exit races undici's
-// socket teardown and aborts the process with a libuv assertion on some platforms.
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  await main();
+}

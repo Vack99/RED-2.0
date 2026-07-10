@@ -127,15 +127,32 @@ declare
   un uuid := current_setting('t.u_nomatch', true)::uuid;
   r  record;
   rec record;
+  v_auth_email text;
+  n  int;
 begin
   select * into r from public.reclamar_o_crear_cliente(g);
   if r.reclamado then raise exception 'V2 FAIL: no matching email should NOT claim'; end if;
-  select nombre, tel, gym_id, auth_user_id, clases_restantes into rec from public.clientes where id = r.cliente_id;
+  -- Assert the WRITTEN row, not just which row (the #78 lesson): an RPC's return value is not its
+  -- contract — the row it writes is. #78 dropped `email` from exactly this create-path INSERT and
+  -- every self-registrant landed with clientes.email = NULL, invisible to a which-row-only test.
+  select nombre, tel, gym_id, auth_user_id, clases_restantes, email, terms_accepted_at, privacy_accepted_at
+    into rec from public.clientes where id = r.cliente_id;
   if rec.auth_user_id <> un then raise exception 'V2 FAIL: fresh cliente not owned by the registrant'; end if;
   if rec.gym_id <> g then raise exception 'V2 FAIL: fresh cliente not scoped to the resolved gym'; end if;
   if rec.nombre <> 'Nora Nueva' then raise exception 'V2 FAIL: nombre not carried from signup metadata (%)', rec.nombre; end if;
   if rec.tel <> '6142223344' then raise exception 'V2 FAIL: tel not derived from phone_e164 (%)', rec.tel; end if;
   if rec.clases_restantes is distinct from 0 then raise exception 'V2 FAIL: fresh self-registrant must start at 0 clases (finite), got % — NULL means Ilimitado = free booking', rec.clases_restantes; end if;
+  -- #78 regression: the create path MUST persist the VERIFIED auth email as the contact address.
+  select u.email into v_auth_email from auth.users u where u.id = un;
+  if rec.email is distinct from v_auth_email then
+    raise exception 'V2 FAIL (#78): create path dropped the verified email — clientes.email=% but auth.users.email=%', rec.email, v_auth_email;
+  end if;
+  -- Consent stamps written at create time (the RPC sets both to now()).
+  if rec.terms_accepted_at is null then raise exception 'V2 FAIL: terms_accepted_at not stamped on the fresh row'; end if;
+  if rec.privacy_accepted_at is null then raise exception 'V2 FAIL: privacy_accepted_at not stamped on the fresh row'; end if;
+  -- Membership upserted in the SAME transaction (no half-registered state on the create path).
+  select count(*) into n from public.gym_membership where user_id = un and gym_id = g and role = 'member';
+  if n <> 1 then raise exception 'V2 FAIL: gym_membership(member) not written on create (count=%)', n; end if;
 end $$;
 reset role;
 
