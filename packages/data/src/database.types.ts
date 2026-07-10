@@ -1486,22 +1486,22 @@ export type Database = {
       }
       registrar_venta: {
         Args: {
-          p_clases?: number
-          p_clases_restantes?: number
-          p_cliente_id?: string
-          p_email?: string
           p_metodo: string
-          p_monto: number
-          p_nombre: string
-          p_paquete_nombre: string
-          p_tel: string
-          p_vence?: string
-          p_vigencia_dias?: number
-          p_vigencia_tipo: string
+          p_paquete_id: string
+          p_idempotency_key: string
+          p_cliente_id?: string
+          p_nombre?: string
+          p_tel?: string
+          p_email?: string
+          p_forzar_nuevo?: boolean
         }
         Returns: {
-          cliente_id: string
           folio: number
+          cliente_id: string
+          clases_restantes: number
+          vence: string
+          paquete_nombre: string
+          monto: number
         }[]
       }
       reservar_clase: {

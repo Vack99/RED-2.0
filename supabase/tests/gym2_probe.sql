@@ -31,6 +31,7 @@ declare
   member2  uuid := gen_random_uuid();  -- registrant who will claim the seeded cliente
   cli_g1   uuid;
   cli_seed uuid;                       -- gym #2's pre-seeded UNCLAIMED cliente (known email)
+  paq2     uuid;                       -- gym #2's paquete: the sole package input to the (c) sale (C13)
 begin
   select id into gym1 from public.gym where slug = 'forge';
   if gym1 is null then raise exception 'SEED FAIL: expected the forge gym from the spine seeds'; end if;
@@ -51,8 +52,11 @@ begin
     returning id into cli_seed;
 
   -- Real rows in BOTH gyms' catalogs so (b)'s "gym-1 invisible" asserts against data, not emptiness.
-  insert into public.paquetes  (gym_id, nombre, precio, vigencia_dias) values
-    (gym1, 'G1 8 clases', 750, 20), (gym2, 'G2 8 clases', 800, 20);
+  -- gym #2's row is captured: the (c) sale re-derives from it (C13), so it carries a real `clases`.
+  insert into public.paquetes  (gym_id, nombre, clases, vigencia_dias, precio) values
+    (gym1, 'G1 8 clases', 8, 20, 750);
+  insert into public.paquetes  (gym_id, nombre, clases, vigencia_dias, precio) values
+    (gym2, 'G2 8 clases', 8, 20, 800) returning id into paq2;
   insert into public.perfil    (gym_id, negocio) values (gym1, 'FORGE'), (gym2, 'GYM2');
   insert into public.plantillas (gym_id, nombre, body) values
     (gym1, 'G1 Recordatorio', 'Hola {nombre}'), (gym2, 'G2 Recordatorio', 'Hola {nombre}');
@@ -68,6 +72,7 @@ begin
   perform set_config('t.staff2',   staff2::text,   true);
   perform set_config('t.member2',  member2::text,  true);
   perform set_config('t.cli_seed', cli_seed::text, true);
+  perform set_config('t.paq2',     paq2::text,     true);
 end $$;
 
 -- ── (a) register→claim: member2 claims the seeded row (reclamado = true, balance carried) ─────
@@ -124,16 +129,15 @@ set local role authenticated;
 do $$
 declare
   g2       uuid := current_setting('t.gym2', true)::uuid;
-  v_today  date := (now() at time zone 'America/Mexico_City')::date;
   v_folio  bigint;
   v_cli    uuid;
   v_gym    uuid;
 begin
-  -- NEW-cliente path: gym derives from staff2's membership (staff_gym()), never a parameter.
+  -- NEW-cliente path: gym derives from staff2's membership (staff_gym()), never a parameter. The sale
+  -- re-derives price/saldo/vence from gym #2's paquete row (C13) — only its id is sent.
   select r.folio, r.cliente_id into v_folio, v_cli from public.registrar_venta(
-    p_nombre := 'Venta G2', p_tel := '5599988877', p_paquete_nombre := 'G2 8 clases', p_vigencia_tipo := 'dias',
-    p_monto := 800, p_metodo := 'efectivo', p_clases_restantes := 8,
-    p_vence := v_today + 20, p_clases := 8, p_vigencia_dias := 20) r;
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.paq2', true)::uuid,
+    p_idempotency_key := gen_random_uuid(), p_nombre := 'Venta G2', p_tel := '5599988877') r;
 
   -- gym #2 has zero ventas → its counter seeds at 1000 → first folio 1001, while gym #1 sits at 1200:
   -- 1001 proves the draw came off gym #2's own counter row.

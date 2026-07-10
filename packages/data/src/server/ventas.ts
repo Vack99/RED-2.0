@@ -1,11 +1,13 @@
 import "server-only";
 
+import { randomUUID } from "node:crypto";
+
 import { z } from "zod";
 
 import { baseParaStack, calcVigenciaEnd, diasRestantes, stackPaquete } from "@gym/domain/rules";
 import type { Clases, CompraPaquete, MetodoPago, PlantillaContext, Saldo } from "@gym/domain/types";
 import { asClienteId, asPaqueteId, type ClienteId, type PaqueteId } from "@gym/domain/ids";
-import { addDays, firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
+import { addDays, firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -79,7 +81,6 @@ export type InviteState =
 export type ReciboResult = VentaResult & { invite: InviteState };
 
 const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n);
-const clasesToDb = (c: Clases): number | null => (c === "ilimitado" ? null : c);
 
 // Unbrand entity ids at the DB edge — kind-checked, so swapping a cliente id and
 // a paquete id is a compile error here, not a silent wrong-row lookup (audit
@@ -100,10 +101,11 @@ function vigenciaDisplay(tipo: string, dias: number | null): string {
  * delegated to src/domain — never reimplemented. `hoy` is the Chihuahua-local
  * calendar day so the domain's local-midnight math is correct (ADR-0003).
  *
- * The mutate-saldo + insert-venta pair is one atomic transaction via the
- * `registrar_venta` RPC (ADR-0005): the math stays here in TS, the DB does only
- * the write. Optional RPC args are omitted (not passed null) so the function's
- * DEFAULT NULL applies — keeps the generated types honest, no `as any`.
+ * Ruling C13: the `registrar_venta` RPC (ADR-0005) re-derives price/saldo/vence from
+ * the paquete row inside one locked transaction — this DAL sends only identity +
+ * paquete_id + metodo + an idempotency key (C6). The domain math below feeds the
+ * recibo DISPLAY only. (Task 4 landed the RPC + this minimal caller; task 5 finishes
+ * the DAL slim-down so the recibo reads the RPC's returned saldo/vence directly.)
  */
 export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise<VentaResult> {
   const input = crearVentaSchema.parse(raw);
@@ -168,27 +170,22 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
 
   const nuevoSaldo = stackPaquete(saldoActual, compra);
   const nuevoVence = addDays(hoy, nuevoSaldo.dias);
-  const nuevoClases = clasesToDb(nuevoSaldo.clases);
 
-  // One atomic write: upsert the cliente's saldo + insert the venta (folio from
-  // the DB sequence), in a single transaction. RLS scopes both writes to the
-  // operator (SECURITY INVOKER). Optional args are spread in only when non-null
-  // so the RPC's DEFAULT NULL handles ilimitado saldo / mes-package nulls / the
-  // new-client id without passing `null` into a `number?` param.
+  // Ruling C13: the RPC re-derives price/balance/vence from the paquete row inside
+  // one locked transaction — the client sends ONLY identity + p_paquete_id + p_metodo
+  // + an idempotency key (C6). The TS saldo math above now feeds the recibo DISPLAY
+  // only; it no longer crosses the write boundary.
+  // NOTE (task 4): this is the minimal contract adjustment to keep the gate green —
+  // task 5 finishes the DAL slim-down (drops the now-display-only math + the recibo
+  // reads the RPC's returned saldo/vence).
   const { data: result, error: rpcErr } = await supabase
     .rpc("registrar_venta", {
-      p_nombre: nombre,
-      p_tel: tel,
-      p_paquete_nombre: paq.nombre,
-      p_vigencia_tipo: paq.vigencia_tipo,
-      p_monto: paq.precio,
       p_metodo: input.metodo,
-      p_vence: toIsoDay(nuevoVence),
+      p_paquete_id: forPaquete(input.paqueteId),
+      p_idempotency_key: randomUUID(),
       ...(input.mode === "existing" && { p_cliente_id: forCliente(input.clienteId!) }),
+      ...(input.mode === "new" && { p_nombre: nombre, p_tel: tel }),
       ...(input.mode === "new" && input.nuevoEmail ? { p_email: input.nuevoEmail } : {}),
-      ...(nuevoClases !== null && { p_clases_restantes: nuevoClases }),
-      ...(paq.clases !== null && { p_clases: paq.clases }),
-      ...(paq.vigencia_dias !== null && { p_vigencia_dias: paq.vigencia_dias }),
     })
     .single();
   if (rpcErr || !result) throw new Error("No se pudo registrar la venta");

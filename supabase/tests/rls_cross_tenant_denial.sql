@@ -60,6 +60,7 @@ declare
   -- #38: capture gym A's seeded paquete + probe for the plan_feature table so the plan_feature vectors
   -- stay green on branches without this slice's migration (diamond-DAG tolerance, matching has_gym_id).
   v_paquete_a      uuid;
+  v_paquete_b      uuid;   -- gym B's own paquete: the package input to the C13 sale vectors
   has_plan_feature boolean;
 begin
   select id into gym_a from public.gym where slug = 'forge';
@@ -121,8 +122,13 @@ begin
     -- #23: one row per curated + owner-only table in gym A (owned by owner_a via user_id) so the
     -- gym-scoped read vectors ("operator_a sees 1", "member_m sees 1", "operator_b sees 0") assert
     -- against REAL rows, never a vacuously empty table.
-    insert into public.paquetes  (gym_id, nombre, precio, vigencia_dias) values (gym_a, '8 clases', 750, 20)
+    insert into public.paquetes  (gym_id, nombre, clases, precio, vigencia_dias) values (gym_a, '8 clases', 8, 750, 20)
       returning id into v_paquete_a;
+    -- gym B's OWN paquete (distinct nombre) — the package input to the C13 sale vectors below. B (a member
+    -- of gym B) can see this one; the cross-tenant reads assert against gym A's '8 clases' by name, so B
+    -- seeing its own row here does not weaken "B sees none of A's".
+    insert into public.paquetes  (gym_id, nombre, clases, precio, vigencia_dias) values (gym_b, 'B 8 clases', 8, 750, 20)
+      returning id into v_paquete_b;
     insert into public.plantillas (gym_id, nombre, body) values (gym_a, 'Recordatorio', 'Hola {nombre}');
     insert into public.perfil    (gym_id, negocio) values (gym_a, 'FORGE');
     insert into public.cobro     (gym_id) values (gym_a);
@@ -155,6 +161,7 @@ begin
   perform set_config('t.member_m',    member_m::text,    true);
   perform set_config('t.has_gym_id',  has_gym_id::text,  true);
   perform set_config('t.paquete_a',       coalesce(v_paquete_a::text, ''), true);
+  perform set_config('t.paquete_b',       coalesce(v_paquete_b::text, ''), true);
   perform set_config('t.has_plan_feature', has_plan_feature::text,         true);
 end $$;
 
@@ -202,7 +209,9 @@ begin
   -- has_role(gym_a,'owner')=false, and owns no gym-A row via user_id → reads 0 and writes 0. Guarded to
   -- the #20 shape (the seeded curated/cobro rows exist only there); pre-#20 these tables are unseeded.
   if current_setting('t.has_gym_id', true)::boolean then
-    select count(*) into n from public.paquetes;   if n <> 0 then raise exception 'DENIAL FAIL: B sees % paquetes', n; end if;
+    -- B sees NONE of gym A's paquetes. (B is a member of gym B, so it sees its own 'B 8 clases' — the
+    -- cross-tenant assertion is on gym A's '8 clases' by name.)
+    select count(*) into n from public.paquetes where nombre = '8 clases';   if n <> 0 then raise exception 'DENIAL FAIL: B sees % of A''s paquetes', n; end if;
     select count(*) into n from public.perfil;      if n <> 0 then raise exception 'DENIAL FAIL: B sees % perfil', n; end if;
     select count(*) into n from public.plantillas;  if n <> 0 then raise exception 'DENIAL FAIL: B sees % plantillas', n; end if;
     select count(*) into n from public.cobro;        if n <> 0 then raise exception 'DENIAL FAIL: B sees % cobro (CLABE)', n; end if;
@@ -220,13 +229,13 @@ begin
     if n <> 0 then raise exception 'DENIAL FAIL: B updated % of A''s plan_feature rows', n; end if;
   end if;
 
-  -- 3) RPC registrar_venta on A's client -> RLS hides the UPDATE -> raises 'Cliente no encontrado'
+  -- 3) RPC registrar_venta on A's client: B passes its OWN gym-B paquete but targets A's cliente id;
+  -- the RPC's gym-scoped locked read (and RLS) hide A's row → raises 'Cliente no encontrado'.
   got_error := false;
   begin
     perform * from public.registrar_venta(
-      p_nombre := 'x', p_tel := 'x', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
-      p_monto := 750, p_metodo := 'efectivo', p_cliente_id := a_client, p_clases_restantes := 5,
-      p_vence := v_today + 20, p_clases := 8, p_vigencia_dias := 20);
+      p_metodo := 'efectivo', p_paquete_id := nullif(current_setting('t.paquete_b', true), '')::uuid,
+      p_idempotency_key := gen_random_uuid(), p_cliente_id := a_client);
   exception when others then got_error := true;
   end;
   if not got_error then raise exception 'DENIAL FAIL: registrar_venta did not deny B on A''s client'; end if;
@@ -376,9 +385,8 @@ begin
   -- (a) registrar_venta for a NEW cliente: the cliente + venta are stamped gym B and the folio is drawn from
   -- gym B's OWN counter (a brand-new gym → its first folio comes off gym B's row, not forge's).
   select r.folio, r.cliente_id into new_folio, new_cli from public.registrar_venta(
-    p_nombre := 'Nuevo B', p_tel := '6149998877', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
-    p_monto := 750, p_metodo := 'efectivo', p_clases_restantes := 8,
-    p_vence := (now() at time zone 'America/Mexico_City')::date + 20, p_clases := 8, p_vigencia_dias := 20) r;
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.paquete_b', true)::uuid,
+    p_idempotency_key := gen_random_uuid(), p_nombre := 'Nuevo B', p_tel := '6149998877') r;
 
   select gym_id into v_gym from public.clientes where id = new_cli;
   if v_gym is distinct from gym_b then

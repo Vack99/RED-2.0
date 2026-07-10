@@ -133,26 +133,28 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     fake = makeFake({ paquetes: ILIMITADO, plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }] });
   });
 
-  it("omits the DEFAULT-NULL keys for a new ilimitado client (spread-guard, finding #3)", async () => {
+  it("sends only identity + paquete_id + metodo + an idempotency key for a new client (C13 re-derivation)", async () => {
     await crearVenta(input({ mode: "new" }), fake.client);
 
     const { name, args } = lastRpc(fake);
     expect(name).toBe("registrar_venta");
 
-    // The object-spread guard must DROP every key whose value is null so the
-    // RPC's DEFAULT NULL applies (ADR-0005) — no `null` into a `number?` param.
+    // Ruling C13: client-computed saldo / price / vence are GONE — the RPC re-derives
+    // them from the paquete row. The client sends only identity + paquete_id + metodo
+    // + an idempotency key (C6).
     expect(args).not.toHaveProperty("p_cliente_id"); // new client → no id
-    expect(args).not.toHaveProperty("p_clases_restantes"); // ilimitado saldo
-    expect(args).not.toHaveProperty("p_clases"); // ilimitado paquete
-    expect(args).not.toHaveProperty("p_vigencia_dias"); // mes paquete
+    expect(args).not.toHaveProperty("p_clases_restantes");
+    expect(args).not.toHaveProperty("p_monto");
+    expect(args).not.toHaveProperty("p_vence");
+    expect(args).not.toHaveProperty("p_email"); // none provided (spread-guard)
 
-    // The 6 required + p_vence are always present.
     expect(Object.keys(args).sort()).toEqual(
-      ["p_metodo", "p_monto", "p_nombre", "p_paquete_nombre", "p_tel", "p_vence", "p_vigencia_tipo"].sort(),
+      ["p_idempotency_key", "p_metodo", "p_nombre", "p_paquete_id", "p_tel"].sort(),
     );
+    expect(typeof args.p_idempotency_key).toBe("string"); // a fresh key per sale
   });
 
-  it("includes the finite keys for an existing client + finite paquete", async () => {
+  it("sends p_cliente_id + paquete_id (no client saldo) for an existing-client sale", async () => {
     fake = makeFake({
       paquetes: FINITO,
       clientes: { id: "cli-1", nombre: "Andrea", tel: "614 000 0000", clases_restantes: 2, vence: "2020-01-01" },
@@ -163,21 +165,27 @@ describe("crearVenta — write orchestration (injected fake)", () => {
 
     const { args } = lastRpc(fake);
     expect(args).toHaveProperty("p_cliente_id", "cli-1");
-    expect(args).toHaveProperty("p_clases", 8); // paquete clases (raw)
-    expect(args).toHaveProperty("p_vigencia_dias", 30);
-    // Stacked: an expired (past vence → días < 0) base forfeits, so 0 + 8 = 8.
-    expect(args).toHaveProperty("p_clases_restantes", 8);
+    expect(args).toHaveProperty("p_paquete_id", "p1");
+    expect(args).toHaveProperty("p_metodo", "efectivo");
+    // The RPC re-derives the stack in a locked txn — no saldo crosses the boundary.
+    expect(args).not.toHaveProperty("p_clases_restantes");
+    expect(args).not.toHaveProperty("p_clases");
+    expect(args).not.toHaveProperty("p_vigencia_dias");
   });
 
-  it("starts a brand-new finite client from an EMPTY saldo (the wiring bug, locked)", async () => {
+  it("sends a new finite client's identity + paquete_id only (empty-base derivation now lives in the RPC)", async () => {
     fake = makeFake({ paquetes: FINITO, plantillas: [{ id: "t1", nombre: "Recibo", body: "x" }] });
 
     await crearVenta(input({ mode: "new" }), fake.client);
 
-    // A new finite buy's stacked clases == the paquete's clases (8), NOT
-    // conflated with ilimitado (which would omit the key). Empty base + 8 = 8.
-    expect(lastRpc(fake).args).toHaveProperty("p_clases_restantes", 8);
-    expect(lastRpc(fake).args).toHaveProperty("p_clases", 8);
+    // The wiring bug (a new finite buy must start from an EMPTY base, never conflated
+    // with ilimitado) is now enforced structurally in registrar_venta + pinned by the
+    // registrar_venta_stacking SQL suite. Here we only assert the payload shape.
+    const { args } = lastRpc(fake);
+    expect(args).toHaveProperty("p_paquete_id", "p1");
+    expect(args).toHaveProperty("p_nombre", "Andrea Castro");
+    expect(args).not.toHaveProperty("p_cliente_id");
+    expect(args).not.toHaveProperty("p_clases_restantes");
   });
 
   // §3.4 — the optional email must NEVER block a sale. Forwarding a MALFORMED value proves it:

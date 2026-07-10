@@ -44,6 +44,7 @@ export const SUITE = [
   'reclamar_por_codigo.sql',
   'registrar_venta_stamps_gym_id.sql',
   'registrar_venta_email.sql',
+  'registrar_venta_stacking.sql',
   'renewal_schema_prep.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',

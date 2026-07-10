@@ -31,6 +31,7 @@ declare
   c_owned  uuid;                          -- row already owned by u_owns
   c_other  uuid;                          -- a second unclaimed coded row (u_owns tries to claim it)
   c_denial uuid;                          -- an unclaimed coded row used by the denial vectors
+  paq_inv  uuid;                          -- gym_inv paquete: the sole package input to the V5 sale (C13)
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (gym_inv, 'reclamar-codigo-suite-gym', 'Reclamar Código Suite', 'America/Mexico_City', 'red');
@@ -61,8 +62,12 @@ begin
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, claim_code, auth_user_id)
     values (gym_inv, 'Denegación', '6148880000', 2, 'deny@old.mx', 'DENY2345', null)
     returning id into c_denial;
+  -- gym_inv paquete for the V5 staff sale (C13: the sale re-derives from this row).
+  insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
+    values (gym_inv, '8 clases', 8, 'dias', 30, 800) returning id into paq_inv;
 
   perform set_config('t.gym_inv',  gym_inv::text,  true);
+  perform set_config('t.paq_inv',  paq_inv::text,  true);
   perform set_config('t.op_user',  op_user::text,  true);
   perform set_config('t.u_claim',  u_claim::text,  true);
   perform set_config('t.u_dead',   u_dead::text,   true);
@@ -164,10 +169,9 @@ do $$
 declare v_cli uuid; v_code text;
 begin
   select cliente_id into v_cli from public.registrar_venta(
-    p_nombre := 'Nuevo Socio', p_tel := '6140001111', p_paquete_nombre := '8 clases',
-    p_vigencia_tipo := 'dias', p_monto := 800, p_metodo := 'efectivo',
-    p_clases_restantes := 8, p_vence := (now() at time zone 'America/Mexico_City')::date + 30,
-    p_clases := 8, p_vigencia_dias := 30, p_email := 'nuevo@socio.mx');
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.paq_inv', true)::uuid,
+    p_idempotency_key := gen_random_uuid(),
+    p_nombre := 'Nuevo Socio', p_tel := '6140001111', p_email := 'nuevo@socio.mx');
   select claim_code into v_code from public.clientes where id = v_cli;
   if v_code is null or v_code !~ '^[A-Z2-9]{8}$' then
     raise exception 'V5 FAIL: NEW sale did not mint a valid 8-char A-Z/2-9 claim_code (got %)', v_code;

@@ -27,6 +27,8 @@ declare
   op_y    uuid := gen_random_uuid();
   cli_x   uuid;
   cli_y   uuid;
+  paq_x   uuid;
+  paq_y   uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_x, 'folio-gym-x', 'Folio Gym X', 'America/Chihuahua',  'forge'),
@@ -48,6 +50,13 @@ begin
   insert into public.clientes (gym_id, nombre, tel, clases_restantes)
     values (gym_y, 'Cliente Y', '6140000002', 5) returning id into cli_y;
 
+  -- One paquete per gym: the sole package input to each sale now (C13). The folio assertions are
+  -- independent of price/saldo, so any valid finite pack serves.
+  insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
+    values (gym_x, '8 clases', 8, 'dias', 20, 750) returning id into paq_x;
+  insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
+    values (gym_y, '8 clases', 8, 'dias', 20, 750) returning id into paq_y;
+
   -- gym_x's pre-existing folio 1050 (the high-water mark the counter must continue from, untouched).
   insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo)
     values (gym_x, cli_x, 1050, '8 clases', 8, 'dias', 20, 750, 'efectivo');
@@ -58,6 +67,8 @@ begin
   perform set_config('t.cli_y', cli_y::text, true);
   perform set_config('t.gym_x', gym_x::text, true);
   perform set_config('t.gym_y', gym_y::text, true);
+  perform set_config('t.paq_x', paq_x::text, true);
+  perform set_config('t.paq_y', paq_y::text, true);
 end $$;
 
 -- ── gym_x: two sales continue from its own max (1050) → 1051, 1052 ────────────
@@ -67,17 +78,15 @@ set local role authenticated;
 do $$
 declare
   cli_x  uuid := current_setting('t.cli_x', true)::uuid;
-  v_today date := (now() at time zone 'America/Chihuahua')::date;
+  paq_x  uuid := current_setting('t.paq_x', true)::uuid;
   f1 bigint; f2 bigint;
 begin
   select folio into f1 from public.registrar_venta(
-    p_nombre := 'x', p_tel := 'x', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
-    p_monto := 750, p_metodo := 'efectivo', p_cliente_id := cli_x, p_clases_restantes := 8, p_vence := v_today + 20);
+    p_metodo := 'efectivo', p_paquete_id := paq_x, p_idempotency_key := gen_random_uuid(), p_cliente_id := cli_x);
   if f1 <> 1051 then raise exception 'FOLIO FAIL: gym_x first sale folio % expected 1051 (seed from own max 1050)', f1; end if;
 
   select folio into f2 from public.registrar_venta(
-    p_nombre := 'x', p_tel := 'x', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
-    p_monto := 750, p_metodo := 'efectivo', p_cliente_id := cli_x, p_clases_restantes := 8, p_vence := v_today + 20);
+    p_metodo := 'efectivo', p_paquete_id := paq_x, p_idempotency_key := gen_random_uuid(), p_cliente_id := cli_x);
   if f2 <> 1052 then raise exception 'FOLIO FAIL: gym_x second sale folio % expected 1052', f2; end if;
 end $$;
 reset role;
@@ -89,17 +98,15 @@ set local role authenticated;
 do $$
 declare
   cli_y  uuid := current_setting('t.cli_y', true)::uuid;
-  v_today date := (now() at time zone 'America/Chihuahua')::date;
+  paq_y  uuid := current_setting('t.paq_y', true)::uuid;
   g1 bigint; g2 bigint;
 begin
   select folio into g1 from public.registrar_venta(
-    p_nombre := 'y', p_tel := 'y', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
-    p_monto := 750, p_metodo := 'efectivo', p_cliente_id := cli_y, p_clases_restantes := 8, p_vence := v_today + 20);
+    p_metodo := 'efectivo', p_paquete_id := paq_y, p_idempotency_key := gen_random_uuid(), p_cliente_id := cli_y);
   if g1 <> 1001 then raise exception 'FOLIO FAIL: gym_y first sale folio % expected 1001 (fresh gym, independent sequence)', g1; end if;
 
   select folio into g2 from public.registrar_venta(
-    p_nombre := 'y', p_tel := 'y', p_paquete_nombre := '8 clases', p_vigencia_tipo := 'dias',
-    p_monto := 750, p_metodo := 'efectivo', p_cliente_id := cli_y, p_clases_restantes := 8, p_vence := v_today + 20);
+    p_metodo := 'efectivo', p_paquete_id := paq_y, p_idempotency_key := gen_random_uuid(), p_cliente_id := cli_y);
   if g2 <> 1002 then raise exception 'FOLIO FAIL: gym_y second sale folio % expected 1002', g2; end if;
 end $$;
 reset role;
