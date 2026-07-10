@@ -1,76 +1,166 @@
--- actualizar_cliente rule test (ADR-0005 contract-honesty item).
+-- actualizar_cliente written-row rules — per-gym idiom (#81 quarantine rewrite).
 --
--- actualizar_cliente edits ONLY the identity columns (nombre, tel) of a client the calling
--- operator owns. Proven here, against the REAL deployed function in a rolled-back transaction:
---   (1) nombre + tel are updated;
---   (2) the saldo columns (clases_restantes, vence, paquete_nombre) are left UNTOUCHED;
---   (3) a non-existent / non-owned id raises 'Cliente no encontrado' (RLS-scoped UPDATE -> 0 rows).
+-- Rewritten from scratch: the old body resolved its operator via perfil.user_id and seeded dead
+-- user_id columns, both removed by Contract-B (20260705082018) — it errored at the first write.
+-- The CURRENT function is the 4-arg (uuid, text, text, text default null) form, last amended by
+-- 20260710131000 (adds the unique_violation → 'Este correo ya pertenece a otro registro de este
+-- gym' handler; 20260710130000 revoked anon EXECUTE). Its UPDATE writes ONLY nombre, tel and
+-- email = coalesce(p_email, email) — never the entitlement columns.
 --
--- Self-asserting: every check RAISEs on mismatch; a clean run returns one 'OK' row. Wrapped in
--- BEGIN/ROLLBACK -- touches no row permanently.
+-- Assertions are on the ROWS WRITTEN, never the return value (#78/#80): each vector re-reads the
+-- clientes row and checks the columns the write did / did not set.
 --
--- HOW TO RUN (no local Docker): via the Supabase MCP execute_sql, or
---   psql "$DATABASE_URL" -f supabase/tests/actualizar_cliente_rules.sql
+--   V1 — identity-only edit: an operator editing nombre/tel (p_email omitted) changes exactly those
+--        two columns; clases_restantes / vence / paquete_nombre / email stay byte-identical.
+--        (Guards the SET list at 20260710131000:48-50 — a leak of any entitlement column would fail.)
+--   V2 — cross-gym denial: an operator of gym B updating a gym-A cliente hits the RLS-scoped UPDATE
+--        (0 rows) → 'Cliente no encontrado' (:56-57), and A's row is unchanged after the attempt.
+--   V3 — email-in-use: editing a row's email to one another row in the same gym already holds trips
+--        clientes_email_gym_uq → the friendly 'Este correo ya pertenece a otro registro de este gym'
+--        (:52-53), and the WHOLE edit rolls back (nombre/tel/email unchanged) — the begin/exception
+--        wraps the single UPDATE, so no partial write leaks.
+--
+-- Deliberately NOT re-asserted here (owned by running siblings, do not duplicate):
+--   · email-arm semantics (first-set / re-save / omitted / claimed-row reject / not-found / nombre-tel
+--     editable) — supabase/tests/actualizar_cliente_email_rules.sql (V1-V7).
+--   · anon/grant-posture denial — supabase/tests/contract_a_denials.sql (group a).
+--
+-- Self-asserting: every check RAISEs on mismatch; a clean run returns one 'OK' row. Transaction-local
+-- fixtures, zero prod UUIDs. Wrapped in BEGIN/ROLLBACK — touches no row permanently. NEVER against live.
+--
+-- HOW TO RUN: node supabase/tests/run-denial-suite.mjs (SUPABASE_TARGET_REF override), or ad hoc via
+-- the Supabase MCP execute_sql (pure SQL — no psql meta-commands).
 
 begin;
 
--- Resolve the operator at runtime (the only env-dependent value): perfil.user_id is a real
--- auth.users id; the RPC keys the write to auth.uid() and RLS scopes clientes to it.
-select set_config(
-  'app.op',
-  (select user_id::text from public.perfil order by created_at limit 1),
-  true
-);
-
-select set_config(
-  'request.jwt.claims',
-  json_build_object('sub', current_setting('app.op', true), 'role', 'authenticated')::text,
-  true
-);
-set local role authenticated;
-
+-- ── Fixtures (transaction-local; zero prod UUIDs; seeded as the migration role, RLS bypassed) ─────
 do $$
 declare
-  v_op     uuid := current_setting('app.op', true)::uuid;
-  v_today  date := (now() at time zone 'America/Chihuahua')::date;
-  v_cli    uuid;
-  v_nombre text;
-  v_tel    text;
-  v_clases int;
-  v_vence  date;
-  v_paq    text;
+  gym_a    uuid := gen_random_uuid();
+  gym_b    uuid := gen_random_uuid();
+  staff_a  uuid := gen_random_uuid();   -- operator of gym A
+  staff_b  uuid := gen_random_uuid();   -- operator of gym B
+  c_a1     uuid;                          -- gym-A cliente edited in V1/V2, holds 'ocupado@…'
+  c_a2     uuid;                          -- gym-A cliente edited in V3, holds 'libre@…'
 begin
-  -- Seed: a finite client owned by the operator, with a known saldo. gym_id NOT NULL since slice #20.
-  insert into public.clientes (user_id, nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
-  values (v_op, 'TEST original', '0000000001', 5, v_today + 20, '8 clases', (select id from public.gym where slug = 'forge'))
-  returning id into v_cli;
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
+    (gym_a, 'actualizar-cliente-suite-a', 'Actualizar Cliente A', 'America/Chihuahua', 'forge'),
+    (gym_b, 'actualizar-cliente-suite-b', 'Actualizar Cliente B', 'America/Chihuahua', 'red');
 
-  -- (1) Update identity -> nombre + tel change.
-  perform public.actualizar_cliente(v_cli, 'TEST editado', '6141112233');
-  select nombre, tel, clases_restantes, vence, paquete_nombre
-    into v_nombre, v_tel, v_clases, v_vence, v_paq
-    from public.clientes where id = v_cli;
-  if v_nombre <> 'TEST editado' then raise exception 'RULE FAIL(1): nombre not updated, got %', v_nombre; end if;
-  if v_tel <> '6141112233' then raise exception 'RULE FAIL(1): tel not updated, got %', v_tel; end if;
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', staff_a, 'authenticated', 'authenticated', 'ac-staff-a@test.local'),
+    ('00000000-0000-0000-0000-000000000000', staff_b, 'authenticated', 'authenticated', 'ac-staff-b@test.local');
 
-  -- (2) Saldo columns untouched.
-  if v_clases <> 5 then raise exception 'RULE FAIL(2): clases_restantes changed, got %', v_clases; end if;
-  if v_vence <> v_today + 20 then raise exception 'RULE FAIL(2): vence changed, got %', v_vence; end if;
-  if v_paq <> '8 clases' then raise exception 'RULE FAIL(2): paquete_nombre changed, got %', v_paq; end if;
+  insert into public.gym_membership (user_id, gym_id, role) values
+    (staff_a, gym_a, 'operator'),
+    (staff_b, gym_b, 'operator');
 
-  -- (3) A random (non-owned / non-existent) id raises 'Cliente no encontrado'.
-  begin
-    perform public.actualizar_cliente(gen_random_uuid(), 'X', '0000000002');
-    raise exception 'RULE FAIL(3): expected Cliente no encontrado, none raised';
-  exception
-    when others then
-      if sqlerrm <> 'Cliente no encontrado' then
-        raise exception 'RULE FAIL(3): expected Cliente no encontrado, got %', sqlerrm;
-      end if;
-  end;
+  -- Both rows UNCLAIMED (auth_user_id null) so the email arm is reachable. Known entitlement snapshot
+  -- with a fixed literal vence — the identity edit must not touch any of these.
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, email, auth_user_id)
+    values (gym_a, 'Cliente A1', '6140000001', 5, date '2099-12-31', '8 clases', 'ocupado@test.local', null)
+    returning id into c_a1;
 
-  raise notice 'actualizar_cliente rules: (1) identity updated, (2) saldo untouched, (3) not-found guard all hold';
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, email, auth_user_id)
+    values (gym_a, 'Cliente A2', '6140000002', 3, date '2098-06-30', '4 clases', 'libre@test.local', null)
+    returning id into c_a2;
+
+  perform set_config('t.staff_a', staff_a::text, true);
+  perform set_config('t.staff_b', staff_b::text, true);
+  perform set_config('t.c_a1',    c_a1::text,    true);
+  perform set_config('t.c_a2',    c_a2::text,    true);
 end $$;
 
-select 'actualizar_cliente rules: OK' as result;
+-- ══ V1 — identity-only edit: nombre/tel change; entitlement + email byte-identical ═══════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  c   uuid := current_setting('t.c_a1', true)::uuid;
+  rec record;
+begin
+  perform public.actualizar_cliente(c, 'Cliente A1 Editado', '6149990001');   -- 3-arg: p_email defaults null
+
+  select nombre, tel, clases_restantes, vence, paquete_nombre, email into rec
+    from public.clientes where id = c;
+  if rec.nombre           is distinct from 'Cliente A1 Editado' then raise exception 'V1 FAIL: nombre not updated, got %', rec.nombre; end if;
+  if rec.tel              is distinct from '6149990001'         then raise exception 'V1 FAIL: tel not updated, got %', rec.tel; end if;
+  if rec.clases_restantes is distinct from 5                    then raise exception 'V1 FAIL: clases_restantes touched, got %', rec.clases_restantes; end if;
+  if rec.vence            is distinct from date '2099-12-31'    then raise exception 'V1 FAIL: vence touched, got %', rec.vence; end if;
+  if rec.paquete_nombre   is distinct from '8 clases'           then raise exception 'V1 FAIL: paquete_nombre touched, got %', rec.paquete_nombre; end if;
+  if rec.email            is distinct from 'ocupado@test.local' then raise exception 'V1 FAIL: email touched by omitted-email edit, got %', rec.email; end if;
+end $$;
+reset role;
+
+-- ══ V2 — cross-gym denial: operator of B cannot update A's cliente; A's row unchanged ════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_b', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  c    uuid := current_setting('t.c_a1', true)::uuid;
+  msg  text;
+begin
+  begin
+    perform public.actualizar_cliente(c, 'HACKED', '0009990000', 'hijack@test.local');
+    raise exception 'V2 FAIL: cross-gym operator updated another gym''s cliente (no error raised)';
+  exception when others then
+    get stacked diagnostics msg = message_text;
+    -- RLS scopes the SELECT + UPDATE to gym B → 0 rows → the not-found guard, not a leak.
+    if msg is distinct from 'Cliente no encontrado' then raise exception 'V2 FAIL: wrong error, got %', msg; end if;
+  end;
+end $$;
+reset role;
+
+-- Re-read as the OWNING gym's operator: every column must survive the cross-gym attempt (V1 values).
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  c   uuid := current_setting('t.c_a1', true)::uuid;
+  rec record;
+begin
+  select nombre, tel, clases_restantes, vence, paquete_nombre, email into rec
+    from public.clientes where id = c;
+  if rec.nombre           is distinct from 'Cliente A1 Editado' then raise exception 'V2 FAIL: cross-gym write leaked nombre = %', rec.nombre; end if;
+  if rec.tel              is distinct from '6149990001'         then raise exception 'V2 FAIL: cross-gym write leaked tel = %', rec.tel; end if;
+  if rec.clases_restantes is distinct from 5                    then raise exception 'V2 FAIL: cross-gym write leaked clases_restantes = %', rec.clases_restantes; end if;
+  if rec.vence            is distinct from date '2099-12-31'    then raise exception 'V2 FAIL: cross-gym write leaked vence = %', rec.vence; end if;
+  if rec.paquete_nombre   is distinct from '8 clases'           then raise exception 'V2 FAIL: cross-gym write leaked paquete_nombre = %', rec.paquete_nombre; end if;
+  if rec.email            is distinct from 'ocupado@test.local' then raise exception 'V2 FAIL: cross-gym write leaked email = %', rec.email; end if;
+end $$;
+reset role;
+
+-- ══ V3 — email-in-use: collide c_a2's email with c_a1's → friendly message, whole edit rolls back ═
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  c    uuid := current_setting('t.c_a2', true)::uuid;
+  msg  text;
+  rec  record;
+begin
+  begin
+    -- New nombre/tel too — proves the begin/exception unwinds the SET list wholesale, not just email.
+    perform public.actualizar_cliente(c, 'Cliente A2 Intento', '6149990002', 'ocupado@test.local');
+    raise exception 'V3 FAIL: email collision was not rejected (no error raised)';
+  exception when others then
+    get stacked diagnostics msg = message_text;
+    if msg is distinct from 'Este correo ya pertenece a otro registro de este gym' then
+      raise exception 'V3 FAIL: wrong error, got %', msg;
+    end if;
+  end;
+
+  -- The whole UPDATE rolled back: nombre, tel and email are all the pre-call values.
+  select nombre, tel, email into rec from public.clientes where id = c;
+  if rec.nombre is distinct from 'Cliente A2'         then raise exception 'V3 FAIL: nombre changed despite rejected edit, got %', rec.nombre; end if;
+  if rec.tel    is distinct from '6140000002'         then raise exception 'V3 FAIL: tel changed despite rejected edit, got %', rec.tel; end if;
+  if rec.email  is distinct from 'libre@test.local'   then raise exception 'V3 FAIL: email changed despite collision, got %', rec.email; end if;
+end $$;
+reset role;
+
+select 'actualizar_cliente written-row rules: OK' as result;
 rollback;
