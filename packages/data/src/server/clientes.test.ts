@@ -12,6 +12,7 @@ import {
 } from "./clientes";
 import type { MailMessage, MailResult, MailTransport } from "./invitaciones";
 import type { SupabaseServer } from "./supabase";
+import { EMAIL_EN_USO_MSG, EmailEnUsoError } from "./ventas";
 
 /**
  * The seam: `actualizarCliente` takes an injectable client (ADR-0001), so the write
@@ -24,9 +25,14 @@ interface FakeClient {
   client: SupabaseServer;
 }
 
-/** `actualizar_cliente`'s row — defaults to "no change, unclaimed" (the common nombre/tel-only edit). */
+/** `actualizar_cliente`'s row — defaults to "no change, unclaimed" (the common nombre/tel-only edit).
+ *  `rpcError` makes the RPC return that error instead of a row (the collision-mapping path). */
 function makeFake(
-  opts: { sub?: string | null; row?: { email_changed: boolean; unclaimed: boolean } } = {},
+  opts: {
+    sub?: string | null;
+    row?: { email_changed: boolean; unclaimed: boolean };
+    rpcError?: { message: string };
+  } = {},
 ): FakeClient {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
   const row = opts.row ?? { email_changed: false, unclaimed: true };
@@ -37,7 +43,10 @@ function makeFake(
     },
     rpc: (name: string, args: Record<string, unknown>) => {
       rpcCalls.push({ name, args });
-      return { single: async () => ({ data: row, error: null }) };
+      return {
+        single: async () =>
+          opts.rpcError ? { data: null, error: opts.rpcError } : { data: row, error: null },
+      };
     },
   };
   return { rpcCalls, client: client as unknown as SupabaseServer };
@@ -99,6 +108,22 @@ describe("actualizarCliente — write orchestration (injected fake)", () => {
     const fake = makeFake({ sub: null });
     await expect(actualizarCliente(valid, fake.client)).rejects.toThrow("No autenticado");
     expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("surfaces the RPC's email-collision raise as EmailEnUsoError (mirrors the vender path)", async () => {
+    const fake = makeFake({ rpcError: { message: EMAIL_EN_USO_MSG } });
+    const err = await actualizarCliente({ ...valid, email: "otra@x.mx" }, fake.client).catch(
+      (e: unknown) => e,
+    );
+    expect(err).toBeInstanceOf(EmailEnUsoError);
+    expect((err as Error).message).toBe("Este correo ya pertenece a otro registro de este gym");
+  });
+
+  it("throws the generic error on any other RPC failure", async () => {
+    const fake = makeFake({ rpcError: { message: "boom" } });
+    await expect(actualizarCliente(valid, fake.client)).rejects.toThrow(
+      "No se pudo actualizar el cliente",
+    );
   });
 });
 

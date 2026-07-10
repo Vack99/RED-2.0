@@ -60,6 +60,12 @@ export function EditarClienteSheet({
         tel,
         ...(cliente.cuentaActiva ? {} : { email: emailTrim }),
       });
+      if (!result.ok) {
+        // Email already in use for this gym (clientes_email_gym_uq) — keep the sheet open so the
+        // operator can correct it; toast the actionable reason verbatim (matches the vender path).
+        forgeToast({ tone: "warning", title: "No se pudo actualizar", body: result.mensaje });
+        return;
+      }
       if (result.invite?.ok) {
         forgeToast({
           tone: "success",

@@ -27,6 +27,7 @@ import { getOperatorGym } from "./gym";
 import { enviarInvitacion, type EnvioResult, type MailTransport } from "./invitaciones";
 import { getPaquetes } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
+import { EMAIL_EN_USO_MSG, EmailEnUsoError } from "./ventas";
 import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
 import { listarPlantillas } from "./plantillas";
 import { getVecinos, type Vecinos } from "./roster-nav";
@@ -373,6 +374,9 @@ export async function actualizarCliente(
       ...(input.email ? { p_email: input.email } : {}),
     })
     .single();
+  // The email backfill can collide with clientes_email_gym_uq (another row in the gym holds it) — the
+  // RPC raises the EMAIL_EN_USO_MSG string (mirrors the vender path), so surface it typed for the ficha.
+  if (error?.message === EMAIL_EN_USO_MSG) throw new EmailEnUsoError();
   if (error || !data) throw new Error("No se pudo actualizar el cliente");
 
   const invite =
