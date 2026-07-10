@@ -61,6 +61,28 @@ export async function confirmarCodigo(
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 
+/** The OTP types an auth-mail `token_hash` link can carry (Send Email Hook, #75).
+ *  A subset of Supabase's `EmailOtpType`; the `/auth/confirm` route validates the
+ *  raw `type` param against this union before calling. */
+export type TipoTokenHash = "email" | "recovery" | "email_change";
+
+/**
+ * Verify a `token_hash` OTP from an auth-mail link and establish the session on
+ * `client`. The Send Email Hook (#75) mints `/auth/confirm?token_hash&type` on the
+ * gym's own host instead of the PKCE `?code=` the default sender used, so this is the
+ * token-hash sibling of `confirmarCodigo`. `type` is the OTP type the link carried;
+ * the route narrows it to `TipoTokenHash` before calling.
+ */
+export async function confirmarTokenHash(
+  type: TipoTokenHash,
+  tokenHash: string,
+  client?: SupabaseServer,
+): Promise<SesionResultado> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+  return error ? { ok: false, error: error.message } : { ok: true };
+}
+
 /** Set a new password for the recovery session established by the reset link. */
 export async function actualizarPassword(
   password: string,

@@ -6,13 +6,15 @@ import {
   reclamarPorCodigo,
 } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
-import { confirmarCodigo } from "@gym/data/server/sesion";
-import { createClient } from "@gym/data/server/supabase";
+import { confirmarCodigo, confirmarTokenHash } from "@gym/data/server/sesion";
+import { createClient, type SupabaseServer } from "@gym/data/server/supabase";
 
 /**
  * Email confirmation / recovery landing (ADR-0009 / ADR-0015). The confirmation
- * email lands here with a PKCE `?code=` (default Supabase sender — ADR-0014). We
- * exchange it for a session, then:
+ * email lands here EITHER with a PKCE `?code=` (default Supabase sender — ADR-0014)
+ * OR with `?token_hash=&type=` (the Send Email Hook mints the link on the gym's own
+ * host — #75). Whichever arm establishes the session, the post-auth handling is the
+ * same:
  *
  *   • recovery (`?next=/restablecer`) → redirect there so the person sets a new
  *     password against the now-established session (NO claim);
@@ -22,11 +24,43 @@ import { createClient } from "@gym/data/server/supabase";
  *   • plain signup → run the atomic verified-EMAIL claim in the HOST-resolved gym
  *     (server-authoritative — never `x-gym`/a client field) and land on the panel.
  *
- * The one shared exchange keeps both email flows on one route. A failed/absent code
- * falls back to `/entrar`. `next` is constrained to a local path (no open redirect).
+ * A failed/absent code or token_hash falls back to `/entrar`. `next` is constrained
+ * to a local path (no open redirect).
  */
+
+/** Post-auth handling shared by both session-establishing arms (`code` + `token_hash`):
+ *  honor a local `next`, else run the invite / host-email claim, then land on the panel. */
+async function finalizarAuth(
+  request: NextRequest,
+  supabase: SupabaseServer,
+  codigo: string | null,
+  next: string | null,
+): Promise<NextResponse> {
+  if (next) {
+    return NextResponse.redirect(new URL(next, request.url));
+  }
+  try {
+    if (codigo) {
+      // Invite-token claim: bind the login to the code's exact paid row + gym.
+      await reclamarPorCodigo(codigo, supabase);
+    } else {
+      // Fallback: claim (or create) the cliente by verified email in the host gym.
+      const tenant = await resolveTenant(request.headers.get("host"), null);
+      if (tenant) {
+        await reclamarCliente(tenant.id, supabase);
+      }
+    }
+  } catch {
+    // A failed claim must not strand a verified account — land on the panel;
+    // the member can retry / an operator reconciles. The RPCs are idempotent.
+  }
+  return NextResponse.redirect(new URL("/reservar", request.url));
+}
+
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get("code");
+  const tokenHash = request.nextUrl.searchParams.get("token_hash");
+  const type = request.nextUrl.searchParams.get("type");
   const codigo = parseCodigoInvitacion(request.nextUrl.searchParams.get("codigo"));
   const nextParam = request.nextUrl.searchParams.get("next");
   const next = nextParam && nextParam.startsWith("/") ? nextParam : null;
@@ -35,25 +69,15 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const exchanged = await confirmarCodigo(code, supabase);
     if (exchanged.ok) {
-      if (next) {
-        return NextResponse.redirect(new URL(next, request.url));
-      }
-      try {
-        if (codigo) {
-          // Invite-token claim: bind the login to the code's exact paid row + gym.
-          await reclamarPorCodigo(codigo, supabase);
-        } else {
-          // Fallback: claim (or create) the cliente by verified email in the host gym.
-          const tenant = await resolveTenant(request.headers.get("host"), null);
-          if (tenant) {
-            await reclamarCliente(tenant.id, supabase);
-          }
-        }
-      } catch {
-        // A failed claim must not strand a verified account — land on the panel;
-        // the member can retry / an operator reconciles. The RPCs are idempotent.
-      }
-      return NextResponse.redirect(new URL("/reservar", request.url));
+      return finalizarAuth(request, supabase, codigo, next);
+    }
+  } else if (tokenHash && (type === "email" || type === "recovery" || type === "email_change")) {
+    // Send Email Hook link (#75): anything but the accepted OTP types falls through
+    // to the error redirect below.
+    const supabase = await createClient();
+    const confirmed = await confirmarTokenHash(type, tokenHash, supabase);
+    if (confirmed.ok) {
+      return finalizarAuth(request, supabase, codigo, next);
     }
   }
 
