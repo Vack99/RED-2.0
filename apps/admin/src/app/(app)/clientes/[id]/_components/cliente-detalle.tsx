@@ -79,6 +79,12 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
     setBusy(true);
     try {
       const res = await togglePaseAction({ clienteId: c.id, fecha: ficha.hoyIso });
+      if (!res.ok) {
+        // The RPC refused with a reason ('Paquete vencido', the C15 already-marked-on-a-session
+        // guard, …) — a typed result, because prod Next.js masks thrown action messages.
+        forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
+        return;
+      }
       setPresent(res.present);
       setHoraHoy(res.hora);
       forgeToast(

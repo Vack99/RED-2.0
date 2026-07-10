@@ -70,6 +70,14 @@ export function AsistenciaScreen({
 
       try {
         const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
+        if (!res.ok) {
+          // The RPC refused with a reason ('Paquete vencido', the C15 already-marked-on-a-session
+          // guard, …) — a typed result, because prod Next.js masks thrown action messages. Roll the
+          // optimistic flip back and tell the operator WHY, not a blind "try again".
+          setMarcadas((m) => setMarcada(m, selIso, c.id, !willBePresent));
+          forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
+          return;
+        }
         // Reconcile against the authoritative result (usually a no-op).
         setMarcadas((m) => setMarcada(m, selIso, c.id, res.present));
         if (res.present) {
@@ -79,13 +87,10 @@ export function AsistenciaScreen({
             body: `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
           });
         }
-      } catch (err) {
-        // Roll the optimistic flip back to its pre-tap value.
+      } catch {
+        // Unexpected failure (network, invalid input) — roll the optimistic flip back.
         setMarcadas((m) => setMarcada(m, selIso, c.id, !willBePresent));
-        // Show the RPC's reason when it has one (e.g. "Paquete vencido", or the C15 already-marked-on-a-
-        // -session guard) so the operator learns WHY, not a blind "try again".
-        const body = err instanceof Error && err.message ? err.message : "Intenta de nuevo.";
-        forgeToast({ tone: "warning", title: "No se pudo registrar", body });
+        forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
       } finally {
         inFlight.current.delete(key);
       }

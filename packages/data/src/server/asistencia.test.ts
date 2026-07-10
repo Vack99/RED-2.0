@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getMarcadas } from "./asistencia";
+import { getMarcadas, togglePase } from "./asistencia";
 import { makeFake } from "./supabase-fake.test-helper";
 
 /**
@@ -78,6 +78,22 @@ describe("getMarcadas — full attendance map (injected fake)", () => {
     expect(map).toEqual({ "2026-05-20": ["front-desk", "session"] });
   });
 
+  it("dedupes one cliente marked on BOTH surfaces the same day (count not inflated)", async () => {
+    // The same cliente can hold a front-desk row AND a session row for one day; the
+    // map must list them once so the pase screen's counts and marks aren't doubled.
+    const { client } = makeFake({
+      asistencias: [
+        asistencia({ fecha: "2026-05-20", cliente_id: "both", class_session_id: null }),
+        asistencia({ fecha: "2026-05-20", cliente_id: "both", class_session_id: "sess-1" }),
+        asistencia({ fecha: "2026-05-21", cliente_id: "both", class_session_id: null }),
+      ],
+    });
+
+    const map = await getMarcadas(client);
+
+    expect(map).toEqual({ "2026-05-20": ["both"], "2026-05-21": ["both"] });
+  });
+
   it("groups rows by fecha → correct per-day cliente_id lists (map shape)", async () => {
     const { client } = makeFake({
       asistencias: [
@@ -95,5 +111,36 @@ describe("getMarcadas — full attendance map (injected fake)", () => {
       "2026-05-19": ["a"],
       "2026-05-20": ["c"],
     });
+  });
+});
+
+describe("togglePase — typed outcome (injected fake)", () => {
+  // Prod Next.js masks thrown Server Action messages (reconstructed client-side as a
+  // generic English blob), so the RPC's operator-facing raises ('Paquete vencido', the
+  // C15 session-managed guard) must travel as a RETURN VALUE for the toast to show them.
+  const input = { clienteId: "cli-1", fecha: "2026-07-10" };
+
+  it("maps an RPC refusal to { ok: false, message } carrying the RPC's own raise", async () => {
+    const { client } = makeFake({}, { rpc: { error: { message: "Paquete vencido" } } });
+
+    const res = await togglePase(input, client);
+
+    expect(res).toEqual({ ok: false, message: "Paquete vencido" });
+  });
+
+  it("falls back to the generic message when the failure carries none", async () => {
+    const { client } = makeFake({}, { rpc: { error: { message: "" } } });
+
+    const res = await togglePase(input, client);
+
+    expect(res).toEqual({ ok: false, message: "No se pudo registrar la asistencia" });
+  });
+
+  it("maps a successful toggle to { ok: true, present, hora }", async () => {
+    const { client } = makeFake({}, { rpc: { data: { present: true, hora: "07:30" } } });
+
+    const res = await togglePase(input, client);
+
+    expect(res).toEqual({ ok: true, present: true, hora: "07:30" });
   });
 });

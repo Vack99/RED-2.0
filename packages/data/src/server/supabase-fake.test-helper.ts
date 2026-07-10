@@ -42,7 +42,12 @@ export interface FakeClient {
 
 export function makeFake(
   rows: FakeRows,
-  opts: { error?: { table: string; err: unknown } } = {},
+  opts: {
+    error?: { table: string; err: unknown };
+    /** What `client.rpc(...).single()` resolves — the RPC-outcome assertion target
+     *  (e.g. togglePase's typed ok/refusal mapping). Defaults to a null row. */
+    rpc?: { data?: unknown; error?: { message: string } | null };
+  } = {},
 ): FakeClient {
   const isCalls: Record<string, [string, unknown][]> = {};
   const gteCalls: Record<string, [string, unknown][]> = {};
@@ -103,6 +108,9 @@ export function makeFake(
       if (table === "gym") return builder(table, [{ timezone: rows.gymTimezone ?? "America/Chihuahua" }]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },
+    rpc: () => ({
+      single: async () => ({ data: opts.rpc?.data ?? null, error: opts.rpc?.error ?? null }),
+    }),
   };
 
   return { client: client as unknown as SupabaseServer, isCalls, gteCalls, rangeCalls };

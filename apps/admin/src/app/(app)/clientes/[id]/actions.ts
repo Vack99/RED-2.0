@@ -1,12 +1,14 @@
 "use server";
 
-import { togglePase, type TogglePaseResult } from "@gym/data/server/asistencia";
+import { togglePase, type TogglePaseOutcome } from "@gym/data/server/asistencia";
 import { actualizarCliente, reenviarInvitacion, type ActualizarClienteResult } from "@gym/data/server/clientes";
 import type { EnvioResult } from "@gym/data/server/invitaciones";
 
 /** Mark/undo today's attendance from the ficha. Thin write seam over the DAL;
- *  (app) reads are dynamic (cookie-bound), so no cache invalidation is needed. */
-export async function togglePaseAction(raw: unknown): Promise<TogglePaseResult> {
+ *  (app) reads are dynamic (cookie-bound), so no cache invalidation is needed.
+ *  An RPC refusal arrives as `{ ok: false, message }` (typed result, NOT a throw —
+ *  prod Next.js masks thrown action messages) so the ficha can toast the reason. */
+export async function togglePaseAction(raw: unknown): Promise<TogglePaseOutcome> {
   return togglePase(raw);
 }
 

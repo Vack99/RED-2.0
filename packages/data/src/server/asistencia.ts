@@ -46,6 +46,10 @@ export const getMarcadas = cache(
     const supabase = client ?? (await createClient());
 
     const map: Record<string, string[]> = {};
+    // A cliente can hold BOTH a front-desk and a session row on one day (marked in a
+    // class, then toggled at the desk on another day's row set, etc.) — dedupe per
+    // (fecha, cliente) so a mark renders once and the day counts aren't inflated.
+    const seen = new Set<string>();
     for (let from = 0; ; from += PAGE) {
       const { data } = await supabase
         .from("asistencias")
@@ -55,6 +59,9 @@ export const getMarcadas = cache(
         .range(from, from + PAGE - 1);
       const page = data ?? [];
       for (const row of page) {
+        const key = `${row.fecha}:${row.cliente_id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         (map[row.fecha] ??= []).push(row.cliente_id);
       }
       if (page.length < PAGE) break;
@@ -74,6 +81,17 @@ export interface TogglePaseResult {
 }
 
 /**
+ * The action/DAL result the pase surfaces switch on. An RPC refusal travels as a
+ * typed RETURN VALUE, never a throw: a thrown Server Action error has its message
+ * MASKED in production Next.js builds (reconstructed client-side as a generic
+ * English blob), so 'Paquete vencido' / the C15 session-managed guard would never
+ * reach the toast. Same convention as vender's CrearVentaResult (`ok` discriminant).
+ */
+export type TogglePaseOutcome =
+  | ({ ok: true } & TogglePaseResult)
+  | { ok: false; message: string };
+
+/**
  * Toggle a client's attendance for a given (absolute) day. Marking present
  * inserts a row and consumes a class (Ilimitado untouched; brief Q6 — same-day
  * duplicates each consume); unmarking soft-deletes the active row and restores a
@@ -83,11 +101,17 @@ export interface TogglePaseResult {
  * RPC (ADR-0005): it makes the on/off decision, the guarded ±1 decrement, and
  * stamps the Chihuahua-local check-in time server-side. RLS scopes every row to
  * the operator (SECURITY INVOKER).
+ *
+ * An RPC failure returns `{ ok: false, message }` carrying the RPC's OWN raise —
+ * every toggle_pase refusal is a deliberate operator-facing Spanish message
+ * ('Paquete vencido'; 'Asistencia de clase ya registrada — gestiónala en la
+ * clase'; C15/C9) — so the UI can toast the reason. Only unexpected failures
+ * (invalid input, no auth) still throw.
  */
 export async function togglePase(
   raw: unknown,
   client?: SupabaseServer,
-): Promise<TogglePaseResult> {
+): Promise<TogglePaseOutcome> {
   const input = togglePaseSchema.parse(raw);
   const supabase = client ?? (await createClient());
 
@@ -98,14 +122,10 @@ export async function togglePase(
   const { data, error } = await supabase
     .rpc("toggle_pase", { p_cliente_id: input.clienteId, p_fecha: input.fecha })
     .single();
-  // Surface the RPC's OWN message: every toggle_pase failure is a deliberate, operator-facing Spanish
-  // raise ('Paquete vencido'; 'Asistencia de clase ya registrada — gestiónala en la clase'; C15/C9), so
-  // the pase screen can toast the reason instead of a blind "try again". Generic fallback only when the
-  // failure carried no message (e.g. an empty result).
-  if (error) throw new Error(error.message || "No se pudo registrar la asistencia");
-  if (!data) throw new Error("No se pudo registrar la asistencia");
+  if (error) return { ok: false, message: error.message || "No se pudo registrar la asistencia" };
+  if (!data) return { ok: false, message: "No se pudo registrar la asistencia" };
 
-  return { present: data.present, hora: data.hora };
+  return { ok: true, present: data.present, hora: data.hora };
 }
 
 export interface AsistenciaHoy {
@@ -122,10 +142,10 @@ export interface AsistenciaHoy {
  * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
  * returns DTOs only (no raw rows cross the boundary, ADR-0001).
  *
- * DECIDED (slice #60): session pases (rows `pasar_lista_sesion` writes, with
- * `class_session_id` set) DO appear here — this is the read-only feed of who
- * checked in today, whichever seam wrote it. Only the front-desk pase screen's
- * map (getMarcadas) excludes them, because its marks drive `toggle_pase`.
+ * Session pases (rows `pasar_lista_sesion` writes, with `class_session_id` set)
+ * appear here — this is the feed of who checked in today, whichever seam wrote
+ * it. Since ruling C15 that is true of EVERY attendance read: getMarcadas shows
+ * session rows too (toggle_pase refuses the double-consume server-side).
  *
  * @returns the DTO list (empty when no rows) · throws on DB error.
  */
