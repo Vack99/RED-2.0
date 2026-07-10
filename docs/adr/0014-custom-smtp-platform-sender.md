@@ -28,3 +28,18 @@ Members self-register by email+password ([ADR-0009](0009-identity-two-tier-auth-
 - Onboarding a gym stays a config act (ADR-0008) — **no per-gym mail setup**; the one sender and its verified domain already serve every new tenant.
 - The Phase-3 exit gate is **observable, not asserted**: deliverability confirmed against a live inbox with headers, per the roadmap criterion; auth-mail deliverability is re-checked at the Phase-7 launch gate.
 - Resend is now load-bearing for auth (not just the deferred weekly export), so its free-tier ceiling and the shared abuse posture on anon surfaces (audit finding 7 — a spammed `contact_message` burns the shared quota) are a real, shared blast radius.
+
+## Amendment — 2026-07-09 (#75)
+
+**The "permanent, structural" per-gym constraint above held only while the mailer was project-wide custom SMTP.** It reasoned from one true premise (custom SMTP is a project-wide setting) to an over-broad conclusion — that *auth mail* can never be per-gym. It did not consider Supabase's **Send Email Hook**, which per Supabase's docs *"replaces Supabase's built-in email sending"* and is available on our plan. The hook is invoked **per message** with the payload (`user`, `token_hash`, `redirect_to`, `email_action_type`), so branding is a per-message decision, not a project-wide one.
+
+**What changes (now live via #75):** auth mail is sent by our own Edge Function (`supabase/functions/send-email/`) through Resend, with:
+- **per-gym display name** on `From:` — the gym resolved from `redirect_to`'s host (`gym_domain` → `gym.brand_name`), neutral "Notificaciones" when no gym maps;
+- **per-gym template copy** (es-MX, the gym's name woven into the body) — our templates, never Supabase's built-in ones;
+- **the confirm link minted on the gym's OWN host** (`https://<gym-host>/auth/confirm?token_hash&type`), retiring the `…supabase.co/auth/v1/verify` spam-signal mismatch.
+
+**What stays true (do NOT re-read the original as forbidding this):**
+- **One sending DOMAIN / address** — `no-reply@ibookit.lat`, the single Resend-verified sender. Per-gym *addresses* would require verifying each gym's domain in Resend; still out of scope. The domain constraint is real; the *branding* constraint was not.
+- **One shared Supabase project** — [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) is unchanged. The hook does not need a project per gym; it reads the gym from the mail's own `redirect_to`.
+
+The original **Decision / Considered-and-rejected / Consequences** sections are left intact as the record of the SMTP-era reasoning; this amendment **supersedes their per-gym-branding claims by reference** for the auth-mail path. Custom SMTP (#72 §B) remains the **fallback** — one dashboard toggle disables the hook and auth mail resumes through SMTP with the neutral platform templates.

@@ -82,6 +82,8 @@ Routes Supabase's signup-confirmation + password-reset mail through Resend's SMT
 - [ ] **B2. Raise the auth email rate limit.** Dashboard → **Authentication → Rate Limits → Rate limit for sending emails**. Post-SMTP the default is **30/hour** — raise to a sane production floor.
   - **DECIDED: `50`/hour.** Clears the ~member-#30 wall the audit hit, while one runaway hour still cannot spend more than half of Resend's free-tier **100 emails/day, 3,000/month** ceiling. Revisit before a real onboarding burst or a paid Resend plan.
   - *Verify:* the saved value reads `50` — above 2/hour, and ≤ what Resend's plan can deliver in a day.
+> **⚠️ §B3 is to be DELETED after the #75 walk — see [`hitl-75-send-email-hook.md`](hitl-75-send-email-hook.md) step e.** The Send Email Hook (#75) takes over signup-confirmation + password-reset mail with gym-branded templates minted on the gym's own host, so these two dashboard templates become **dead config** once the hook is green. Keep them until then — they are the rollback path (disable the hook → SMTP + these templates resume). Do **not** delete pre-walk.
+
 - [ ] **B3. Rewrite the two auth templates (es-MX, gym-neutral, platform-voiced).** Dashboard → **Authentication → Emails → Templates**. Edit **Confirm signup** and **Reset Password**. Per ADR-0014: no gym name, no brand color, accessible HTML, keep `{{ .ConfirmationURL }}` intact.
 
   > **The subject goes in the "Subject heading" field, NOT in the body.** Each template has a Subject field above the HTML box. Paste only the `<div>…</div>` below into the body. (Getting this wrong ships Supabase's English default subject — *"Confirm your email address"* — over Spanish copy, which is itself a spam signal. It happened on the first pass, 2026-07-09.)
