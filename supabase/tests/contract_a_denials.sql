@@ -9,11 +9,11 @@
 -- same-uid row through) — which is the point: it proves the contract, not the status quo.
 --
 -- Two vector groups:
---   (a) anon EXECUTE denial on each of the five legacy write RPCs — after Migration A's revokes, a call
---       as the `anon` role raises insufficient_privilege (42501) at the permission check, before any body
---       runs. NOTE the actualizar_cliente overload probed is the LIVE 3-arg (uuid, text, text) — the same
---       signature Migration A revokes and the repo defines (20260602120000_actualizar_cliente_rpc.sql);
---       the 7-arg form named in the plan prose does not exist.
+--   (a) anon EXECUTE denial on each of the five legacy write RPCs — after the revokes, a call as the
+--       `anon` role raises insufficient_privilege (42501) at the permission check, before any body runs.
+--       NOTE the actualizar_cliente overload probed is the LIVE 4-arg (uuid, text, text, text): 3 args
+--       are passed and p_email defaults. 20260708220000 replaced the original 3-arg form, and
+--       20260710130000 (#82.3) re-revoked anon's EXECUTE on the 4-arg form after that recreate leaked it.
 --   (b) with_check denial: staff of gym A directly INSERTs a clientes row stamped gym B → the only
 --       surviving policy is `clientes_staff_insert with check (is_staff_of(gym_id))`, and A's staff is not
 --       staff of B, so the row violates RLS (42501). A positive control (the same staff inserting into
@@ -69,19 +69,17 @@ do $$
 declare denied boolean;
 begin
   -- actualizar_cliente: 20260708220000 DROPPED the 3-arg form and CREATEd the 4-arg
-  -- (uuid, text, text, text default null) — this 3-arg probe resolves to it. That recreate revoked only
-  -- `from public` (not `from public, anon` like the house style), and Supabase's default privileges
-  -- grant EXECUTE on new functions to anon directly — so Migration A's revoke no longer applies to the
-  -- new overload and the call reaches the body, where the auth guard raises P0001 'No autenticado'
-  -- (auth.uid() is null for anon). Both are a denial: the grant-level 42501 (if a future migration
-  -- re-revokes anon) or the body-level P0001 auth guard. Anything else — including success — fails.
+  -- (uuid, text, text, text default null) — this 3-arg probe resolves to it (p_email defaults). That
+  -- recreate revoked only `from public` (not `from public, anon` like the house style), letting
+  -- Supabase's default privileges re-grant EXECUTE to anon — a regression 20260710130000 (#82.3) closes
+  -- by re-revoking `from public, anon`. With the grant gone, the anon permission check raises
+  -- insufficient_privilege (42501) BEFORE the body runs, so 42501 is the ONLY pass. If anon ever regains
+  -- EXECUTE the call reaches the body's 'No autenticado' guard (P0001) and this vector FAILS — forcing
+  -- the grant fix back. Anything else — including success — fails too.
   denied := false;
   begin perform public.actualizar_cliente(gen_random_uuid(), 'x'::text, 'x'::text);
-  exception
-    when insufficient_privilege then denied := true;
-    when raise_exception then denied := (sqlerrm = 'No autenticado');
-  end;
-  if not denied then raise exception 'A FAIL: anon not denied on actualizar_cliente'; end if;
+  exception when insufficient_privilege then denied := true; end;
+  if not denied then raise exception 'A FAIL: anon EXECUTE not denied on actualizar_cliente'; end if;
 
   denied := false;
   begin perform public.actualizar_plantilla(gen_random_uuid(), 'x'::text, 'x'::text);
