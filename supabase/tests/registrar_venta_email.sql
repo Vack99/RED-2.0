@@ -3,33 +3,35 @@
 -- against the REAL deployed function, rolled back. Self-asserting; BEGIN/ROLLBACK; mutates nothing.
 --
 -- Post-C13 (2026-07-10): registrar_venta re-derives everything from the paquete row, so the sale sends
--- ONLY identity + p_paquete_id + p_metodo + p_idempotency_key. A transaction-local paquete is seeded in
--- forge (connecting role, rolled back) and its id is the sole package input; the email arm is unchanged.
--- HOW TO RUN: via the Supabase MCP execute_sql, or psql "$DATABASE_URL" -f supabase/tests/registrar_venta_email.sql
+-- ONLY identity + p_paquete_id + p_metodo + p_idempotency_key. Fixtures are fully transaction-local
+-- (synthetic gym + operator + paquete, zero prod UUIDs — the registrar_venta_stacking pattern): the old
+-- preamble resolved the operator from a live forge gym_membership row, which does not exist on a fresh
+-- scratch project (empty sub → 22P02 in staff_gym()).
+-- HOW TO RUN: via `node supabase/tests/run-denial-suite.mjs`, or ad hoc via the Supabase MCP execute_sql.
 begin;
 
--- Operator session = the forge gym's owner/operator gym_membership row (a real auth.users id), matching
--- registrar_venta_stamps_gym_id.sql; registrar_venta keys writes to auth.uid() + staff_gym(), which reads
--- this same (user_id, role in ('owner','operator')) predicate. perfil.user_id was dropped by Contract-B.
-select set_config('app.op',
-  (select user_id::text from public.gym_membership
-     where gym_id = (select id from public.gym where slug = 'forge')
-       and role in ('owner', 'operator')
-     order by created_at limit 1), true);
-
--- Seed a transaction-local paquete in forge (connecting role → RLS bypassed, like the import path). Its
--- id is the sale's only package input now (C13); rolled back with everything else.
+-- ── Fixtures (transaction-local; zero prod UUIDs) ────────────────────────────
 do $$
-declare v_paq uuid;
+declare
+  gym_e   uuid := gen_random_uuid();
+  op_user uuid := gen_random_uuid();
+  v_paq   uuid;
 begin
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_e, 'venta-email-suite-gym', 'Venta Email Suite', 'America/Mexico_City', 'red');
+  insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_user_meta_data)
+    values ('00000000-0000-0000-0000-000000000000', op_user, 'authenticated', 'authenticated', 'op@venta-email.local', now(), '{}');
+  insert into public.gym_membership (user_id, gym_id, role) values (op_user, gym_e, 'owner');
+  -- The sale's only package input (C13): the RPC re-derives price/saldo/vence from this row.
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
-    values ((select id from public.gym where slug = 'forge'), 'EMAIL SUITE 8 clases', 8, 'dias', 30, 800)
+    values (gym_e, 'EMAIL SUITE 8 clases', 8, 'dias', 30, 800)
     returning id into v_paq;
-  perform set_config('t.paq', v_paq::text, true);
+  perform set_config('t.op',  op_user::text, true);
+  perform set_config('t.paq', v_paq::text,   true);
 end $$;
 
 select set_config('request.jwt.claims',
-  json_build_object('sub', current_setting('app.op', true), 'role', 'authenticated')::text, true);
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 
 do $$
@@ -50,6 +52,8 @@ begin
     raise exception 'EMAIL FAIL: clientes.email = % (expected the p_email passed to the sale)', v_email;
   end if;
 end $$;
+
+reset role;
 
 select 'registrar_venta email capture: OK' as result;
 rollback;

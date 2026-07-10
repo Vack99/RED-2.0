@@ -2,14 +2,21 @@
 --
 -- Proves the atomic SECURITY DEFINER RPC `public.reclamar_o_crear_cliente(p_gym_id)` obeys the locked
 -- claim mechanics: a claim executes ONLY on a UNIQUE verified-email match in the host-resolved gym
--- (balance + history carry over); no-match / phone-only / ambiguous all mint a FRESH cliente (phone
--- NEVER claims); the `gym_membership(role='member')` insert commits in the SAME transaction (no
--- half-registered state); an unverified email is rejected; and a matching verified email in ANOTHER
--- gym is never claimed (gym is server-authoritative — the RPC scopes the match to p_gym_id). A final
--- vector proves the claimed member reads EXACTLY their own cliente row under the #23 gym-scoped RLS.
+-- (balance + history carry over); no-match / phone-only mint a FRESH cliente (phone NEVER claims);
+-- the `gym_membership(role='member')` insert commits in the SAME transaction (no half-registered
+-- state); an unverified email is rejected; and a matching verified email in ANOTHER gym is never
+-- claimed (gym is server-authoritative — the RPC scopes the match to p_gym_id). A final vector proves
+-- the claimed member reads EXACTLY their own cliente row under the #23 gym-scoped RLS.
 --
--- Eight named vectors (issue TDD list): claim-on-verified-match, create-on-no-match,
--- create-on-phone-only, create-on-ambiguous, unverified-rejected, membership-atomicity,
+-- AMBIGUITY IS NOW STRUCTURALLY IMPOSSIBLE (D2, 20260710120000): `clientes_email_gym_uq
+-- (gym_id, lower(email)) where email is not null` means two rows can never share an email in a gym.
+-- The old create-on-ambiguous vector (two dup@x.mx rows → the RPC refuses to guess) modeled a state
+-- the DB no longer admits; V4 now proves (a) the index rejects the second same-email insert (23505 —
+-- the index, not the RPC's v_n=1 count, is the guard) and (b) the formerly-ambiguous email, now
+-- necessarily unique, deterministically CLAIMS its single row.
+--
+-- Eight named vectors: claim-on-verified-match, create-on-no-match, create-on-phone-only,
+-- email-unique-index-guard + claim-on-now-unique-match, unverified-rejected, membership-atomicity,
 -- cross-gym-claim-denied, member-scoped-read.
 --
 -- Zero hardcoded prod UUIDs (ADR-0013 §5): gym A is looked up by slug from the spine seeds; a synthetic
@@ -42,7 +49,9 @@ declare
   -- pre-seeded UNCLAIMED clientes
   c_match   uuid;
   c_phone   uuid;
+  c_dup     uuid;
   c_cross   uuid;
+  got_23505 boolean := false;
 begin
   select id into gym_a from public.gym where slug = 'forge';
   if gym_a is null then raise exception 'SEED FAIL: expected the forge gym from the spine seeds'; end if;
@@ -62,9 +71,10 @@ begin
     ('00000000-0000-0000-0000-000000000000', u_cross,   'authenticated','authenticated','cross@x.mx',         now(), '{"full_name":"Cris Cross","phone_e164":"+526147778899"}');
 
   -- Pre-seeded operator CRM rows (auth_user_id NULL). c_match's email matches u_match (→ claim);
-  -- c_phone shares u_phone's PHONE but has a DIFFERENT email (→ phone must NOT claim); two dup@x.mx rows
-  -- make u_ambig ambiguous (→ create); c_cross matches u_cross's email but lives in gym A while u_cross
-  -- registers into gym B (→ cross-gym must NOT claim).
+  -- c_phone shares u_phone's PHONE but has a DIFFERENT email (→ phone must NOT claim); c_dup carries
+  -- the once-ambiguous dup@x.mx — a SECOND row with that email is now impossible (V4 proves the index
+  -- rejects it); c_cross matches u_cross's email but lives in gym A while u_cross registers into gym B
+  -- (→ cross-gym must NOT claim).
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
     values (gym_a, 'Ana Preexistente', '6141112233', 5, 'ana@x.mx', null)
     returning id into c_match;
@@ -72,9 +82,19 @@ begin
     values (gym_a, 'Titular Real', '6143334455', 7, 'titular-real@x.mx', '+526143334455', null)
     returning id into c_phone;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
-    values (gym_a, 'Dup Uno', '6144440001', 3, 'dup@x.mx', null);
-  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
-    values (gym_a, 'Dup Dos', '6144440002', 4, 'dup@x.mx', null);
+    values (gym_a, 'Dup Uno', '6144440001', 3, 'dup@x.mx', null)
+    returning id into c_dup;
+  -- V4a — email-unique-index-guard: the duplicate-email state the old ambiguity vector seeded can no
+  -- longer be created. The second same-email insert (even with a case twist) must raise 23505 off
+  -- clientes_email_gym_uq; the guard is the INDEX, not the RPC's v_n = 1 count.
+  begin
+    insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
+      values (gym_a, 'Dup Dos', '6144440002', 4, 'DUP@x.mx', null);
+  exception when unique_violation then got_23505 := true;
+  end;
+  if not got_23505 then
+    raise exception 'V4a FAIL: a second dup@x.mx row was inserted — clientes_email_gym_uq did not fire';
+  end if;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, auth_user_id)
     values (gym_a, 'Cross Preexistente', '6147778899', 9, 'cross@x.mx', null)
     returning id into c_cross;
@@ -90,6 +110,7 @@ begin
   perform set_config('t.u_cross',   u_cross::text,   true);
   perform set_config('t.c_match',   c_match::text,   true);
   perform set_config('t.c_phone',   c_phone::text,   true);
+  perform set_config('t.c_dup',     c_dup::text,     true);
   perform set_config('t.c_cross',   c_cross::text,   true);
 end $$;
 
@@ -143,9 +164,11 @@ begin
   if rec.tel <> '6142223344' then raise exception 'V2 FAIL: tel not derived from phone_e164 (%)', rec.tel; end if;
   if rec.clases_restantes is distinct from 0 then raise exception 'V2 FAIL: fresh self-registrant must start at 0 clases (finite), got % — NULL means Ilimitado = free booking', rec.clases_restantes; end if;
   -- #78 regression: the create path MUST persist the VERIFIED auth email as the contact address.
-  select u.email into v_auth_email from auth.users u where u.id = un;
+  -- Compared against the fixture literal (u_nomatch was seeded 'nuevo@x.mx'): this block runs AS
+  -- `authenticated`, which has no SELECT grant on auth.users — reading it here 42501s on scratch.
+  v_auth_email := 'nuevo@x.mx';
   if rec.email is distinct from v_auth_email then
-    raise exception 'V2 FAIL (#78): create path dropped the verified email — clientes.email=% but auth.users.email=%', rec.email, v_auth_email;
+    raise exception 'V2 FAIL (#78): create path dropped the verified email — clientes.email=% but the verified signup email=%', rec.email, v_auth_email;
   end if;
   -- Consent stamps written at create time (the RPC sets both to now()).
   if rec.terms_accepted_at is null then raise exception 'V2 FAIL: terms_accepted_at not stamped on the fresh row'; end if;
@@ -183,32 +206,37 @@ begin
   if v_auth <> up or created = cp then raise exception 'V3 FAIL: expected a fresh cliente for the registrant'; end if;
 end $$;
 
--- ══ V4 — create-on-ambiguous: >1 verified-email match never guesses; both dup rows stay unclaimed ══
+-- ══ V4b — claim-on-now-unique-match: the formerly-ambiguous email is structurally unique (V4a proved
+--          the index guard), so registering with it deterministically CLAIMS its single row ═════════
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.u_ambig', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare g uuid := current_setting('t.gym_a', true)::uuid; r record;
+declare
+  g  uuid := current_setting('t.gym_a', true)::uuid;
+  cd uuid := current_setting('t.c_dup', true)::uuid;
+  r  record;
 begin
   select * into r from public.reclamar_o_crear_cliente(g);
-  if r.reclamado then raise exception 'V4 FAIL: an ambiguous match must NOT claim'; end if;
-  perform set_config('t.c_created_ambig', r.cliente_id::text, true);
+  if not r.reclamado then raise exception 'V4b FAIL: a now-unique email match must CLAIM (got create)'; end if;
+  if r.cliente_id <> cd then raise exception 'V4b FAIL: claimed % but expected the single dup row %', r.cliente_id, cd; end if;
 end $$;
 reset role;
 do $$
 declare
-  g uuid := current_setting('t.gym_a', true)::uuid;
+  cd uuid := current_setting('t.c_dup', true)::uuid;
   ua uuid := current_setting('t.u_ambig', true)::uuid;
-  created uuid := current_setting('t.c_created_ambig', true)::uuid;
   n int;
-  v_auth uuid;
+  rec record;
 begin
-  -- The two dup@x.mx CRM rows both remain unclaimed (no guess).
-  select count(*) into n from public.clientes
-    where gym_id = g and email = 'dup@x.mx' and auth_user_id is null;
-  if n <> 2 then raise exception 'V4 FAIL: expected both dup rows unclaimed (count=%)', n; end if;
-  select auth_user_id into v_auth from public.clientes where id = created;
-  if v_auth <> ua then raise exception 'V4 FAIL: expected a fresh cliente for the registrant'; end if;
+  -- The WRITTEN row (the #78 lesson): bound to the registrant, balance carried, consent stamped.
+  select auth_user_id, clases_restantes, terms_accepted_at into rec from public.clientes where id = cd;
+  if rec.auth_user_id <> ua then raise exception 'V4b FAIL: dup row not bound to the registrant'; end if;
+  if rec.clases_restantes is distinct from 3 then raise exception 'V4b FAIL: balance not carried (clases_restantes=%)', rec.clases_restantes; end if;
+  if rec.terms_accepted_at is null then raise exception 'V4b FAIL: terms_accepted_at not stamped on claim'; end if;
+  -- No fresh row was minted for the registrant (the claim, not a create, served them).
+  select count(*) into n from public.clientes where auth_user_id = ua;
+  if n <> 1 then raise exception 'V4b FAIL: expected exactly the claimed row for the registrant, got %', n; end if;
 end $$;
 
 -- ══ V5 — unverified-email rejected: RPC raises; no cliente + no membership persist ══════════════════

@@ -68,10 +68,20 @@ set local role anon;
 do $$
 declare denied boolean;
 begin
+  -- actualizar_cliente: 20260708220000 DROPPED the 3-arg form and CREATEd the 4-arg
+  -- (uuid, text, text, text default null) — this 3-arg probe resolves to it. That recreate revoked only
+  -- `from public` (not `from public, anon` like the house style), and Supabase's default privileges
+  -- grant EXECUTE on new functions to anon directly — so Migration A's revoke no longer applies to the
+  -- new overload and the call reaches the body, where the auth guard raises P0001 'No autenticado'
+  -- (auth.uid() is null for anon). Both are a denial: the grant-level 42501 (if a future migration
+  -- re-revokes anon) or the body-level P0001 auth guard. Anything else — including success — fails.
   denied := false;
   begin perform public.actualizar_cliente(gen_random_uuid(), 'x'::text, 'x'::text);
-  exception when insufficient_privilege then denied := true; end;
-  if not denied then raise exception 'A FAIL: anon EXECUTE not denied on actualizar_cliente'; end if;
+  exception
+    when insufficient_privilege then denied := true;
+    when raise_exception then denied := (sqlerrm = 'No autenticado');
+  end;
+  if not denied then raise exception 'A FAIL: anon not denied on actualizar_cliente'; end if;
 
   denied := false;
   begin perform public.actualizar_plantilla(gen_random_uuid(), 'x'::text, 'x'::text);
