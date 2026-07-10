@@ -28,7 +28,7 @@ New app code forwards `p_email` **only** for a new-client sale that carries an e
 5. **Fast-forward `main` to the branch and deploy the apps** (solo-main workflow).
 
 ## Post-apply verification (SQL green — run ad hoc against live via MCP `execute_sql`; all are `BEGIN/ROLLBACK`)
-The two money-path tests are intentionally **not** in `pnpm test:denial` (they need an ambient forge operator, so they can't seed a fresh preview branch) — run them ad hoc:
+The two money-path tests are now **wired into** `pnpm test:denial` (#80), but they read the forge owner/operator from `gym_membership`, so the scratch project must carry a seeded forge operator membership (a fresh preview branch has none). Against live they still run ad hoc as below:
 - `supabase/tests/registrar_venta_email.sql` → `registrar_venta email capture: OK` (Defect A proven).
 - `supabase/tests/registrar_venta_stamps_gym_id.sql` → `registrar_venta gym_id stamping: OK` (money-path regression).
 - `supabase/tests/registro_claim.sql` → `registro claim suite: OK` (V2 now sees `clases_restantes = 0`). Also covered by `pnpm test:denial` if you set `SUPABASE_TARGET_REF` + `SUPABASE_ACCESS_TOKEN` against a seeded scratch.
