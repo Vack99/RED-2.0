@@ -24,6 +24,20 @@ alter table public.ventas add constraint ventas_metodo_check
 --    a booking that actually spent one (a no-show consumed and is not refunded).
 alter table public.reservation add column if not exists consumio boolean not null default false;
 
+--    Backfill (final review, 2026-07-10): every PRE-migration booking by a finite member
+--    consumed a class at booking time (reservar_clase's decrement rail) — the default-false
+--    column would tell cancelar_reserva it spent nothing, so cancelling such a booking would
+--    refund nothing and eat a paid class (the phantom-refund bug's mirror image). Stamp those
+--    rows true. Only active 'reservada' rows matter (cancel touches nothing else); ilimitado
+--    members (clases_restantes null) never consumed, so they stay false. Idempotent, and a
+--    no-op on a fresh scratch replay (the table is empty at this point in the sequence).
+update public.reservation r
+   set consumio = true
+  from public.clientes c
+ where r.member_id = c.id
+   and r.status = 'reservada'
+   and c.clases_restantes is not null;
+
 -- 4. D2 backstop: one member row per verified email per gym (case-insensitive). Placeholder
 --    seed emails (8 distinct forge-demo people sharing seed@mock.test) are scrubbed to NULL
 --    FIRST — email is optional and demo rows need no join key; keying dedup on them would

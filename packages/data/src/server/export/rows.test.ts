@@ -295,7 +295,7 @@ describe("buildRespaldoRows — Email fallback + Vigencia + metodo labels", () =
     expect(r.clientes.rows[0][2]).toBe("—");
   });
 
-  it('Vigencia reads "todo el mes" for a mes package, "N días" otherwise', () => {
+  it('Vigencia reads "30 días" for a mes package (flat 30, ruling C1), "N días" otherwise', () => {
     const r = buildRespaldoRows(
       data({
         ventas: [
@@ -308,9 +308,9 @@ describe("buildRespaldoRows — Email fallback + Vigencia + metodo labels", () =
         ],
       }),
     );
-    expect(r.ventas.rows[0][6]).toBe("todo el mes");
+    expect(r.ventas.rows[0][6]).toBe("30 días");
     expect(r.ventas.rows[1][6]).toBe("30 días");
-    expect(r.paquetes.rows[0][3]).toBe("todo el mes");
+    expect(r.paquetes.rows[0][3]).toBe("30 días");
     expect(r.paquetes.rows[1][3]).toBe("15 días");
   });
 

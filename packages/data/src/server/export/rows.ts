@@ -112,9 +112,9 @@ function clasesLabel(n: number | null | "ilimitado"): string {
   return `${n} clase${n === 1 ? "" : "s"}`;
 }
 
-/** Mirrors PaqueteDTO.vigencia: "todo el mes" for a mes package, "N días" otherwise. */
+/** Mirrors PaqueteDTO.vigencia: "30 días" for a mes package (flat 30, ruling C1), "N días" otherwise. */
 function vigenciaLabel(tipo: string, dias: number | null): string {
-  return tipo === "mes" ? "todo el mes" : `${dias} días`;
+  return tipo === "mes" ? "30 días" : `${dias} días`;
 }
 
 // ── The shaper ──

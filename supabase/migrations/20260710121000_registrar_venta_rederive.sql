@@ -138,12 +138,19 @@ begin
   v_new_vence := v_hoy + v_new_dias;
 
   if p_cliente_id is not null then
-    update public.clientes c
-      set clases_restantes = v_new_clases,
-          vence = v_new_vence,
-          paquete_nombre = v_paq.nombre,
-          email = coalesce(p_email, c.email)               -- C7 backfill
-      where c.id = p_cliente_id;
+    -- The C7 email backfill can collide with clientes_email_gym_uq (another row in the gym
+    -- already holds p_email): surface a human message, not a raw 23505 — the same guard the
+    -- claim RPCs carry (20260710122000). The whole sale rolls back (no venta row written).
+    begin
+      update public.clientes c
+        set clases_restantes = v_new_clases,
+            vence = v_new_vence,
+            paquete_nombre = v_paq.nombre,
+            email = coalesce(p_email, c.email)             -- C7 backfill
+        where c.id = p_cliente_id;
+    exception when unique_violation then
+      raise exception 'Este correo ya pertenece a otro registro de este gym';
+    end;
     v_cliente_id := p_cliente_id;
   else
     loop

@@ -54,7 +54,7 @@ export function isTelValido(raw: string): boolean {
  * Email intake rule — the single home for "what does a plausible email look like", mirroring
  * `isTelValido`'s role. A pragmatic client-side gate (enables/disables a Save button); the DAL's
  * `z.string().email()` is the real validation authority (design 2026-07-08 §4 — this surface is an
- * edit, not a sale, so it validates; the sale-path `nuevoEmail` normalizer stays deliberately unvalidated).
+ * edit, not a sale, so it validates; the sale-path `email` field (crearVentaSchema) stays deliberately unvalidated).
  */
 export function isEmailValido(raw: string): boolean {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim());

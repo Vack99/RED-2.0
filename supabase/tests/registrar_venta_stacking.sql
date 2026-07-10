@@ -9,7 +9,8 @@
 -- (4) renewal ON the vence day carries [C9], (5) lapsed base forfeits, (6) active ilimitado + finite =
 -- pack's count, days add [C4], (7) finite + ilimitado pack = ilimitado, days add [C4], (8) idempotent
 -- replay = one venta, same folio [C6], (9) duplicate guard + p_forzar_nuevo override [D2], (10) email
--- backfill / keep [C7], (11) 'pendiente' rejected [C2], (12) cross-gym paquete = not found.
+-- backfill / keep [C7], (11) 'pendiente' rejected [C2], (12) cross-gym paquete = not found, (13) a
+-- colliding backfill email fails with the human message and rolls back atomically [C7/D2].
 --
 -- Zero prod UUIDs (ADR-0013 §5): a synthetic gym + operator + catalog, all gen_random_uuid(). One
 -- BEGIN/ROLLBACK so a scratch project is REUSABLE and accumulates no state. Self-asserting: every check
@@ -29,6 +30,7 @@ declare
   v_today   date;
   p_fin8_20 uuid; p_mes uuid; p_fin8_30 uuid; p_ilim uuid; p_other uuid;
   cli_v3 uuid; cli_v4 uuid; cli_v5 uuid; cli_v6 uuid; cli_v7 uuid; cli_v10 uuid;
+  cli_v13 uuid; cli_v13b uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_stk,   'registrar-stacking-suite-gym', 'Registrar Stacking Suite', 'America/Mexico_City', 'red'),
@@ -66,6 +68,11 @@ begin
     values (gym_stk, 'Base V7 Finite',   '6200000007', 5, v_today + 3,  '8 clases 20d') returning id into cli_v7;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre)
     values (gym_stk, 'Base V10 Email',   '6200000010', 5, v_today + 10, '8 clases 20d') returning id into cli_v10;
+  -- V13 pair: the renewal target (no email) + the row that already OWNS the colliding email.
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre)
+    values (gym_stk, 'Base V13 Target',  '6200000013', 5, v_today + 10, '8 clases 20d') returning id into cli_v13;
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, email)
+    values (gym_stk, 'Base V13 Owner',   '6200000014', 5, v_today + 10, '8 clases 20d', 'v13owner@stk.mx') returning id into cli_v13b;
 
   perform set_config('t.gym_stk',   gym_stk::text,   true);
   perform set_config('t.op_user',   op_user::text,   true);
@@ -80,6 +87,7 @@ begin
   perform set_config('t.cli_v6',  cli_v6::text,  true);
   perform set_config('t.cli_v7',  cli_v7::text,  true);
   perform set_config('t.cli_v10', cli_v10::text, true);
+  perform set_config('t.cli_v13', cli_v13::text, true);
 end $$;
 
 -- All sales run as gym_stk's operator (SECURITY INVOKER → the RPC + these assertions run under RLS).
@@ -354,6 +362,33 @@ begin
   end;
   if not got_error then raise exception 'V12 FAIL: a cross-gym paquete was accepted (scope leak)'; end if;
   if msg is distinct from 'Paquete no encontrado' then raise exception 'V12 FAIL: wrong error for cross-gym paquete (%)', msg; end if;
+end $$;
+
+-- ══ V13 — C7 backfill email collides with another row's email (clientes_email_gym_uq): the sale
+--          fails with the HUMAN message and rolls back atomically — no venta row, target untouched ═════
+do $$
+declare
+  ci uuid := current_setting('t.cli_v13', true)::uuid;
+  k uuid := gen_random_uuid();
+  got_error boolean := false; msg text;
+  c record; n int;
+begin
+  begin
+    perform public.registrar_venta(
+      p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+      p_idempotency_key := k, p_cliente_id := ci, p_email := 'V13OWNER@stk.mx');  -- case twist: index is lower()
+  exception when others then got_error := true; msg := sqlerrm;
+  end;
+  if not got_error then raise exception 'V13 FAIL: a colliding backfill email was accepted'; end if;
+  if msg is distinct from 'Este correo ya pertenece a otro registro de este gym' then
+    raise exception 'V13 FAIL: wrong error for the email collision (%)', msg;
+  end if;
+  -- Atomic rollback: no venta row written, and the target row is untouched.
+  select count(*) into n from public.ventas where idempotency_key = k;
+  if n <> 0 then raise exception 'V13 FAIL: the failed sale wrote % ventas rows (expected 0)', n; end if;
+  select email, clases_restantes into c from public.clientes where id = ci;
+  if c.email is not null then raise exception 'V13 FAIL: target email % (expected still null)', c.email; end if;
+  if c.clases_restantes is distinct from 5 then raise exception 'V13 FAIL: target saldo % mutated by the failed sale', c.clases_restantes; end if;
 end $$;
 
 reset role;

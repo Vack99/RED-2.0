@@ -105,8 +105,10 @@ const clasesFromDb = (n: number | null): Clases => (n === null ? "ilimitado" : n
 const forCliente = (id: ClienteId): string => id;
 const forPaquete = (id: PaqueteId): string => id;
 
+// A 'mes' package is a flat 30 days from purchase (ruling C1) — the label must say so;
+// "todo el mes" was the retired month-end semantics and contradicted the printed vence.
 function vigenciaDisplay(tipo: string, dias: number | null): string {
-  return tipo === "mes" ? "todo el mes" : `${dias} días`;
+  return tipo === "mes" ? "30 días" : `${dias} días`;
 }
 
 /**

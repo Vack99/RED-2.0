@@ -326,8 +326,8 @@ export const getClienteFicha = cache(
 
 /** Identity-edit input (nombre + tel + optional email). Trims like crearVenta; tel validity is the
  *  canonical 10-digit MX rule (isTelValido), the same rule the DB CHECK (clientes_tel_10_digits_ck)
- *  enforces. `email` is OPTIONAL and `.email()`-VALIDATED (design §4) — unlike the sale-path `nuevoEmail`
- *  normalizer (ventas.ts, deliberately untouched: cash sale never gated), this surface is an edit, not a
+ *  enforces. `email` is OPTIONAL and `.email()`-VALIDATED (design §4) — unlike the sale-path `email` field
+ *  (crearVentaSchema in ventas.ts, deliberately unvalidated: cash sale never gated), this surface is an edit, not a
  *  sale, so validation is safe here. Blank/whitespace-only input means "no change" (preprocessed to
  *  `undefined`, never forwarded as `''`) — this slice has no explicit "clear the email" arm. */
 export const actualizarClienteSchema = z.object({

@@ -24,7 +24,7 @@ const rows: RespaldoRows = {
     headers: ["Folio", "Fecha", "Cliente", "Paquete", "Monto", "Método", "Vigencia"],
     rows: [
       [1001, "2026-05-20", "Andrea Castro", "8 clases", 1250.5, "Efectivo", "30 días"],
-      [1002, "2026-05-21", "Beto Ruiz", "Mensual", 800, "Transferencia", "todo el mes"],
+      [1002, "2026-05-21", "Beto Ruiz", "Mensual", 800, "Transferencia", "30 días"],
     ],
     money: [4],
   },

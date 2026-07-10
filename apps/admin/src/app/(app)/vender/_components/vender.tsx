@@ -378,6 +378,13 @@ export function VenderScreen({
               <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 3, lineHeight: 1.5 }}>
                 Otro cliente tiene este teléfono o email. Véndele como EXISTENTE para no duplicar su ficha, o crea uno nuevo si de verdad es otra persona.
               </div>
+              {/* CREAR NUEVO bypasses only the tel guard; a repeated email stays blocked by the
+                  per-gym unique index, so without this hint the dialog reopens unexplained. */}
+              {nuevo.email.trim() !== "" && (
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6, lineHeight: 1.5 }}>
+                  Ojo: si el email es el repetido, crear uno nuevo seguirá bloqueado — corrígelo o déjalo vacío primero.
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-col" style={{ gap: 10, marginTop: 18 }}>

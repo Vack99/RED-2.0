@@ -40,8 +40,8 @@ export interface ResumenRoster {
  *  credit sale (ruling C2; prod had zero such rows, so the narrowing is clean). */
 export type MetodoPago = "efectivo" | "transferencia" | "tarjeta";
 
-/** Validity window: a fixed number of days, or the remainder of the
- *  purchase calendar month ("mes", used by Ilimitado — brief Q1). */
+/** Validity window: a fixed number of days, or "mes" — a flat 30 days from the
+ *  purchase date (ruling C1, 2026-07-08; month-end semantics are gone). */
 export type Vigencia = number | "mes";
 
 /** What a client has left of their active package. */

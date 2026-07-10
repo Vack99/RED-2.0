@@ -17,7 +17,7 @@ export interface PaqueteDTO {
   /** Class grant, NULL = ilimitado. The editor sets this (1..30 or null) and the
    *  display `nombre` is DERIVED from it in-DB, so label and grant cannot drift. */
   clases: number | null;
-  /** Display vigencia, e.g. "20 días" or "todo el mes". */
+  /** Display vigencia, e.g. "20 días" — a mes package reads "30 días" (flat 30, ruling C1). */
   vigencia: string;
   /** Expiry if bought today (fmtShort), e.g. "16 jun" — for the "Hasta …" hint. */
   hasta: string;
@@ -49,7 +49,7 @@ export const getPaquetes = cache(
         id: p.id,
         nombre: p.nombre,
         clases: p.clases,
-        vigencia: p.vigencia_tipo === "mes" ? "todo el mes" : `${p.vigencia_dias} días`,
+        vigencia: p.vigencia_tipo === "mes" ? "30 días" : `${p.vigencia_dias} días`,
         hasta: fmtShort(calcVigenciaEnd(hoy, vigencia)),
         precio: p.precio,
         popular: p.popular,
@@ -105,7 +105,7 @@ export const getPlanesEditor = cache(
         id: p.id,
         nombre: p.nombre,
         clases: p.clases,
-        vigencia: p.vigencia_tipo === "mes" ? "todo el mes" : `${p.vigencia_dias} días`,
+        vigencia: p.vigencia_tipo === "mes" ? "30 días" : `${p.vigencia_dias} días`,
         hasta: fmtShort(calcVigenciaEnd(hoy, vigencia)),
         precio: p.precio,
         popular: p.popular,

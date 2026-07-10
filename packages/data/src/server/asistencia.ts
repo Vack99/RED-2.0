@@ -46,9 +46,10 @@ export const getMarcadas = cache(
     const supabase = client ?? (await createClient());
 
     const map: Record<string, string[]> = {};
-    // A cliente can hold BOTH a front-desk and a session row on one day (marked in a
-    // class, then toggled at the desk on another day's row set, etc.) — dedupe per
-    // (fecha, cliente) so a mark renders once and the day counts aren't inflated.
+    // A cliente can hold BOTH a front-desk row and a session-linked row on one day
+    // (e.g. the desk marks a booked member present, then the coach runs the agenda
+    // pase for the same class) — dedupe per (fecha, cliente) so the mark renders
+    // once and the day counts aren't inflated.
     const seen = new Set<string>();
     for (let from = 0; ; from += PAGE) {
       const { data } = await supabase
