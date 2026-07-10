@@ -1,0 +1,44 @@
+## Error Type
+Console Error
+
+## Error Message
+Encountered a script tag while rendering React component. Scripts inside React components are never executed when rendering on the client. Consider using template tag instead (https://developer.mozilla.org/en-US/docs/Web/HTML/Element/template).
+
+
+    at script (unknown:0:0)
+    at Providers (src/app/providers.tsx:27:5)
+    at RootLayout (src\app\layout.tsx:70:9)
+
+## Code Frame
+  25 | export function Providers({ children }: { children: React.ReactNode }) {
+  26 |   return (
+> 27 |     <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+     |     ^
+  28 |       {children}
+  29 |     </ThemeProvider>
+  30 |   );
+
+Next.js version: 16.2.6 (Turbopack)
+---
+
+## Error Type
+Runtime Error
+
+## Error Message
+Sin gym asignado
+
+
+    at <anonymous> (..\..\packages\data\src\server\gym.ts:40:28)
+    at Page (src\app\(app)\inicio\page.tsx:11:28)
+
+## Code Frame
+  38 |       .limit(1)
+  39 |       .maybeSingle();
+> 40 |     if (!membership) throw new Error("Sin gym asignado");
+     |                            ^
+  41 |
+  42 |     const { data: gym } = await supabase
+  43 |       .from("gym")
+
+Next.js version: 16.2.6 (Turbopack)
+
