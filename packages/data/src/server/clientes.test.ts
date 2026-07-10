@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   actualizarCliente,
+  getClienteFicha,
   getClientesLite,
   getClientesRoster,
   getRosterResumen,
@@ -384,5 +385,130 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(resumen.nuevosOnline).toBe(1); // only cli-online
     const clientesSelect = fake.selects.clientes.join(" ");
     expect(clientesSelect).not.toContain("claim_code");
+  });
+});
+
+/**
+ * C14: the clases gauge's `usadas` (attendedSincePurchase) must anchor at the venta
+ * INSTANT, not just its gym-local calendar day. A check-in earlier the same day as a
+ * renewal was already spent from the pre-renewal balance — counting it again against
+ * the new package double-counts it. `getClienteFicha` needs a full fake (it touches
+ * clientes/gym_membership/gym/asistencias/ventas + the best-effort perfil/plantillas/
+ * paquetes/cobro reads), so this builds its own hand-rolled query-builder fake rather
+ * than reusing makeReadFake's narrower Rows shape (ADR-0001 pattern, same discipline).
+ */
+describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", () => {
+  const TZ = "America/Chihuahua";
+
+  const FICHA_CLIENTE = {
+    id: "cli-ficha",
+    nombre: "Diego Herrera",
+    tel: "614 555 0100",
+    paquete_nombre: "8 clases",
+    clases_restantes: 5,
+    vence: "2026-08-10",
+    created_at: "2026-01-01T00:00:00Z",
+    email: null,
+    invitacion_enviada_at: null,
+    auth_user_id: null,
+  };
+
+  // 2026-07-10T18:00:00Z == 2026-07-10 12:00:00 in America/Chihuahua (gym-local).
+  const FICHA_VENTA = {
+    cliente_id: "cli-ficha",
+    fecha: "2026-07-10T18:00:00Z",
+    paquete_nombre: "8 clases",
+    monto: 500,
+    metodo: "efectivo",
+    clases: 8,
+    vigencia_tipo: "dias",
+    vigencia_dias: 30,
+  };
+
+  function makeFichaFake(asistencias: Record<string, unknown>[]): SupabaseServer {
+    const rows: Record<string, Record<string, unknown>[]> = {
+      clientes: [FICHA_CLIENTE],
+      gym_membership: [{ gym_id: "g-1", role: "operator" }],
+      gym: [{ id: "g-1", timezone: TZ }],
+      asistencias,
+      ventas: [FICHA_VENTA],
+      perfil: [],
+      plantillas: [],
+      paquetes: [],
+      cobro: [],
+    };
+
+    function builder(table: string) {
+      let filtered = [...(rows[table] ?? [])];
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: (col: string, val: unknown) => {
+          filtered = filtered.filter((r) => r[col] === val);
+          return b;
+        },
+        is: (col: string, val: unknown) => {
+          filtered = filtered.filter((r) => r[col] === val);
+          return b;
+        },
+        gte: (col: string, val: unknown) => {
+          filtered = filtered.filter((r) => (r[col] as string) >= (val as string));
+          return b;
+        },
+        order: () => b,
+        range: (from: number, to: number) => {
+          filtered = filtered.slice(from, to + 1);
+          return b;
+        },
+        limit: (n: number) => {
+          filtered = filtered.slice(0, n);
+          return b;
+        },
+        maybeSingle: () => Promise.resolve({ data: filtered[0] ?? null, error: null }),
+        then: (resolve: (v: { data: unknown; error: null }) => unknown) =>
+          resolve({ data: filtered, error: null }),
+      };
+      return b;
+    }
+
+    const client = {
+      auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
+      from: (table: string) => builder(table),
+    };
+    return client as unknown as SupabaseServer;
+  }
+
+  it("excludes a same-day check-in that happened BEFORE the venta's gym-local time", async () => {
+    const client = makeFichaFake([
+      // Consumed BEFORE the 12:00 venta (gym-local) — already spent from the prior balance.
+      {
+        cliente_id: "cli-ficha",
+        fecha: "2026-07-10",
+        hora: "09:00:00",
+        consumio: true,
+        deleted_at: null,
+      },
+      // Consumed AFTER the venta — the only row that should count against the new package.
+      {
+        cliente_id: "cli-ficha",
+        fecha: "2026-07-10",
+        hora: "15:00:00",
+        consumio: true,
+        deleted_at: null,
+      },
+    ]);
+
+    const ficha = await getClienteFicha("cli-ficha", client);
+
+    expect(ficha?.clasesGauge?.usadas).toBe(1);
+  });
+
+  it("counts a null-hora (back-entry) same-day row — no recorded time to prove it preceded the venta", async () => {
+    const client = makeFichaFake([
+      { cliente_id: "cli-ficha", fecha: "2026-07-10", hora: null, consumio: true, deleted_at: null },
+    ]);
+
+    const ficha = await getClienteFicha("cli-ficha", client);
+
+    expect(ficha?.clasesGauge?.usadas).toBe(1);
   });
 });

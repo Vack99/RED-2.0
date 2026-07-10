@@ -103,6 +103,22 @@ function monthStartIso(hoy: Date): string {
   return toIsoDay(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
 }
 
+/** The gym-local "HH:MM:SS" wall clock for a timestamptz — matches the Postgres
+ *  `time` literal format asistencias.hora is stored in, so a venta's instant can be
+ *  string-compared against it directly (C14, clases-gauge anchor). Seconds matter
+ *  here (unlike @gym/format's `horaEnZona`, "HH:MM" for display): truncating to the
+ *  minute would misclassify a check-in seconds apart from the venta on the same
+ *  minute. */
+function horaSegEnZona(isoTimestamp: string, tz: string): string {
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: tz,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).format(new Date(isoTimestamp));
+}
+
 /** The ficha's rolling attendance window length, in days (ADR/spec 2026-06-01).
  *  One constant, easy to retune; the directory keeps its own this-month count. */
 const FICHA_VENTANA_DIAS = 30;
@@ -254,18 +270,28 @@ export const getClienteFicha = cache(
     }).negocio;
 
     // Classes consumed since the last purchase (Part B clases-gauge denominator):
-    // count `consumio` rows with fecha >= the purchase date. The purchase is the
-    // saldo anchor `ventas[0]` (newest-first). lastPurchaseIso is the gym-local
-    // calendar day of that timestamptz, matched against asistencias' `date` column.
+    // count `consumio` rows at/after the purchase INSTANT, not just its calendar day
+    // (C14) — a check-in earlier the SAME day as a renewal was already spent from the
+    // pre-renewal balance, so day-granularity double-counts it against the new package.
+    // ventaDia is the gym-local calendar day; ventaHora is the gym-local "HH:MM:SS"
+    // wall clock, directly string-comparable against asistencias.hora (a Postgres
+    // `time`). Null `hora` (back-entry rows, predating the column) are counted: with
+    // no recorded time there's no way to prove they preceded the venta.
     const ventas = ventasRes.data ?? [];
-    const lastPurchaseIso = ventas[0] ? toIsoDay(fechaEnZona(ventas[0].fecha, tz)) : null;
+    const ventaInstante = ventas[0]
+      ? { dia: toIsoDay(fechaEnZona(ventas[0].fecha, tz)), hora: horaSegEnZona(ventas[0].fecha, tz) }
+      : null;
     let attendedSincePurchase = 0;
-    if (lastPurchaseIso) {
-      if (lastPurchaseIso >= ventanaIso) {
+    if (ventaInstante) {
+      const { dia: ventaDia, hora: ventaHora } = ventaInstante;
+      if (ventaDia >= ventanaIso) {
         // Common case: the purchase is inside the 30-day window we already fetched,
         // so count the rows in hand — no extra round trip.
         attendedSincePurchase = (asistRes.data ?? []).filter(
-          (a) => a.consumio && a.fecha >= lastPurchaseIso,
+          (a) =>
+            a.consumio &&
+            (a.fecha > ventaDia ||
+              (a.fecha === ventaDia && (a.hora === null || a.hora >= ventaHora))),
         ).length;
       } else {
         // Old purchase predating the window: a tiny exact head-count keeps the
@@ -276,7 +302,7 @@ export const getClienteFicha = cache(
           .eq("cliente_id", id)
           .eq("consumio", true)
           .is("deleted_at", null)
-          .gte("fecha", lastPurchaseIso);
+          .or(`fecha.gt.${ventaDia},and(fecha.eq.${ventaDia},or(hora.gte.${ventaHora},hora.is.null))`);
         attendedSincePurchase = count ?? 0;
       }
     }
