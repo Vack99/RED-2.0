@@ -89,8 +89,14 @@ set local role authenticated;
 do $$
 declare n int;
 begin
-  select count(*) into n from public.gym_membership where gym_id = current_setting('t.gym_a', true)::uuid;
-  if n <> 2 then raise exception 'POLICY FAIL: staff owner_a sees % of gym A''s 2 rows', n; end if;
+  -- Allow-count scoped to THIS suite's two seeded users: gym A *is* forge, and a scratch project
+  -- carries a pre-seeded forge operator row (the test:denial recipe), so an unscoped count
+  -- false-fails at 3. Staff visibility of another user's row is still what's proven; the deny
+  -- counts below stay unscoped — any visible row is a leak no matter who seeded it.
+  select count(*) into n from public.gym_membership
+    where gym_id = current_setting('t.gym_a', true)::uuid
+      and user_id in (current_setting('t.owner_a', true)::uuid, current_setting('t.member_a', true)::uuid);
+  if n <> 2 then raise exception 'POLICY FAIL: staff owner_a sees % of the suite''s 2 gym-A rows', n; end if;
   select count(*) into n from public.gym_membership where gym_id = current_setting('t.gym_b', true)::uuid;
   if n <> 0 then raise exception 'POLICY FAIL: staff owner_a sees % gym B rows (cross-gym leak)', n; end if;
 end $$;
