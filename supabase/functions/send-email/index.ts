@@ -124,8 +124,9 @@ Deno.serve(async (req: Request) => {
     // Status only — never the token/payload (a drop or a retryable failure).
     console.error(`send-email: resend status ${status}`);
   }
+  // Always JSON — GoTrue rejects any hook response it can't parse as JSON.
   return new Response(out.body, {
     status: out.status,
-    headers: out.body ? { "Content-Type": "application/json" } : undefined,
+    headers: { "Content-Type": "application/json" },
   });
 });

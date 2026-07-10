@@ -158,9 +158,13 @@ ${c.cierre}`;
  * Map a Resend send outcome to the hook's HTTP response (AC6 — a failed send must
  * not brick signup):
  *   - null (network error) / 429 / 5xx → 503 + JSON error → Supabase RETRIES (≤3×);
- *   - 2xx → 200 empty (sent);
- *   - any other 4xx (a config bug a retry can't fix) → 200 empty DROP — the hook
+ *   - 2xx → 200 `{}` (sent);
+ *   - any other 4xx (a config bug a retry can't fix) → 200 `{}` DROP — the hook
  *     returns success so the auth action still completes; `index.ts` logs the status.
+ *
+ * The 200 body is `{}`, never empty: GoTrue parses every hook response as JSON and
+ * fails the WHOLE auth action (rolling back the just-created user AFTER the mail
+ * went out) on a non-JSON content type — live-verified 2026-07-10.
  */
 export function respuestaEnvio(resendStatus: number | null): { status: number; body: string } {
   if (resendStatus === null || resendStatus === 429 || resendStatus >= 500) {
@@ -169,5 +173,5 @@ export function respuestaEnvio(resendStatus: number | null): { status: number; b
       body: JSON.stringify({ error: { http_code: 503, message: "envío temporalmente no disponible" } }),
     };
   }
-  return { status: 200, body: "" };
+  return { status: 200, body: "{}" };
 }

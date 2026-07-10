@@ -126,9 +126,9 @@ describe("construirCorreoAuth — the From display name", () => {
 });
 
 describe("respuestaEnvio — the send-outcome → HTTP matrix (AC6)", () => {
-  it("2xx → 200 empty (sent)", () => {
-    expect(respuestaEnvio(200)).toEqual({ status: 200, body: "" });
-    expect(respuestaEnvio(202)).toEqual({ status: 200, body: "" });
+  it("2xx → 200 `{}` (sent) — GoTrue parses every hook response as JSON; an empty body rolls back the auth action after the mail went out", () => {
+    expect(respuestaEnvio(200)).toEqual({ status: 200, body: "{}" });
+    expect(respuestaEnvio(202)).toEqual({ status: 200, body: "{}" });
   });
 
   it("null (network) → 503 so Supabase retries", () => {
@@ -146,9 +146,9 @@ describe("respuestaEnvio — the send-outcome → HTTP matrix (AC6)", () => {
     expect(respuestaEnvio(503).status).toBe(503);
   });
 
-  it("other 4xx → 200 empty DROP (retry can't fix a config bug; must not brick signup)", () => {
-    expect(respuestaEnvio(400)).toEqual({ status: 200, body: "" });
-    expect(respuestaEnvio(422)).toEqual({ status: 200, body: "" });
-    expect(respuestaEnvio(403)).toEqual({ status: 200, body: "" });
+  it("other 4xx → 200 `{}` DROP (retry can't fix a config bug; must not brick signup)", () => {
+    expect(respuestaEnvio(400)).toEqual({ status: 200, body: "{}" });
+    expect(respuestaEnvio(422)).toEqual({ status: 200, body: "{}" });
+    expect(respuestaEnvio(403)).toEqual({ status: 200, body: "{}" });
   });
 });
