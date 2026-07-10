@@ -309,6 +309,8 @@ const FIXTURE_CLIENTES = [
     invitacion_enviada_at: null,
     auth_user_id: "auth-1",
     claim_code: "ABCD2345",
+    // Self-registered, never charged: 0 ventas → primeraCompra true (#77).
+    ventas: [{ count: 0 }],
   },
   {
     id: "cli-desk",
@@ -321,6 +323,8 @@ const FIXTURE_CLIENTES = [
     invitacion_enviada_at: "2026-07-08T03:00:00Z",
     auth_user_id: null,
     claim_code: "WXYZ6789",
+    // Desk client with a sale on record → primeraCompra false.
+    ventas: [{ count: 3 }],
   },
 ];
 
@@ -362,11 +366,16 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
 
     const clientesSelect = fake.selects.clientes.join(" ");
     expect(clientesSelect).not.toContain("claim_code");
+    expect(clientesSelect).toContain("ventas(count)"); // primeraCompra embed (#77)
     expect(JSON.stringify(lite)).not.toContain("claim_code");
 
     const desk = lite.find((c) => c.id === "cli-desk")!;
     expect(desk.email).toBe("ana@mail.com"); // for the NUEVO soft duplicate warn
     expect(desk.invitacion.badge).toBe("Invitada 7 jul");
+    expect(desk.primeraCompra).toBe(false); // 3 ventas on record
+
+    const online = lite.find((c) => c.id === "cli-online")!;
+    expect(online.primeraCompra).toBe(true); // never charged
   });
 
   it("getRosterResumen counts nuevosOnline (auth-linked, no active package)", async () => {

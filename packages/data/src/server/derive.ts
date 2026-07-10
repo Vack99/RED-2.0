@@ -167,6 +167,11 @@ export function esRegistroOnlinePendiente(
   return invitacion === "cuenta_activa" && estado === "sin_clases";
 }
 
+/** Primera compra: the member has never had a sale, regardless of door (#77). */
+export function esPrimeraCompra(ventasCount: number): boolean {
+  return ventasCount === 0;
+}
+
 // ── Ficha (client detail) derivation ───────────────────────────────
 // The ficha's pure read-shaping, lifted out of the DAL's cache() closure so it
 // is testable through its interface (the closure was the single largest impure
@@ -266,6 +271,10 @@ export interface FichaDerivada {
   historial: FichaAsistencia[];
   pagos: FichaPago[];
   ventasCount: number;
+  /** True when the member has never had a sale (#77) — drives the ficha's
+   *  first-purchase statement card + CTA. A precomputed DTO boolean (the client
+   *  component can't import server derive code), mirroring `pendienteOnline`. */
+  primeraCompra: boolean;
   mensajes: MensajeDTO[];
 }
 
@@ -375,6 +384,7 @@ export function shapeFicha(
     historial,
     pagos,
     ventasCount: ventas.length,
+    primeraCompra: esPrimeraCompra(ventas.length),
     mensajes,
   };
 }

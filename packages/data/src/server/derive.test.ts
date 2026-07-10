@@ -7,6 +7,7 @@ import {
   derivarMembresia,
   derivarPaseCliente,
   diasDenom,
+  esPrimeraCompra,
   esRegistroOnlinePendiente,
   estadoInvitacion,
   gaugeFill,
@@ -205,9 +206,17 @@ describe("shapeFicha", () => {
     expect(f.pagos[0]).toEqual({ fechaDisplay: "20 may", paquete: "8 clases", montoDisplay: "$800", metodo: "Efectivo" });
     expect(f.pagos[1].metodo).toBe("Por pagar");
     expect(f.ventasCount).toBe(2);
+    expect(f.primeraCompra).toBe(false); // has sales
     expect(f.totalClases).toBe(8); // latest = ventas[0]
     expect(f.dayDenom).toBe(30);
     expect(f.compradoDisplay).toBe("20 may");
+  });
+
+  it("flags primeraCompra when the member has no ventas (#77)", () => {
+    expect(shapeFicha(clienteRow, [], [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0).primeraCompra).toBe(true);
+    expect(
+      shapeFicha(clienteRow, [], [venta()], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0).primeraCompra,
+    ).toBe(false);
   });
 
   it("dayDenom falls back to 30 for mes packages, no ventas, AND a 0 vigencia_dias (divide-by-zero guard)", () => {
@@ -550,5 +559,13 @@ describe("esRegistroOnlinePendiente — tile/filter population", () => {
     // the exact cohort finding #12 says self-registrants were indistinguishable from
     expect(esRegistroOnlinePendiente("sin_email", "sin_clases")).toBe(false);
     expect(esRegistroOnlinePendiente("invitacion_enviada", "sin_clases")).toBe(false);
+  });
+});
+
+describe("esPrimeraCompra — never-had-a-sale predicate (#77)", () => {
+  it("is true only at zero ventas (boundary)", () => {
+    expect(esPrimeraCompra(0)).toBe(true);
+    expect(esPrimeraCompra(1)).toBe(false);
+    expect(esPrimeraCompra(2)).toBe(false);
   });
 });

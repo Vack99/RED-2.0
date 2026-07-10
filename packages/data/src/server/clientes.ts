@@ -13,6 +13,7 @@ import {
   derivarCliente,
   derivarInvitacion,
   derivarPaseCliente,
+  esPrimeraCompra,
   esRegistroOnlinePendiente,
   estadoInvitacion,
   shapeFicha,
@@ -45,6 +46,10 @@ export interface ClienteLiteDTO {
   email: string | null;
   /** Derived invite state + es-MX badge for the picker (ADR-0015). */
   invitacion: InvitacionDerivada;
+  /** True when the member has never had a sale (#77) — the Vender preselect /
+   *  picker marks it PRIMERA COMPRA and the receipt snapshots it. Precomputed via
+   *  the `ventas(count)` embed (never a fallback query). */
+  primeraCompra: boolean;
 }
 
 /** Minimal roster for the venta client-picker, ordered by name. */
@@ -54,7 +59,9 @@ export const getClientesLite = cache(
     const { timezone: tz } = await getOperatorGym(supabase);
     const { data } = await supabase
       .from("clientes")
-      .select("id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id")
+      .select(
+        "id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id, ventas(count)",
+      )
       .order("nombre");
 
     if (!data) return [];
@@ -67,6 +74,7 @@ export const getClientesLite = cache(
       paqueteLabel: c.paquete_nombre ?? "Sin paquete",
       email: c.email,
       invitacion: derivarInvitacion(c, tz),
+      primeraCompra: esPrimeraCompra(c.ventas?.[0]?.count ?? 0),
     }));
   },
 );
