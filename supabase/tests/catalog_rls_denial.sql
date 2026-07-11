@@ -23,20 +23,18 @@ begin;
 
 do $$
 declare
-  gym_a       uuid;
+  -- gym A is minted fresh (like gym B) since #86: the real-forge seed migration populates forge's
+  -- catalog, so a suite reusing forge as gym A would count seeded rows, not its own fixtures.
+  gym_a       uuid := gen_random_uuid();
   gym_b       uuid := gen_random_uuid();
   operator_a  uuid := gen_random_uuid();
   operator_b  uuid := gen_random_uuid();
   member_a    uuid := gen_random_uuid();
   ct_a        uuid;
 begin
-  select id into gym_a from public.gym where slug = 'forge';
-  if gym_a is null then
-    raise exception 'SEED FAIL: expected the forge gym from the spine seeds';
-  end if;
-
-  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
-    values (gym_b, 'catalog-denial-gym-2', 'Catalog Denial Gym 2', 'America/Mexico_City', 'red');
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
+    (gym_a, 'catalog-denial-gym-a', 'Catalog Denial Gym A', 'America/Chihuahua',   'forge'),
+    (gym_b, 'catalog-denial-gym-2', 'Catalog Denial Gym 2', 'America/Mexico_City', 'red');
 
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', operator_a, 'authenticated', 'authenticated', 'catalog-operator-a@test.local'),

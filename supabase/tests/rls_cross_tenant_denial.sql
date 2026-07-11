@@ -14,8 +14,8 @@
 -- with them, and prove: staff read/write, curated member read, owning-member read (member-vs-member),
 -- member-vs-operator-surface (read+write), and cobro owner-only (operator DENIED CLABE, owner granted).
 --
--- Zero hardcoded prod UUIDs (audit finding 6, ADR-0013 §5): gym A is looked up by slug from the spine
--- seeds; the synthetic gym #2 (a non-Chihuahua zone, America/Mexico_City) and all three auth users are
+-- Zero hardcoded prod UUIDs (audit finding 6, ADR-0013 §5): both synthetic gyms (gym A in
+-- America/Chihuahua, gym #2 in a non-Chihuahua zone, America/Mexico_City) and all auth users are
 -- minted with gen_random_uuid(). Fixtures are transaction-local — seeded inside BEGIN/ROLLBACK and rolled
 -- back — so the preview branch is REUSABLE across runs with no reset and accumulates no state. On a
 -- preview branch production auth rows do not carry over, so seeding auth.users is safe.
@@ -36,14 +36,16 @@
 begin;
 
 -- ── Fixtures (transaction-local; zero prod UUIDs) ────────────────────────────
--- gym A = forge (spine-seeded, America/Chihuahua). gym B = a synthetic second gym in a non-Chihuahua
+-- gym A = a synthetic gym in America/Chihuahua (minted fresh since #86: the real-forge seed migration
+-- populates forge's paquetes/catalog, so reusing forge as gym A would count seeded rows, not fixtures).
+-- gym B = a synthetic second gym in a non-Chihuahua
 -- IANA zone. owner_a owns gym A's data rows (the current policy keys rows on user_id); operator_b is the
 -- cross-tenant attacker; member_m is the member who claims one cliente (auth_user_id, where #20's column
 -- exists) while a second cliente stays UNCLAIMED. Seeded as the connecting role (RLS bypassed),
 -- exactly as the registration/claim + import paths will (ADR-0013 §4) — never a direct client write.
 do $$
 declare
-  gym_a        uuid;
+  gym_a        uuid := gen_random_uuid();
   gym_b        uuid := gen_random_uuid();
   owner_a      uuid := gen_random_uuid();
   operator_b   uuid := gen_random_uuid();
@@ -63,11 +65,6 @@ declare
   v_paquete_b      uuid;   -- gym B's own paquete: the package input to the C13 sale vectors
   has_plan_feature boolean;
 begin
-  select id into gym_a from public.gym where slug = 'forge';
-  if gym_a is null then
-    raise exception 'SEED FAIL: expected the forge gym from the spine seeds';
-  end if;
-
   -- One probe covers #20's whole evolution (gym_id on the money-path tables + clientes.auth_user_id
   -- ship in the same migration).
   select exists (
@@ -81,9 +78,11 @@ begin
     where table_schema = 'public' and table_name = 'plan_feature'
   ) into has_plan_feature;
 
-  -- Synthetic gym #2: non-Chihuahua zone; brand_module_id is opaque here (Phase 4 owns the shape).
-  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
-    values (gym_b, 'denial-suite-gym-2', 'Denial Suite Gym 2', 'America/Mexico_City', 'red');
+  -- Synthetic gyms A + B (gym #2 in a non-Chihuahua zone); brand_module_id is opaque here (Phase 4
+  -- owns the shape).
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
+    (gym_a, 'denial-suite-gym-a', 'Denial Suite Gym A', 'America/Chihuahua',   'forge'),
+    (gym_b, 'denial-suite-gym-2', 'Denial Suite Gym 2', 'America/Mexico_City', 'red');
 
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', owner_a,    'authenticated', 'authenticated', 'owner-a@test.local'),

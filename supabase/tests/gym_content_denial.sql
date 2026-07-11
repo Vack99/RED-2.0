@@ -9,19 +9,21 @@
 -- tables (decision b discharged in #50 — the gym content is public marketing surface).
 --
 -- Self-asserting: every check RAISEs on failure; a clean run returns one 'OK' row. Zero hardcoded prod
--- UUIDs (ADR-0013 §5): gym A/B are looked up by slug from the spine seeds (forge/red); every auth user
--- is minted with gen_random_uuid(). Transaction-local (BEGIN/ROLLBACK) so the scratch project stays
--- reusable across runs.
+-- UUIDs (ADR-0013 §5): gym A is minted fresh (gen_random_uuid — decoupled from the #86-seeded forge),
+-- gym B is looked up by slug from the spine seeds (red); every auth user is minted with
+-- gen_random_uuid(). Transaction-local (BEGIN/ROLLBACK) so the scratch project stays reusable across runs.
 --
 -- HOW TO RUN: via `node supabase/tests/run-denial-suite.mjs` (wired into the SUITE list), or ad hoc via
 -- the Supabase MCP execute_sql / apply-sql.mjs against a scratch project (pure SQL, no psql meta-commands).
 
 begin;
 
--- ── Fixtures: gym A (forge) + gym B (red) + one staff/member/cross-tenant-staff triple ────────────
+-- ── Fixtures: fresh gym A + gym B (red) + one staff/member/cross-tenant-staff triple ──────────────
+-- gym A is minted fresh since #86: the real-forge seed migration populates forge's about content,
+-- so a suite reusing forge as gym A would count seeded rows, not its own fixtures.
 do $$
 declare
-  gym_a     uuid;
+  gym_a     uuid := gen_random_uuid();
   gym_b     uuid;
   owner_a   uuid := gen_random_uuid();
   member_a  uuid := gen_random_uuid();
@@ -31,11 +33,13 @@ declare
   stat_id   uuid;
   faq_id    uuid;
 begin
-  select id into gym_a from public.gym where slug = 'forge';
   select id into gym_b from public.gym where slug = 'red';
-  if gym_a is null or gym_b is null then
-    raise exception 'SEED FAIL: expected forge + red gyms from the spine seeds';
+  if gym_b is null then
+    raise exception 'SEED FAIL: expected the red gym from the spine seeds';
   end if;
+
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_a, 'gym-content-denial-gym-a', 'Gym Content Denial Gym A', 'America/Chihuahua', 'forge');
 
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', owner_a,  'authenticated', 'authenticated', 'gc-owner-a@test.local'),

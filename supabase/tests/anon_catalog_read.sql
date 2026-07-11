@@ -16,28 +16,30 @@
 --       decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE policy exists.
 --
 -- Self-asserting (every check RAISEs on failure; a clean run returns one 'OK' row). Wrapped in
--- BEGIN/ROLLBACK — touches no row. gym A is looked up by slug (forge) from the spine seeds; no
--- hardcoded prod UUIDs (ADR-0013 §5). Transaction-local, so the scratch project stays reusable.
+-- BEGIN/ROLLBACK — touches no row. gym A is minted fresh with gen_random_uuid (decoupled from the
+-- #86-seeded forge); no hardcoded prod UUIDs (ADR-0013 §5). Transaction-local, so the scratch project
+-- stays reusable.
 --
 -- HOW TO RUN: node supabase/tests/run-denial-suite.mjs (SUPABASE_TARGET_REF override), or ad hoc via
 -- the Supabase MCP execute_sql (pure SQL, no psql meta-commands).
 
 begin;
 
--- ── Fixtures: one row in every decision-(b) table + the two denial probes (gym A = forge) ──────────
+-- ── Fixtures: one row in every decision-(b) table + the two denial probes (gym A minted fresh) ─────
 -- Inserted as the connecting/migration role (RLS bypassed) — exactly how the app's authoring RPCs and
--- the operator seed write these rows.
+-- the operator seed write these rows. gym A is minted fresh since #86: the real-forge seed migration
+-- gives forge a gym_contact row (its PK is gym_id), so reusing forge as gym A would collide on insert.
 do $$
 declare
-  gym_a uuid;
+  gym_a uuid := gen_random_uuid();
   ct    uuid;
   co    uuid;
   cs    uuid;
   tmpl  uuid;
   pkg   uuid;
 begin
-  select id into gym_a from public.gym where slug = 'forge';
-  if gym_a is null then raise exception 'SEED FAIL: expected the forge gym from the spine seeds'; end if;
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_a, 'anon-catalog-gym-a', 'Anon Catalog Gym A', 'America/Chihuahua', 'forge');
 
   insert into public.coach (gym_id, name, initials, role) values (gym_a, 'Anon Probe', 'AP', 'coach')
     returning id into co;
