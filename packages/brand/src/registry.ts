@@ -101,7 +101,11 @@ export const brands: Record<BrandId, BrandModule> = {
     id: "forge",
     tokens: forgeTokens,
     css: tokensToCss(forgeTokens),
-    copy: { name: "FORGE", description: "FORGE — administración del gimnasio." },
+    copy: {
+      name: "FORGE",
+      description: "FORGE — administración del gimnasio.",
+      tagline: "Aquí se forja tu mejor versión",
+    },
     logo: ForgeLockup,
     appIcon: forgeAppIcon,
     loginAnimation: ForgeLoginAnimation,

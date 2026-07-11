@@ -1,4 +1,4 @@
-import { FMARK_BARS } from "./logo";
+import { FMARK_BARS } from "./mark-geometry";
 import { forgeTokens } from "./tokens";
 
 // Forge's self-contained app icon (the dynamic /icon favicon route serves this).
