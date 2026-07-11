@@ -22,6 +22,11 @@
 --                                                   toggle_pase on the session's date REFUSES ('Asistencia de clase
 --                                                   ya registrada') and consumes nothing — no second row, balance
 --                                                   unchanged, session pase + reservation whole (ADR-0004 drift closed).
+--   * cross-seam C15 MIRROR (Agenda side)         — the reverse: a member checked in at the FRONT DESK today (consuming
+--                                                   toggle_pase row) is then marked present in an Agenda class. The
+--                                                   walk-in branch writes the attendance row + walk-in reservation with
+--                                                   consumio=false — present, NO second consume (balance unchanged); the
+--                                                   untoggle refunds nothing (20260710132000, mirror of 20260710124000).
 --
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row. BEGIN/ROLLBACK, so
 -- it touches no row permanently. Zero hardcoded prod UUIDs (gym members/operator/clientes seeded tx-local).
@@ -43,7 +48,8 @@ declare
   m_bkfin  uuid := gen_random_uuid();   -- booked finite member
   m_bkilim uuid := gen_random_uuid();   -- booked ilimitado member
   m_walk   uuid := gen_random_uuid();   -- walk-in finite member (never books)
-  c_bkfin  uuid; c_bkilim uuid; c_walk uuid;
+  m_fd     uuid := gen_random_uuid();   -- front-desk-then-Agenda member (C15 mirror)
+  c_bkfin  uuid; c_bkilim uuid; c_walk uuid; c_fd uuid;
   s_id     uuid;
 begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
@@ -57,12 +63,13 @@ begin
     ('00000000-0000-0000-0000-000000000000', op,       'authenticated', 'authenticated', 'pl-op@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_bkfin,  'authenticated', 'authenticated', 'pl-bkfin@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_bkilim, 'authenticated', 'authenticated', 'pl-bkilim@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_walk,   'authenticated', 'authenticated', 'pl-walk@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_walk,   'authenticated', 'authenticated', 'pl-walk@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_fd,     'authenticated', 'authenticated', 'pl-fd@test.local');
 
-  -- the operator is STAFF of forge; the three members are members
+  -- the operator is STAFF of forge; the four members are members
   insert into public.gym_membership (user_id, gym_id, role) values
     (op, v_gym, 'operator'),
-    (m_bkfin, v_gym, 'member'), (m_bkilim, v_gym, 'member'), (m_walk, v_gym, 'member');
+    (m_bkfin, v_gym, 'member'), (m_bkilim, v_gym, 'member'), (m_walk, v_gym, 'member'), (m_fd, v_gym, 'member');
 
   -- one cliente per acting member (auth_user_id links them so reservar_clase resolves them)
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
@@ -71,6 +78,8 @@ begin
     values ('PL booked ilim', '0000000002', null, v_today + 20, 'Ilimitado', v_gym, m_bkilim) returning id into c_bkilim;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
     values ('PL walk-in', '0000000003', 5, v_today + 20, '8 clases', v_gym, m_walk) returning id into c_walk;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('PL front-desk', '0000000004', 5, v_today + 20, '8 clases', v_gym, m_fd) returning id into c_fd;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'PL Metcon') returning id into v_ct;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
@@ -84,6 +93,7 @@ begin
   perform set_config('t.c_bkfin',  c_bkfin::text,   true);
   perform set_config('t.c_bkilim', c_bkilim::text,  true);
   perform set_config('t.c_walk',   c_walk::text,    true);
+  perform set_config('t.c_fd',     c_fd::text,      true);
   perform set_config('t.s_id',     s_id::text,      true);
 end $$;
 
@@ -260,6 +270,52 @@ begin
   if v_n <> 0 then raise exception 'RULE FAIL(xseam): a second front-desk row was written (% , expected 0)', v_n; end if;
   select status into v_status from public.reservation where member_id = c_walk and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(xseam): reservation drifted to % (expected asistida)', v_status; end if;
+end $$;
+
+-- ── (5) cross-seam C15 mirror: front-desk-then-Agenda marks present but does NOT re-consume ─
+-- Ruling C15 (owner, 2026-07-10): one attended visit = one consumed class regardless of surface. The
+-- REVERSE of vector (4): a member checked in at the FRONT DESK today (toggle_pase writes a class_session_id
+-- NULL asistencia and consumes one) is then marked present in an Agenda class. pasar_lista_sesion's WALK-IN
+-- branch must see the same-day front-desk row and write the attendance row + walk-in reservation with
+-- consumio=false — mark present, do NOT consume a SECOND class. Balance seeded so a wrongful decrement is
+-- visible: front desk takes 5 -> 4; the Agenda mark must LEAVE it at 4 (a bug would drop it to 3).
+do $$
+declare
+  s_id   uuid := current_setting('t.s_id', true)::uuid;
+  c_fd   uuid := current_setting('t.c_fd', true)::uuid;
+  v_fecha date := current_setting('t.today', true)::date;
+  v_present boolean; v_clases int; v_status text; v_walk boolean; v_consumio boolean; v_n int;
+begin
+  -- Arrange: a real consuming FRONT-DESK check-in today (5 -> 4; class_session_id NULL row).
+  select present into v_present from public.toggle_pase(c_fd, v_fecha);
+  if v_present is not true then raise exception 'SEED FAIL(fd-mirror): front-desk toggle ON failed'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_fd;
+  if v_clases <> 4 then raise exception 'SEED FAIL(fd-mirror): expected 4 after front-desk consume, got %', v_clases; end if;
+
+  -- Act: mark present in the Agenda class (walk-in branch — no prior reservation). Present, NO re-consume.
+  select present into v_present from public.pasar_lista_sesion(s_id, c_fd);
+  if v_present is not true then raise exception 'RULE FAIL(fd-mirror ON): not present'; end if;
+  -- Written-rows rule: balance UNCHANGED at 4 (no second decrement — the front-desk visit already paid).
+  select clases_restantes into v_clases from public.clientes where id = c_fd;
+  if v_clases <> 4 then raise exception 'RULE FAIL(fd-mirror ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
+  -- …and the session-linked attendance row was still written, with consumio=false.
+  select consumio into v_consumio from public.asistencias
+    where cliente_id = c_fd and class_session_id = s_id and deleted_at is null order by created_at desc limit 1;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(fd-mirror ON): asistencia.consumio % (expected false)', v_consumio; end if;
+  -- …and the walk-in reservation exists as asistida/is_walk_in (the mark is still recorded, just not charged).
+  select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_fd and class_session_id = s_id;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(fd-mirror ON): reservation status % (expected asistida)', v_status; end if;
+  if v_walk is not true then raise exception 'RULE FAIL(fd-mirror ON): is_walk_in not true'; end if;
+
+  -- Untoggle: consumio=false ⇒ NO credit-back (the Agenda mark charged nothing; the front-desk consume stays).
+  select present into v_present from public.pasar_lista_sesion(s_id, c_fd);
+  if v_present is not false then raise exception 'RULE FAIL(fd-mirror OFF): still present'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_fd;
+  if v_clases <> 4 then raise exception 'RULE FAIL(fd-mirror OFF): PHANTOM REFUND — balance % (expected 4)', v_clases; end if;
+  select status into v_status from public.reservation where member_id = c_fd and class_session_id = s_id;
+  if v_status <> 'cancelada' then raise exception 'RULE FAIL(fd-mirror OFF): reservation status % (expected cancelada)', v_status; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_fd and class_session_id = s_id and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(fd-mirror OFF): active session asistencia rows % (expected 0)', v_n; end if;
 end $$;
 
 reset role;
