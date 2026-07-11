@@ -20,13 +20,16 @@ begin;
 
 do $$
 declare
-  gym_a      uuid;
+  -- gym A is minted fresh since #86: the real-forge seed migration gives forge 21 active templates,
+  -- so a suite reusing forge as gym A would materialize + count the seeded program, not its own 2
+  -- fixture templates (the RPCs scope to staff_gym(), so a fresh gym isolates them completely).
+  gym_a      uuid := gen_random_uuid();
   operator_a uuid := gen_random_uuid();
   ct_a       uuid;
   coach_a    uuid;
 begin
-  select id into gym_a from public.gym where slug = 'forge';
-  if gym_a is null then raise exception 'SEED FAIL: expected the forge gym from the spine seeds'; end if;
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_a, 'scheduling-mat-gym-a', 'Scheduling Mat Gym A', 'America/Chihuahua', 'forge');
 
   insert into auth.users (instance_id, id, aud, role, email)
     values ('00000000-0000-0000-0000-000000000000', operator_a, 'authenticated', 'authenticated', 'sched-mat-operator-a@test.local');
