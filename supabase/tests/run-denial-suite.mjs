@@ -43,6 +43,7 @@ export const SUITE = [
   'registro_claim.sql',
   'preparar_invitacion_rules.sql',
   'actualizar_cliente_email_rules.sql',
+  'actualizar_cliente_rules.sql',
   'reclamar_por_codigo.sql',
   'registrar_venta_stamps_gym_id.sql',
   'registrar_venta_email.sql',
@@ -52,6 +53,8 @@ export const SUITE = [
   'contract_b_denials.sql',
   'catalog_rls_denial.sql',
   'paquete_marketing_rules.sql',
+  'actualizar_paquete_rules.sql',
+  'plantillas_rules.sql',
   'scheduling_rls_denial.sql',
   'scheduling_materialization.sql',
   'gym_content_denial.sql',
@@ -71,19 +74,11 @@ export const SUITE = [
 
 // QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason
 // (satisfies #80 AC "run OR deleted with a stated reason; nothing sits on disk pretending to be a
-// test"). These predate Contract-B (20260705082018), which dropped the `user_id` columns from
-// clientes/paquetes/plantillas/perfil; every one still resolves its operator via the dropped
-// `perfil.user_id` AND seeds rows with the dropped `user_id` columns, so each errors at its first
-// INSERT/DELETE against the current schema. They encode real RPC write-rules (single-popular +
-// derived-name, the 4-plantilla cap, identity-only edits) worth keeping, so they are quarantined for
-// a per-gym rewrite + scratch validation — NOT deleted — and tracked here so the drift guard still
-// fails on any NEW unwired file. See #80. (toggle_pase_rules + toggle_pase_gym2_timezone were
-// un-quarantined per-gym alongside the C15/C9 toggle_pase rewrite, 20260710124000.)
-export const QUARANTINE = [
-  'actualizar_cliente_rules.sql',
-  'actualizar_paquete_rules.sql',
-  'plantillas_rules.sql',
-];
+// test"). Empty since #81: the last three pre-Contract-B files (actualizar_cliente_rules,
+// actualizar_paquete_rules, plantillas_rules) were rewritten to the per-gym written-row idiom and
+// moved into SUITE (toggle_pase_rules + toggle_pase_gym2_timezone earlier, alongside 20260710124000).
+// Kept as the drift guard's landing slot: a NEW suite file must enter SUITE or here with a reason.
+export const QUARANTINE = [];
 
 const token = process.env.SUPABASE_ACCESS_TOKEN;
 const parentRef = process.env.SUPABASE_PROJECT_REF;
