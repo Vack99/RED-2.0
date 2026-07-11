@@ -53,8 +53,11 @@ begin
   -- per row so the RPC's DERIVED nombre never collides under paquetes_nombre_gym_uq (gym_id, nombre).
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
     values (gym_a, '10 clases', 10, 'dias', 30, 1000, true,  0) returning id into paq_a1;
+  -- paq_a2 seeds vigencia as 'mes'/NULL (a valid vigencia_tipo per the ('dias','mes') CHECK, NULL dias per
+  -- paquetes_vigencia_ck) — the OPPOSITE of the body's hard-normalized 'dias'/30, so V1's readback proves the
+  -- UPDATE actually WROTE those columns rather than reading back the seed (a dropped normalization clause fails).
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
-    values (gym_a, '5 clases',   5, 'dias', 30,  600, false, 1) returning id into paq_a2;
+    values (gym_a, '5 clases',   5, 'mes', null,  600, false, 1) returning id into paq_a2;
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
     values (gym_a, '3 clases',   3, 'dias', 30,  400, false, 2) returning id into paq_a3;
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden)
