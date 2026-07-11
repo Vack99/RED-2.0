@@ -26,8 +26,8 @@ export interface BrandCopy {
   readonly description: string;
   /**
    * Optional brand-voice tagline — the neon under-logo line the landing renders in
-   * the RED-only `.dark .cm-vals` slot when present. Part of the brand-voice minimum,
-   * so brands without a signature line simply omit it.
+   * the RED-only `.dark[data-brand="red"] .cm-vals` slot when present. Part of the
+   * brand-voice minimum, so brands without a signature line simply omit it.
    */
   readonly tagline?: string;
 }
@@ -105,6 +105,11 @@ export const brands: Record<BrandId, BrandModule> = {
     logo: ForgeLockup,
     appIcon: forgeAppIcon,
     loginAnimation: ForgeLoginAnimation,
+    // Dark-only in the client (calm gold-on-black, the admin app's look) — the
+    // whole scheme flip (#84). The client layout appends the `dark` class for
+    // dark-default brands; the admin app runs its own theme provider (light +
+    // toggle) and never reads this field, so the desk is untouched.
+    defaultScheme: "dark",
   },
   red: {
     id: "red",

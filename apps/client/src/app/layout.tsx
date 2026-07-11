@@ -6,7 +6,7 @@ import { createClient } from "@gym/data/server/supabase";
 
 import "./globals.css";
 import { PublicHeader } from "./_components/public-header";
-import { resolveBrand } from "../lib/brand";
+import { brandHtmlSeam, resolveBrand } from "../lib/brand";
 import { fetchTokenOverrides } from "../lib/token-overrides";
 
 export const metadata: Metadata = {
@@ -64,14 +64,14 @@ export default async function RootLayout({
   // reaches this sink) and fast-paths to the precomputed baseline when empty.
   const css = brandCss(brand, fetchTokenOverrides(brand.id));
 
-  // Font vars always apply; `dark` is appended only for a dark-default brand
-  // (kept alongside, never overwritten — ADR-0012's brand seam).
-  const htmlClassName = `${outfit.variable} ${jetbrainsMono.variable}${
-    brand.defaultScheme === "dark" ? " dark" : ""
-  }`;
+  // Font vars always apply; the seam appends `dark` only for a dark-default brand
+  // (kept alongside, never overwritten) and carries the `data-brand` the RED glow
+  // selectors match, so Forge dark paints calm token base layers only (ADR-0012 §3).
+  const { dataBrand, schemeClass } = brandHtmlSeam(brand);
+  const htmlClassName = `${outfit.variable} ${jetbrainsMono.variable}${schemeClass}`;
 
   return (
-    <html lang="es-MX" className={htmlClassName}>
+    <html lang="es-MX" className={htmlClassName} data-brand={dataBrand}>
       <head>
         <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>

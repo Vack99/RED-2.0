@@ -170,11 +170,12 @@
    breathe (copyDashDraw/copyDashBreathe) — they flank the white label ("Entrenamiento
    funcional"); the crimson tagline ("Con beneficios de luz roja") is rule-LESS. Glow
    reds are RED brand furniture baked as literals here, NOT contract tokens (§3.1 cross-
-   walk (b)) — scoped under `.dark` (RED is the only dark brand) so Forge/base (light)
-   never paints this neon. Every turn-on carries a `both` fill so the universal
+   walk (b)) — scoped under `.dark[data-brand="red"]` (dark AND the RED brand, #84) so
+   Forge's own dark canvas paints only the calm token base layer (the JSX's `bg-line`
+   hairlines + `text-muted` label), never this neon. Every turn-on carries a `both` fill so the universal
    reduced-motion collapse (@gym/ui motion.css) lands on the fully-lit final frame, not
    a half-played one; no per-component media query is added. */
-.dark .cm-sub {
+.dark[data-brand="red"] .cm-sub {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -182,7 +183,7 @@
   margin-top: 16px;
   width: 100%;
 }
-.dark .cm-sub .ln {
+.dark[data-brand="red"] .cm-sub .ln {
   flex: 1;
   max-width: 46px;
   height: 1.5px;
@@ -192,13 +193,13 @@
   animation: copyDashDraw 0.5s ease-out 1.5s both,
     copyDashBreathe 4.2s ease-in-out 2.4s infinite both;
 }
-.dark .cm-sub .ln:first-child {
+.dark[data-brand="red"] .cm-sub .ln:first-child {
   transform-origin: right;
 }
-.dark .cm-sub .ln:last-child {
+.dark[data-brand="red"] .cm-sub .ln:last-child {
   transform-origin: left;
 }
-.dark .cm-sub span {
+.dark[data-brand="red"] .cm-sub span {
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 2.5px;
@@ -209,10 +210,10 @@
   opacity: 0;
   animation: copyNeonOn 0.7s ease-out 1.3s both;
 }
-.dark .cm-vals {
+.dark[data-brand="red"] .cm-vals {
   margin-top: 18px;
 }
-.dark .cm-vals span {
+.dark[data-brand="red"] .cm-vals span {
   color: #ff3a2a;
   text-shadow: 0 0 2px #ff6b5a, 0 0 6px #ff2c19, 0 0 15px #cc0f00;
   opacity: 0;
@@ -324,8 +325,9 @@
 /* Reservar + Membresía · ember data-bars (§3.4). BASE below is brand-neutral: both the
    occupancy bar (.rcard-pips) and the plan bar (.mb-prog) are structural track+fill,
    token-driven (var(--line) track, var(--yellow) fill, var(--warning)/var(--muted-soft)
-   state fills) so Forge/base (light) paint their own colors with no glow/animation. The
-   RED NEON LAYER right after is scoped under `.dark` (RED is the only dark brand) — the
+   state fills) so Forge/base paint their own colors with no glow/animation. The
+   RED NEON LAYER right after is scoped under `.dark[data-brand="red"]` (dark AND the RED
+   brand, #84 — Forge dark keeps the calm base) — the
    glow sits on the TRACK (never the fill) so the track's `overflow: hidden` can't clip
    the halo. pipBreathe/mbBreathe idle-breathe the track glow, mbSweep draws the fill on
    screen-enter (`.ignited`). The state-aware glow rides var(--rp-*) set inline on the
@@ -356,7 +358,7 @@
 .rcard-pips.s-finished i {
   background: var(--muted-soft);
 }
-.dark .rcard-pips {
+.dark[data-brand="red"] .rcard-pips {
   --rp-fill: var(--yellow);
   --rp-glow: #ff2c19;
   --rp-glowD: #cc0f00;
@@ -366,13 +368,13 @@
   animation: pipBreathe 4.2s ease-in-out infinite both;
   animation-delay: calc(2.4s + var(--card-i, 0) * 0.35s);
 }
-.dark .rcard-pips i {
+.dark[data-brand="red"] .rcard-pips i {
   background: var(--rp-fill);
 }
-.dark .rcard-pips.ignited i {
+.dark[data-brand="red"] .rcard-pips.ignited i {
   animation: mbSweep 0.6s cubic-bezier(0.45, 0.05, 0.35, 1) both;
 }
-.dark .rcard-pips i::before {
+.dark[data-brand="red"] .rcard-pips i::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -380,19 +382,19 @@
   background: linear-gradient(90deg, transparent, rgba(255, 138, 122, 0.55), transparent);
   opacity: 0.7;
 }
-.dark .rcard-pips.s-full {
+.dark[data-brand="red"] .rcard-pips.s-full {
   --rp-fill: #c98a14;
   --rp-glow: #c98a14;
   --rp-glowD: #6a4a08;
   --rp-glowH: #d49418;
   --rp-glowHD: #6a4a08;
 }
-.dark .rcard-pips.s-finished {
+.dark[data-brand="red"] .rcard-pips.s-finished {
   --rp-fill: #332f29;
   box-shadow: none;
   animation: none;
 }
-.dark .rcard-pips.s-finished i::before {
+.dark[data-brand="red"] .rcard-pips.s-finished i::before {
   display: none;
 }
 .mb-prog {
@@ -412,16 +414,16 @@
   transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
   position: relative;
 }
-.dark .mb-prog {
+.dark[data-brand="red"] .mb-prog {
   box-shadow: 0 0 3px #ff2c19, 0 0 7px #cc0f00;
 }
-.dark .mb-prog.ignited {
+.dark[data-brand="red"] .mb-prog.ignited {
   animation: mbBreathe 4.2s ease-in-out 2.4s infinite both;
 }
-.dark .mb-prog.ignited i {
+.dark[data-brand="red"] .mb-prog.ignited i {
   animation: mbSweep 0.6s cubic-bezier(0.45, 0.05, 0.35, 1) both;
 }
-.dark .mb-prog i::before {
+.dark[data-brand="red"] .mb-prog i::before {
   content: "";
   position: absolute;
   inset: 0 0 auto 0;
@@ -529,8 +531,9 @@
 /* Clase · roster occupancy pips (§3.4) — the class-detail signature: one pip per seat that
    flickers on like neon. The BASE below is brand-neutral + token-driven: each pip is a thin
    token bar (empty var(--line) / lit var(--yellow)), UNSCOPED so Forge/base paint calm,
-   static pips. The RED NEON LAYER right after is scoped under `.dark` (RED is the only dark
-   brand): the literal-red drop-shadow glow on lit pips, the `pipFlick` strobe on screen-enter
+   static pips. The RED NEON LAYER right after is scoped under `.dark[data-brand="red"]`
+   (dark AND the RED brand, #84 — Forge dark keeps the calm static pips): the literal-red
+   drop-shadow glow on lit pips, the `pipFlick` strobe on screen-enter
    (`.ignited`, staggered by the per-pip `--i` × `--rp-step`), and the leading `.tip` pip's
    idle breathe (reusing `@keyframes pipBreathe` from the ember bars, driven by the same
    `--rp-*` glow vars). `pipFlick` is a colorless opacity strobe modeled on the logo's neon
@@ -554,37 +557,37 @@
 .cd-roster .pips.s-full i.lit {
   background: var(--warning);
 }
-.dark .cd-roster .pips {
+.dark[data-brand="red"] .cd-roster .pips {
   --rp-glow: #ff2c19;
   --rp-glowD: #cc0f00;
   --rp-glowH: #ff3a26;
   --rp-glowHD: #e21500;
 }
-.dark .cd-roster .pips i.lit {
+.dark[data-brand="red"] .cd-roster .pips i.lit {
   box-shadow: 0 0 3px var(--rp-glow), 0 0 6px var(--rp-glowD);
 }
-.dark .cd-roster .pips i.tip {
+.dark[data-brand="red"] .cd-roster .pips i.tip {
   animation: pipBreathe 4.2s ease-in-out 2.4s infinite both;
 }
-.dark .cd-roster .pips.ignited i.lit {
+.dark[data-brand="red"] .cd-roster .pips.ignited i.lit {
   animation: pipFlick 0.5s both;
   animation-delay: calc(var(--i, 0) * var(--rp-step, 30ms));
 }
-.dark .cd-roster .pips.ignited i.tip {
+.dark[data-brand="red"] .cd-roster .pips.ignited i.tip {
   animation: pipFlick 0.5s both, pipBreathe 4.2s ease-in-out infinite both;
   animation-delay: calc(var(--i, 0) * var(--rp-step, 30ms)),
     calc(var(--i, 0) * var(--rp-step, 30ms) + 0.9s);
 }
-.dark .cd-roster .pips.s-full {
+.dark[data-brand="red"] .cd-roster .pips.s-full {
   --rp-glow: #c98a14;
   --rp-glowD: #6a4a08;
   --rp-glowH: #d49418;
   --rp-glowHD: #6a4a08;
 }
-.dark .cd-roster .pips.s-finished i.lit {
+.dark[data-brand="red"] .cd-roster .pips.s-finished i.lit {
   box-shadow: none;
 }
-.dark .cd-roster .pips.s-finished i.tip {
+.dark[data-brand="red"] .cd-roster .pips.s-finished i.tip {
   animation: none;
   box-shadow: none;
 }

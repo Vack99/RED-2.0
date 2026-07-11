@@ -40,6 +40,16 @@ describe("@gym/brand registry", () => {
     }
   });
 
+  it("stamps a dark default scheme for the two bespoke brands, light for neutral base (#84)", () => {
+    // `defaultScheme` drives the layout's `<html>` scheme-class append (ADR-0012's
+    // no-FOUC seam). Forge joins RED as dark-only in Phase-#84's calm-gold pass; the
+    // neutral base module omits it (falls back to light). Admin doesn't consume this
+    // field (own theme provider), so flipping forge here leaves the desk untouched.
+    expect(brands.forge.defaultScheme).toBe("dark");
+    expect(brands.red.defaultScheme).toBe("dark");
+    expect(brands.base.defaultScheme).toBeUndefined();
+  });
+
   it("exercises the code-preset path — forge and red carry a bespoke login hero, base omits it", () => {
     // The Forge sequence and RED's ignition are self-contained module heroes
     // (grill lock (h)). The neutral base module OMITS the optional hero, so the
