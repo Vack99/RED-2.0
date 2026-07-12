@@ -154,7 +154,7 @@ export function PublicHeader({
           <Link
             href="/registro"
             onClick={close}
-            className="flex justify-center bg-accent px-5 py-3.5 text-xs font-bold uppercase tracking-[0.16em] text-white hover:opacity-90"
+            className="flex justify-center bg-accent px-5 py-3.5 text-xs font-bold uppercase tracking-[0.16em] text-accent-fg hover:opacity-90"
           >
             Reservar clase
           </Link>

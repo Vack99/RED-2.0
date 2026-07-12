@@ -138,7 +138,7 @@ function EmptyReservas({ onReservar }: { onReservar: () => void }) {
       <button
         type="button"
         onClick={onReservar}
-        className="mt-5 w-full rounded-xl bg-accent py-3.5 text-xs font-extrabold uppercase tracking-wider text-white"
+        className="mt-5 w-full rounded-xl bg-accent py-3.5 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
       >
         Reservar clase
       </button>
@@ -226,7 +226,7 @@ function ConfirmSheet({
             onClick={onConfirm}
             disabled={pending}
             className={`flex-1 rounded-xl py-3.5 text-[11px] font-bold uppercase tracking-wider disabled:opacity-70 ${
-              danger ? "bg-warning text-canvas" : "bg-accent text-white"
+              danger ? "bg-warning text-canvas" : "bg-accent text-accent-fg"
             }`}
           >
             {pending ? "Un momento…" : confirmLabel}
@@ -320,7 +320,7 @@ function PlanRow({ p, onPick }: { p: PlanMembresiaDTO; onPick: () => void }) {
       {badge && (
         <span
           className={`absolute -top-2 left-4 px-2 py-0.5 text-[8.5px] font-bold uppercase tracking-wide ${
-            p.current ? "bg-sunk text-muted" : "bg-accent text-white"
+            p.current ? "bg-sunk text-muted" : "bg-accent text-accent-fg"
           }`}
         >
           {badge}
@@ -345,7 +345,7 @@ function PlanRow({ p, onPick }: { p: PlanMembresiaDTO; onPick: () => void }) {
           type="button"
           onClick={onPick}
           className={`mt-3.5 w-full rounded-lg py-3 text-[10px] font-bold uppercase tracking-wider ${
-            hi ? "bg-accent text-white" : "border border-line text-fg"
+            hi ? "bg-accent text-accent-fg" : "border border-line text-fg"
           }`}
         >
           Elegir

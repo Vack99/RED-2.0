@@ -140,7 +140,7 @@ export function ConfirmadaVista({ confirmacion }: { confirmacion: ConfirmacionRe
         </button>
         <Link
           href="/reservar?perfil=1"
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
         >
           Ver mis reservas
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

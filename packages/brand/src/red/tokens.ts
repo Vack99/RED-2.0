@@ -22,6 +22,11 @@ import type { BrandTokens, TokenScheme } from "../tokens";
  * (`yellow`), the deep-crimson accent text (`gold`), and the `rgb(239,43,26)`
  * tint base (`yellow-soft`/`yellow-edge`) each carry the neon depth. The
  * glow/ember `--rp-*` reds are brand-scoped (animation slice), not contract keys.
+ *
+ * `yellow-fg` — the foreground ON the crimson fill — is WHITE here (6.78:1),
+ * where Forge's dark accent takes near-black (near-black on this crimson is
+ * 2.92:1, a fail). That split is precisely why the key is per-brand rather than
+ * a literal in the button: RED's buttons must not change at all.
  */
 const redNeon: TokenScheme = {
   canvas: "#0a0a0a",
@@ -36,9 +41,12 @@ const redNeon: TokenScheme = {
   "yellow-soft": "rgba(239, 43, 26, 0.13)",
   "yellow-edge": "rgba(239, 43, 26, 0.4)",
   "press-yellow": "#d92b1f",
+  "yellow-fg": "#ffffff",
+  "yellow-core": "#841014",
 
   silver: "#c5c5c5",
   "silver-dim": "#8c8c8c",
+  "silver-core": "#9a9a9a",
 
   fg: "#fafafa",
   muted: "#7a7a7a",

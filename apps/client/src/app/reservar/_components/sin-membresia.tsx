@@ -18,7 +18,7 @@ export function SinMembresia() {
       </p>
       <Link
         href="/precios"
-        className="mt-2 flex w-full items-center justify-center rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+        className="mt-2 flex w-full items-center justify-center rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
       >
         Ver planes
       </Link>

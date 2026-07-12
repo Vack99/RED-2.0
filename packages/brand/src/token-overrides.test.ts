@@ -4,7 +4,7 @@ import { parseTokenOverrides, tokenOverridesSchema } from "./token-overrides";
 import { TOKEN_KEYS } from "./tokens";
 
 // The token-override schema is the machine-checked mirror of the *contrato de
-// marca* (PRD grill (a)): only the contract's ~28 keys are overridable, values
+// marca* (PRD grill (a)): only the contract's 33 keys are overridable, values
 // are charset-whitelisted, and ANY defect rejects the WHOLE payload so the render
 // falls back to the module baseline (fail-safe — never half-branded). It is the
 // guard on the `dangerouslySetInnerHTML` sink both layouts feed, so the hostile

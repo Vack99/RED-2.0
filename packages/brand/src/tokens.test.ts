@@ -7,7 +7,7 @@ import { TOKEN_KEYS, tokensToCss, type BrandTokens } from "./tokens";
 /**
  * The serializer is the ONE renderer of the `:root,.light {} .dark {}` block
  * (PRD grill lock (b)) — structured tokens in, the exact block out. Forge's
- * output is pinned against a frozen fixture; RED's dark-only neon output is
+ * output is pinned against a hand-written fixture; RED's dark-only neon output is
  * pinned against its expected block (identical `:root,.light` and `.dark`),
  * both compared after whitespace normalization (acceptance criterion:
  * "normalized comparison in tests").
@@ -18,12 +18,15 @@ function normalize(css: string): string {
   return css.replace(/\s+/g, " ").trim();
 }
 
-// Expected serializer output, pinned by hand. Forge is a frozen copy of its
-// module's rendered block (with the amber warning channel); RED is its dark-only
-// neon block (§3.1, identical light/dark). Fixtures only — never imported by
-// product code.
+// Expected serializer output, pinned by hand — a full pin of the block we mean
+// to emit, not a historical artifact: when a brand's values change, these move
+// with them (there is no snapshot and no `-u` path, deliberately, so every hex
+// that reaches a user is read by a human first). Forge is its rendered block
+// (amber warning channel; the dark accent deepened to the F-mark's own gold);
+// RED is its dark-only neon block (§3.1, identical light/dark — so RED's keys
+// appear TWICE below). Fixtures only — never imported by product code.
 
-const forgeTokenCssBeforeRefactor = `:root,
+const forgeTokenCssExpected = `:root,
 .light {
   --canvas: #f4f2ed;
   --surface: #ffffff;
@@ -37,9 +40,12 @@ const forgeTokenCssBeforeRefactor = `:root,
   --yellow-soft: rgba(227, 168, 31, 0.16);
   --yellow-edge: rgba(143, 109, 9, 0.4);
   --press-yellow: #f0bb45;
+  --yellow-fg: #0a0a0a;
+  --yellow-core: #d4a72c;
 
   --silver: #6f6e69;
   --silver-dim: #9b9a93;
+  --silver-core: #9a9a9a;
 
   --fg: #16150f;
   --muted: #82807a;
@@ -71,15 +77,18 @@ const forgeTokenCssBeforeRefactor = `:root,
   --line: #1f1f1f;
   --line-soft: #161616;
 
-  --yellow: #f5c542;
-  --gold: #f5c542;
+  --yellow: #d4a72c;
+  --gold: #d4a72c;
   --yellow-dim: #7a6020;
-  --yellow-soft: rgba(245, 197, 66, 0.14);
-  --yellow-edge: rgba(245, 197, 66, 0.42);
-  --press-yellow: #ffd54f;
+  --yellow-soft: rgba(212, 167, 44, 0.14);
+  --yellow-edge: rgba(212, 167, 44, 0.42);
+  --press-yellow: #e2b843;
+  --yellow-fg: #0a0a0a;
+  --yellow-core: #b18b24;
 
   --silver: #c5c5c5;
   --silver-dim: #6e6e6e;
+  --silver-core: #9a9a9a;
 
   --fg: #fafafa;
   --muted: #7a7a7a;
@@ -121,9 +130,12 @@ const redTokenCssExpected = `:root,
   --yellow-soft: rgba(239, 43, 26, 0.13);
   --yellow-edge: rgba(239, 43, 26, 0.4);
   --press-yellow: #d92b1f;
+  --yellow-fg: #ffffff;
+  --yellow-core: #841014;
 
   --silver: #c5c5c5;
   --silver-dim: #8c8c8c;
+  --silver-core: #9a9a9a;
 
   --fg: #fafafa;
   --muted: #7a7a7a;
@@ -161,9 +173,12 @@ const redTokenCssExpected = `:root,
   --yellow-soft: rgba(239, 43, 26, 0.13);
   --yellow-edge: rgba(239, 43, 26, 0.4);
   --press-yellow: #d92b1f;
+  --yellow-fg: #ffffff;
+  --yellow-core: #841014;
 
   --silver: #c5c5c5;
   --silver-dim: #8c8c8c;
+  --silver-core: #9a9a9a;
 
   --fg: #fafafa;
   --muted: #7a7a7a;
@@ -222,8 +237,8 @@ describe("tokensToCss", () => {
     }
   });
 
-  it("forge: rendered CSS is equivalent to the pre-refactor block (normalized)", () => {
-    expect(normalize(tokensToCss(forgeTokens))).toBe(normalize(forgeTokenCssBeforeRefactor));
+  it("forge: rendered CSS is equivalent to the pinned block (normalized)", () => {
+    expect(normalize(tokensToCss(forgeTokens))).toBe(normalize(forgeTokenCssExpected));
   });
 
   it("red: dark-only neon renders the same block for :root,.light and .dark (normalized)", () => {

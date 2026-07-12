@@ -10,7 +10,7 @@ import { TOKEN_KEYS, type TokenKey } from "./tokens";
  * the `dangerouslySetInnerHTML` `<style>` sink both layouts inline. Two closed
  * dimensions make an injection unrepresentable rather than merely filtered:
  *
- *   1. **Keys** — only the ~28 `TOKEN_KEYS` (derived here, single source): an
+ *   1. **Keys** — only the 33 `TOKEN_KEYS` (derived here, single source): an
  *      unknown key is a typo or an attack, both rejected. Light and dark are
  *      independent partial maps, so a value's destination scheme is never ambiguous.
  *   2. **Values** — a conservative charset whitelist (letters, digits, and

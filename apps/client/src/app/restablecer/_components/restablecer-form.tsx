@@ -92,7 +92,7 @@ export function RestablecerForm() {
       <button
         type="submit"
         disabled={pending}
-        className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-white transition hover:brightness-105 disabled:opacity-40"
+        className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition hover:brightness-105 disabled:opacity-40"
       >
         {pending ? "Guardando…" : "Guardar contraseña"}
       </button>

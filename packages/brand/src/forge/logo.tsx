@@ -13,15 +13,22 @@ export * from "./mark-geometry";
 export function FMark({ size = 28 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" aria-label="Forge">
+      {/* The metallic bevel: each bar is one hue lit at its edges and shadowed
+          through its middle, so BOTH stops are brand color — the rim (0%/100%)
+          and the deep core (50%). The core was a hardcoded literal, which meant
+          a gym's `token_overrides` recolored the whole product but silently left
+          the mark's core the old gold/grey. `--yellow-core`/`--silver-core` are
+          the contract keys for that core (the accent's own deep band, ~11 L*
+          below it), so the mark now follows an override like everything else. */}
       <defs>
         <linearGradient id="fm-silver" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--silver)" />
-          <stop offset="50%" stopColor="#9a9a9a" />
+          <stop offset="50%" stopColor="var(--silver-core)" />
           <stop offset="100%" stopColor="var(--silver)" />
         </linearGradient>
         <linearGradient id="fm-yellow" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor="var(--yellow)" />
-          <stop offset="50%" stopColor="#d4a72c" />
+          <stop offset="50%" stopColor="var(--yellow-core)" />
           <stop offset="100%" stopColor="var(--yellow)" />
         </linearGradient>
       </defs>

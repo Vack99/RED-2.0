@@ -48,7 +48,7 @@ export function MapBlock({
           <div className="absolute bottom-0 top-0 left-1/3 w-px bg-line" />
         </div>
         <div className="relative flex flex-col items-center gap-2">
-          <span className="flex h-9 items-center rounded-full bg-accent px-3 font-mono text-[10px] font-bold tracking-wide text-white">
+          <span className="flex h-9 items-center rounded-full bg-accent px-3 font-mono text-[10px] font-bold tracking-wide text-accent-fg">
             {label}
           </span>
           <span className="h-2 w-2 rounded-full bg-accent ring-4 ring-accent-soft" />

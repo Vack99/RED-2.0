@@ -58,7 +58,7 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
       {plan.badge && (
         <span
           className={`mb-3 inline-flex w-fit rounded-full px-3 py-1 font-mono text-[11px] font-semibold uppercase tracking-wide ${
-            plan.popular ? "bg-accent text-white" : "bg-accent-soft text-accent"
+            plan.popular ? "bg-accent text-accent-fg" : "bg-accent-soft text-accent"
           }`}
         >
           {plan.badge}
@@ -84,7 +84,7 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
         href="/registro"
         className={`mt-6 inline-flex justify-center rounded-full px-5 py-3 text-sm font-semibold ${
           plan.popular
-            ? "bg-accent text-white hover:opacity-90"
+            ? "bg-accent text-accent-fg hover:opacity-90"
             : "border border-line text-fg hover:border-accent hover:text-accent"
         }`}
       >
@@ -206,7 +206,7 @@ export default async function PreciosPage() {
         <div className="mt-5 flex flex-col items-center gap-3">
           <Link
             href="/registro"
-            className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+            className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
           >
             Empezar ahora
           </Link>

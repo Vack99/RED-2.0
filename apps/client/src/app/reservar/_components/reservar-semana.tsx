@@ -124,7 +124,7 @@ function ClassCard({ sesion, idx, onOpen }: { sesion: SesionMiembroDTO; idx: num
       <div className="flex w-[104px] flex-none flex-col items-center justify-center gap-3 bg-sunk px-2.5 py-4">
         <span className="text-lg font-extrabold tabular-nums text-fg">{sesion.hora}</span>
         {vista.reservable ? (
-          <span className="bg-accent px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-white">
+          <span className="bg-accent px-3 py-2 text-[9px] font-bold uppercase tracking-wider text-accent-fg">
             {vista.cta}
           </span>
         ) : vista.reservada ? (
@@ -254,7 +254,7 @@ function SummarySheet({
         </p>
         <Link
           href="/precios"
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
         >
           Ver planes
           {arrow}
@@ -282,7 +282,7 @@ function SummarySheet({
           type="button"
           onClick={onBook}
           disabled={pending}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white disabled:opacity-70"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg disabled:opacity-70"
         >
           {pending ? "Reservando…" : "Reservar lugar"}
           {!pending && arrow}
@@ -406,7 +406,7 @@ function ConfirmedSheet({
         <button
           type="button"
           onClick={onVerReservas}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
         >
           Ver mis reservas
           {arrow}

@@ -91,7 +91,7 @@ export default async function NosotrosPage() {
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/registro"
-            className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+            className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
           >
             Empezar ahora
           </Link>
@@ -225,7 +225,7 @@ export default async function NosotrosPage() {
         </p>
         <Link
           href="/registro"
-          className="mt-5 inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+          className="mt-5 inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
         >
           Empezar ahora
         </Link>

@@ -41,8 +41,13 @@ export function ForgeLoginAnimation({
           this hero adds only the ambient wash behind it. */}
       <style>{`
         .forge-login-root {
-          /* Soft warm gold for the atmospheric glow — low alpha, a subtle wash. */
-          --forge-login-glow: rgba(212, 167, 44, 0.10);
+          /* The atmospheric glow is the ACCENT at low alpha — a subtle wash, not a
+             color of its own. It was rgba(212,167,44,.10): a third hardcoded copy of
+             the mark's gold, which could not follow a palette change — so a gym's
+             token_overrides recolored the form and the mark and left a stale gold
+             halo behind them. color-mix derives it from the live accent at the same
+             10% alpha, so the wash tracks whatever --yellow resolves to. */
+          --forge-login-glow: color-mix(in srgb, var(--yellow) 10%, transparent);
         }
         /* Opacity-only fade-in. No transform/scale, so there is no rectangular
            edge to sweep into view — the gradient is full-bleed and already

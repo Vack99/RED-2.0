@@ -9,6 +9,12 @@ import type { BrandTokens } from "../tokens";
  * point of the base + overrides path), yet intentional — never unstyled. Semantic
  * `green`/`red` and the authentic WhatsApp bubble stay put across every marca.
  *
+ * `yellow-fg` (the foreground ON a solid `yellow` fill) FLIPS between the two
+ * schemes: white on the light indigo `#5b6698` (5.53:1), near-black on the dark
+ * `#8a93d6` (6.81:1 — where white would be 2.91:1). A brand that overrides
+ * `yellow` and forgets `yellow-fg` inherits a legible default; one that overrides
+ * both keeps control of the pair.
+ *
  * Copy voice is neutral es-MX placeholder pending the HITL voice decision (Phase 4
  * terminal slice) — see the registry's `base.copy`.
  */
@@ -26,9 +32,12 @@ export const baseTokens: BrandTokens = {
     "yellow-soft": "rgba(91, 102, 152, 0.14)",
     "yellow-edge": "rgba(63, 70, 112, 0.4)",
     "press-yellow": "#6b76a8",
+    "yellow-fg": "#ffffff",
+    "yellow-core": "#444c72",
 
     silver: "#6b6b70",
     "silver-dim": "#9a9aa0",
+    "silver-core": "#4e4e52",
 
     fg: "#17171a",
     muted: "#7b7b82",
@@ -65,9 +74,12 @@ export const baseTokens: BrandTokens = {
     "yellow-soft": "rgba(138, 147, 214, 0.14)",
     "yellow-edge": "rgba(138, 147, 214, 0.42)",
     "press-yellow": "#9aa3e0",
+    "yellow-fg": "#0a0a0a",
+    "yellow-core": "#6974ca",
 
     silver: "#c4c4c8",
     "silver-dim": "#6d6d72",
+    "silver-core": "#9a9a9e",
 
     fg: "#fafafa",
     muted: "#7a7a80",

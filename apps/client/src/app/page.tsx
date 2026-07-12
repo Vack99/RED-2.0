@@ -70,7 +70,7 @@ export default async function Home() {
 
         <Link
           href="/registro"
-          className="btn-primary mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-white hover:opacity-90"
+          className="btn-primary mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-accent-fg hover:opacity-90"
         >
           Reservar clase
           <span aria-hidden>→</span>

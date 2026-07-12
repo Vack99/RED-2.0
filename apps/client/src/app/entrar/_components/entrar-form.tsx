@@ -108,7 +108,7 @@ export function EntrarForm() {
           <button
             type="submit"
             disabled={resetPending}
-            className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-white transition disabled:opacity-40"
+            className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition disabled:opacity-40"
           >
             {resetPending ? "Enviando…" : "Enviar enlace"}
           </button>
@@ -216,7 +216,7 @@ export function EntrarForm() {
       <button
         type="submit"
         disabled={loginPending}
-        className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-white transition hover:brightness-105 disabled:opacity-40"
+        className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition hover:brightness-105 disabled:opacity-40"
       >
         <span>{loginPending ? "Entrando…" : "Entrar"}</span>
         {!loginPending && (

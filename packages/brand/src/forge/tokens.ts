@@ -7,8 +7,32 @@ import type { BrandTokens } from "../tokens";
  * relocated out of `apps/admin/globals.css` so Forge is defined once.
  *
  * Token roles: `--yellow` = FILL accent · `--gold` = foreground accent text/icon ·
- * `--ink` = constant dark placed ON a yellow fill. Light is the default; `.dark`
- * swaps the whole surface/text/line palette in place.
+ * `--yellow-fg` = the text/icon placed ON a solid `--yellow` fill · `--ink` =
+ * constant dark placed on the amber `--warning` fill · `--yellow-core` /
+ * `--silver-core` = the deep bands inside the F-mark's gold/silver metallic
+ * gradients. Light is the default; `.dark` swaps the whole surface/text/line
+ * palette in place.
+ *
+ * `--yellow-fg` is a key and not a hardcoded `text-white` because the client's
+ * dark accent takes near-black (`#0a0a0a`, 8.83:1) while RED's crimson takes
+ * white — one token, two brands, no possible shared literal. It is NOT `--ink`:
+ * `--ink` is the foreground on the amber WARNING fill, and the two roles diverge
+ * the moment a brand's accent is dark.
+ *
+ * `--yellow-core` / `--silver-core` used to be `#d4a72c` / `#9a9a9a` literals in
+ * `logo.tsx` + `ignition-mark.tsx`, which put the mark outside the contract: a
+ * gym's `token_overrides` could recolor every button and still ship someone
+ * else's logo. Keep each `-core` ~11 L* below its parent (`--yellow` /
+ * `--silver`) — that gap IS the bevel.
+ *
+ * DARK's accent is the mark's own gold (`#d4a72c`), not a hotter amber. One
+ * token used to serve accent-stroke, button-fill, and mark-gradient duty; the
+ * fill was `#f5c542` with hardcoded white on it (1.62:1) while the mark beside
+ * it was already `#d4a72c`. `--gold` (the accent-TEXT role, e.g. the BOOTCAMP
+ * wordmark) MUST track it — leaving `--gold` hot re-creates exactly the accent
+ * mismatch this deepening exists to kill. `--press-yellow` is a LIFT above the
+ * accent, kept at ~+5 L* (`#e2b843`); reusing the old `#ffd54f` against the
+ * deepened accent would be a +16 L* flashbulb.
  */
 export const forgeTokens: BrandTokens = {
   light: {
@@ -24,9 +48,12 @@ export const forgeTokens: BrandTokens = {
     "yellow-soft": "rgba(227, 168, 31, 0.16)",
     "yellow-edge": "rgba(143, 109, 9, 0.4)",
     "press-yellow": "#f0bb45",
+    "yellow-fg": "#0a0a0a",
+    "yellow-core": "#d4a72c",
 
     silver: "#6f6e69",
     "silver-dim": "#9b9a93",
+    "silver-core": "#9a9a9a",
 
     fg: "#16150f",
     muted: "#82807a",
@@ -57,15 +84,18 @@ export const forgeTokens: BrandTokens = {
     line: "#1f1f1f",
     "line-soft": "#161616",
 
-    yellow: "#f5c542",
-    gold: "#f5c542",
+    yellow: "#d4a72c",
+    gold: "#d4a72c",
     "yellow-dim": "#7a6020",
-    "yellow-soft": "rgba(245, 197, 66, 0.14)",
-    "yellow-edge": "rgba(245, 197, 66, 0.42)",
-    "press-yellow": "#ffd54f",
+    "yellow-soft": "rgba(212, 167, 44, 0.14)",
+    "yellow-edge": "rgba(212, 167, 44, 0.42)",
+    "press-yellow": "#e2b843",
+    "yellow-fg": "#0a0a0a",
+    "yellow-core": "#b18b24",
 
     silver: "#c5c5c5",
     "silver-dim": "#6e6e6e",
+    "silver-core": "#9a9a9a",
 
     fg: "#fafafa",
     muted: "#7a7a7a",

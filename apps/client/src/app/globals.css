@@ -33,6 +33,11 @@
      the contract key stays `yellow` by name, carrying each brand's accent value (ADR-0012 §4). */
   --color-accent: var(--yellow);
   --color-accent-soft: var(--yellow-soft);
+  /* The foreground that rides a SOLID accent fill (contract key `yellow-fg`) — per-brand,
+     because Forge's gold needs near-black where RED's crimson needs white. Distinct from
+     `ink`, which is the text on the amber WARNING fill (white can't sit there either, but
+     an accent fill and a warning fill don't agree on a foreground). */
+  --color-accent-fg: var(--yellow-fg);
   /* The semantic error role (contract key `red`, unchanged across brands): the
      Reservar card's "Lleno" state. */
   --color-danger: var(--red);

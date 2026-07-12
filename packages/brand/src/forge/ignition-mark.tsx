@@ -20,9 +20,13 @@ import { FMARK_BARS, FMARK_BAR_HEIGHT } from "./mark-geometry";
 // per-component media query. Presentation-only and hook-free: imports only React
 // + the sibling logo geometry, so the frozen `brand ✗→ data/domain` boundary holds.
 //
-// Every color routes through the CSS-var contract (`var(--silver)`/`var(--yellow)`);
-// the metal mid-stops and the white specular are effect furniture with no swappable
-// token, so they are the two literals the mark carries (mirrors the static `FMark`).
+// Every color routes through a var() — no literal. The bar rims are the contract's
+// `--silver`/`--yellow`, and the metal mid-stops (the bevel's deep core) are now
+// `--silver-core`/`--yellow-core`: they used to be hardcoded, which meant a gym's
+// `token_overrides` recolored the product but silently left the mark's core the old
+// gold/grey. The one remaining non-brand color is the WHITE specular, which is white
+// by physics (a highlight on metal), not by brand — it is effect furniture with no
+// swappable token, so it lives in a component-local var below. Mirrors `FMark`.
 
 // --- Per-bar build, derived FROM the shared geometry -------------------------
 // Each shared bar's polygon is `xL,yTop  xR,yTop  xR+rightSlant,yTop+h
@@ -152,14 +156,17 @@ export function ForgeIgnitionMark({ name }: { readonly name: string }) {
         style={{ display: "block", overflow: "visible" }}
       >
         <defs>
+          {/* The metallic bevel — rim (0%/100%) lit, core (50%) deep. Both stops
+              are brand color, so both are contract keys; the core is no longer a
+              literal the palette cannot reach. Same two gradients as `FMark`. */}
           <linearGradient id="forge-ignition-silver" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--silver)" />
-            <stop offset="50%" stopColor="#9a9a9a" />
+            <stop offset="50%" stopColor="var(--silver-core)" />
             <stop offset="100%" stopColor="var(--silver)" />
           </linearGradient>
           <linearGradient id="forge-ignition-gold" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--yellow)" />
-            <stop offset="50%" stopColor="#d4a72c" />
+            <stop offset="50%" stopColor="var(--yellow-core)" />
             <stop offset="100%" stopColor="var(--yellow)" />
           </linearGradient>
 

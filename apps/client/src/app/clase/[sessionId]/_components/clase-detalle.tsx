@@ -343,7 +343,7 @@ export function ClaseDetalle({
             </p>
             <Link
               href="/precios"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
             >
               Ver planes
               {fwdArrow}
@@ -364,7 +364,7 @@ export function ClaseDetalle({
               type="button"
               onClick={book}
               disabled={pending}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-white disabled:opacity-70"
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg disabled:opacity-70"
             >
               {pending ? "Reservando…" : "Reservar lugar"}
               {!pending && fwdArrow}
