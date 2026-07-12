@@ -138,12 +138,14 @@ Custom sales are always `vigencia_tipo = 'dias'`. The `ventas` insert additional
 
 ```ts
 paquete:
-  | { tipo: "registrado";     paqueteId: string }
-  | { tipo: "personalizado";  nombre: string; precio: number;
-      clases: number | null; ilimitado: boolean; dias: number }
+  | { tipo: "registrado";    paqueteId: string }
+  | { tipo: "personalizado"; nombre: string; precio: number;
+      clases: number | null; dias: number }   // clases: null = ilimitado
 ```
 
 A union, not two optional fields with a `.refine`: it makes "both sent" and "neither sent" **unrepresentable** rather than merely rejected. Zod mirrors the D6 bounds for a fast client-side failure; **the RPC remains the trust boundary** — the bounds are enforced there too, and that is the enforcement that counts.
+
+**The TS wire carries no `ilimitado` boolean.** Inside the `personalizado` arm, `clases` is a *required, nullable* field — so "absent" is a parse error and `null` unambiguously means ilimitado. Only SQL needs the extra discriminator (§5.1), because a SQL argument that is absent and one that is `null` are the same value. `crearVenta` derives it at the RPC edge: `p_custom_ilimitado: clases === null`.
 
 `crearVenta` builds the RPC args from the union arm.
 
