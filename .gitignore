@@ -58,3 +58,9 @@ next-env.d.ts
 
 # session handoff docs (durable scratch, not version-controlled)
 /docs/handoffs/
+
+# archived docs (local-only, not version-controlled)
+/docs/archived-files/
+
+# scratch-project data dumps
+/docs/supabase-throwaway-project/data/
