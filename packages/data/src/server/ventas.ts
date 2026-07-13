@@ -25,6 +25,32 @@ export type Metodo = MetodoPago;
 // the canonical type a compile error, not a silent runtime divergence.
 const METODOS = ["efectivo", "transferencia", "tarjeta"] as const satisfies readonly MetodoPago[];
 
+/** The two package sources a sale can have. A discriminated union, not two optional
+ *  fields: "both" and "neither" are unrepresentable, not merely rejected.
+ *
+ *  `clases: null` = ilimitado — a REQUIRED nullable field, so "absent" is a parse
+ *  error and null unambiguously means unlimited. (SQL needs an extra
+ *  p_custom_ilimitado discriminator for the same job, because an absent argument and
+ *  a null one are the same value there. See the RPC edge below.)
+ *
+ *  Bounds mirror the RPC (spec D6) for a fast, local failure — but the RPC is the
+ *  trust boundary and enforces them again. This copy is convenience, not security. */
+const paqueteSeleccionSchema = z.discriminatedUnion("tipo", [
+  z.object({
+    tipo: z.literal("registrado"),
+    paqueteId: z.string().min(1).transform(asPaqueteId),
+  }),
+  z.object({
+    tipo: z.literal("personalizado"),
+    nombre: z.string().trim().min(3).max(40),
+    precio: z.number().int().min(1).max(100_000),
+    clases: z.number().int().min(1).max(365).nullable(),
+    dias: z.number().int().min(1).max(365),
+  }),
+]);
+
+export type PaqueteSeleccion = z.infer<typeof paqueteSeleccionSchema>;
+
 export const crearVentaSchema = z
   .object({
     mode: z.enum(["new", "existing"]),
@@ -35,7 +61,7 @@ export const crearVentaSchema = z
     // never gate on it (§3.4). Trimmed so a blank field forwards nothing.
     email: z.string().trim().optional(),
     clienteId: z.string().transform(asClienteId).optional(),
-    paqueteId: z.string().min(1).transform(asPaqueteId),
+    paquete: paqueteSeleccionSchema,
     metodo: z.enum(METODOS),
     // Submission-stable key (C6): minted once per sale attempt in the vender UI,
     // so a retry after an error replays the SAME sale instead of double-charging.
@@ -153,12 +179,17 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // the client's name/tel are independent, so fire them concurrently; NEW mode has
   // no cliente row, so its slot resolves to null.
   const isNew = input.mode === "new";
+  const esCustom = input.paquete.tipo === "personalizado";
   const [paqRes, cliRes] = await Promise.all([
-    supabase
-      .from("paquetes")
-      .select("nombre, vigencia_tipo, vigencia_dias, precio")
-      .eq("id", forPaquete(input.paqueteId))
-      .single(),
+    // Display-only read, and ONLY for a registered plan — a custom package has no
+    // paquetes row by design (spec §2). Reading here would throw on a valid sale.
+    esCustom
+      ? Promise.resolve(null)
+      : supabase
+          .from("paquetes")
+          .select("nombre, vigencia_tipo, vigencia_dias, precio")
+          .eq("id", forPaquete((input.paquete as { paqueteId: PaqueteId }).paqueteId))
+          .single(),
     input.mode === "existing"
       ? supabase
           .from("clientes")
@@ -168,8 +199,21 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
       : Promise.resolve(null),
   ]);
 
-  const { data: paq, error: paqErr } = paqRes;
-  if (paqErr || !paq) throw new Error("Paquete no encontrado");
+  // The recibo's CONCEPTO. For a registered plan it mirrors the paquetes row; for a
+  // custom package there IS no row, so it comes from the typed values (always 'dias').
+  let reciboPaquete: { nombre: string; vigencia: string; precio: number };
+  if (input.paquete.tipo === "personalizado") {
+    const c = input.paquete;
+    reciboPaquete = { nombre: c.nombre, vigencia: `${c.dias} días`, precio: c.precio };
+  } else {
+    const { data: paq, error: paqErr } = paqRes!;
+    if (paqErr || !paq) throw new Error("Paquete no encontrado");
+    reciboPaquete = {
+      nombre: paq.nombre,
+      vigencia: vigenciaDisplay(paq.vigencia_tipo, paq.vigencia_dias),
+      precio: paq.precio,
+    };
+  }
 
   let nombre: string;
   let tel: string;
@@ -190,8 +234,19 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const { data: result, error: rpcErr } = await supabase
     .rpc("registrar_venta", {
       p_metodo: input.metodo,
-      p_paquete_id: forPaquete(input.paqueteId),
       p_idempotency_key: input.idempotencyKey,
+      ...(input.paquete.tipo === "registrado"
+        ? { p_paquete_id: forPaquete(input.paquete.paqueteId) }
+        : {
+            p_custom_nombre: input.paquete.nombre,
+            p_custom_precio: input.paquete.precio,
+            p_custom_dias: input.paquete.dias,
+            // SQL cannot distinguish an absent argument from a null one, and null IS
+            // the ilimitado value — so the flag carries what the type already knows.
+            ...(input.paquete.clases === null
+              ? { p_custom_ilimitado: true }
+              : { p_custom_clases: input.paquete.clases }),
+          }),
       ...(input.mode === "existing" && { p_cliente_id: forCliente(input.clienteId!) }),
       ...(input.mode === "new" && { p_nombre: nombre, p_tel: tel }),
       ...(input.email ? { p_email: input.email } : {}),
@@ -243,7 +298,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   const ctx: PlantillaContext = {
     nombre: firstName(nombre),
     clases: fmtClases(clasesFromDb(result.clases_restantes)),
-    paquete: paq.nombre,
+    paquete: reciboPaquete.nombre,
     vence: venceDisplay,
     dias: fmtDias(diasRestantes(vence, hoy)),
     precios: fmtPrecios(paquetes),
@@ -264,11 +319,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
       inicial: iniciales(nombre),
       isNew,
     },
-    paquete: {
-      nombre: paq.nombre,
-      vigencia: vigenciaDisplay(paq.vigencia_tipo, paq.vigencia_dias),
-      precio: paq.precio,
-    },
+    paquete: reciboPaquete,
     metodo: input.metodo,
     metodoDisplay,
     negocio,

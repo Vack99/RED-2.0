@@ -31,6 +31,9 @@ interface FakeRows {
 interface FakeClient {
   /** What `.rpc("registrar_venta", args)` was called with — the assertion target. */
   rpcCalls: { name: string; args: Record<string, unknown> }[];
+  /** Every table name passed to `.from(...)` — lets a test assert a table was
+   *  (or was NOT) touched, e.g. a custom sale never reading `paquetes`. */
+  fromCalls: string[];
   client: SupabaseServer;
 }
 
@@ -58,6 +61,7 @@ function makeFake(
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
   const rpcData = opts.rpcData === undefined ? RPC_ROW : opts.rpcData;
   const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
+  const fromCalls: string[] = [];
 
   const builder = (single: unknown, list: unknown[]) => {
     const b = {
@@ -80,6 +84,7 @@ function makeFake(
       getClaims: async () => ({ data: sub ? { claims: { sub } } : null }),
     },
     from: (table: string) => {
+      fromCalls.push(table);
       switch (table) {
         case "paquetes":
           // single (`.eq().single()`) = the package crearVenta is selling;
@@ -112,7 +117,7 @@ function makeFake(
     },
   };
 
-  return { rpcCalls, client: client as unknown as SupabaseServer };
+  return { rpcCalls, fromCalls, client: client as unknown as SupabaseServer };
 }
 
 // Package fixtures (DB shape: ilimitado → clases null; mes → vigencia_dias null).
@@ -142,7 +147,7 @@ const input = (over: Partial<RawVentaInput> = {}): RawVentaInput =>
     mode: "new",
     nuevoNombre: "Andrea Castro",
     nuevoTel: "614 218 3401",
-    paqueteId: "p1",
+    paquete: { tipo: "registrado", paqueteId: "p1" },
     metodo: "efectivo",
     idempotencyKey: KEY,
     ...over,
@@ -258,7 +263,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
         mode: "new",
         nuevoNombre: "Andrea Castro",
         nuevoTel: "614 218 3401",
-        paqueteId: "p1",
+        paquete: { tipo: "registrado", paqueteId: "p1" },
         metodo: "pendiente",
         idempotencyKey: KEY,
       } as unknown),
@@ -356,5 +361,95 @@ describe("crearVenta — write orchestration (injected fake)", () => {
 
     const res = await crearVenta(input({ mode: "new" }), fake.client);
     expect(res.mensajes[0].texto).toBe("Hola Andrea."); // empty tokens render to nothing
+  });
+});
+
+describe("crearVenta — paquete personalizado", () => {
+  it("rejects a custom package whose price is out of bounds", async () => {
+    await expect(
+      crearVenta({
+        mode: "new",
+        nuevoNombre: "Ana Ruiz",
+        nuevoTel: "6141234567",
+        paquete: { tipo: "personalizado", nombre: "Promo Verano", precio: 0, clases: 12, dias: 45 },
+        metodo: "efectivo",
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("rejects a custom package name shorter than 3 characters", async () => {
+    await expect(
+      crearVenta({
+        mode: "new",
+        nuevoNombre: "Ana Ruiz",
+        nuevoTel: "6141234567",
+        paquete: { tipo: "personalizado", nombre: "ab", precio: 750, clases: 12, dias: 45 },
+        metodo: "efectivo",
+        idempotencyKey: KEY,
+      }),
+    ).rejects.toThrow();
+  });
+
+  describe("a custom sale with an unlimited class grant", () => {
+    let fake: FakeClient;
+    let res: Awaited<ReturnType<typeof crearVenta>>;
+
+    beforeEach(async () => {
+      fake = makeFake(
+        { plantillas: [{ id: "t1", nombre: "Recibo", body: "Hola {nombre}" }] },
+        {
+          rpcData: {
+            folio: 1042,
+            cliente_id: "c-1",
+            clases_restantes: null,
+            vence: "2026-08-25",
+            paquete_nombre: "Promo Verano",
+            monto: 750,
+          },
+        },
+      );
+      res = await crearVenta(
+        input({
+          paquete: { tipo: "personalizado", nombre: "Promo Verano", precio: 750, clases: null, dias: 45 },
+        }),
+        fake.client,
+      );
+    });
+
+    it("sends the custom args to the RPC and derives ilimitado from a null class grant", () => {
+      const { args } = lastRpc(fake);
+      expect(args).toMatchObject({
+        p_custom_nombre: "Promo Verano",
+        p_custom_precio: 750,
+        p_custom_ilimitado: true,
+        p_custom_dias: 45,
+      });
+      expect(args.p_custom_clases).toBeUndefined();
+      expect(args.p_paquete_id).toBeUndefined();
+    });
+
+    it("composes the recibo package block from the typed values — there is no paquetes row to read", () => {
+      // The trap: a custom sale has no `paquetes` row. `undefined días` or a thrown
+      // "Paquete no encontrado" both mean the receipt fell back to the row-read path.
+      expect(res.paquete).toEqual({ nombre: "Promo Verano", vigencia: "45 días", precio: 750 });
+    });
+
+    it("skips the paquetes single-row display lookup for a custom sale", () => {
+      // getPaquetes still reads the catalog for the recibo's {precios} token
+      // (unconditional, independent of this sale's own package) — but the per-sale
+      // `.eq(id).single()` display read this task makes conditional must not fire.
+      expect(fake.fromCalls.filter((t) => t === "paquetes")).toHaveLength(1);
+    });
+  });
+
+  it("still sends p_paquete_id for a registered plan", async () => {
+    const fake = makeFake({ paquetes: FINITO, plantillas: [{ id: "t1", nombre: "Recibo", body: "x" }] });
+
+    await crearVenta(input({ paquete: { tipo: "registrado", paqueteId: "p-1" } }), fake.client);
+
+    const { args } = lastRpc(fake);
+    expect(args.p_paquete_id).toBe("p-1");
+    expect(args.p_custom_nombre).toBeUndefined();
   });
 });
