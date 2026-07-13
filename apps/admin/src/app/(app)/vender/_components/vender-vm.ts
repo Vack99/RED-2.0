@@ -120,7 +120,7 @@ export function customErrors(
     ? null
     : quieto("clases", f.clases)
       ? null
-      : rangoError(f.clases, LIMITES.clasesMin, LIMITES.clasesMax, "Las clases");
+      : rangoError(f.clases, LIMITES.clasesMin, LIMITES.clasesMax, "El número de clases");
 
   const dias = quieto("dias", f.dias)
     ? null
