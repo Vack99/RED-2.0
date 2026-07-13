@@ -26,10 +26,13 @@ export function Input({
   placeholder,
   value,
   onChange,
+  onBlur,
   suffix,
   type = "text",
   autoFocus,
   inputMode,
+  maxLength,
+  disabled,
   className,
   style,
 }: {
@@ -37,10 +40,13 @@ export function Input({
   placeholder?: string;
   value?: string;
   onChange?: (v: string) => void;
+  onBlur?: () => void;
   suffix?: string;
   type?: string;
   autoFocus?: boolean;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
+  maxLength?: number;
+  disabled?: boolean;
   className?: string;
   style?: React.CSSProperties;
 }) {
@@ -67,6 +73,8 @@ export function Input({
         ref={ref}
         type={type}
         inputMode={inputMode}
+        maxLength={maxLength}
+        disabled={disabled}
         // `data-autofocus` is the marker a Sheet queries to focus this field
         // after its slide-in (see `sheet.tsx`). We never set native `autofocus`:
         // it focuses during commit and scrolls an off-screen field into view,
@@ -76,6 +84,7 @@ export function Input({
         placeholder={placeholder}
         value={value ?? ""}
         onChange={(e) => onChange?.(e.target.value)}
+        onBlur={() => onBlur?.()}
         className="min-w-0 flex-1 border-none bg-transparent font-medium outline-none"
         // 16px: anything smaller triggers iOS Safari's auto-zoom on focus.
         style={{ color: "var(--fg)", fontSize: 16 }}
