@@ -164,6 +164,17 @@ must not introduce a `gym`/`gymId`/`slug` param.**
 
 `RespaldoSheet` gains one optional `boldRows` field. The workbook assembler stays dumb.
 
+**Which reads are windowed — and which must NOT be:**
+
+| Read | `?mes=` | default (24m) | why |
+|---|---|---|---|
+| `ventas` | **windowed** — half-open **instant** bounds | windowed | the ledger being reported |
+| `asistencias` | **windowed** — half-open **day** bounds (it's a `date`) | windowed | the ledger being reported |
+| `clientes` | **NOT windowed — full roster** | full roster | **load-bearing:** the roster is what denormalizes `cliente_id → nombre` on the Ventas and Asistencias sheets. Window this query and every client who joined before the month renders as `—` on their own sales. The **Altas** sheet filters `created_at` **in the pure shaper**, not in the query. |
+| `paquetes` | NOT windowed — full catálogo | full catálogo | a price list, not a ledger |
+
+All four carry `.eq("gym_id", gym.id)` (§1.1).
+
 **`metodo = 'pendiente'` does not exist.** `20260710120000_renewal_schema_prep.sql` re-added
 `check (metodo in ('efectivo','transferencia','tarjeta'))` with no `NOT VALID`. Verified live. A "Por pagar"
 line would be **provably always $0** — a dead legend entry a future chart would inherit. **3 buckets.**
