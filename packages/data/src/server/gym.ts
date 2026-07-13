@@ -40,7 +40,7 @@ export const getOperatorGym = cache(
 
     const { data: membership } = await supabase
       .from("gym_membership")
-      .select("gym_id, role")
+      .select("gym_id")
       .in("role", ["owner", "operator"])
       .order("gym_id")
       .limit(1)
