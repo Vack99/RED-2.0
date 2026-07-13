@@ -527,4 +527,15 @@ describe("materializarSesion", () => {
     expect(chi.getTime()).not.toBe(mex.getTime());
     expect((chi.getTime() - mex.getTime()) / 3_600_000).toBe(1); // Chihuahua 1h behind Mexico City that June
   });
+
+  it("materializes a 06:00 class ON the Tijuana spring-forward Sunday at 06:00 PDT, not 07:00 (spec §1.7 — class hours DO straddle DST when the class day IS the transition day)", () => {
+    // Week of Mon 2026-03-02; weekday 6 = Sunday 2026-03-08, the US spring-forward
+    // day (02:00 PST → 03:00 PDT at 10:00Z). 06:00 PDT = UTC-7 → 13:00Z.
+    const instante = materializarSesion(
+      { weekday: 6, startTime: "06:00" },
+      new Date(2026, 2, 2),
+      "America/Tijuana",
+    );
+    expect(instante.toISOString()).toBe("2026-03-08T13:00:00.000Z");
+  });
 });

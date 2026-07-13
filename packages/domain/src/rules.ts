@@ -421,8 +421,10 @@ function offsetMsEnZona(utcMs: number, tz: string): number {
  * instant — exactly what makes the DB's `(template_id, starts_at)` unique
  * guard an idempotent re-run (PRD decision c), not a separate mechanism.
  * tz-honest: the same wall clock in two different gym zones yields two
- * different absolute instants (single-pass offset lookup — this app's class
- * hours, 05:00–22:45, never straddle a DST transition).
+ * different absolute instants. Two-pass offset lookup: when the class day IS a
+ * DST transition day (Tijuana/Ciudad Juárez, twice a year), the offset at the
+ * guess differs from the offset at the true instant — re-derive at the
+ * candidate, or a 06:00 class materializes at 07:00.
  */
 export function materializarSesion(plantilla: PlantillaHorario, lunesSemana: Date, tz: string): Date {
   const y = lunesSemana.getFullYear();
@@ -430,5 +432,8 @@ export function materializarSesion(plantilla: PlantillaHorario, lunesSemana: Dat
   const d = lunesSemana.getDate() + plantilla.weekday;
   const [hh, mm] = plantilla.startTime.split(":").map(Number);
   const guess = Date.UTC(y, m, d, hh, mm);
-  return new Date(guess - offsetMsEnZona(guess, tz));
+  const o1 = offsetMsEnZona(guess, tz);
+  const o2 = offsetMsEnZona(guess - o1, tz);
+  const candidato = guess - o2;
+  return new Date(offsetMsEnZona(candidato, tz) === o2 ? candidato : guess - o1);
 }

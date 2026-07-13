@@ -4,7 +4,7 @@ import { cache } from "react";
 
 import { calcularResumenMes } from "@gym/domain/rules";
 import type { AsistenciaResumen, ResumenMes, VentaResumen } from "@gym/domain/types";
-import { fechaEnZona, hoyEnZona, parseDay, toIsoDay } from "@gym/format";
+import { fechaEnZona, hoyEnZona, instanteEnZona, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 import { getOperatorGym } from "./gym";
 
@@ -24,11 +24,17 @@ export const getResumenMes = cache(
     const hoy = hoyEnZona(tz);
 
     // Window: first day of the PRIOR calendar month (covers mes + prev + semana).
+    // The two bounds are DELIBERATELY asymmetric (spec 2026-07-13 §1.8):
+    // ventas.fecha is a timestamptz → its bound is the absolute INSTANT the window
+    // starts in the gym's zone; asistencias.fecha is a `date` → a bare day string
+    // IS the exact bound, and an instant would break it. Same column name, two
+    // meanings — do not harmonize them.
     const desde = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+    const desdeInstante = instanteEnZona(desde, "00:00", tz).toISOString();
     const desdeIso = toIsoDay(desde);
 
     const [ventasRes, asisRes] = await Promise.all([
-      supabase.from("ventas").select("fecha, monto").gte("fecha", desdeIso),
+      supabase.from("ventas").select("fecha, monto").gte("fecha", desdeInstante),
       supabase
         .from("asistencias")
         .select("fecha, deleted_at")

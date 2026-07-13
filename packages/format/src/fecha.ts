@@ -128,5 +128,13 @@ function offsetMsEnZona(utcMs: number, tz: string): number {
 export function instanteEnZona(diaLocal: Date, hhmm: string, tz: string): Date {
   const [hh, mm] = hhmm.split(":").map(Number);
   const guess = Date.UTC(diaLocal.getFullYear(), diaLocal.getMonth(), diaLocal.getDate(), hh, mm);
-  return new Date(guess - offsetMsEnZona(guess, tz));
+  // Two-pass: the offset must be RE-DERIVED at the candidate instant — sampling it
+  // only at the guess shifts any wall clock near a DST transition by an hour (the
+  // Tijuana 06:00→07:00 Agenda bug). A nonexistent wall clock (spring-forward gap)
+  // resolves to the transition instant; an ambiguous one (fall-back overlap) to the
+  // earlier of its two instants.
+  const o1 = offsetMsEnZona(guess, tz);
+  const o2 = offsetMsEnZona(guess - o1, tz);
+  const candidato = guess - o2;
+  return new Date(offsetMsEnZona(candidato, tz) === o2 ? candidato : guess - o1);
 }

@@ -111,6 +111,63 @@ describe("instanteEnZona", () => {
   });
 });
 
+// DST correctness (spec 2026-07-13 §1.7): the offset must be re-derived at the
+// candidate instant, not sampled at the guess — a transition between the two
+// shifts the Agenda write path by an hour. Rules: a nonexistent wall clock (gap)
+// resolves to the transition instant; an ambiguous one (overlap) to the EARLIER
+// instant. Expected values are hand-derived from the IANA rules for each zone,
+// never from the code under test.
+describe("instanteEnZona — DST transitions", () => {
+  it("Tijuana (kept US DST post-2022-reform): 06:00 on the spring-forward Sunday is 06:00 PDT, not 07:00 — the live Agenda bug", () => {
+    // 2026-03-08: clocks jump 02:00 PST → 03:00 PDT at 10:00Z. 06:00 PDT = UTC-7.
+    const instante = instanteEnZona(new Date(2026, 2, 8), "06:00", "America/Tijuana");
+    expect(instante.toISOString()).toBe("2026-03-08T13:00:00.000Z");
+  });
+
+  it("Tijuana: 06:00 on the fall-back Sunday is 06:00 PST, not 05:00", () => {
+    // 2026-11-01: clocks fall 02:00 PDT → 01:00 PST at 09:00Z. 06:00 PST = UTC-8.
+    const instante = instanteEnZona(new Date(2026, 10, 1), "06:00", "America/Tijuana");
+    expect(instante.toISOString()).toBe("2026-11-01T14:00:00.000Z");
+  });
+
+  it("Santiago: the day bound on the April fall-back Sunday is Sunday 00:00 CLT, not Saturday 23:00 — the −1h-every-April day bound", () => {
+    // 2026-04-05: clocks fall 00:00 CLST (UTC-3) → 23:00 Sat CLT (UTC-4) at 03:00Z.
+    // Sunday 00:00 CLT is therefore 04:00Z.
+    const instante = instanteEnZona(new Date(2026, 3, 5), "00:00", "America/Santiago");
+    expect(instante.toISOString()).toBe("2026-04-05T04:00:00.000Z");
+  });
+
+  it("Santiago: the NONEXISTENT spring-forward midnight resolves to the transition instant (the moment the day actually began)", () => {
+    // 2026-09-06: clocks jump 00:00 CLT (UTC-4) → 01:00 CLST (UTC-3) at 04:00Z.
+    // Local 00:00 never happens; the day begins at the transition instant 04:00Z.
+    const instante = instanteEnZona(new Date(2026, 8, 6), "00:00", "America/Santiago");
+    expect(instante.toISOString()).toBe("2026-09-06T04:00:00.000Z");
+  });
+
+  it("Havana: the NONEXISTENT spring-forward midnight resolves to the transition instant", () => {
+    // 2026-03-08: clocks jump 00:00 CST (UTC-5) → 01:00 CDT (UTC-4) at 05:00Z.
+    const instante = instanteEnZona(new Date(2026, 2, 8), "00:00", "America/Havana");
+    expect(instante.toISOString()).toBe("2026-03-08T05:00:00.000Z");
+  });
+
+  it("Havana: the AMBIGUOUS fall-back midnight (a month bound) picks the EARLIER of its two instants", () => {
+    // 2026-11-01: clocks fall 01:00 CDT (UTC-4) → 00:00 CST (UTC-5) at 05:00Z, so
+    // 00:00 happens twice: 04:00Z (CDT) and 05:00Z (CST). A month bound must take 04:00Z.
+    const instante = instanteEnZona(new Date(2026, 10, 1), "00:00", "America/Havana");
+    expect(instante.toISOString()).toBe("2026-11-01T04:00:00.000Z");
+  });
+
+  it("Beirut (UTC-positive DST zone, control): an ordinary summer wall clock resolves through EEST (UTC+3)", () => {
+    const instante = instanteEnZona(new Date(2026, 6, 15), "18:00", "Asia/Beirut");
+    expect(instante.toISOString()).toBe("2026-07-15T15:00:00.000Z");
+  });
+
+  it("Bogotá (fixed-offset zone, control): UTC-5 year-round, transitions never fire", () => {
+    const instante = instanteEnZona(new Date(2026, 7, 10), "06:00", "America/Bogota");
+    expect(instante.toISOString()).toBe("2026-08-10T11:00:00.000Z");
+  });
+});
+
 // The read-side sibling of instanteEnZona: an absolute instant (a class_session's
 // starts_at) rendered as the gym-local "HH:MM" wall clock the Agenda card shows.
 describe("horaEnZona", () => {
