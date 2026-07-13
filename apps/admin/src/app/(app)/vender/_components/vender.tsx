@@ -10,10 +10,22 @@ import { Avatar, Badge, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/u
 import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
-import { pesos } from "@gym/format";
+import { calcVigenciaEnd } from "@gym/domain/rules";
+import { fmtShort, parseDay, pesos } from "@gym/format";
 import { crearVentaAction } from "../actions";
+import { PersonalizadoEditor } from "./personalizado-editor";
 import { Recibo } from "./recibo";
-import { clienteListo, telError } from "./vender-vm";
+import {
+  clienteListo,
+  CUSTOM_VACIO,
+  customSeleccion,
+  customValido,
+  paqueteListo,
+  PERSONALIZADO,
+  precioSeleccionado,
+  telError,
+  type CustomForm,
+} from "./vender-vm";
 
 type Mode = "new" | "existing";
 type Metodo = "Efectivo" | "Tarjeta" | "Transferencia";
@@ -28,6 +40,7 @@ export function VenderScreen({
   paquetes,
   clientes,
   initialClienteId = null,
+  hoyGym,
   lockup,
 }: {
   paquetes: PaqueteDTO[];
@@ -36,6 +49,9 @@ export function VenderScreen({
    *  (Q3): read once into the initial state; later same-route query changes are
    *  not a supported flow. */
   initialClienteId?: string | null;
+  /** The gym's calendar day ("YYYY-MM-DD"), for the custom package's "Hasta …" hint.
+   *  Never `new Date()` in here: that is the operator's timezone, not the gym's. */
+  hoyGym: string;
   /** The resolved marca's lockup for the receipt (grill lock (g)). */
   lockup: React.ReactNode;
 }) {
@@ -53,6 +69,7 @@ export function VenderScreen({
   const [backfillEmail, setBackfillEmail] = React.useState("");
   const [clientId, setClientId] = React.useState<string | null>(preselectId);
   const [sel, setSel] = React.useState<string | null>(null);
+  const [custom, setCustom] = React.useState<CustomForm>(CUSTOM_VACIO);
   const [metodo, setMetodo] = React.useState<Metodo | null>(null);
   // Submission-stable idempotency key (C6): one key per sale ATTEMPT. A retry after
   // an error (or the "crear nuevo de todos modos" override) replays the SAME key, so
@@ -82,8 +99,16 @@ export function VenderScreen({
   /** First purchase, minus this-mount stale flags (a client just sold to). */
   const esPrimera = (cli: ClienteLiteDTO | null): boolean =>
     !!cli && cli.primeraCompra && !soldIds.has(cli.id);
-  const paq = sel ? (paquetes.find((p) => p.id === sel) ?? null) : null;
+  const esCustom = sel === PERSONALIZADO;
+  const paq = sel && !esCustom ? (paquetes.find((p) => p.id === sel) ?? null) : null;
   const vigenciaEnd = paq?.hasta ?? null;
+
+  // The custom package's expiry, derived in the GYM's timezone from the typed `dias`.
+  const customHasta = React.useMemo(() => {
+    const dias = Number(custom.dias);
+    if (!Number.isSafeInteger(dias) || dias < 1) return null;
+    return fmtShort(calcVigenciaEnd(parseDay(hoyGym), dias));
+  }, [custom.dias, hoyGym]);
 
   // Soft (never blocking) NUEVO duplicate warn (audit #7): a NEW sale whose typed
   // phone or email already matches an existing member in the gym almost certainly
@@ -106,7 +131,9 @@ export function VenderScreen({
   const showDup = dupMatch && dupMatch.id !== dismissedDupId ? dupMatch : null;
 
   const clienteValid = clienteListo(mode, nuevo.nombre, nuevo.tel, !!existing);
-  const canSubmit = clienteValid && !!sel && !!metodo && !submitting;
+  const paqueteValid = paqueteListo(sel, custom);
+  const precio = precioSeleccionado(sel, paq?.precio ?? null, custom);
+  const canSubmit = clienteValid && paqueteValid && !!metodo && !submitting;
 
   const clienteSummary = (() => {
     if (mode === "new") {
@@ -116,7 +143,13 @@ export function VenderScreen({
     }
     return existing ? `${existing.nombre} · ${existing.tel}` : null;
   })();
-  const paqueteSummary = paq ? `${paq.nombre.toUpperCase()} · ${pesos(paq.precio)}` : null;
+  const paqueteSummary = esCustom
+    ? customValido(custom)
+      ? `${custom.nombre.trim().toUpperCase()} · ${pesos(Number(custom.precio))}`
+      : "PERSONALIZADO"
+    : paq
+      ? `${paq.nombre.toUpperCase()} · ${pesos(paq.precio)}`
+      : null;
   const pagoSummary = metodo ? metodo.toUpperCase() : null;
 
   const toggle = (k: string) => setOpenSection((s) => (s === k ? null : k));
@@ -152,7 +185,18 @@ export function VenderScreen({
 
   const selectPaquete = (id: string) => {
     setSel(id);
-    if (openSection === "paquete") advanceFrom("paquete", "metodo");
+    // A registered plan completes the section the instant it is picked. The custom
+    // tile does not: it advances only once its form validates (see setCustomForm).
+    if (id !== PERSONALIZADO && openSection === "paquete") advanceFrom("paquete", "metodo");
+  };
+
+  // Advance out of PAQUETE the moment the custom form first becomes valid — the same
+  // "advance once, on the event that completes the section" discipline as CLIENTE.
+  const setCustomForm = (f: CustomForm) => {
+    setCustom(f);
+    if (sel === PERSONALIZADO && openSection === "paquete" && paqueteListo(PERSONALIZADO, f)) {
+      advanceFrom("paquete", "metodo");
+    }
   };
 
   const selectMetodo = (m: Metodo) => {
@@ -171,7 +215,9 @@ export function VenderScreen({
         nuevoTel: mode === "new" ? nuevo.tel : undefined,
         email,
         clienteId: mode === "existing" ? (clientId ?? undefined) : undefined,
-        paqueteId: sel,
+        paquete: esCustom
+          ? customSeleccion(custom)
+          : { tipo: "registrado" as const, paqueteId: sel },
         metodo: METODO_ENUM[metodo],
         idempotencyKey: idemKey,
         forzarNuevo: opts.forzarNuevo,
@@ -210,6 +256,7 @@ export function VenderScreen({
     setBackfillEmail("");
     setClientId(null);
     setSel(null);
+    setCustom(CUSTOM_VACIO);
     setMetodo(null);
     setOpenSection("cliente");
     advanced.current = { cliente: false, paquete: false, metodo: false };
@@ -243,7 +290,7 @@ export function VenderScreen({
 
   const missing: string[] = [];
   if (!clienteValid) missing.push("cliente");
-  if (!sel) missing.push("paquete");
+  if (!paqueteValid) missing.push("paquete");
   if (!metodo) missing.push("método");
 
   return (
@@ -286,8 +333,16 @@ export function VenderScreen({
           />
         </AccordionSection>
 
-        <AccordionSection label="PAQUETE" summary={paqueteSummary} emptyHint="Elegir paquete" complete={!!sel} open={openSection === "paquete"} onToggle={() => toggle("paquete")}>
-          <PaqueteEditor paquetes={paquetes} sel={sel} setSel={selectPaquete} vigenciaEnd={vigenciaEnd} />
+        <AccordionSection label="PAQUETE" summary={paqueteSummary} emptyHint="Elegir paquete" complete={paqueteValid} open={openSection === "paquete"} onToggle={() => toggle("paquete")}>
+          <PaqueteEditor
+            paquetes={paquetes}
+            sel={sel}
+            setSel={selectPaquete}
+            vigenciaEnd={vigenciaEnd}
+            custom={custom}
+            setCustom={setCustomForm}
+            customHasta={customHasta}
+          />
         </AccordionSection>
 
         <AccordionSection label="MÉTODO" summary={pagoSummary} emptyHint="Elegir método" complete={!!metodo} open={openSection === "metodo"} onToggle={() => toggle("metodo")} last>
@@ -301,12 +356,12 @@ export function VenderScreen({
       <div className="bg-canvas" style={{ position: "sticky", bottom: 0, zIndex: 1, borderTop: "1px solid var(--line)", padding: "18px 22px 22px" }}>
         <div className="flex items-baseline justify-between" style={{ marginBottom: 14 }}>
           <Eyebrow>TOTAL</Eyebrow>
-          <span className="tnum font-extrabold" style={{ fontSize: 30, color: paq ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
-            {paq ? (
+          <span className="tnum font-extrabold" style={{ fontSize: 30, color: precio !== null ? "var(--fg)" : "var(--muted-soft)", letterSpacing: -0.6 }}>
+            {precio !== null ? (
               // No `key`: reuse the one CountUp instance so switching packages
               // tweens price→price via its fromRef (the continuity the primitive
               // exists for) instead of remounting and flashing $0→price each time.
-              <CountUp value={paq.precio} format={pesos} />
+              <CountUp value={precio} format={pesos} />
             ) : (
               <>$<span style={{ opacity: 0.6 }}>—</span></>
             )}
@@ -314,7 +369,7 @@ export function VenderScreen({
           </span>
         </div>
         <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={() => finish()}>
-          {submitting ? "PROCESANDO…" : paq ? `COBRAR ${pesos(paq.precio)}` : "CONFIRMAR VENTA"}
+          {submitting ? "PROCESANDO…" : precio !== null ? `COBRAR ${pesos(precio)}` : "CONFIRMAR VENTA"}
         </Button>
         {missing.length > 0 && (
           <div style={{ marginTop: 10, fontSize: 11, color: "var(--muted)", letterSpacing: 0.4, textAlign: "center" }}>
@@ -644,12 +699,19 @@ function PaqueteEditor({
   sel,
   setSel,
   vigenciaEnd,
+  custom,
+  setCustom,
+  customHasta,
 }: {
   paquetes: PaqueteDTO[];
   sel: string | null;
   setSel: (id: string) => void;
   vigenciaEnd: string | null;
+  custom: CustomForm;
+  setCustom: (f: CustomForm) => void;
+  customHasta: string | null;
 }) {
+  const onCustom = sel === PERSONALIZADO;
   return (
     <div className="flex flex-col" style={{ gap: 8 }}>
       {paquetes.map((p) => {
@@ -669,6 +731,27 @@ function PaqueteEditor({
           </button>
         );
       })}
+
+      {/* Promos, discounts and one-off deals. Never becomes a paquetes row, so it can
+          never reach the gym's public catalog (spec §2). */}
+      <div style={{ border: `1px solid ${onCustom ? "var(--yellow)" : "var(--line)"}`, transition: "border-color 140ms ease" }}>
+        <button
+          onClick={() => setSel(PERSONALIZADO)}
+          className="forge-pressable flex items-center justify-between text-left"
+          style={{ width: "100%", padding: 18, background: "transparent", border: "none", color: "var(--fg)", cursor: "pointer" }}
+        >
+          <div className="flex flex-col" style={{ gap: 4 }}>
+            <div className="uppercase font-bold" style={{ fontSize: 16, letterSpacing: -0.1 }}>Personalizado</div>
+            <div className="uppercase" style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.8 }}>Promo · descuento · plan especial</div>
+          </div>
+          <Icon name="plus" size={20} color={onCustom ? "var(--gold)" : "var(--muted)"} />
+        </button>
+        {onCustom && (
+          <div style={{ padding: "0 18px 18px" }}>
+            <PersonalizadoEditor form={custom} setForm={setCustom} hasta={customHasta} />
+          </div>
+        )}
+      </div>
     </div>
   );
 }
