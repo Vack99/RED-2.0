@@ -1256,9 +1256,11 @@ export type Database = {
           folio: number
           gym_id: string
           id: string
+          idempotency_key: string | null
           metodo: string
           monto: number
           paquete_nombre: string
+          personalizado: boolean
           vigencia_dias: number | null
           vigencia_tipo: string
         }
@@ -1270,9 +1272,11 @@ export type Database = {
           folio: number
           gym_id: string
           id?: string
+          idempotency_key?: string | null
           metodo: string
           monto: number
           paquete_nombre: string
+          personalizado?: boolean
           vigencia_dias?: number | null
           vigencia_tipo: string
         }
@@ -1284,9 +1288,11 @@ export type Database = {
           folio?: number
           gym_id?: string
           id?: string
+          idempotency_key?: string | null
           metodo?: string
           monto?: number
           paquete_nombre?: string
+          personalizado?: boolean
           vigencia_dias?: number | null
           vigencia_tipo?: string
         }
@@ -1486,22 +1492,27 @@ export type Database = {
       }
       registrar_venta: {
         Args: {
-          p_metodo: string
-          p_paquete_id: string
-          p_idempotency_key: string
           p_cliente_id?: string
-          p_nombre?: string
-          p_tel?: string
+          p_custom_clases?: number
+          p_custom_dias?: number
+          p_custom_ilimitado?: boolean
+          p_custom_nombre?: string
+          p_custom_precio?: number
           p_email?: string
           p_forzar_nuevo?: boolean
+          p_idempotency_key: string
+          p_metodo: string
+          p_nombre?: string
+          p_paquete_id?: string
+          p_tel?: string
         }
         Returns: {
-          folio: number
-          cliente_id: string
           clases_restantes: number
-          vence: string
-          paquete_nombre: string
+          cliente_id: string
+          folio: number
           monto: number
+          paquete_nombre: string
+          vence: string
         }[]
       }
       reservar_clase: {
