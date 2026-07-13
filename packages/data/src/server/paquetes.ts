@@ -34,14 +34,20 @@ export interface PaqueteDTO {
 export const getPaquetes = cache(
   async (client?: SupabaseServer, tz?: string): Promise<PaqueteDTO[]> => {
     const supabase = client ?? (await createClient());
+    // Resolved unconditionally now that the read is gym-scoped (§1.1 — this is the
+    // read that leaked a competitor's catalog under is_member_of). getOperatorGym
+    // is React-cache()d per client, so a caller that already resolved it (crearVenta
+    // passing `tz`) costs no extra round trip.
+    const gym = await getOperatorGym(supabase);
     const { data } = await supabase
       .from("paquetes")
       .select("id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden")
+      .eq("gym_id", gym.id)
       .order("orden");
 
     if (!data) return [];
 
-    const zone = tz ?? (await getOperatorGym(supabase)).timezone;
+    const zone = tz ?? gym.timezone;
     const hoy = hoyEnZona(zone);
     return data.map((p) => {
       const vigencia: Vigencia = p.vigencia_tipo === "mes" ? "mes" : (p.vigencia_dias ?? 0);
@@ -77,12 +83,14 @@ export interface PlanEditorDTO extends PaqueteDTO {
 export const getPlanesEditor = cache(
   async (client?: SupabaseServer, tz?: string): Promise<PlanEditorDTO[]> => {
     const supabase = client ?? (await createClient());
+    const gym = await getOperatorGym(supabase); // gym-scoped read (§1.1)
     const [{ data: rows }, { data: feats }] = await Promise.all([
       supabase
         .from("paquetes")
         .select(
           "id, nombre, clases, vigencia_tipo, vigencia_dias, precio, popular, orden, code, name, subtitle, badge, cadence",
         )
+        .eq("gym_id", gym.id)
         .order("orden"),
       supabase.from("plan_feature").select("plan_id, label, orden").order("orden"),
     ]);

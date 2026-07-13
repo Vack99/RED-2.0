@@ -39,6 +39,7 @@ function makeFake(
         filtered = filtered.filter((r) => r[col] === val);
         return b;
       },
+      in: () => b,
       order: (col: string) => {
         orderCol = orderCol ?? col;
         return b;

@@ -40,7 +40,11 @@ function makeFake(
     if (name === "gym_membership") {
       return {
         select: () => ({
-          limit: () => ({ maybeSingle: async () => ({ data: { gym_id: "gym-1" }, error: null }) }),
+          in: () => ({
+            order: () => ({
+              limit: () => ({ maybeSingle: async () => ({ data: { gym_id: "gym-1" }, error: null }) }),
+            }),
+          }),
         }),
       };
     }

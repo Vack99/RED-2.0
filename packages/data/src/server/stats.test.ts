@@ -39,7 +39,13 @@ function makeFake(opts: FakeOpts = {}): { client: SupabaseServer; calls: Calls }
     auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
     from: (table: string) => {
       if (table === "gym_membership") {
-        return { select: () => ({ limit: () => ({ maybeSingle: async () => ({ data: { gym_id: "gym-1" }, error: null }) }) }) };
+        return {
+          select: () => ({
+            in: () => ({
+              order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: { gym_id: "gym-1" }, error: null }) }) }),
+            }),
+          }),
+        };
       }
       if (table === "gym") {
         return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { timezone: "America/Chihuahua" }, error: null }) }) }) };

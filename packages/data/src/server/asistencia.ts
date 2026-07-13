@@ -44,6 +44,7 @@ const PAGE = 1000;
 export const getMarcadas = cache(
   async (client?: SupabaseServer): Promise<Record<string, string[]>> => {
     const supabase = client ?? (await createClient());
+    const gym = await getOperatorGym(supabase); // gym-scoped read (spec §1.1)
 
     const map: Record<string, string[]> = {};
     // A cliente can hold BOTH a front-desk row and a session-linked row on one day
@@ -55,6 +56,7 @@ export const getMarcadas = cache(
       const { data } = await supabase
         .from("asistencias")
         .select("fecha, cliente_id")
+        .eq("gym_id", gym.id)
         .is("deleted_at", null)
         .order("fecha")
         .range(from, from + PAGE - 1);
@@ -154,12 +156,13 @@ export interface AsistenciaHoy {
  */
 export async function getAsistenciasHoy(client?: SupabaseServer): Promise<AsistenciaHoy[]> {
   const supabase = client ?? (await createClient());
-  const { timezone: tz } = await getOperatorGym(supabase);
-  const hoyIso = toIsoDay(hoyEnZona(tz));
+  const gym = await getOperatorGym(supabase);
+  const hoyIso = toIsoDay(hoyEnZona(gym.timezone));
 
   const { data: asis, error } = await supabase
     .from("asistencias")
     .select("cliente_id, hora")
+    .eq("gym_id", gym.id)
     .eq("fecha", hoyIso)
     .is("deleted_at", null)
     .order("hora", { ascending: false });

@@ -57,12 +57,18 @@ export interface ClienteLiteDTO {
 export const getClientesLite = cache(
   async (client?: SupabaseServer): Promise<ClienteLiteDTO[]> => {
     const supabase = client ?? (await createClient());
-    const { timezone: tz } = await getOperatorGym(supabase);
+    // `.eq("gym_id", …)` on every staff read (spec 2026-07-13 §1.1): a scope
+    // selector, not a boundary — RLS stays the boundary (ADR-0001); the eq flips
+    // the correlated-SubPlan seq scan into an index condition and keeps a
+    // multi-membership operator's roster to THIS gym.
+    const gym = await getOperatorGym(supabase);
+    const tz = gym.timezone;
     const { data } = await supabase
       .from("clientes")
       .select(
         "id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id, ventas(count)",
       )
+      .eq("gym_id", gym.id)
       .order("nombre");
 
     if (!data) return [];
@@ -87,15 +93,16 @@ export const getClientesLite = cache(
 export const getClientesParaPase = cache(
   async (client?: SupabaseServer): Promise<PaseClienteDTO[]> => {
     const supabase = client ?? (await createClient());
+    const gym = await getOperatorGym(supabase); // resolved FIRST — the read is gym-scoped (§1.1)
     const { data } = await supabase
       .from("clientes")
       .select("id, nombre, tel, paquete_nombre, clases_restantes, vence")
+      .eq("gym_id", gym.id)
       .order("nombre");
 
     if (!data) return [];
 
-    const { timezone: tz } = await getOperatorGym(supabase);
-    const hoy = hoyEnZona(tz);
+    const hoy = hoyEnZona(gym.timezone);
     return data.map((c) => derivarPaseCliente(c, hoy));
   },
 );
@@ -137,7 +144,8 @@ export interface ClienteRosterDTO extends ClienteDerivado {
 export const getClientesRoster = cache(
   async (client?: SupabaseServer): Promise<ClienteRosterDTO[]> => {
     const supabase = client ?? (await createClient());
-    const { timezone: tz } = await getOperatorGym(supabase);
+    const gym = await getOperatorGym(supabase);
+    const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
 
     const [clientesRes, asistRes] = await Promise.all([
@@ -146,10 +154,12 @@ export const getClientesRoster = cache(
         .select(
           "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
         )
+        .eq("gym_id", gym.id)
         .order("nombre"),
       supabase
         .from("asistencias")
         .select("cliente_id")
+        .eq("gym_id", gym.id)
         .is("deleted_at", null)
         .gte("fecha", monthStartIso(hoy)),
     ]);
@@ -187,12 +197,13 @@ export interface RosterResumenDTO extends ResumenRoster {
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
-    const { timezone: tz } = await getOperatorGym(supabase);
-    const hoy = hoyEnZona(tz);
+    const gym = await getOperatorGym(supabase);
+    const hoy = hoyEnZona(gym.timezone);
 
     const { data } = await supabase
       .from("clientes")
-      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id");
+      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id")
+      .eq("gym_id", gym.id);
 
     if (!data) return { vigentes: 0, totalActivos: 0, nuevosOnline: 0 };
 

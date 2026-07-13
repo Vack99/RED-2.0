@@ -26,9 +26,33 @@ create function public.is_staff_of(p_gym uuid) returns boolean
 
 `security definer` is **required, not incidental**: `gym_membership` itself carries RLS, so a policy that queried it *as invoker* would recurse into `gym_membership`'s own policies. Definer executes the membership read with RLS bypassed, breaking the recursion. `EXECUTE` is **revoked from `public` and `anon`, granted to `authenticated`** — a definer function must never be client-callable beyond its intended caller (the same lockdown [`20260531210445`](../../supabase/migrations/20260531210445_revoke_rls_auto_enable_execute.sql) applies to `rls_auto_enable`).
 
-### 2. Initplan caching is mandatory, not a nicety
+### 2. The helper wrap, corrected: it is per-ROW, not per-statement (corrected 2026-07-13)
 
-Every policy invokes a helper wrapped as `(select public.is_staff_of(gym_id))` — the identical initplan idiom the codebase already applies to `auth.uid()` (ADR-0001) — so the helper evaluates **once per statement, not once per row**. Index **every** `gym_id` column; the `gym_membership` PK `(user_id, gym_id)` already covers the helper's lookup. The 2026-07-01 scale audit confirms this is O(1)-per-statement at all-Mexico scale.
+> **Correction (2026-07-13, spec `2026-07-13-respaldo-mensual-design.md` §1.2).** This section originally
+> claimed the `(select public.is_staff_of(gym_id))` wrap evaluates "once per statement, not once per row —
+> O(1)-per-statement at all-Mexico scale." **That was false.** The initplan idiom hoists only
+> **uncorrelated** subqueries: `(select auth.uid())` references no table column, so it becomes an InitPlan.
+> `(select is_staff_of(gym_id))` **references the row's own `gym_id` column** → it is a **correlated
+> SubPlan**, evaluated **once per row of the whole cross-tenant table**, and the planner cannot turn it
+> into an index condition. Live proof at correction time: `gym_membership` (6 rows) had **214,861 seq
+> scans**; `ventas` ran 1,574 seq scans against 61 index scans.
+
+What actually holds:
+
+- The wrap is kept for the `auth.uid()` call INSIDE the helper bodies (that one is genuinely initplan-cached),
+  and the helpers stay the single home of the membership rule (§1) — none of that changes.
+- **Scale comes from the readers, not the predicate:** every staff DAL read carries an explicit
+  `.eq("gym_id", gym.id)` scope selector (spec §1.1), which flips the seq scan into
+  `Index Cond: gym_id = …` and drops the per-row helper calls to the matched rows only. The `.eq` is
+  **not redundant with RLS and must not be "cleaned up"**: RLS answers *"may I see this row?"*; the `.eq`
+  answers *"which of the rows I may see belong to this gym?"* — which a per-row-per-gym predicate
+  structurally cannot.
+- Index **every** `gym_id` column (composite `(gym_id, fecha)` on the ledgers — `20260713180000`); the
+  `gym_membership` PK `(user_id, gym_id)` already covers the helper's lookup.
+- **Deferred with a named trigger:** rewriting the policies to an uncorrelated form
+  (`gym_id in (select staff_gyms())`, hoistable to an InitPlan) converts "every reader must remember
+  `.eq`" from a convention into a property. Adopt when any gym-scoped admin result set routinely exceeds
+  ~50k rows or admin p95 exceeds 500ms.
 
 ### 3. One standard predicate per RLS class
 
@@ -60,6 +84,11 @@ Every tenant table: `gym_id uuid NOT NULL` (after expand/contract backfill) + an
 ## What a future reader must not undo
 
 - **Never drop `SECURITY DEFINER` from the helpers** — invoker-rights helpers recurse into `gym_membership`'s own RLS.
-- **Never unwrap `(select helper(gym_id))`** into a bare call — that reverts O(1)-per-statement to per-row evaluation.
+- **Never delete a reader's `.eq("gym_id", …)` as "redundant with RLS"** — it is the scope selector §2
+  (corrected) makes load-bearing: without it the read is a cross-tenant seq scan with a per-row SubPlan,
+  and the export stamps one gym's name on rows RLS happens to allow from another. (The pre-correction
+  bullet here said "never unwrap `(select helper(gym_id))` — that reverts O(1)-per-statement to per-row";
+  that rested on the false §2 claim. The wrap is harmless and kept, but it never bought per-statement
+  evaluation on a correlated predicate.)
 - **Never widen anon reads past `gym`/`gym_domain` in Phase 3**, and never let a policy read the host/`x-brand` header (ADR-0008).
 - **Never adopt JWT-claims RLS without confronting staleness** — it was rejected on a correctness cost, not an oversight.

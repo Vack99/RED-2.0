@@ -101,7 +101,7 @@ function makeFake(
   const client = {
     auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
     from: (table: string) => {
-      if (table === "gym_membership") return builder(table, [{ gym_id: "gym-1" }]);
+      if (table === "gym_membership") return builder(table, [{ gym_id: "gym-1", role: "owner" }]);
       if (table === "gym") return builder(table, [{ id: "gym-1", timezone: rows.gymTimezone ?? TZ }]);
       return builder(table, (rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },

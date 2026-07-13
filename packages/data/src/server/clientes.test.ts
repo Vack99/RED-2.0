@@ -298,6 +298,10 @@ function makeReadFake(rows: Rows) {
         filtered = filtered.filter((r) => r[col] === val);
         return b;
       },
+      in: (col: string, vals: unknown[]) => {
+        filtered = filtered.filter((r) => vals.includes(r[col]));
+        return b;
+      },
       is: (col: string, val: unknown) => {
         filtered = filtered.filter((r) => r[col] === val);
         return b;
@@ -328,6 +332,7 @@ function makeReadFake(rows: Rows) {
 const FIXTURE_CLIENTES = [
   {
     id: "cli-online",
+    gym_id: "g-1", // the readers are gym-scoped (spec §1.1) and this fake FILTERS .eq
     nombre: "Sofia Online",
     tel: "614 111 2222",
     paquete_nombre: null,
@@ -342,6 +347,7 @@ const FIXTURE_CLIENTES = [
   },
   {
     id: "cli-desk",
+    gym_id: "g-1",
     nombre: "Ana Mostrador",
     tel: "614 333 4444",
     paquete_nombre: "8 clases",
@@ -488,6 +494,10 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
         select: () => b,
         eq: (col: string, val: unknown) => {
           filtered = filtered.filter((r) => r[col] === val);
+          return b;
+        },
+        in: (col: string, vals: unknown[]) => {
+          filtered = filtered.filter((r) => vals.includes(r[col]));
           return b;
         },
         is: (col: string, val: unknown) => {

@@ -68,6 +68,7 @@ function makeFake(
       select: () => b,
       eq: () => b,
       is: () => b,
+      in: () => b,
       order: () => b,
       limit: () => b,
       single: async () => ({ data: single, error: null }),

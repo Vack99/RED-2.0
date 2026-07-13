@@ -151,6 +151,38 @@ describe("getRespaldoData — full-history RLS-scoped gather (injected fake)", (
     expect(data.clientes[0].alta).toBe("2025-12-01T05:00:00.000Z");
   });
 
+  it("scopes ALL FOUR reads to the operator's gym — `.eq(\"gym_id\", …)` is the scope selector (spec §1.1), RLS stays the boundary", async () => {
+    const { client, eqCalls } = makeFake({
+      clientes: [cliente()],
+      ventas: [venta()],
+      asistencias: [asistencia()],
+      paquetes: [paquete()],
+    });
+
+    await getRespaldoData(client);
+
+    // "test-gym" is the fake's membership-resolved gym id — the rows the export
+    // stamps the gym's name on are selected by it, which RLS structurally cannot do.
+    expect(eqCalls["clientes"]).toContainEqual(["gym_id", "test-gym"]);
+    expect(eqCalls["ventas"]).toContainEqual(["gym_id", "test-gym"]);
+    expect(eqCalls["asistencias"]).toContainEqual(["gym_id", "test-gym"]);
+    expect(eqCalls["paquetes"]).toContainEqual(["gym_id", "test-gym"]);
+  });
+
+  it("orders both paginated ledgers with a UNIQUE tiebreaker (spec §1.4 — ties on fecha must not reorder across OFFSET pages)", async () => {
+    const { client, orderCalls } = makeFake({
+      clientes: [cliente()],
+      ventas: [venta()],
+      asistencias: [asistencia()],
+      paquetes: [paquete()],
+    });
+
+    await getRespaldoData(client);
+
+    expect(orderCalls["ventas"]).toEqual(["fecha", "folio"]);
+    expect(orderCalls["asistencias"]).toEqual(["fecha", "id"]);
+  });
+
   it("throws on a query error (e.g. ventas)", async () => {
     const { client } = makeFake(
       { clientes: [cliente()], ventas: [venta()], asistencias: [asistencia()], paquetes: [paquete()] },

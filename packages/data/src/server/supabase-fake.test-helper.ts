@@ -28,6 +28,8 @@ export interface FakeRows {
   paquetes?: unknown[];
   /** Overrides the default `gym.timezone` (America/Chihuahua) getOperatorGym resolves to. */
   gymTimezone?: string;
+  /** Overrides the default `gym.slug` ("forge") getOperatorGym resolves to. */
+  gymSlug?: string;
 }
 
 export interface FakeClient {
@@ -38,6 +40,12 @@ export interface FakeClient {
   gteCalls: Record<string, [string, unknown][]>;
   /** Per-table record of `.range(from, to)` calls — the pagination-window assertion target. */
   rangeCalls: Record<string, [number, number][]>;
+  /** Per-table record of `.eq(col, val)` calls — the tenant-scope (`gym_id`) assertion target. */
+  eqCalls: Record<string, [string, unknown][]>;
+  /** Per-table record of `.in(col, vals)` calls — the staff-role filter assertion target. */
+  inCalls: Record<string, [string, unknown[]][]>;
+  /** Per-table record of `.order(col)` calls — the pagination-tiebreaker assertion target. */
+  orderCalls: Record<string, string[]>;
 }
 
 export function makeFake(
@@ -52,6 +60,9 @@ export function makeFake(
   const isCalls: Record<string, [string, unknown][]> = {};
   const gteCalls: Record<string, [string, unknown][]> = {};
   const rangeCalls: Record<string, [number, number][]> = {};
+  const eqCalls: Record<string, [string, unknown][]> = {};
+  const inCalls: Record<string, [string, unknown[]][]> = {};
+  const orderCalls: Record<string, string[]> = {};
 
   const builder = (table: string, list: unknown[]) => {
     // A paginating read calls `.from(table)` once PER page, each returning a fresh
@@ -60,13 +71,26 @@ export function makeFake(
     isCalls[table] ??= [];
     gteCalls[table] ??= [];
     rangeCalls[table] ??= [];
+    eqCalls[table] ??= [];
+    inCalls[table] ??= [];
+    orderCalls[table] ??= [];
     const err = opts.error?.table === table ? opts.error.err : null;
     // The window this builder will resolve. `undefined` = no `.range()` was applied
     // (clientes/paquetes single reads) → resolve the whole list.
     let window: [number, number] | undefined;
     const b: Record<string, unknown> = {
       select: () => b,
-      eq: () => b,
+      // Filters RECORD but never narrow the seeded list — a test seeds exactly the
+      // rows it wants back and asserts the filter was SENT (the query contract),
+      // mirroring how gteCalls proves windowing without the fake re-implementing it.
+      eq: (col: string, val: unknown) => {
+        eqCalls[table].push([col, val]);
+        return b;
+      },
+      in: (col: string, vals: unknown[]) => {
+        inCalls[table].push([col, vals]);
+        return b;
+      },
       is: (col: string, val: unknown) => {
         isCalls[table].push([col, val]);
         return b;
@@ -80,7 +104,10 @@ export function makeFake(
         window = [from, to];
         return b;
       },
-      order: () => b,
+      order: (col: string) => {
+        orderCalls[table].push(col);
+        return b;
+      },
       limit: () => b, // no-op passthrough — the fake's seeded lists are already small
       // getOperatorGym's terminal call — resolves to the first (only) seeded row.
       maybeSingle: async () => {
@@ -104,8 +131,12 @@ export function makeFake(
       getClaims: async () => ({ data: { claims: { sub: "test-operator" } } }),
     },
     from: (table: string) => {
-      if (table === "gym_membership") return builder(table, [{ gym_id: "test-gym" }]);
-      if (table === "gym") return builder(table, [{ timezone: rows.gymTimezone ?? "America/Chihuahua" }]);
+      if (table === "gym_membership")
+        return builder(table, [{ gym_id: "test-gym", role: "owner" }]);
+      if (table === "gym")
+        return builder(table, [
+          { timezone: rows.gymTimezone ?? "America/Chihuahua", slug: rows.gymSlug ?? "forge" },
+        ]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },
     rpc: () => ({
@@ -113,5 +144,13 @@ export function makeFake(
     }),
   };
 
-  return { client: client as unknown as SupabaseServer, isCalls, gteCalls, rangeCalls };
+  return {
+    client: client as unknown as SupabaseServer,
+    isCalls,
+    gteCalls,
+    rangeCalls,
+    eqCalls,
+    inCalls,
+    orderCalls,
+  };
 }

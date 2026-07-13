@@ -29,13 +29,15 @@ const PAGE = 1000;
  * { ascending: false })` preserved; throw-on-error; explicit row→DTO map into
  * `RespaldoVenta` (no stray columns). Empty table → `[]`.
  */
-async function readAllVentas(supabase: SupabaseServer): Promise<RespaldoVenta[]> {
+async function readAllVentas(supabase: SupabaseServer, gymId: string): Promise<RespaldoVenta[]> {
   const out: RespaldoVenta[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("ventas")
       .select("folio, fecha, cliente_id, paquete_nombre, monto, metodo, vigencia_tipo, vigencia_dias")
+      .eq("gym_id", gymId)
       .order("fecha", { ascending: false }) // NO date filter — FULL history
+      .order("folio", { ascending: false }) // unique tiebreaker: fecha ties must not reorder across pages (§1.4)
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const page = data ?? [];
@@ -62,14 +64,19 @@ async function readAllVentas(supabase: SupabaseServer): Promise<RespaldoVenta[]>
  * date filter — FULL history); `.order("fecha", { ascending: false })` preserved;
  * throw-on-error; explicit row→DTO map into `RespaldoAsistencia`. Empty table → `[]`.
  */
-async function readAllAsistencias(supabase: SupabaseServer): Promise<RespaldoAsistencia[]> {
+async function readAllAsistencias(
+  supabase: SupabaseServer,
+  gymId: string,
+): Promise<RespaldoAsistencia[]> {
   const out: RespaldoAsistencia[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await supabase
       .from("asistencias")
       .select("fecha, hora, cliente_id")
+      .eq("gym_id", gymId)
       .is("deleted_at", null) // soft-delete filter ONLY; NO date filter — FULL history
       .order("fecha", { ascending: false })
+      .order("id") // unique tiebreaker: 15 live rows already share one fecha (§1.4)
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const page = data ?? [];
@@ -94,11 +101,16 @@ async function readAllAsistencias(supabase: SupabaseServer): Promise<RespaldoAsi
  * per-response cap can't silently truncate the oldest history. The shaping/formatting
  * lives in the pure `buildRespaldoRows` (rows.ts); this layer only does I/O.
  *
- * RLS-scoped transparently (ADR-0001): the reads carry no explicit `user_id`
- * filter — RLS is the hard boundary. The route handler does the operator gate;
- * this DAL read relies on RLS. `client` is the injectable trailing param (default:
- * the real per-request client) so the gather is testable with a fake (audit cluster
- * 4); wrapped in React `cache()` to share the result across one request's callers.
+ * RLS stays the hard boundary (ADR-0001); every read ALSO carries
+ * `.eq("gym_id", gym.id)` — a SCOPE SELECTOR, not a boundary (spec 2026-07-13
+ * §1.1). RLS answers "may I see this row?"; the export additionally needs "which
+ * of the rows I may see belong to the gym whose name I'm stamping on this file?",
+ * which RLS structurally cannot answer (its predicate is per-row-per-gym). The
+ * `.eq` also flips the correlated-SubPlan seq scan into an index condition — the
+ * difference between O(month) and O(everyone's history). The route handler does
+ * the operator gate; `client` is the injectable trailing param (default: the real
+ * per-request client) so the gather is testable with a fake (audit cluster 4);
+ * wrapped in React `cache()` to share the result across one request's callers.
  *
  * `generadoHoy`/`tz` resolve the operator's gym via `getOperatorGym` (ADR-0013
  * membership, slice #25) so the "today" the export stamps is the GYM's local
@@ -112,19 +124,22 @@ async function readAllAsistencias(supabase: SupabaseServer): Promise<RespaldoAsi
 export const getRespaldoData = cache(
   async (client?: SupabaseServer): Promise<RespaldoData> => {
     const supabase = client ?? (await createClient());
-    const { timezone: tz } = await getOperatorGym(supabase);
+    const gym = await getOperatorGym(supabase);
+    const tz = gym.timezone;
     const generadoHoy = hoyEnZona(tz);
 
     const [clientesRes, ventas, asistencias, paquetesRes] = await Promise.all([
       supabase
         .from("clientes")
         .select("id, nombre, tel, email, birthday, paquete_nombre, clases_restantes, vence, created_at")
+        .eq("gym_id", gym.id)
         .order("nombre"),
-      readAllVentas(supabase), // paginated — FULL history
-      readAllAsistencias(supabase), // paginated — FULL history
+      readAllVentas(supabase, gym.id), // paginated — FULL history
+      readAllAsistencias(supabase, gym.id), // paginated — FULL history
       supabase
         .from("paquetes")
         .select("nombre, precio, clases, vigencia_tipo, vigencia_dias, orden")
+        .eq("gym_id", gym.id)
         .order("orden"),
     ]);
 

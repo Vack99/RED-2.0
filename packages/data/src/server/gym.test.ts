@@ -4,29 +4,43 @@ import { getOperatorGym } from "./gym";
 import type { SupabaseServer } from "./supabase";
 
 /**
- * getOperatorGym — the operator's gym/tz resolution (ADR-0013 membership).
- * Slice #66 (S5 robustness): the membership read must reject a `member` role
- * (self-registered/claimed socio) — the admin app's SinGimnasio state depends
- * on this throwing for a member session (audit #19). Injectable client
- * (ADR-0001); RLS itself (staff write, cross-tenant denial) is proven at the
- * DB layer. The fake's `gym_membership` builder is the plain
- * `select().limit().maybeSingle()` chain every other DAL fake already shares
- * (no `.in()` needed — the role gate is a JS check in `gym.ts`, not a query
- * filter), so this stays consistent with the rest of the suite.
+ * getOperatorGym — the operator's gym/tz/slug resolution (ADR-0013 membership).
+ * Spec 2026-07-13 §1.3: the staff-role filter and the `gym_id` order live IN THE
+ * QUERY (`.in()` + `.order()`), not in JS — a `.limit(1)` read picks its row at
+ * the DB, so determinism under multi-membership can only come from the query
+ * itself. This fake therefore FILTERS `.in()` and SORTS `.order()` for real
+ * (purpose-built for this function; the shared helper only records), and the
+ * SinGimnasio behavior for a member-only session falls out of the filter — no
+ * JS role check remains to test separately. Injectable client (ADR-0001); RLS
+ * itself (staff write, cross-tenant denial) is proven at the DB layer.
  */
 function makeFake(opts: {
   sub?: string | null;
   membership?: Record<string, unknown>[];
   gymTimezone?: string;
+  gymSlug?: string;
 }) {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
   const membership = opts.membership ?? [{ gym_id: "gym-1", role: "owner" }];
+  const inCalls: [string, unknown[]][] = [];
+  const orderCalls: string[] = [];
 
   function membershipBuilder() {
+    let rows = [...membership];
     const b: Record<string, unknown> = {
       select: () => b,
+      in: (col: string, vals: unknown[]) => {
+        inCalls.push([col, vals]);
+        rows = rows.filter((r) => vals.includes(r[col]));
+        return b;
+      },
+      order: (col: string) => {
+        orderCalls.push(col);
+        rows = [...rows].sort((a, bb) => String(a[col]).localeCompare(String(bb[col])));
+        return b;
+      },
       limit: () => b,
-      maybeSingle: async () => ({ data: membership[0] ?? null, error: null }),
+      maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
     };
     return b;
   }
@@ -40,7 +54,10 @@ function makeFake(opts: {
           select: () => ({
             eq: () => ({
               maybeSingle: async () => ({
-                data: { timezone: opts.gymTimezone ?? "America/Chihuahua" },
+                data: {
+                  timezone: opts.gymTimezone ?? "America/Chihuahua",
+                  slug: opts.gymSlug ?? "forge",
+                },
                 error: null,
               }),
             }),
@@ -50,31 +67,59 @@ function makeFake(opts: {
       throw new Error(`unexpected table ${table}`);
     },
   };
-  return client as unknown as SupabaseServer;
+  return { client: client as unknown as SupabaseServer, inCalls, orderCalls };
 }
 
 describe("getOperatorGym", () => {
-  it("resolves the gym/tz for an owner", async () => {
-    const gym = await getOperatorGym(makeFake({ membership: [{ gym_id: "gym-1", role: "owner" }] }));
-    expect(gym).toEqual({ id: "gym-1", timezone: "America/Chihuahua" });
+  it("resolves the gym/tz/slug for an owner", async () => {
+    const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "owner" }] });
+    expect(await getOperatorGym(client)).toEqual({
+      id: "gym-1",
+      timezone: "America/Chihuahua",
+      slug: "forge",
+    });
   });
 
-  it("resolves the gym/tz for an operator", async () => {
-    const gym = await getOperatorGym(makeFake({ membership: [{ gym_id: "gym-1", role: "operator" }] }));
-    expect(gym).toEqual({ id: "gym-1", timezone: "America/Chihuahua" });
+  it("resolves the gym/tz/slug for an operator", async () => {
+    const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "operator" }] });
+    expect(await getOperatorGym(client)).toEqual({
+      id: "gym-1",
+      timezone: "America/Chihuahua",
+      slug: "forge",
+    });
   });
 
-  it("throws 'Sin gym asignado' for a member-only session (no staff role)", async () => {
-    await expect(
-      getOperatorGym(makeFake({ membership: [{ gym_id: "gym-1", role: "member" }] })),
-    ).rejects.toThrow("Sin gym asignado");
+  it("filters to staff roles and orders by gym_id IN THE QUERY (the determinism lives in SQL, not JS)", async () => {
+    const { client, inCalls, orderCalls } = makeFake({});
+    await getOperatorGym(client);
+    expect(inCalls).toEqual([["role", ["owner", "operator"]]]);
+    expect(orderCalls).toEqual(["gym_id"]);
+  });
+
+  it("under multi-membership, deterministically resolves the FIRST staff gym by gym_id — never the member row", async () => {
+    const { client } = makeFake({
+      membership: [
+        { gym_id: "gym-c", role: "member" }, // socio row — must never win
+        { gym_id: "gym-b", role: "operator" },
+        { gym_id: "gym-a", role: "owner" },
+      ],
+    });
+    const gym = await getOperatorGym(client);
+    expect(gym.id).toBe("gym-a"); // staff rows sorted by gym_id; member filtered out
+  });
+
+  it("throws 'Sin gym asignado' for a member-only session (the staff filter leaves no row)", async () => {
+    const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "member" }] });
+    await expect(getOperatorGym(client)).rejects.toThrow("Sin gym asignado");
   });
 
   it("throws 'Sin gym asignado' when the caller holds no membership row at all", async () => {
-    await expect(getOperatorGym(makeFake({ membership: [] }))).rejects.toThrow("Sin gym asignado");
+    const { client } = makeFake({ membership: [] });
+    await expect(getOperatorGym(client)).rejects.toThrow("Sin gym asignado");
   });
 
   it("throws 'No autenticado' for an anonymous caller", async () => {
-    await expect(getOperatorGym(makeFake({ sub: null }))).rejects.toThrow("No autenticado");
+    const { client } = makeFake({ sub: null });
+    await expect(getOperatorGym(client)).rejects.toThrow("No autenticado");
   });
 });
