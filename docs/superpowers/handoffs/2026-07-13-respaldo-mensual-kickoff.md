@@ -1,7 +1,17 @@
 # Handoff — Respaldo mensual: implementation kickoff
 
+> **STATUS 2026-07-13 (later session): PLANNING DONE — do not re-run the pipeline.**
+> Wayfinder fog-check found zero open decisions → map skipped per its no-fog rule (owner approved).
+> Spec published as **#90** (`ready-for-agent`); tickets **#91–#95** published with native `blocked_by`
+> edges (94←{91,92}, 95←{92,93,94}). **Frontier: #91 (timezone — live DST bug, first), #92, #93** — parallel-safe.
+> **Next session's job: `/implement` one frontier ticket** (start #91), fresh context per ticket.
+> Session rulings added: no fable-5 in subagents (quota — opus/sonnet instead); the owner provisions the
+> scratch Supabase project + PAT only when the testing phase (#95) arrives — never create one unprompted;
+> `supabase-fake.test-helper.ts` (in-memory vitest helper) stays and grows `.lt()`/`ltCalls`/`slug` as planned.
+> **The 10 traps below remain fully in force — read them before implementing any ticket.**
+
 **Date:** 2026-07-13
-**Next session's job:** `/wayfinder` → `/to-spec` → `/to-tickets` for the **full implementation** of the
+**Original job (done, see status above):** `/wayfinder` → `/to-spec` → `/to-tickets` for the **full implementation** of the
 month-scoped respaldo export **and the base fixes it depends on**.
 **State:** design approved by the owner. **Nothing implemented.** Docs only. `main @ fdaec14`, clean gate
 (lint + typecheck + 868 tests green).
