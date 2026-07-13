@@ -179,16 +179,15 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // the client's name/tel are independent, so fire them concurrently; NEW mode has
   // no cliente row, so its slot resolves to null.
   const isNew = input.mode === "new";
-  const esCustom = input.paquete.tipo === "personalizado";
   const [paqRes, cliRes] = await Promise.all([
     // Display-only read, and ONLY for a registered plan — a custom package has no
     // paquetes row by design (spec §2). Reading here would throw on a valid sale.
-    esCustom
+    input.paquete.tipo === "personalizado"
       ? Promise.resolve(null)
       : supabase
           .from("paquetes")
           .select("nombre, vigencia_tipo, vigencia_dias, precio")
-          .eq("id", forPaquete((input.paquete as { paqueteId: PaqueteId }).paqueteId))
+          .eq("id", forPaquete(input.paquete.paqueteId))
           .single(),
     input.mode === "existing"
       ? supabase

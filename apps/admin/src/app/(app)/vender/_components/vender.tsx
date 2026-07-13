@@ -145,7 +145,7 @@ export function VenderScreen({
   })();
   const paqueteSummary = esCustom
     ? customValido(custom)
-      ? `${custom.nombre.trim().toUpperCase()} · ${pesos(Number(custom.precio))}`
+      ? `${custom.nombre.trim().toUpperCase()} · ${pesos(precio ?? 0)}`
       : "PERSONALIZADO"
     : paq
       ? `${paq.nombre.toUpperCase()} · ${pesos(paq.precio)}`
