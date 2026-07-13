@@ -66,14 +66,20 @@ export function PersonalizadoEditor({
 
       <Campo label="CLASES" error={errors.clases}>
         <div className="flex" style={{ gap: 8 }}>
-          <div style={{ flex: 1, opacity: form.ilimitado ? 0.4 : 1 }}>
+          {/* minWidth 0 lifts the flex item's automatic minimum (the input's intrinsic
+              ~20ch), which otherwise pushes the ILIMITADO button through the tile
+              border on narrow phones. Focusing the dimmed input turns ilimitado off —
+              a disabled input would swallow the tap and dead-end the flow. */}
+          <div style={{ flex: 1, minWidth: 0, opacity: form.ilimitado ? 0.4 : 1 }}>
             <Input
               inputMode="numeric"
               placeholder="12"
               value={form.ilimitado ? "" : form.clases}
               onChange={(v: string) => set("clases", v)}
               onBlur={() => touch("clases")}
-              disabled={form.ilimitado}
+              onFocus={() => {
+                if (form.ilimitado) set("ilimitado", false);
+              }}
             />
           </div>
           <button
@@ -83,6 +89,8 @@ export function PersonalizadoEditor({
             className="forge-pressable uppercase font-bold"
             style={{
               padding: "0 18px",
+              flexShrink: 0,
+              whiteSpace: "nowrap",
               background: "transparent",
               border: `1px solid ${form.ilimitado ? "var(--yellow)" : "var(--line)"}`,
               color: form.ilimitado ? "var(--yellow)" : "var(--muted)",
