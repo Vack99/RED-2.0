@@ -4,7 +4,7 @@ import * as React from "react";
 import { Icon } from "@gym/ui/forge/icon";
 import { MensajePicker } from "@gym/ui/forge/mensaje-picker";
 import { Button, Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
-import type { InviteState, ReciboResult } from "@gym/data/server/ventas";
+import type { InviteState, ReciboEmailState, ReciboResult } from "@gym/data/server/ventas";
 import { pesos, waLink } from "@gym/format";
 
 export function Recibo({
@@ -30,7 +30,7 @@ export function Recibo({
   onOtra: () => void;
   onVerCliente: (id: string) => void;
 }) {
-  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, invite } = result;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, invite, reciboEmail } = result;
   const isNew = c.isNew;
   const primerNombre = c.nombre.split(" ")[0];
   const [showCheck, setShowCheck] = React.useState(false);
@@ -75,6 +75,7 @@ export function Recibo({
                 : `Folio listo y paquete activo en la ficha de ${primerNombre}.`}
           </div>
           {isNew && <InviteNote invite={invite} />}
+          <ReciboEmailNote envio={reciboEmail} isNew={isNew} />
         </div>
 
         {/* Receipt — fixed cream palette in both themes */}
@@ -183,6 +184,26 @@ function InviteNote({ invite }: { invite: InviteState }) {
     case "no-aplica":
       return null;
   }
+  return <Nota accent={accent} text={text} />;
+}
+
+/** The post-sale receipt-mail state (#99), the send-outcome sibling of InviteNote — rendered for
+ *  EVERY sale (the receipt mail has no `no-aplica`). A NEW sale's missing email is already the
+ *  invite note's message, so `sin-email` renders only for a renewal — the operator's prompt to
+ *  capture the address (spec #96). */
+function ReciboEmailNote({ envio, isNew }: { envio: ReciboEmailState; isNew: boolean }) {
+  switch (envio.estado) {
+    case "enviado":
+      return <Nota accent="var(--yellow)" text={`Recibo enviado a ${envio.email}.`} />;
+    case "fallo":
+      return <Nota accent="var(--gold)" text={`No pudimos enviar el recibo a ${envio.email}.`} />;
+    case "sin-email":
+      return isNew ? null : <Nota accent="var(--gold)" text="Sin email — captura su correo en la ficha para enviarle el recibo." />;
+  }
+}
+
+/** The shared note chip both send states render (invite + receipt mail). */
+function Nota({ accent, text }: { accent: string; text: string }) {
   return (
     <div
       className="flex items-start"

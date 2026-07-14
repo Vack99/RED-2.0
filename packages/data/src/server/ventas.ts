@@ -96,6 +96,10 @@ export interface VentaResult {
    *  action reads this to decide whether to auto-send the invite (mode NEW + email) and to render "enviada
    *  a {email}" on the recibo. Never a `.email()`-validated value (the sale path never gates on email). */
   emailIngresado: string | null;
+  /** The receipt mail's recipient (#99), BOTH modes: the typed input wins (a C7 backfill email is
+   *  coalesced onto the row inside the RPC, so the pre-RPC read is stale for it), then the client's
+   *  stored email, else null. Distinct from `emailIngresado`, which the invite rail keeps (NEW only). */
+  emailCliente: string | null;
 }
 
 /**
@@ -109,8 +113,16 @@ export type InviteState =
   | { estado: "sin-email" }
   | { estado: "no-aplica" };
 
-/** `crearVenta`'s result plus the invite state the action stitches on — the exact shape the recibo reads. */
-export type ReciboResult = VentaResult & { invite: InviteState };
+/** The post-sale receipt-mail state the recibo renders (#99). Derived by the ACTION after the
+ *  best-effort send, exactly like `InviteState` — never by `crearVenta`. Unlike the invite, it
+ *  applies to EVERY sale with an email on hand (new and renewal alike), so it has no `no-aplica`. */
+export type ReciboEmailState =
+  | { estado: "enviado"; email: string }
+  | { estado: "fallo"; email: string }
+  | { estado: "sin-email" };
+
+/** `crearVenta`'s result plus the send states the action stitches on — the exact shape the recibo reads. */
+export type ReciboResult = VentaResult & { invite: InviteState; reciboEmail: ReciboEmailState };
 
 /** The RPC's `CLIENTE_DUPLICADO:<id>` raise (D2), surfaced as a typed error so the
  *  vender UI can switch on it to open the "¿Usar existente?" dialog — instead of the
@@ -193,7 +205,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     input.mode === "existing"
       ? supabase
           .from("clientes")
-          .select("nombre, tel")
+          .select("nombre, tel, email")
           .eq("id", forCliente(input.clienteId!))
           .single()
       : Promise.resolve(null),
@@ -217,11 +229,13 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
 
   let nombre: string;
   let tel: string;
+  let emailFicha: string | null = null;
   if (input.mode === "existing") {
     const { data: cli, error } = cliRes!;
     if (error || !cli) throw new Error("Cliente no encontrado");
     nombre = cli.nombre;
     tel = cli.tel;
+    emailFicha = cli.email ?? null;
   } else {
     nombre = input.nuevoNombre!.trim();
     tel = input.nuevoTel!.trim();
@@ -327,5 +341,6 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     coach,
     mensajes,
     emailIngresado: isNew ? (input.email || null) : null,
+    emailCliente: input.email || emailFicha || null,
   };
 }

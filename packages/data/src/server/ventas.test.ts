@@ -463,3 +463,55 @@ describe("crearVenta — paquete personalizado", () => {
     expect(args.p_custom_nombre).toBeUndefined();
   });
 });
+
+describe("emailCliente — the receipt mail's recipient (#99)", () => {
+  const PLANTILLAS = [{ id: "t1", nombre: "Recibo", body: "x" }];
+
+  it("NEW: the typed email is the recipient (and stays the invite target)", async () => {
+    const fake = makeFake({ paquetes: FINITO, plantillas: PLANTILLAS });
+    const res = await crearVenta(input({ email: "nueva@correo.mx" }), fake.client);
+    expect(res.emailCliente).toBe("nueva@correo.mx");
+    expect(res.emailIngresado).toBe("nueva@correo.mx");
+  });
+
+  it("NEW without email → null", async () => {
+    const fake = makeFake({ paquetes: FINITO, plantillas: PLANTILLAS });
+    const res = await crearVenta(input(), fake.client);
+    expect(res.emailCliente).toBeNull();
+  });
+
+  it("RENEWAL: the typed C7 backfill email WINS over the stale pre-RPC row read", async () => {
+    const fake = makeFake({
+      paquetes: FINITO,
+      clientes: { nombre: "Andrea", tel: "614 000 0000", email: "vieja@correo.mx" },
+      plantillas: PLANTILLAS,
+    });
+    const res = await crearVenta(
+      input({ mode: "existing", clienteId: "cli-1", email: "nueva@correo.mx" }),
+      fake.client,
+    );
+    expect(res.emailCliente).toBe("nueva@correo.mx");
+    // The invite rail keeps its NEW-only field untouched.
+    expect(res.emailIngresado).toBeNull();
+  });
+
+  it("RENEWAL: falls back to the email on file", async () => {
+    const fake = makeFake({
+      paquetes: FINITO,
+      clientes: { nombre: "Andrea", tel: "614 000 0000", email: "vieja@correo.mx" },
+      plantillas: PLANTILLAS,
+    });
+    const res = await crearVenta(input({ mode: "existing", clienteId: "cli-1" }), fake.client);
+    expect(res.emailCliente).toBe("vieja@correo.mx");
+  });
+
+  it("RENEWAL: no typed email, none on file → null", async () => {
+    const fake = makeFake({
+      paquetes: FINITO,
+      clientes: { nombre: "Andrea", tel: "614 000 0000" },
+      plantillas: PLANTILLAS,
+    });
+    const res = await crearVenta(input({ mode: "existing", clienteId: "cli-1" }), fake.client);
+    expect(res.emailCliente).toBeNull();
+  });
+});
