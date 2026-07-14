@@ -1,18 +1,16 @@
 "use server";
 
 import { enviarInvitacion } from "@gym/data/server/invitaciones";
-import { enviarReciboEmail } from "@gym/data/server/recibo-mail";
 import {
   crearVenta,
   DuplicadoError,
   EmailEnUsoError,
   type InviteState,
-  type ReciboEmailState,
   type ReciboResult,
   type VentaResult,
 } from "@gym/data/server/ventas";
 
-import { construirReciboEmail } from "./_components/ticket-twin";
+import { enviarReciboDeVenta } from "./recibo-envio";
 
 /** The vender screen switches on this: a completed sale (recibo), the RPC's duplicate
  *  guard tripping (D2 — the UI offers "usar existente / crear nuevo de todos modos"),
@@ -45,7 +43,8 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
   }
   const [invite, reciboEmail] = await Promise.all([
     resolverInvitacion(result),
-    resolverReciboEmail(result),
+    // The auto receipt email (#99) — EVERY sale with an email on hand, new and renewal alike.
+    enviarReciboDeVenta(result),
   ]);
   return { ok: true, recibo: { ...result, invite, reciboEmail } };
 }
@@ -59,21 +58,4 @@ async function resolverInvitacion(result: VentaResult): Promise<InviteState> {
 
   const envio = await enviarInvitacion({ clienteId: result.cliente.id });
   return envio.ok ? { estado: "enviada", email } : { estado: "fallo", email };
-}
-
-/** Fire the auto receipt email (#99) — EVERY sale with an email on hand, new and renewal alike.
- *  Synchronous with the sale, from the RPC's own return values (the sales table doesn't snapshot
- *  resulting balances, so a later re-render would lie — spec #96). Best-effort end to end: the
- *  compose is guarded here and `enviarReciboEmail` never throws, so mail can never break a
- *  recorded sale. */
-async function resolverReciboEmail(result: VentaResult): Promise<ReciboEmailState> {
-  const email = result.emailCliente;
-  if (!email) return { estado: "sin-email" };
-  try {
-    const { subject, html, text } = construirReciboEmail(result);
-    const envio = await enviarReciboEmail({ to: email, subject, html, text }, result.negocio);
-    return envio.ok ? { estado: "enviado", email } : { estado: "fallo", email };
-  } catch {
-    return { estado: "fallo", email };
-  }
 }
