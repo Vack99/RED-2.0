@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:denial": "node supabase/tests/run-denial-suite.mjs",
     "perf": "node tools/perf/run.mjs",
+    "perf:env": "node tools/perf/env.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
