@@ -11,6 +11,7 @@ import {
   PORTS,
   SAMPLES,
   WARMUP,
+  pointAtLocalDatabase,
   routesInScope,
 } from "./config.mjs";
 import { launchBrowser, login, measureLcp } from "./lib/browser.mjs";
@@ -28,6 +29,9 @@ const skipBuild = process.argv.includes("--no-build");
  * anything.
  */
 async function main() {
+  // MUST precede the build: NEXT_PUBLIC_* is inlined into the bundle at build time.
+  if (DB_MODE === "local") pointAtLocalDatabase();
+
   const routes = routesInScope();
   console.log(
     `\nperf run "${label}" — ${routes.length} routes, db=${DB_MODE}, gate=${GATE_METRIC} < ${GATE_MS}ms, conditions=${CONDITIONS_ID}\n`,
