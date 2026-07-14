@@ -55,6 +55,9 @@ begin
   if v_key is null then
     raise exception 'Configuración incompleta: tenant_assertion_key ausente';
   end if;
+  -- Plain (non-constant-time) comparison is fine here: extracting a 256-bit digest
+  -- byte-by-byte through PostgREST/planner/network jitter is not a realistic oracle,
+  -- and the key is high-entropy.
   if p_firma is distinct from
      encode(extensions.hmac(v_uid::text || ':' || p_gym_id::text, v_key, 'sha256'), 'hex') then
     raise exception 'Firma de tenant inválida';
