@@ -1,6 +1,6 @@
 "use server";
 
-import { requireOperator } from "@gym/data/server/_auth";
+import { getOperatorGym } from "@gym/data/server/gym";
 import { enviarInvitacion } from "@gym/data/server/invitaciones";
 import { createClient } from "@gym/data/server/supabase";
 import {
@@ -59,22 +59,26 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
  * job). `emailOverride` (the just-captured address) wins over the sale-time resolution; it is deliberately
  * NOT `.email()`-validated (same posture as the sale path — garbage bounces, it doesn't block).
  *
- * Guarded so an unauthenticated caller can never pump mail (defense-in-depth; the route is already
- * auth-gated). A failed presence check reports without sending: `fallo` to the known address, else the
- * unchanged `sin-email`. Best-effort throughout: `enviarReciboDeVenta` never throws.
+ * Guarded by the caller's own gym membership (`getOperatorGym` throws without one), and the sender
+ * identity is NOT trusted from the payload: `negocio` — the `From:` display name and the ticket's
+ * brand line — is re-resolved server-side from the caller's gym, so an authenticated caller can
+ * never emit platform mail branded as someone else. A failed check reports without sending: `fallo`
+ * to the known address, else the unchanged `sin-email`. Best-effort throughout: `enviarReciboDeVenta`
+ * never throws.
  */
 export async function reenviarReciboAction(
   venta: VentaResult,
   emailOverride?: string,
 ): Promise<ReciboEmailState> {
   const override = emailOverride?.trim() || undefined;
+  let brandName: string;
   try {
-    await requireOperator(await createClient());
+    brandName = (await getOperatorGym(await createClient())).brandName;
   } catch {
     const dest = override ?? venta.emailCliente;
     return dest ? { estado: "fallo", email: dest } : { estado: "sin-email" };
   }
-  return enviarReciboDeVenta(venta, { email: override });
+  return enviarReciboDeVenta({ ...venta, negocio: brandName }, { email: override });
 }
 
 /** Fire the auto-invite for a NEW-client sale with an email; map its outcome to the recibo's invite state.

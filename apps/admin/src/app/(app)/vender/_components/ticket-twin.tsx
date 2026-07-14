@@ -34,16 +34,17 @@ export const FORGE_TICKET: TicketPalette = {
 /** Email-client-safe stack for the HTML body; the PNG render passes "Outfit" (#100). */
 const EMAIL_FONT_STACK = "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif";
 
+/** The ticket's true size — also the PNG canvas width (#100). */
+export const TICKET_WIDTH = 360;
+
 export function TicketTwin({
   venta,
   palette = FORGE_TICKET,
   fontFamily = EMAIL_FONT_STACK,
-  width = 360,
 }: {
   venta: VentaResult;
   palette?: TicketPalette;
   fontFamily?: string;
-  width?: number;
 }) {
   const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad } = venta;
   const rule = { height: 1, background: palette.ink, opacity: 0.15 };
@@ -54,7 +55,7 @@ export function TicketTwin({
       style={{
         display: "flex",
         flexDirection: "column",
-        width,
+        width: TICKET_WIDTH,
         background: palette.paper,
         color: palette.ink,
         padding: "22px 22px 24px",
@@ -127,7 +128,7 @@ export function construirReciboEmail(venta: VentaResult): { subject: string; htm
 
   const html = renderStaticHtml(
     <div style={{ margin: "0 auto", maxWidth: 420, padding: 24 }}>
-      <TicketTwin venta={venta} width={360} />
+      <TicketTwin venta={venta} />
     </div>,
   );
 
@@ -141,7 +142,7 @@ export function construirReciboEmail(venta: VentaResult): { subject: string; htm
     `FECHA: ${fechaDisplay.toUpperCase()}`,
     `VIGENCIA: ${compradoDisplay.toUpperCase()} → ${venceDisplay.toUpperCase()}`,
     `MÉTODO: ${metodoDisplay}`,
-    `TOTAL: ${pesos(p.precio)}.00 MXN`,
+    `TOTAL: ${pesos(p.precio)} MXN`,
     "",
     `${negocio}${ciudad ? ` · ${ciudad}` : ""}`,
   ].join("\n");

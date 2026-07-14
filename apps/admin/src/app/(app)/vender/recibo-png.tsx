@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { ImageResponse } from "next/og";
 import type { VentaResult } from "@gym/data/server/ventas";
 
-import { FORGE_TICKET, TicketTwin } from "./_components/ticket-twin";
+import { FORGE_TICKET, TICKET_WIDTH, TicketTwin } from "./_components/ticket-twin";
 
 /**
  * The receipt PNG twin (#100): the SAME hook-free `TicketTwin` the email body serializes, rasterized
@@ -20,10 +20,9 @@ import { FORGE_TICKET, TicketTwin } from "./_components/ticket-twin";
  * assumes a single-app root; the `new URL` form is the monorepo-safe equivalent.
  */
 
-/** Canvas: 360px wide (the twin's true size) × 520px tall. 520 clears the tallest realistic ticket —
+/** Canvas: the twin's true width × 520px tall. 520 clears the tallest realistic ticket —
  *  a two-line client name plus a wrapped concepto plus the ciudad footer land near ~455px — and the
  *  extra height is filled by the paper-colored root so the slack reads as receipt paper, not a band. */
-const PNG_WIDTH = 360;
 const PNG_HEIGHT = 520;
 
 const fontUrl = (file: string) => new URL(`./_assets/fonts/${file}`, import.meta.url);
@@ -47,11 +46,11 @@ export async function generarReciboPng(venta: VentaResult): Promise<string | nul
             background: FORGE_TICKET.paper,
           }}
         >
-          <TicketTwin venta={venta} fontFamily="Outfit" width={PNG_WIDTH} />
+          <TicketTwin venta={venta} fontFamily="Outfit" />
         </div>
       ),
       {
-        width: PNG_WIDTH,
+        width: TICKET_WIDTH,
         height: PNG_HEIGHT,
         fonts: [
           { name: "Outfit", data: regular, weight: 400, style: "normal" },

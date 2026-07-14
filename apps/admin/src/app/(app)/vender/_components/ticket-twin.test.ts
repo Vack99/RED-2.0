@@ -51,7 +51,8 @@ describe("construirReciboEmail — the ticket twin rendered as the email (#99)",
     expect(text).toContain("Folio F-1001");
     expect(text).toContain("CLIENTE: Andrea Ríos (NUEVO)");
     expect(text).toContain("MÉTODO: EFECTIVO");
-    expect(text).toContain(`TOTAL: ${pesos(800)}.00 MXN`);
+    // No `.00` — the card's TOTAL renders the bare pesos value; the text twin mirrors it.
+    expect(text).toContain(`TOTAL: ${pesos(800)} MXN`);
   });
 
   it("a renewal drops the NUEVO badge", () => {

@@ -235,7 +235,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     if (error || !cli) throw new Error("Cliente no encontrado");
     nombre = cli.nombre;
     tel = cli.tel;
-    emailFicha = cli.email ?? null;
+    emailFicha = cli.email?.trim() || null;
   } else {
     nombre = input.nuevoNombre!.trim();
     tel = input.nuevoTel!.trim();

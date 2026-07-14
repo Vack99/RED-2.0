@@ -29,7 +29,6 @@
     "./server/reservas": "./src/server/reservas.ts",
     "./server/perfil": "./src/server/perfil.ts",
     "./server/plantillas": "./src/server/plantillas.ts",
-    "./server/recibo-mail": "./src/server/recibo-mail.ts",
     "./server/registro": "./src/server/registro.ts",
     "./server/resolve-tenant": "./src/server/resolve-tenant.ts",
     "./server/respaldo": "./src/server/respaldo.ts",

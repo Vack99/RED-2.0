@@ -53,8 +53,12 @@ export function resendTransport(): MailTransport {
       const from = msg.from ?? process.env.RESEND_FROM;
       if (!apiKey || !from) return { ok: false, error: "no-configurado" };
       try {
+        // Bounded: the send rides the sale-confirmation critical path (best-effort by contract),
+        // so a hung Resend must fail fast as a value — never stall the action into a timeout that
+        // reads as a failed sale.
         const res = await fetch("https://api.resend.com/emails", {
           method: "POST",
+          signal: AbortSignal.timeout(10_000),
           headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
           body: JSON.stringify({
             from,
