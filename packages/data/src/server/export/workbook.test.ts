@@ -1,9 +1,9 @@
 // Thin integration smoke test for the workbook assembler (build-spec §6). It does
-// NOT test ExcelJS internals — it round-trips a small RespaldoRows through
+// NOT test ExcelJS internals — it round-trips a small sheet list through
 // buildRespaldoWorkbook and reads the buffer back with a fresh workbook to assert
-// the structure the operator actually relies on: four named sheets in order, a
-// header row, the data rows, the peso number format on the money columns (with the
-// cell VALUE still numeric), and a non-empty Node Buffer.
+// the structure the operator actually relies on: named sheets in the given order,
+// a header row, the data rows, the peso number format on the money columns (with
+// the cell VALUE still numeric), boldRows applied, and a non-empty Node Buffer.
 
 import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
@@ -43,7 +43,12 @@ const rows: RespaldoRows = {
 
 describe("buildRespaldoWorkbook", () => {
   it("round-trips to a readable workbook with the right structure + money format", async () => {
-    const buffer = await buildRespaldoWorkbook(rows);
+    const buffer = await buildRespaldoWorkbook([
+      rows.clientes,
+      rows.ventas,
+      rows.asistencias,
+      rows.paquetes,
+    ]);
 
     // Returns a non-empty Node Buffer.
     expect(Buffer.isBuffer(buffer)).toBe(true);
@@ -85,5 +90,24 @@ describe("buildRespaldoWorkbook", () => {
     expect(precioCell.numFmt).toBe("$#,##0.00");
     expect(typeof precioCell.value).toBe("number");
     expect(precioCell.value).toBe(800);
+  });
+
+  it("bolds exactly the rows a sheet flags in boldRows (the Ventas TOTAL row pattern)", async () => {
+    const buffer = await buildRespaldoWorkbook([
+      {
+        name: "Ventas",
+        headers: ["Folio", "Monto"],
+        rows: [[1, 100], [], ["TOTAL", 100]],
+        money: [1],
+        boldRows: [2],
+      },
+    ]);
+    type LoadArg = Parameters<ExcelJS.Xlsx["load"]>[0];
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(buffer as unknown as LoadArg);
+    const ws = wb.getWorksheet("Ventas")!;
+    // Row 1 = headers (bold), rows 2-4 = data; only row 4 (boldRows index 2) bold.
+    expect(ws.getRow(2).font?.bold ?? false).toBe(false);
+    expect(ws.getRow(4).font?.bold).toBe(true);
   });
 });

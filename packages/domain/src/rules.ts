@@ -6,11 +6,14 @@
 // ──────────────────────────────────────────────────────────────
 
 import type {
+  AltaMes,
   AsistenciaResumen,
   Clases,
   CompraPaquete,
+  CorteMes,
   EstadoCliente,
   EstadoSesion,
+  MetodoPago,
   NivelUrgencia,
   PlantillaContext,
   PlantillaHorario,
@@ -19,6 +22,7 @@ import type {
   Saldo,
   SesionOcupacion,
   Urgencia,
+  VentaMes,
   VentaResumen,
   Vigencia,
 } from "./types";
@@ -282,6 +286,75 @@ export function calcularResumenMes(
     asistenciasAyer,
     ingresosSemana,
     asistenciasSemana,
+  };
+}
+
+/**
+ * Fold one month's ledgers into the respaldo corte (spec 2026-07-13 §2.3).
+ * PURE: already-fetched rows + a month anchor + hoy — fetches nothing, reads no
+ * clock (mirrors calcularResumenMes). `hoy` is what makes closed-vs-in-progress
+ * expressible without a clock: when `mes` falls in hoy's month the corte is
+ * PARCIAL and the prev block is cut to the same day-of-month (like-for-like);
+ * otherwise the month is closed and prev is the FULL prior month.
+ *
+ * Deliberately NOT a generalization of calcularResumenMes: that rule is
+ * hard-anchored on hoy with prior-month-to-date semantics — reusing it for a
+ * closed month (e.g. hoy = last day of February) would cut January to Jan 28.
+ * Prefer a little duplication over the wrong abstraction.
+ *
+ * Returns raw numbers only — Excel needs them summable, a chart needs them
+ * numeric. `ticketPromedio` is 0 (never NaN) for an empty month. This shape is
+ * what defuses the future analytics N+1: a 12-month trend calls the fold 12×
+ * over one in-memory set.
+ */
+export function calcularCorteMes(
+  ventas: VentaMes[],
+  asistencias: AsistenciaResumen[],
+  altas: AltaMes[],
+  mes: Date,
+  hoy: Date,
+): CorteMes {
+  const mesPrev = new Date(mes.getFullYear(), mes.getMonth() - 1, 1);
+  const parcial = mismoMes(mes, hoy);
+  // Like-for-like cutoff for an in-progress month; Infinity = full prev (closed).
+  const corteDia = parcial ? hoy.getDate() : Infinity;
+
+  let ingresos = 0;
+  let nVentas = 0;
+  const porMetodo: Record<MetodoPago, number> = { efectivo: 0, transferencia: 0, tarjeta: 0 };
+  const prev = { ingresos: 0, ventas: 0, asistencias: 0 };
+
+  for (const venta of ventas) {
+    if (mismoMes(venta.fecha, mes)) {
+      ingresos += venta.monto;
+      nVentas += 1;
+      porMetodo[venta.metodo] += venta.monto;
+    } else if (mismoMes(venta.fecha, mesPrev) && venta.fecha.getDate() <= corteDia) {
+      prev.ingresos += venta.monto;
+      prev.ventas += 1;
+    }
+  }
+
+  let nAsistencias = 0;
+  for (const asis of asistencias) {
+    if (mismoMes(asis.fecha, mes)) nAsistencias += 1;
+    else if (mismoMes(asis.fecha, mesPrev) && asis.fecha.getDate() <= corteDia) prev.asistencias += 1;
+  }
+
+  let nAltas = 0;
+  for (const alta of altas) {
+    if (mismoMes(alta.fecha, mes)) nAltas += 1;
+  }
+
+  return {
+    ingresos,
+    ventas: nVentas,
+    ticketPromedio: nVentas === 0 ? 0 : ingresos / nVentas,
+    porMetodo,
+    altas: nAltas,
+    asistencias: nAsistencias,
+    parcial,
+    prev,
   };
 }
 

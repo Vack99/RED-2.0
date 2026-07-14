@@ -36,8 +36,11 @@ export interface FakeClient {
   client: SupabaseServer;
   /** Per-table record of `.is(col, val)` calls — the soft-delete assertion target. */
   isCalls: Record<string, [string, unknown][]>;
-  /** Per-table record of `.gte(col, val)` calls — proves NO date filter is applied. */
+  /** Per-table record of `.gte(col, val)` calls — the window lower-bound assertion target. */
   gteCalls: Record<string, [string, unknown][]>;
+  /** Per-table record of `.lt(col, val)` calls — the window UPPER-bound assertion target
+   *  (unassertable before the month-scoped respaldo needed it — named present need). */
+  ltCalls: Record<string, [string, unknown][]>;
   /** Per-table record of `.range(from, to)` calls — the pagination-window assertion target. */
   rangeCalls: Record<string, [number, number][]>;
   /** Per-table record of `.eq(col, val)` calls — the tenant-scope (`gym_id`) assertion target. */
@@ -59,6 +62,7 @@ export function makeFake(
 ): FakeClient {
   const isCalls: Record<string, [string, unknown][]> = {};
   const gteCalls: Record<string, [string, unknown][]> = {};
+  const ltCalls: Record<string, [string, unknown][]> = {};
   const rangeCalls: Record<string, [number, number][]> = {};
   const eqCalls: Record<string, [string, unknown][]> = {};
   const inCalls: Record<string, [string, unknown[]][]> = {};
@@ -70,6 +74,7 @@ export function makeFake(
     // builders, so initialize each table's record once — not on every `.from()`.
     isCalls[table] ??= [];
     gteCalls[table] ??= [];
+    ltCalls[table] ??= [];
     rangeCalls[table] ??= [];
     eqCalls[table] ??= [];
     inCalls[table] ??= [];
@@ -97,6 +102,10 @@ export function makeFake(
       },
       gte: (col: string, val: unknown) => {
         gteCalls[table].push([col, val]);
+        return b;
+      },
+      lt: (col: string, val: unknown) => {
+        ltCalls[table].push([col, val]);
         return b;
       },
       range: (from: number, to: number) => {
@@ -148,6 +157,7 @@ export function makeFake(
     client: client as unknown as SupabaseServer,
     isCalls,
     gteCalls,
+    ltCalls,
     rangeCalls,
     eqCalls,
     inCalls,

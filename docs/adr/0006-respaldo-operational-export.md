@@ -1,6 +1,6 @@
 # ADR-0006 — Respaldo: an operational export, not a disaster-recovery backup
 
-**Status:** Accepted · **Date:** 2026-06-01 · **Amended:** 2026-07-02 (mail-provider clause — see [ADR-0014](0014-custom-smtp-platform-sender.md)) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (RLS, no ORM), [ADR-0002](0002-derived-not-stored.md) (derived-at-read)
+**Status:** Accepted · **Date:** 2026-06-01 · **Amended:** 2026-07-02 (mail-provider clause — see [ADR-0014](0014-custom-smtp-platform-sender.md)); 2026-07-13 (month-scoped mode — see below) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (RLS, no ORM), [ADR-0002](0002-derived-not-stored.md) (derived-at-read)
 
 ## Context
 
@@ -33,9 +33,17 @@ flagged-tension note in `CONTEXT.md`.) Concretely:
   emailed), `perfil` (brand config), `plantillas` (message templates). These are *settings*, not
   *what happened at the gym*, and keeping secrets out is what makes the file safe to auto-email
   (Phase 2).
-- **Full snapshot, no delta.** Each export is the complete current picture: roster as-of-now +
+- ~~**Full snapshot, no delta.** Each export is the complete current picture: roster as-of-now +
   full ledger history. Each file stands alone. Volume is trivial (one operator, thousands of
-  rows/year), so windowing earns nothing.
+  rows/year), so windowing earns nothing.~~
+
+  > **Amended 2026-07-13 (month-scoped mode).** The export is no longer an unbounded full
+  > snapshot: the default is **the last 24 months**, and `?mes=YYYY-MM` selects a single
+  > gym-local month. Windowing now earns what it did not in 2026-06 — monthly totals — and the
+  > unbounded snapshot proved to be a memory/response-size bomb (spec 2026-07-13 §2.5). Each
+  > file still **stands alone**, which is the property this ADR actually cares about. The window
+  > is a half-open **instant** interval on `ventas.fecha` (timestamptz) and a half-open **day**
+  > interval on `asistencias.fecha` (date); that asymmetry is deliberate.
 - **Formatted display values, Spanish (es-MX):** pesos for `monto`, Chihuahua-local dates,
   "Ilimitado"/"N clases" labels, derived `estado`/`urgencia` as text columns. The export
   *reuses* the read-side DTOs/derivations (ADR-0002) — it does not re-derive in a second place.

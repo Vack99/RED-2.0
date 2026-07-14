@@ -15,7 +15,7 @@ import "server-only";
 
 import ExcelJS from "exceljs";
 
-import type { RespaldoRows, RespaldoSheet } from "./rows";
+import type { RespaldoSheet } from "./rows";
 
 const MONEY_FMT = "$#,##0.00";
 
@@ -26,14 +26,13 @@ const PER_CHAR = 1.1;
 const headerWidth = (header: string) => Math.max(MIN_WIDTH, Math.round(header.length * PER_CHAR));
 
 /**
- * Assemble the four respaldo worksheets into a single .xlsx workbook and return
- * it as a Node Buffer (for the route handler's Response body).
+ * Assemble the shaped worksheets (already in tab order — buildRespaldoSheets
+ * decides the list) into a single .xlsx workbook and return it as a Node Buffer
+ * (for the route handler's Response body).
  */
-export async function buildRespaldoWorkbook(rows: RespaldoRows): Promise<Buffer> {
+export async function buildRespaldoWorkbook(sheets: RespaldoSheet[]): Promise<Buffer> {
   const wb = new ExcelJS.Workbook();
-  // Sheet order matches the tab order in the spec (§0): Clientes, Ventas,
-  // Asistencias, Paquetes.
-  for (const sheet of [rows.clientes, rows.ventas, rows.asistencias, rows.paquetes]) {
+  for (const sheet of sheets) {
     addSheet(wb, sheet);
   }
   // ExcelJS's writeBuffer() is typed as Promise<ExcelJS.Buffer>, an ambient
@@ -50,9 +49,11 @@ function addSheet(wb: ExcelJS.Workbook, sheet: RespaldoSheet): void {
   const header = ws.addRow(sheet.headers);
   header.font = { bold: true };
 
-  for (const row of sheet.rows) {
-    ws.addRow(row);
-  }
+  const bold = new Set(sheet.boldRows ?? []);
+  sheet.rows.forEach((row, i) => {
+    const added = ws.addRow(row);
+    if (bold.has(i)) added.font = { bold: true };
+  });
 
   // Peso number format on the money columns (0-based in RespaldoSheet; ExcelJS
   // columns are 1-based). The value stays numeric (set in rows.ts) — only the

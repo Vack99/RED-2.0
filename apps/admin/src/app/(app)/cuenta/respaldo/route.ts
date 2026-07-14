@@ -16,10 +16,10 @@
 // is a clean 401 ("No autenticado"), not a 500.
 
 import { requireOperator } from "@gym/data/server/_auth";
+import { getOperatorGym } from "@gym/data/server/gym";
 import { getRespaldoData } from "@gym/data/server/respaldo";
-import { buildRespaldoRows } from "@gym/data/server/export/rows";
+import { buildRespaldoSheets } from "@gym/data/server/export/rows";
 import { buildRespaldoWorkbook } from "@gym/data/server/export/workbook";
-import { toIsoDay } from "@gym/format";
 import { createClient } from "@gym/data/server/supabase";
 
 export const runtime = "nodejs"; // ExcelJS needs Node, not edge
@@ -27,7 +27,10 @@ export const runtime = "nodejs"; // ExcelJS needs Node, not edge
 const XLSX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-export async function GET(): Promise<Response> {
+// Validated BEFORE the value reaches a query or the filename (spec §2.1).
+const MES_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+export async function GET(request: Request): Promise<Response> {
   const supabase = await createClient();
 
   try {
@@ -36,11 +39,32 @@ export async function GET(): Promise<Response> {
     return new Response("No autenticado", { status: 401 });
   }
 
-  const data = await getRespaldoData(supabase);
-  const buffer = await buildRespaldoWorkbook(buildRespaldoRows(data));
-  // Reuse data.generadoHoy (already resolved in the operator's gym zone) instead
-  // of a second, separate tz resolution just for the filename.
-  const filename = `forge-respaldo-${toIsoDay(data.generadoHoy)}.xlsx`;
+  // The route takes NO gym identifier — the gym is derived from auth.uid() →
+  // gym_membership (spec §2.1). A member-only session ("Sin gym asignado") is a
+  // clean 403, not a 500.
+  let gym;
+  try {
+    gym = await getOperatorGym(supabase);
+  } catch {
+    return new Response("Sin acceso", { status: 403 });
+  }
+
+  const mesRaw = new URL(request.url).searchParams.get("mes");
+  if (mesRaw !== null && !MES_RE.test(mesRaw)) {
+    return new Response("Mes inválido", { status: 400 });
+  }
+  const mes = mesRaw ?? undefined;
+
+  const data = await getRespaldoData(supabase, mes);
+  const buffer = await buildRespaldoWorkbook(buildRespaldoSheets(data));
+
+  // Filename from the MEMBERSHIP-RESOLVED slug — never x-gym (the host is
+  // attacker-influenceable, ADR-0008, and absent on unmapped hosts) — sanitized
+  // AT THE HEADER SINK: gym.slug has no format CHECK in the DB and flows into
+  // Content-Disposition (quote/CRLF injection). The header must not depend on a
+  // DB constraint that does not exist.
+  const slugSafe = gym.slug.toLowerCase().replace(/[^a-z0-9-]/g, "");
+  const filename = `${slugSafe}-respaldo-${mes ?? "ultimos-24-meses"}.xlsx`;
 
   // The body is a Node Buffer (Uint8Array under the hood), a valid BodyInit; the
   // cast just satisfies TS's lib.dom BodyInit union, which omits Node's Buffer.

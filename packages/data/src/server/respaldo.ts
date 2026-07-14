@@ -2,7 +2,9 @@ import "server-only";
 
 import { cache } from "react";
 
-import { hoyEnZona } from "@gym/format";
+import { calcularCorteMes } from "@gym/domain/rules";
+import type { AltaMes, AsistenciaResumen, CorteMes, MetodoPago, VentaMes } from "@gym/domain/types";
+import { fechaEnZona, hoyEnZona, instanteEnZona, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 import { getOperatorGym } from "./gym";
 import type {
@@ -29,14 +31,30 @@ const PAGE = 1000;
  * { ascending: false })` preserved; throw-on-error; explicit row→DTO map into
  * `RespaldoVenta` (no stray columns). Empty table → `[]`.
  */
-async function readAllVentas(supabase: SupabaseServer, gymId: string): Promise<RespaldoVenta[]> {
+/** The half-open window a gather applies to a ledger: `gte ≤ fecha < lt`.
+ *  `lt: null` = no upper bound (the default últimos-24-meses mode). The VALUE
+ *  types differ per ledger — instants for ventas, day strings for asistencias
+ *  (the §1.8 asymmetry) — so the window carries pre-serialized strings. */
+interface VentanaLedger {
+  gte: string;
+  lt: string | null;
+}
+
+async function readAllVentas(
+  supabase: SupabaseServer,
+  gymId: string,
+  ventana: VentanaLedger,
+): Promise<RespaldoVenta[]> {
   const out: RespaldoVenta[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
+    let q = supabase
       .from("ventas")
       .select("folio, fecha, cliente_id, paquete_nombre, monto, metodo, vigencia_tipo, vigencia_dias")
       .eq("gym_id", gymId)
-      .order("fecha", { ascending: false }) // NO date filter — FULL history
+      .gte("fecha", ventana.gte); // INSTANT bound — ventas.fecha is a timestamptz (§1.8)
+    if (ventana.lt !== null) q = q.lt("fecha", ventana.lt);
+    const { data, error } = await q
+      .order("fecha", { ascending: false })
       .order("folio", { ascending: false }) // unique tiebreaker: fecha ties must not reorder across pages (§1.4)
       .range(from, from + PAGE - 1);
     if (error) throw error;
@@ -67,14 +85,18 @@ async function readAllVentas(supabase: SupabaseServer, gymId: string): Promise<R
 async function readAllAsistencias(
   supabase: SupabaseServer,
   gymId: string,
+  ventana: VentanaLedger,
 ): Promise<RespaldoAsistencia[]> {
   const out: RespaldoAsistencia[] = [];
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await supabase
+    let q = supabase
       .from("asistencias")
       .select("fecha, hora, cliente_id")
       .eq("gym_id", gymId)
-      .is("deleted_at", null) // soft-delete filter ONLY; NO date filter — FULL history
+      .gte("fecha", ventana.gte); // DAY-STRING bound — asistencias.fecha is a `date` (§1.8)
+    if (ventana.lt !== null) q = q.lt("fecha", ventana.lt);
+    const { data, error } = await q
+      .is("deleted_at", null) // soft-delete filter stays on every page
       .order("fecha", { ascending: false })
       .order("id") // unique tiebreaker: 15 live rows already share one fecha (§1.4)
       .range(from, from + PAGE - 1);
@@ -122,11 +144,34 @@ async function readAllAsistencias(
  * the "excludes soft-deleted" guarantee lives here, not in the shaper.
  */
 export const getRespaldoData = cache(
-  async (client?: SupabaseServer): Promise<RespaldoData> => {
+  async (client?: SupabaseServer, mes?: string): Promise<RespaldoData> => {
     const supabase = client ?? (await createClient());
     const gym = await getOperatorGym(supabase);
     const tz = gym.timezone;
     const generadoHoy = hoyEnZona(tz);
+
+    // Month bounds, module-private (spec §2.3 — they can't live in @gym/domain and
+    // must not become a @gym/format export). Half-open windows; instants for ventas,
+    // day strings for asistencias — the §1.8 asymmetry, three lines apart, deliberate.
+    //   ?mes=  → [prev-month start, month end): one window spanning the prior month,
+    //            exactly the resumen.ts precedent, so the corte's prior-month block
+    //            has its rows and the fold re-buckets in gym-local dates. The SHEETS
+    //            filter to the month in the pure shaper (the Altas pattern).
+    //   default → últimos 24 meses (ADR-0006 as amended 2026-07-13): [current month
+    //            − 23, ∞). The unbounded snapshot is retired — it 413s at ~3 years.
+    const mesAncla = mes ? parseDay(`${mes}-01`) : null;
+    const desde = mesAncla
+      ? new Date(mesAncla.getFullYear(), mesAncla.getMonth() - 1, 1)
+      : new Date(generadoHoy.getFullYear(), generadoHoy.getMonth() - 23, 1);
+    const hasta = mesAncla ? new Date(mesAncla.getFullYear(), mesAncla.getMonth() + 1, 1) : null;
+    const ventanaVentas: VentanaLedger = {
+      gte: instanteEnZona(desde, "00:00", tz).toISOString(),
+      lt: hasta ? instanteEnZona(hasta, "00:00", tz).toISOString() : null,
+    };
+    const ventanaAsistencias: VentanaLedger = {
+      gte: toIsoDay(desde),
+      lt: hasta ? toIsoDay(hasta) : null,
+    };
 
     const [clientesRes, ventas, asistencias, paquetesRes] = await Promise.all([
       supabase
@@ -134,8 +179,8 @@ export const getRespaldoData = cache(
         .select("id, nombre, tel, email, birthday, paquete_nombre, clases_restantes, vence, created_at")
         .eq("gym_id", gym.id)
         .order("nombre"),
-      readAllVentas(supabase, gym.id), // paginated — FULL history
-      readAllAsistencias(supabase, gym.id), // paginated — FULL history
+      readAllVentas(supabase, gym.id, ventanaVentas), // paginated
+      readAllAsistencias(supabase, gym.id, ventanaAsistencias), // paginated
       supabase
         .from("paquetes")
         .select("nombre, precio, clases, vigencia_tipo, vigencia_dias, orden")
@@ -170,6 +215,87 @@ export const getRespaldoData = cache(
       vigencia_dias: p.vigencia_dias,
     }));
 
-    return { generadoHoy, tz, clientes, ventas, asistencias, paquetes };
+    // Month mode: fold the fetched (month + prev) rows into the corte. Rows are
+    // mapped to gym-local Dates at this boundary (mirrors resumen.ts); the fold
+    // owns the math, the shaper only formats (spec §2.3).
+    let corte: CorteMes | null = null;
+    if (mesAncla) {
+      const ventasMes: VentaMes[] = ventas.map((v) => ({
+        fecha: fechaEnZona(v.fecha, tz),
+        monto: Number(v.monto),
+        metodo: v.metodo as MetodoPago,
+      }));
+      const asisMes: AsistenciaResumen[] = asistencias.map((a) => ({
+        fecha: parseDay(a.fecha.slice(0, 10)),
+      }));
+      const altas: AltaMes[] = clientes.map((c) => ({ fecha: fechaEnZona(c.alta, tz) }));
+      corte = calcularCorteMes(ventasMes, asisMes, altas, mesAncla, generadoHoy);
+    }
+
+    return { generadoHoy, tz, mes: mesAncla, corte, clientes, ventas, asistencias, paquetes };
   },
 );
+
+/** One picker option: `value` is the route's `?mes=` param, `label` es-MX display. */
+export interface MesRespaldo {
+  value: string; // "2026-07"
+  label: string; // "Julio 2026"
+}
+
+/**
+ * The months-with-data list for the Cuenta picker (spec §2.5), NEWEST first —
+ * every month from the gym's first activity to the current one. TWO single-row
+ * ordered index lookups, never `min()`: under this RLS an aggregate is a full
+ * cross-tenant seq scan on every Cuenta render; with the §1.9 indexes each
+ * lookup is one probe. Expansion to a month list happens here in JS, in the
+ * gym's zone. A gym with no activity yet gets just the current month.
+ */
+export const getMesesRespaldo = cache(async (client?: SupabaseServer): Promise<MesRespaldo[]> => {
+  const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase);
+  const tz = gym.timezone;
+  const hoy = hoyEnZona(tz);
+
+  const [vRes, cRes] = await Promise.all([
+    supabase
+      .from("ventas")
+      .select("fecha")
+      .eq("gym_id", gym.id)
+      .order("fecha", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from("clientes")
+      .select("created_at")
+      .eq("gym_id", gym.id)
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const primeros: Date[] = [];
+  if (vRes.data?.fecha) primeros.push(fechaEnZona(vRes.data.fecha, tz));
+  if (cRes.data?.created_at) primeros.push(fechaEnZona(cRes.data.created_at, tz));
+  const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+  const inicio = primeros.length
+    ? new Date(
+        Math.min(...primeros.map((d) => new Date(d.getFullYear(), d.getMonth(), 1).getTime())),
+      )
+    : mesActual;
+
+  const nombreMes = new Intl.DateTimeFormat("es-MX", { month: "long" });
+  const out: MesRespaldo[] = [];
+  for (
+    let d = mesActual;
+    d.getTime() >= inicio.getTime();
+    d = new Date(d.getFullYear(), d.getMonth() - 1, 1)
+  ) {
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const nombre = nombreMes.format(d);
+    out.push({
+      value: `${d.getFullYear()}-${mm}`,
+      label: `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${d.getFullYear()}`,
+    });
+  }
+  return out;
+});

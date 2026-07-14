@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildRespaldoRows,
+  buildRespaldoSheets,
   type RespaldoAsistencia,
   type RespaldoCliente,
   type RespaldoData,
   type RespaldoPaquete,
   type RespaldoVenta,
 } from "./rows";
+import type { CorteMes } from "@gym/domain/types";
 
 // House fixture style (build-spec §9): inline factory fns with spread overrides,
 // a FIXED Chihuahua "today" so derivarCliente / urgenciaCliente are deterministic.
@@ -57,6 +59,8 @@ const paquete = (over: Partial<RespaldoPaquete> = {}): RespaldoPaquete => ({
 const data = (over: Partial<RespaldoData> = {}): RespaldoData => ({
   generadoHoy: HOY,
   tz: "America/Chihuahua", // models the real Forge gym's zone (fixture convention, slice #25)
+  mes: null,
+  corte: null,
   clientes: [],
   ventas: [],
   asistencias: [],
@@ -396,5 +400,126 @@ describe("buildRespaldoRows — empty state (PRD US#17)", () => {
     expect(r.ventas.headers.length).toBe(7);
     expect(r.asistencias.headers.length).toBe(3);
     expect(r.paquetes.headers.length).toBe(4);
+  });
+});
+
+// ── Month mode (spec 2026-07-13 §2.2): buildRespaldoSheets ────────────────────
+
+const CORTE: CorteMes = {
+  ingresos: 800,
+  ventas: 2,
+  ticketPromedio: 400,
+  porMetodo: { efectivo: 500, transferencia: 0, tarjeta: 300 },
+  altas: 1,
+  asistencias: 1,
+  parcial: true,
+  prev: { ingresos: 900, ventas: 1, asistencias: 1 },
+};
+const MES = new Date(2026, 4, 1); // mayo 2026 — HOY (27 may) is in it → parcial
+
+describe("buildRespaldoSheets", () => {
+  it("default mode: the classic 4 sheets in order — no Resumen, no Altas", () => {
+    const sheets = buildRespaldoSheets(data({ clientes: [cliente()], ventas: [venta()] }));
+    expect(sheets.map((s) => s.name)).toEqual(["Clientes", "Ventas", "Asistencias", "Paquetes"]);
+  });
+
+  it("month mode: Resumen first, then Ventas/Asistencias/Altas/Paquetes", () => {
+    const sheets = buildRespaldoSheets(data({ mes: MES, corte: CORTE }));
+    expect(sheets.map((s) => s.name)).toEqual([
+      "Resumen",
+      "Ventas",
+      "Asistencias",
+      "Altas",
+      "Paquetes",
+    ]);
+  });
+
+  it("month mode filters the Ventas sheet to the month (the gather spans the prior month for the corte) and closes with a blank row + bold TOTAL", () => {
+    const sheets = buildRespaldoSheets(
+      data({
+        mes: MES,
+        corte: CORTE,
+        clientes: [cliente()],
+        ventas: [
+          venta({ folio: 1, fecha: "2026-05-20T15:00:00.000Z", monto: 500 }),
+          venta({ folio: 2, fecha: "2026-05-25T15:00:00.000Z", monto: 300 }),
+          venta({ folio: 3, fecha: "2026-04-10T15:00:00.000Z", monto: 900 }), // prev month — corte-only
+        ],
+      }),
+    );
+    const ventas = sheets[1];
+    // 2 month rows + blank + TOTAL.
+    expect(ventas.rows).toHaveLength(4);
+    expect(ventas.rows[0][0]).toBe(1);
+    expect(ventas.rows[1][0]).toBe(2);
+    expect(ventas.rows[2]).toEqual([]);
+    // TOTAL: label col A, count under Paquete (col 3), sum under Monto (col 4).
+    expect(ventas.rows[3][0]).toBe("TOTAL");
+    expect(ventas.rows[3][3]).toBe("2 ventas");
+    expect(ventas.rows[3][4]).toBe(800);
+    expect(ventas.boldRows).toEqual([3]);
+  });
+
+  it("month mode filters the Asistencias sheet to the month", () => {
+    const sheets = buildRespaldoSheets(
+      data({
+        mes: MES,
+        corte: CORTE,
+        clientes: [cliente()],
+        asistencias: [asistencia({ fecha: "2026-05-26" }), asistencia({ fecha: "2026-04-02" })],
+      }),
+    );
+    expect(sheets[2].rows).toHaveLength(1);
+    expect(sheets[2].rows[0][0]).toBe("2026-05-26");
+  });
+
+  it("Altas: the roster filtered to the month's signups IN THE SHAPER, with (hoy) on the snapshot columns", () => {
+    const sheets = buildRespaldoSheets(
+      data({
+        mes: MES,
+        corte: CORTE,
+        clientes: [
+          cliente({ id: "c-mes", alta: "2026-05-10T18:00:00.000Z" }),
+          cliente({ id: "c-viejo", nombre: "Vieja Alta", alta: "2026-01-15T18:30:00.000Z" }),
+        ],
+      }),
+    );
+    const altas = sheets[3];
+    expect(altas.rows).toHaveLength(1);
+    expect(altas.rows[0][0]).toBe("Andrea Castro");
+    // Estado / Clases restantes / Urgencia carry the (hoy) marker — there is no
+    // history table; without it the operator reads today's values as month-end state.
+    expect(altas.headers).toContain("Estado (hoy)");
+    expect(altas.headers).toContain("Clases restantes (hoy)");
+    expect(altas.headers).toContain("Urgencia (hoy)");
+    expect(altas.headers).not.toContain("Estado");
+  });
+
+  it("Resumen FORMATS the corte's raw numbers (title parcial al hoy, 3-bucket desglose, prev block) — it never recomputes them", () => {
+    const sheets = buildRespaldoSheets(data({ mes: MES, corte: CORTE }));
+    const resumen = sheets[0];
+    expect(resumen.headers).toEqual(["Concepto", "Monto", "Cantidad"]);
+    expect(resumen.money).toEqual([1]);
+    expect(resumen.rows[0][0]).toBe("RESUMEN — MAYO 2026 (parcial al 27 may)");
+    // Money stays raw numbers (summable); counts live in the Cantidad column.
+    expect(resumen.rows).toContainEqual(["Ingresos", 800, ""]);
+    expect(resumen.rows).toContainEqual(["Ventas", "", 2]);
+    expect(resumen.rows).toContainEqual(["Ticket promedio", 400, ""]);
+    expect(resumen.rows).toContainEqual(["Efectivo", 500, ""]);
+    expect(resumen.rows).toContainEqual(["Transferencia", 0, ""]);
+    expect(resumen.rows).toContainEqual(["Tarjeta", 300, ""]);
+    expect(resumen.rows).toContainEqual(["Altas del mes", "", 1]);
+    expect(resumen.rows).toContainEqual(["Asistencias del mes", "", 1]);
+    expect(resumen.rows).toContainEqual(["MES ANTERIOR (al día 27)", "", ""]);
+    expect(resumen.rows).toContainEqual(["Asistencias", "", 1]);
+  });
+
+  it("Resumen for a CLOSED month: no parcial marker; prev block labelled completo", () => {
+    const sheets = buildRespaldoSheets(
+      data({ mes: new Date(2026, 1, 1), corte: { ...CORTE, parcial: false } }),
+    );
+    const resumen = sheets[0];
+    expect(resumen.rows[0][0]).toBe("RESUMEN — FEBRERO 2026");
+    expect(resumen.rows).toContainEqual(["MES ANTERIOR (completo)", "", ""]);
   });
 });

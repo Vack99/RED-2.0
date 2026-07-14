@@ -1,14 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { getRespaldoData } from "./respaldo";
+import { getMesesRespaldo, getRespaldoData } from "./respaldo";
 import { makeFake } from "./supabase-fake.test-helper";
 
 /**
  * The seam this exercises: `getRespaldoData` takes an injectable client (ADR-0001),
- * so the gather ORCHESTRATION — the four reads, the FULL-history (no date filter)
- * guarantee, the asistencias soft-delete `.is("deleted_at", null)` filter, the
- * created_at → alta mapping, and the PAGINATION of the two full-history ledgers
- * (ventas, asistencias) — is testable with a hand-rolled fake. No Supabase, no DB.
+ * so the gather ORCHESTRATION — the four reads, the WINDOW BOUNDS (24-month default /
+ * single-month + prev span; ADR-0006 as amended 2026-07-13), the asistencias
+ * soft-delete `.is("deleted_at", null)` filter, the created_at → alta mapping, the
+ * corte fold, and the PAGINATION of the two ledgers — is testable with a hand-rolled
+ * fake. No Supabase, no DB.
  *
  * The fake (`makeFake`, the shared chain-capturing builder in
  * `./supabase-fake.test-helper`) is a per-table thenable query builder that
@@ -65,36 +66,119 @@ const paquete = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
-describe("getRespaldoData — full-history RLS-scoped gather (injected fake)", () => {
-  it("returns all four tables, ventas + asistencias UNFILTERED by date (full history)", async () => {
-    // Seed both a recent and a January row in ventas + asistencias. A month-scoped
-    // reader would drop January; full history keeps BOTH. This is the load-bearing
-    // requirement — the respaldo is the whole record, not the current month.
+// Frozen clock for the window-bound assertions: 2026-07-13T18:00Z = 12:00 in
+// Chihuahua (the fake's default zone) → hoy = 13 jul 2026; the 24-month default
+// window (current month + 23 prior) opens at 1 ago 2024.
+const AHORA = new Date("2026-07-13T18:00:00.000Z");
+
+describe("getRespaldoData — capped/windowed RLS-scoped gather (injected fake)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: AHORA });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("default mode windows BOTH ledgers to the last 24 months (ADR-0006 as amended 2026-07-13 — full history is retired)", async () => {
+    // This test was the machine-guard on ADR-0006's original "no windowing" clause
+    // (it asserted gteCalls === []). The 2026-07-13 amendment retires the unbounded
+    // snapshot — the default is the last 24 months — so THIS assertion changes WITH
+    // the ADR, deliberately: the guard now pins the 24-month bound instead.
     const reciente = venta({ folio: 1002, fecha: "2026-05-28T16:00:00.000Z" });
     const enero = venta({ folio: 1000, fecha: "2026-01-05T16:00:00.000Z" });
-    const asistReciente = asistencia({ fecha: "2026-05-28" });
-    const asistEnero = asistencia({ fecha: "2026-01-05" });
 
-    const { client, gteCalls } = makeFake({
+    const { client, gteCalls, ltCalls } = makeFake({
       clientes: [cliente()],
       ventas: [reciente, enero],
-      asistencias: [asistReciente, asistEnero],
+      asistencias: [asistencia({ fecha: "2026-05-28" }), asistencia({ fecha: "2026-01-05" })],
       paquetes: [paquete()],
     });
 
     const data = await getRespaldoData(client);
 
-    // All four arrays present and fully populated.
     expect(data.clientes).toHaveLength(1);
     expect(data.paquetes).toHaveLength(1);
-
-    // FULL history: both the recent AND the January rows survive in BOTH ledgers.
     expect(data.ventas.map((v) => v.folio).sort()).toEqual([1000, 1002]);
-    expect(data.asistencias.map((a) => a.fecha).sort()).toEqual(["2026-01-05", "2026-05-28"]);
 
-    // And NO `.gte("fecha", ...)` date filter was ever applied to either ledger.
-    expect(gteCalls["ventas"]).toEqual([]);
-    expect(gteCalls["asistencias"]).toEqual([]);
+    // The deliberate asymmetry (spec §1.8): ventas.fecha is a timestamptz → the
+    // bound is the gym-local INSTANT 1 ago 2024 00:00 (06:00Z in Chihuahua);
+    // asistencias.fecha is a `date` → a bare day string. No upper bound in default
+    // mode (nothing exists after "now").
+    expect(gteCalls["ventas"]).toEqual([["fecha", "2024-08-01T06:00:00.000Z"]]);
+    expect(gteCalls["asistencias"]).toEqual([["fecha", "2024-08-01"]]);
+    expect(ltCalls["ventas"]).toEqual([]);
+    expect(ltCalls["asistencias"]).toEqual([]);
+    // No Resumen corte in default mode — there is no single month to summarize.
+    expect(data.corte).toBeNull();
+    expect(data.mes).toBeNull();
+  });
+
+  it("month mode (?mes=2026-07) windows ventas on half-open INSTANT bounds and asistencias on half-open DAY bounds — one window spanning the prior month (the resumen.ts precedent) so the corte's prev block has its rows", async () => {
+    const { client, gteCalls, ltCalls } = makeFake({
+      clientes: [cliente()],
+      ventas: [venta()],
+      asistencias: [asistencia()],
+      paquetes: [paquete()],
+    });
+
+    await getRespaldoData(client, "2026-07");
+
+    // Lower bound = 1 jun (prev month start, feeds the prior-month comparison);
+    // upper bound = 1 ago (half-open month end). Instants for ventas (timestamptz),
+    // bare day strings for asistencias (a `date`) — the §1.8 asymmetry, pinned.
+    expect(gteCalls["ventas"]).toEqual([["fecha", "2026-06-01T06:00:00.000Z"]]);
+    expect(ltCalls["ventas"]).toEqual([["fecha", "2026-08-01T06:00:00.000Z"]]);
+    expect(gteCalls["asistencias"]).toEqual([["fecha", "2026-06-01"]]);
+    expect(ltCalls["asistencias"]).toEqual([["fecha", "2026-08-01"]]);
+    // clientes stays a FULL roster (it denormalizes cliente_id → nombre; the Altas
+    // sheet filters in the pure shaper) and paquetes stays the full catálogo.
+    expect(gteCalls["clientes"]).toEqual([]);
+    expect(ltCalls["clientes"]).toEqual([]);
+    expect(gteCalls["paquetes"]).toEqual([]);
+  });
+
+  it("month mode computes the corte from the fetched rows — 3-bucket desglose + the prev block from the spanned prior month (the fold, not the shaper, owns the math)", async () => {
+    const { client } = makeFake({
+      clientes: [cliente({ created_at: "2026-07-05T18:00:00.000Z" })],
+      ventas: [
+        venta({ folio: 1, fecha: "2026-07-05T18:00:00.000Z", monto: 500, metodo: "efectivo" }),
+        venta({ folio: 2, fecha: "2026-07-10T18:00:00.000Z", monto: 300, metodo: "tarjeta" }),
+        venta({ folio: 3, fecha: "2026-06-10T18:00:00.000Z", monto: 900 }), // prev month, day ≤ 13
+        venta({ folio: 4, fecha: "2026-06-20T18:00:00.000Z", monto: 111 }), // prev, day 20 > 13 → cut (parcial)
+      ],
+      asistencias: [asistencia({ fecha: "2026-07-06" }), asistencia({ fecha: "2026-06-02" })],
+      paquetes: [paquete()],
+    });
+
+    const data = await getRespaldoData(client, "2026-07");
+
+    expect(data.mes).toEqual(new Date(2026, 6, 1));
+    expect(data.corte).toMatchObject({
+      ingresos: 800,
+      ventas: 2,
+      ticketPromedio: 400,
+      porMetodo: { efectivo: 500, tarjeta: 300, transferencia: 0 },
+      altas: 1,
+      asistencias: 1,
+      parcial: true, // July 2026 IS the frozen "current" month
+      prev: { ingresos: 900, ventas: 1, asistencias: 1 }, // like-for-like: cut to day 13
+    });
+  });
+
+  it("a venta at 23:30 local on the month's LAST day lands in THAT month's corte (the whole reason Part 1 exists)", async () => {
+    // 23:30 in Chihuahua on 31 jul = 2026-08-01T05:30Z — a UTC-day-string
+    // implementation would push it into August.
+    const { client } = makeFake({
+      clientes: [cliente()],
+      ventas: [venta({ folio: 9, fecha: "2026-08-01T05:30:00.000Z", monto: 250 })],
+      asistencias: [],
+      paquetes: [paquete()],
+    });
+
+    const data = await getRespaldoData(client, "2026-07");
+
+    expect(data.corte?.ingresos).toBe(250);
+    expect(data.corte?.ventas).toBe(1);
   });
 
   it("applies the asistencias soft-delete filter `.is(\"deleted_at\", null)` at the query", async () => {
@@ -261,5 +345,38 @@ describe("getRespaldoData — full-history RLS-scoped gather (injected fake)", (
       [0, 999],
       [1000, 1999],
     ]);
+  });
+});
+
+describe("getMesesRespaldo — the picker's months-with-data list (spec §2.5)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ now: AHORA }); // hoy = jul 2026 in Chihuahua
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("expands earliest activity → current month, NEWEST first, via two single-row ordered lookups (never min())", async () => {
+    const { client, eqCalls, orderCalls } = makeFake({
+      // The fake's maybeSingle returns the FIRST seeded row = the earliest.
+      ventas: [venta({ fecha: "2026-05-03T18:00:00.000Z" })],
+      clientes: [cliente({ created_at: "2026-04-20T18:00:00.000Z" })],
+    });
+
+    const meses = await getMesesRespaldo(client);
+
+    expect(meses.map((m) => m.value)).toEqual(["2026-07", "2026-06", "2026-05", "2026-04"]);
+    expect(meses[0].label).toBe("Julio 2026");
+    expect(meses[3].label).toBe("Abril 2026");
+    // Query contract: gym-scoped, ordered single-row probes (index lookups, not aggregates).
+    expect(eqCalls["ventas"]).toContainEqual(["gym_id", "test-gym"]);
+    expect(eqCalls["clientes"]).toContainEqual(["gym_id", "test-gym"]);
+    expect(orderCalls["ventas"]).toEqual(["fecha"]);
+    expect(orderCalls["clientes"]).toEqual(["created_at"]);
+  });
+
+  it("a gym with no activity yet gets exactly the current month", async () => {
+    const { client } = makeFake({ ventas: [], clientes: [] });
+    expect(await getMesesRespaldo(client)).toEqual([{ value: "2026-07", label: "Julio 2026" }]);
   });
 });

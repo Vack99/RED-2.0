@@ -66,6 +66,43 @@ export interface VentaResumen {
   monto: number;
 }
 
+/** A venta as the month corte needs it: when + how much + how it was paid.
+ *  Deliberately NOT a widening of VentaResumen — that would silently change the
+ *  input contract of a live rule (spec 2026-07-13 §2.3). */
+export interface VentaMes {
+  /** Gym-local calendar date of the sale (DAL parses at the boundary). */
+  fecha: Date;
+  monto: number;
+  metodo: MetodoPago;
+}
+
+/** An alta (client signup) reduced to when it happened, gym-local. */
+export interface AltaMes {
+  fecha: Date;
+}
+
+/** The month corte the respaldo's Resumen sheet (and any future chart) consumes.
+ *  Raw numbers only — Excel needs them summable, a chart needs them numeric;
+ *  formatting is the shaper's job. */
+export interface CorteMes {
+  ingresos: number;
+  ventas: number;
+  /** ingresos / ventas, 0 when the month has no sales. */
+  ticketPromedio: number;
+  /** Desglose by the 3 payment methods (metodo='pendiente' cannot exist — DB CHECK). */
+  porMetodo: Record<MetodoPago, number>;
+  altas: number;
+  asistencias: number;
+  /** True when `mes` is the in-progress month: the prev block below is cut to the
+   *  same day-of-month (like-for-like); a closed month compares FULL prev. */
+  parcial: boolean;
+  prev: {
+    ingresos: number;
+    ventas: number;
+    asistencias: number;
+  };
+}
+
 /** An asistencia reduced to what the monthly resumen needs: when.
  *  The DAL parses the DB row's `date` to a Chihuahua-local Date. */
 export interface AsistenciaResumen {

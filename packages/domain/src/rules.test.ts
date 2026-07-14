@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
+import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete — purchase wins, days carry (ruling C4)", () => {
@@ -346,6 +346,92 @@ describe("calcularResumenMes", () => {
     const finMarzo = new Date(2026, 2, 31); // 31 Mar 2026, diaHoy = 31
     const rr = calcularResumenMes([v(2026, 1, 28, 700)], [], finMarzo); // 28 feb
     expect(rr.ingresosMesPrev).toBe(700); // 28 ≤ 31 → counted, no clamp
+  });
+});
+
+// ── calcularCorteMes — the respaldo month corte (spec 2026-07-13 §2.3) ────
+// Deliberately a sibling of calcularResumenMes, NOT a generalization: the
+// resumen is hard-anchored on hoy (prior-month-TO-DATE); the corte anchors on a
+// requested month and compares a CLOSED month against the FULL prior month.
+
+describe("calcularCorteMes", () => {
+  const vm = (
+    y: number,
+    m: number,
+    d: number,
+    monto: number,
+    metodo: "efectivo" | "transferencia" | "tarjeta" = "efectivo",
+  ) => ({
+    fecha: new Date(y, m, d),
+    monto,
+    metodo,
+  });
+  const am = (y: number, m: number, d: number) => ({ fecha: new Date(y, m, d) });
+
+  it("buckets ingresos/ventas/asistencias/altas to the requested month only, with the 3-method desglose and ticket promedio", () => {
+    const r = calcularCorteMes(
+      [
+        vm(2026, 6, 5, 500, "efectivo"),
+        vm(2026, 6, 20, 300, "tarjeta"),
+        vm(2026, 6, 31, 200, "transferencia"),
+        vm(2026, 5, 30, 900), // June — out
+        vm(2026, 7, 1, 800), // August — out
+      ],
+      [am(2026, 6, 5), am(2026, 6, 6), am(2026, 5, 30)],
+      [am(2026, 6, 12), am(2026, 4, 1)],
+      new Date(2026, 6, 1), // July 2026, closed…
+      new Date(2026, 8, 10), // …because hoy is September
+    );
+    expect(r.ingresos).toBe(1000);
+    expect(r.ventas).toBe(3);
+    expect(r.ticketPromedio).toBeCloseTo(1000 / 3);
+    expect(r.porMetodo).toEqual({ efectivo: 500, tarjeta: 300, transferencia: 200 });
+    expect(r.asistencias).toBe(2);
+    expect(r.altas).toBe(1);
+    expect(r.parcial).toBe(false);
+  });
+
+  it("a CLOSED February compares against FULL January — including Jan 29–31 (the calcularResumenMes-reuse bug, pinned)", () => {
+    const r = calcularCorteMes(
+      [vm(2026, 1, 10, 100), vm(2026, 0, 15, 200), vm(2026, 0, 30, 400), vm(2026, 0, 31, 800)],
+      [am(2026, 0, 29), am(2026, 0, 5), am(2026, 1, 3)],
+      [],
+      new Date(2026, 1, 1), // February 2026
+      new Date(2026, 6, 13), // exported much later — closed month
+    );
+    expect(r.prev.ingresos).toBe(1400); // 200 + 400 + 800 — Jan 30/31 NOT cut off
+    expect(r.prev.ventas).toBe(3);
+    expect(r.prev.asistencias).toBe(2); // Jan 29 counted
+    expect(r.parcial).toBe(false);
+  });
+
+  it("the IN-PROGRESS month is parcial and compares prior-month-to-the-same-day (like-for-like)", () => {
+    const hoy = new Date(2026, 6, 13);
+    const r = calcularCorteMes(
+      [vm(2026, 6, 5, 500), vm(2026, 5, 10, 300), vm(2026, 5, 20, 900)],
+      [am(2026, 5, 13), am(2026, 5, 14)],
+      [],
+      hoy, // mes = the current month, anchored at hoy
+      hoy,
+    );
+    expect(r.parcial).toBe(true);
+    expect(r.prev.ingresos).toBe(300); // 10 jun ≤ day 13; 20 jun excluded
+    expect(r.prev.ventas).toBe(1);
+    expect(r.prev.asistencias).toBe(1); // 13 jun in, 14 jun out
+  });
+
+  it("returns raw zeros (ticket included) for an empty month — never NaN", () => {
+    const r = calcularCorteMes([], [], [], new Date(2026, 3, 1), new Date(2026, 6, 13));
+    expect(r).toEqual({
+      ingresos: 0,
+      ventas: 0,
+      ticketPromedio: 0,
+      porMetodo: { efectivo: 0, transferencia: 0, tarjeta: 0 },
+      altas: 0,
+      asistencias: 0,
+      parcial: false,
+      prev: { ingresos: 0, ventas: 0, asistencias: 0 },
+    });
   });
 });
 

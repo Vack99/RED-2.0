@@ -25,6 +25,7 @@ import type { MensajeDTO } from "@gym/data/server/mensajes";
 import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
+import type { MesRespaldo } from "@gym/data/server/respaldo";
 import type { StatDTO } from "@gym/data/server/stats";
 import { pesos } from "@gym/format";
 
@@ -53,6 +54,8 @@ interface CuentaScreenProps {
   stats: StatDTO[];
   faqs: FaqDTO[];
   mensajes: MensajeDTO[];
+  /** Months-with-data for the respaldo picker, newest first (spec 2026-07-13 §2.5). */
+  mesesRespaldo: MesRespaldo[];
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -110,6 +113,7 @@ export function CuentaScreen({
   stats,
   faqs,
   mensajes,
+  mesesRespaldo,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -273,11 +277,15 @@ export function CuentaScreen({
         RESPALDO
       </SectionHeader>
       <div style={{ margin: "0 16px" }}>
-        <a
-          href="/cuenta/respaldo"
-          download
-          className="flex w-full items-center border border-line bg-surface text-left transition-transform active:scale-[0.992]"
-          style={{ gap: 14, padding: "14px 16px", cursor: "pointer", color: "var(--fg)" }}
+        {/* Native GET form (spec 2026-07-13 §2.5): no client JS — the route's
+            Content-Disposition: attachment fires the save dialog. The select
+            picks one month (?mes=YYYY-MM); the empty value is the capped
+            "Últimos 24 meses" default (?mes absent). */}
+        <form
+          method="get"
+          action="/cuenta/respaldo"
+          className="flex w-full items-center border border-line bg-surface"
+          style={{ gap: 14, padding: "14px 16px", color: "var(--fg)" }}
         >
           <div
             className="flex shrink-0 items-center justify-center border border-line"
@@ -289,12 +297,29 @@ export function CuentaScreen({
             <div className="font-bold" style={{ fontSize: 12.5, letterSpacing: 0.6 }}>
               DESCARGAR RESPALDO
             </div>
-            <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
-              Excel del registro — clientes, ventas y asistencias
-            </div>
+            <select
+              name="mes"
+              aria-label="Mes del respaldo"
+              className="w-full border border-line bg-canvas"
+              style={{ marginTop: 6, padding: "6px 8px", fontSize: 11.5, color: "var(--fg)" }}
+            >
+              <option value="">Últimos 24 meses</option>
+              {mesesRespaldo.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
           </div>
-          <Icon name="arrow" size={14} color="var(--muted)" />
-        </a>
+          <button
+            type="submit"
+            className="inline-flex shrink-0 items-center uppercase font-extrabold transition-transform active:scale-[0.97]"
+            style={{ gap: 5, background: "transparent", border: "none", cursor: "pointer", padding: "8px 0", fontSize: 10.5, letterSpacing: 1.2, color: "var(--gold)" }}
+          >
+            DESCARGAR
+            <Icon name="arrow" size={13} color="var(--gold)" />
+          </button>
+        </form>
       </div>
 
       {/* Paquetes y precios — real catalog (read-only) */}
