@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   invitacionInfo,
   parseCodigoInvitacion,
+  reclamarCliente,
   reclamarPorCodigo,
   registrarSocio,
   registroSchema,
@@ -112,6 +113,49 @@ describe("reclamarPorCodigo", () => {
     await expect(reclamarPorCodigo("ZZZZZZZZ", client)).rejects.toThrow(
       "Código de invitación inválido o ya utilizado",
     );
+  });
+});
+
+describe("reclamarCliente — tenant firma (spec 2026-07-13 §1.5, D2 binding)", () => {
+  // The RPC's gym binding: only the server holds TENANT_ASSERTION_KEY, so only the
+  // server can produce a valid p_firma for the host-resolved gym — a direct
+  // PostgREST caller naming an arbitrary gym cannot. The expected value is a PINNED
+  // literal (HMAC-SHA256 of "u-1:g-1" with "test-key", derived outside this code),
+  // never recomputed the implementation's way.
+  const FIRMA_PINNED = "106a15a15e7bcdb10b36ce36812ba202abec2fa8342f15000cd42cc749a15dfd";
+
+  function fakeAuthRpc(capture: (name: string, args: unknown) => void): SupabaseServer {
+    return {
+      auth: { getClaims: async () => ({ data: { claims: { sub: "u-1" } } }) },
+      rpc: (name: string, args: unknown) => {
+        capture(name, args);
+        return { single: async () => ({ data: { cliente_id: "c-1", reclamado: true }, error: null }) };
+      },
+    } as unknown as SupabaseServer;
+  }
+
+  it("sends p_gym_id plus the server-side firma over uid:gym", async () => {
+    vi.stubEnv("TENANT_ASSERTION_KEY", "test-key");
+    let seen: { name: string; args: unknown } | null = null;
+    const client = fakeAuthRpc((name, args) => {
+      seen = { name, args };
+    });
+    const result = await reclamarCliente("g-1", client);
+    expect(result).toEqual({ cliente_id: "c-1", reclamado: true });
+    expect(seen).toEqual({
+      name: "reclamar_o_crear_cliente",
+      args: { p_gym_id: "g-1", p_firma: FIRMA_PINNED },
+    });
+    vi.unstubAllEnvs();
+  });
+
+  it("throws when TENANT_ASSERTION_KEY is not configured (never calls the RPC unsigned)", async () => {
+    vi.stubEnv("TENANT_ASSERTION_KEY", "");
+    const client = fakeAuthRpc(() => {
+      throw new Error("RPC must not be called without a firma");
+    });
+    await expect(reclamarCliente("g-1", client)).rejects.toThrow("TENANT_ASSERTION_KEY");
+    vi.unstubAllEnvs();
   });
 });
 

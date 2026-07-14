@@ -1478,7 +1478,7 @@ export type Database = {
         }[]
       }
       reclamar_o_crear_cliente: {
-        Args: { p_gym_id: string }
+        Args: { p_firma: string; p_gym_id: string }
         Returns: {
           cliente_id: string
           reclamado: boolean

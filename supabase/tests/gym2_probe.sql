@@ -36,6 +36,15 @@ begin
   select id into gym1 from public.gym where slug = 'forge';
   if gym1 is null then raise exception 'SEED FAIL: expected the forge gym from the spine seeds'; end if;
 
+  -- D2 tenant binding (20260713190000): transaction-local HMAC key for the claim call's firma.
+  if exists (select 1 from vault.secrets where name = 'tenant_assertion_key') then
+    perform vault.update_secret(
+      (select id from vault.secrets where name = 'tenant_assertion_key'), 'denial-suite-secret');
+  else
+    perform vault.create_secret('denial-suite-secret', 'tenant_assertion_key');
+  end if;
+  perform set_config('t.hmac_key', 'denial-suite-secret', true);
+
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (gym2, 'gym2-probe', 'Gym 2 Probe', 'America/Mexico_City', 'red');
 
@@ -87,7 +96,9 @@ declare
   r  record;
   n  int;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g2);
+  select * into r from public.reclamar_o_crear_cliente(g2,
+    encode(extensions.hmac(m2::text || ':' || g2::text,
+                           current_setting('t.hmac_key', true), 'sha256'), 'hex'));
   if not r.reclamado then raise exception 'PROBE (a) FAIL: expected reclamado=true (verified-email match)'; end if;
   if r.cliente_id <> cs then raise exception 'PROBE (a) FAIL: claimed % but expected the seeded cliente %', r.cliente_id, cs; end if;
   -- Balance carried over untouched + membership written in the same transaction.

@@ -15,9 +15,15 @@
 -- the index, not the RPC's v_n=1 count, is the guard) and (b) the formerly-ambiguous email, now
 -- necessarily unique, deterministically CLAIMS its single row.
 --
--- Eight named vectors: claim-on-verified-match, create-on-no-match, create-on-phone-only,
+-- TENANT BINDING (D2, 20260713190000): the RPC now takes `p_firma` — HMAC-SHA256 over
+-- `uid:gym_id` with the Vault key `tenant_assertion_key` — verified BEFORE any read or write, so a
+-- direct PostgREST caller cannot mint a membership in a gym the server did not resolve for them.
+-- Fixtures seed a transaction-local key (update-or-create, rolled back); every vector signs its
+-- call via pg_temp.firma(); V9 proves a forged and a cross-gym firma are rejected and write nothing.
+--
+-- Nine named vectors: claim-on-verified-match, create-on-no-match, create-on-phone-only,
 -- email-unique-index-guard + claim-on-now-unique-match, unverified-rejected, membership-atomicity,
--- cross-gym-claim-denied, member-scoped-read.
+-- cross-gym-claim-denied, member-scoped-read, forged-firma-rejected.
 --
 -- Zero hardcoded prod UUIDs (ADR-0013 §5): gym A is looked up by slug from the spine seeds; a synthetic
 -- gym B, all auth.users, and all pre-seeded clientes are minted with gen_random_uuid(). Fixtures are
@@ -46,6 +52,7 @@ declare
   u_unverif uuid := gen_random_uuid();
   u_atomic  uuid := gen_random_uuid();
   u_cross   uuid := gen_random_uuid();
+  u_forge   uuid := gen_random_uuid();   -- V9: attacker probing the tenant binding
   -- pre-seeded UNCLAIMED clientes
   c_match   uuid;
   c_phone   uuid;
@@ -55,6 +62,15 @@ declare
 begin
   select id into gym_a from public.gym where slug = 'forge';
   if gym_a is null then raise exception 'SEED FAIL: expected the forge gym from the spine seeds'; end if;
+
+  -- D2 tenant binding: transaction-local HMAC key (update-or-create; rolls back with the suite).
+  if exists (select 1 from vault.secrets where name = 'tenant_assertion_key') then
+    perform vault.update_secret(
+      (select id from vault.secrets where name = 'tenant_assertion_key'), 'denial-suite-secret');
+  else
+    perform vault.create_secret('denial-suite-secret', 'tenant_assertion_key');
+  end if;
+  perform set_config('t.hmac_key', 'denial-suite-secret', true);
 
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (gym_b, 'registro-suite-gym-2', 'Registro Suite Gym 2', 'America/Mexico_City', 'red');
@@ -68,7 +84,8 @@ begin
     ('00000000-0000-0000-0000-000000000000', u_ambig,   'authenticated','authenticated','dup@x.mx',           now(), '{"full_name":"Ada Ambig","phone_e164":"+526144445566"}'),
     ('00000000-0000-0000-0000-000000000000', u_unverif, 'authenticated','authenticated','sin@x.mx',           null,  '{"full_name":"Uma Unverif","phone_e164":"+526145556677"}'),
     ('00000000-0000-0000-0000-000000000000', u_atomic,  'authenticated','authenticated','atom@x.mx',          now(), '{"full_name":"Ato Mic","phone_e164":"+526146667788"}'),
-    ('00000000-0000-0000-0000-000000000000', u_cross,   'authenticated','authenticated','cross@x.mx',         now(), '{"full_name":"Cris Cross","phone_e164":"+526147778899"}');
+    ('00000000-0000-0000-0000-000000000000', u_cross,   'authenticated','authenticated','cross@x.mx',         now(), '{"full_name":"Cris Cross","phone_e164":"+526147778899"}'),
+    ('00000000-0000-0000-0000-000000000000', u_forge,   'authenticated','authenticated','forja@x.mx',         now(), '{"full_name":"Fabián Forja","phone_e164":"+526148889900"}');
 
   -- Pre-seeded operator CRM rows (auth_user_id NULL). c_match's email matches u_match (→ claim);
   -- c_phone shares u_phone's PHONE but has a DIFFERENT email (→ phone must NOT claim); c_dup carries
@@ -108,11 +125,20 @@ begin
   perform set_config('t.u_unverif', u_unverif::text, true);
   perform set_config('t.u_atomic',  u_atomic::text,  true);
   perform set_config('t.u_cross',   u_cross::text,   true);
+  perform set_config('t.u_forge',   u_forge::text,   true);
   perform set_config('t.c_match',   c_match::text,   true);
   perform set_config('t.c_phone',   c_phone::text,   true);
   perform set_config('t.c_dup',     c_dup::text,     true);
   perform set_config('t.c_cross',   c_cross::text,   true);
 end $$;
+
+-- The signing helper every vector uses (temp schema — vanishes with the session; callable by the
+-- role-switched blocks because EXECUTE on functions defaults to PUBLIC).
+create function pg_temp.firma(u uuid, g uuid) returns text language sql as $$
+  select encode(
+    extensions.hmac(u::text || ':' || g::text, current_setting('t.hmac_key', true), 'sha256'),
+    'hex');
+$$;
 
 -- ══ V1 — claim-on-verified-email-match: balance carried + membership written atomically ═════════════
 select set_config('request.jwt.claims',
@@ -126,7 +152,7 @@ declare
   r   record;
   n   int;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g);
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(um, g));
   if not r.reclamado then raise exception 'V1 FAIL: expected reclamado=true (a verified-email match)'; end if;
   if r.cliente_id <> cm then raise exception 'V1 FAIL: claimed % but expected the matched cliente %', r.cliente_id, cm; end if;
   -- Balance carried over untouched (ADR-0009): the operator-tracked 5 clases survive the claim.
@@ -151,7 +177,7 @@ declare
   v_auth_email text;
   n  int;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g);
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(un, g));
   if r.reclamado then raise exception 'V2 FAIL: no matching email should NOT claim'; end if;
   -- Assert the WRITTEN row, not just which row (the #78 lesson): an RPC's return value is not its
   -- contract — the row it writes is. #78 dropped `email` from exactly this create-path INSERT and
@@ -184,9 +210,12 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.u_phone', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare g uuid := current_setting('t.gym_a', true)::uuid; r record;
+declare
+  g  uuid := current_setting('t.gym_a', true)::uuid;
+  up uuid := current_setting('t.u_phone', true)::uuid;
+  r  record;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g);
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(up, g));
   if r.reclamado then raise exception 'V3 FAIL: a phone-only match must NOT claim'; end if;
   perform set_config('t.c_created_phone', r.cliente_id::text, true);
 end $$;
@@ -215,9 +244,10 @@ do $$
 declare
   g  uuid := current_setting('t.gym_a', true)::uuid;
   cd uuid := current_setting('t.c_dup', true)::uuid;
+  ua uuid := current_setting('t.u_ambig', true)::uuid;
   r  record;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g);
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(ua, g));
   if not r.reclamado then raise exception 'V4b FAIL: a now-unique email match must CLAIM (got create)'; end if;
   if r.cliente_id <> cd then raise exception 'V4b FAIL: claimed % but expected the single dup row %', r.cliente_id, cd; end if;
 end $$;
@@ -244,10 +274,14 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.u_unverif', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare g uuid := current_setting('t.gym_a', true)::uuid; r record; got_error boolean := false;
+declare
+  g  uuid := current_setting('t.gym_a', true)::uuid;
+  uu uuid := current_setting('t.u_unverif', true)::uuid;
+  r  record;
+  got_error boolean := false;
 begin
   begin
-    select * into r from public.reclamar_o_crear_cliente(g);
+    select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(uu, g));
   exception when others then got_error := true;
   end;
   if not got_error then raise exception 'V5 FAIL: an unverified email must be rejected'; end if;
@@ -271,10 +305,14 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.u_atomic', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare g uuid := current_setting('t.gym_a', true)::uuid; r record; got_error boolean := false;
+declare
+  g  uuid := current_setting('t.gym_a', true)::uuid;
+  ua uuid := current_setting('t.u_atomic', true)::uuid;
+  r  record;
+  got_error boolean := false;
 begin
   begin
-    select * into r from public.reclamar_o_crear_cliente(g);
+    select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(ua, g));
   exception when others then got_error := true;
   end;
   if not got_error then raise exception 'V6 FAIL: injected membership failure did not surface'; end if;
@@ -295,9 +333,12 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.u_cross', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare gb uuid := current_setting('t.gym_b', true)::uuid; r record;
+declare
+  gb uuid := current_setting('t.gym_b', true)::uuid;
+  uc uuid := current_setting('t.u_cross', true)::uuid;
+  r  record;
 begin
-  select * into r from public.reclamar_o_crear_cliente(gb);
+  select * into r from public.reclamar_o_crear_cliente(gb, pg_temp.firma(uc, gb));
   if r.reclamado then raise exception 'V7 FAIL: a match in ANOTHER gym must NOT be claimed'; end if;
   perform set_config('t.c_created_cross', r.cliente_id::text, true);
 end $$;
@@ -340,6 +381,44 @@ begin
   if n <> 1 then raise exception 'V8 FAIL: member self-read of their gym membership failed (count=%)', n; end if;
 end $$;
 reset role;
+
+-- ══ V9 — forged-firma-rejected: the D2 tenant binding. A garbage firma raises; a VALID firma for
+--         gym A replayed against gym B raises (the gym id is inside the signed message); and neither
+--         attempt writes a cliente or membership row. ═══════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.u_forge', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  ga uuid := current_setting('t.gym_a', true)::uuid;
+  gb uuid := current_setting('t.gym_b', true)::uuid;
+  uf uuid := current_setting('t.u_forge', true)::uuid;
+  r  record;
+  got_error boolean := false;
+begin
+  -- (a) garbage firma
+  begin
+    select * into r from public.reclamar_o_crear_cliente(ga, 'deadbeef');
+  exception when others then got_error := true;
+  end;
+  if not got_error then raise exception 'V9 FAIL: a garbage firma was accepted'; end if;
+  -- (b) valid firma for gym A, replayed against gym B — the binding must be to the SIGNED gym
+  got_error := false;
+  begin
+    select * into r from public.reclamar_o_crear_cliente(gb, pg_temp.firma(uf, ga));
+  exception when others then got_error := true;
+  end;
+  if not got_error then raise exception 'V9 FAIL: gym A''s firma minted a membership in gym B'; end if;
+end $$;
+reset role;
+do $$
+declare uf uuid := current_setting('t.u_forge', true)::uuid; n int;
+begin
+  select count(*) into n from public.clientes where auth_user_id = uf;
+  if n <> 0 then raise exception 'V9 FAIL: a rejected firma still created % cliente row(s)', n; end if;
+  select count(*) into n from public.gym_membership where user_id = uf;
+  if n <> 0 then raise exception 'V9 FAIL: a rejected firma still created % membership row(s)', n; end if;
+end $$;
 
 select 'registro claim suite: OK' as result;
 rollback;

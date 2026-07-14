@@ -2,6 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
+import { createHmac } from "node:crypto";
+
 import { isTelValido, telDigits } from "@gym/format";
 
 import type { Database } from "../database.types";
@@ -106,8 +108,23 @@ export async function registrarSocio(
 }
 
 /**
+ * The tenant firma (spec 2026-07-13 §1.5, ruling D2): HMAC-SHA256 over
+ * `uid:gymId` with a key only the server and the DB (Vault) hold. The RPC
+ * verifies it, so `p_gym_id` is bound to the HOST-RESOLVED tenant — a direct
+ * PostgREST caller naming an arbitrary gym cannot forge the signature, which is
+ * the only un-spoofable channel available (the DB cannot observe the host, and
+ * headers/user-metadata are caller-controlled).
+ */
+function firmaTenant(userId: string, gymId: string): string {
+  const key = process.env.TENANT_ASSERTION_KEY;
+  if (!key) throw new Error("TENANT_ASSERTION_KEY no configurada");
+  return createHmac("sha256", key).update(`${userId}:${gymId}`).digest("hex");
+}
+
+/**
  * Post-verification claim-or-create. `gymId` is the caller's host-resolved tenant,
- * passed by the confirm route — NEVER a client field (ADR-0009). The RPC re-checks
+ * passed by the confirm route — NEVER a client field (ADR-0009), and since D2 it is
+ * accompanied by the server-only tenant firma the RPC verifies. The RPC re-checks
  * `email_confirmed_at` (defense-in-depth), matches on VERIFIED email only (phone
  * never claims; ambiguous → create), and commits the member membership atomically.
  */
@@ -116,8 +133,11 @@ export async function reclamarCliente(
   client?: SupabaseServer,
 ): Promise<ReclamoCliente> {
   const supabase = client ?? (await createClient());
+  const { data: claims } = await supabase.auth.getClaims();
+  const uid = claims?.claims?.sub;
+  if (!uid) throw new Error("No autenticado");
   const { data, error } = await supabase
-    .rpc("reclamar_o_crear_cliente", { p_gym_id: gymId })
+    .rpc("reclamar_o_crear_cliente", { p_gym_id: gymId, p_firma: firmaTenant(uid, gymId) })
     .single();
   if (error || !data) {
     throw new Error(error?.message ?? "No se pudo completar el registro");

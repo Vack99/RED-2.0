@@ -6,6 +6,10 @@
 -- authenticated caller — Phase 3 adds NO write policy to either table (rows are seeded by the
 -- migration, which runs as the migration role and bypasses RLS). This proves both halves.
 --
+-- Since 20260713190100 (D3): anon's `gym` read is COLUMN-granted — the brand-seam columns only.
+-- The anon block additionally proves the granted list still serves the pre-auth lookup and that
+-- `legal_name`/`owner_user_id` raise 42501 for anon. (`authenticated` keeps the table-wide grant.)
+--
 -- Written BEFORE the create_gym_tenant_spine migration (TDD, denial-test-first): against a fresh
 -- preview branch with neither table present it FAILS (the tables don't exist); after the migration
 -- it returns one 'OK' row.
@@ -43,6 +47,26 @@ begin
   if n < 2 then raise exception 'READ FAIL: anon sees % gym rows (expected >= 2)', n; end if;
   select count(*) into n from public.gym_domain;
   if n < 5 then raise exception 'READ FAIL: anon sees % gym_domain rows (expected >= 5)', n; end if;
+
+  -- COLUMN GRANTS (D3, 20260713190100): anon reads exactly the brand-seam columns the pre-auth
+  -- host→brand lookup needs (resolveTenant: id/slug/brand_module_id; marketing: brand_name/
+  -- timezone/about_*; branding: token_overrides) — this is the "still works" proof the GRANT
+  -- change would otherwise break SILENTLY on an unmapped host…
+  perform id, slug, brand_name, timezone, brand_module_id, token_overrides,
+          about_story, about_pull_quote, about_tagline
+    from public.gym;
+
+  -- …and NOT the owner PII: legal_name / owner_user_id must 42501 for anon.
+  begin
+    perform legal_name from public.gym;
+    raise exception 'DENIAL FAIL: anon read gym.legal_name — the column revoke did not hold';
+  exception when insufficient_privilege then null;  -- 42501 = correct
+  end;
+  begin
+    perform owner_user_id from public.gym;
+    raise exception 'DENIAL FAIL: anon read gym.owner_user_id — the column revoke did not hold';
+  exception when insufficient_privilege then null;
+  end;
 
   -- WRITE: INSERT denied (default-deny, no policy → error)
   n := 1;
