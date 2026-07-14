@@ -22,3 +22,17 @@ How to apply:
 - Reviews of plans/implementations: fable-5 or opus-4.8.
 - Never use Haiku.
 - Claude models (sonnet-5, opus-4.8, fable-5) run via the Agent/Workflow model parameter.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub issues on `Vack99/RED-2.0`, via the `gh` CLI. External PRs are **not** a triage surface — this is a solo repo that ships on branches and fast-forwards to `main` without PRs. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, with one remap: `ready-for-human` is spelled **`hitl`** here. `ready-for-agent` and `wontfix` match. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + one `docs/adr/` at the root, shared by every package. See `docs/agents/domain.md`.
