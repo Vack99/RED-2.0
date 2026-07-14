@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { ImageResponse } from "next/og";
 import type { VentaResult } from "@gym/data/server/ventas";
 
-import { FORGE_TICKET, TICKET_WIDTH, TicketTwin } from "./_components/ticket-twin";
+import { FORGE_TICKET, TICKET_WIDTH, TicketTwin, type TicketPalette } from "./_components/ticket-twin";
 
 /**
  * The receipt PNG twin (#100): the SAME hook-free `TicketTwin` the email body serializes, rasterized
@@ -27,7 +27,10 @@ const PNG_HEIGHT = 520;
 
 const fontUrl = (file: string) => new URL(`./_assets/fonts/${file}`, import.meta.url);
 
-export async function generarReciboPng(venta: VentaResult): Promise<string | null> {
+export async function generarReciboPng(
+  venta: VentaResult,
+  palette: TicketPalette = FORGE_TICKET,
+): Promise<string | null> {
   try {
     const [regular, semibold, bold, extrabold] = await Promise.all([
       readFile(fontUrl("Outfit-Regular.ttf")),
@@ -43,10 +46,10 @@ export async function generarReciboPng(venta: VentaResult): Promise<string | nul
             display: "flex",
             width: "100%",
             height: "100%",
-            background: FORGE_TICKET.paper,
+            background: palette.paper,
           }}
         >
-          <TicketTwin venta={venta} fontFamily="Outfit" />
+          <TicketTwin venta={venta} palette={palette} fontFamily="Outfit" />
         </div>
       ),
       {

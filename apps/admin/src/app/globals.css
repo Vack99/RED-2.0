@@ -11,6 +11,11 @@
    unstyled text. Forge cannot match its `[data-brand="red"]` scope. */
 @import "@gym/brand/red/neon.css";
 
+/* RED's receipt-card accent (#103): re-keys the `--recibo-*` properties under
+   `[data-brand="red"]` — the compound selector out-specifies the `.recibo-card`
+   defaults below, so it wins despite @import's earlier cascade position. */
+@import "@gym/brand/red/recibo.css";
+
 /* Register @gym/ui's source with Tailwind v4 (ADR-0011 §7). Tailwind 4 (CSS-first)
    auto-detects classes only from this Next project's root (apps/admin) and ignores
    out-of-root files, so the UI kit under packages/ui/src — now outside the app —

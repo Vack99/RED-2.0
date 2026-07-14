@@ -2,7 +2,7 @@ import type { VentaResult } from "@gym/data/server/ventas";
 import { pesos } from "@gym/format";
 import { describe, expect, it } from "vitest";
 
-import { construirReciboEmail, FORGE_TICKET } from "./ticket-twin";
+import { construirReciboEmail, FORGE_TICKET, RED_TICKET, ticketPalette } from "./ticket-twin";
 
 const VENTA: VentaResult = {
   folio: 1001,
@@ -53,6 +53,16 @@ describe("construirReciboEmail — the ticket twin rendered as the email (#99)",
     expect(text).toContain("MÉTODO: EFECTIVO");
     // No `.00` — the card's TOTAL renders the bare pesos value; the text twin mirrors it.
     expect(text).toContain(`TOTAL: ${pesos(800)} MXN`);
+  });
+
+  it("the RED palette re-keys the accent — same paper, same ink (#103)", () => {
+    const { html } = construirReciboEmail(VENTA, RED_TICKET);
+    expect(html).toContain(RED_TICKET.label);
+    expect(html).not.toContain(FORGE_TICKET.label);
+    expect(html).toContain(FORGE_TICKET.paper);
+    expect(ticketPalette("red")).toBe(RED_TICKET);
+    expect(ticketPalette("forge")).toBe(FORGE_TICKET);
+    expect(ticketPalette("otra-marca")).toBe(FORGE_TICKET);
   });
 
   it("a renewal drops the NUEVO badge", () => {

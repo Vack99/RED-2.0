@@ -31,6 +31,21 @@ export const FORGE_TICKET: TicketPalette = {
   badge: "rgba(199,149,69,0.18)",
 };
 
+/** RED on the same cream paper (#103, owner-picked "Vino" = RED's `gold` token). Must agree with
+ *  `packages/brand/src/red/recibo.css` — the card reads that stylesheet, the email/PNG read this
+ *  (Satori has no cascade, Gmail strips `<style>`, so the twin cannot consume the custom props). */
+export const RED_TICKET: TicketPalette = {
+  paper: "#f5f1ea",
+  ink: "#1c1917",
+  label: "#7e0d10",
+  badge: "rgba(126,13,16,0.12)",
+};
+
+/** The brand → twin-palette rule the send path resolves per request (unknown brands stay Forge-cream). */
+export function ticketPalette(brandId: string): TicketPalette {
+  return brandId === "red" ? RED_TICKET : FORGE_TICKET;
+}
+
 /** Email-client-safe stack for the HTML body; the PNG render passes "Outfit" (#100). */
 const EMAIL_FONT_STACK = "-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif";
 
@@ -120,15 +135,18 @@ export function TicketTwin({
 }
 
 /** Compose the receipt email (#99): subject + the twin as the HTML body + its plain-text mirror.
- *  Pure — the caller owns recipient resolution and the send. */
-export function construirReciboEmail(venta: VentaResult): { subject: string; html: string; text: string } {
+ *  Pure — the caller owns recipient resolution, the brand's palette (#103), and the send. */
+export function construirReciboEmail(
+  venta: VentaResult,
+  palette: TicketPalette = FORGE_TICKET,
+): { subject: string; html: string; text: string } {
   const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad } = venta;
 
   const subject = `Tu recibo de ${negocio} · F-${folio}`;
 
   const html = renderStaticHtml(
     <div style={{ margin: "0 auto", maxWidth: 420, padding: 24 }}>
-      <TicketTwin venta={venta} />
+      <TicketTwin venta={venta} palette={palette} />
     </div>,
   );
 

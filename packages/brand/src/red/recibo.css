@@ -1,0 +1,14 @@
+/* RED's receipt-card accent (#103, owner-picked 2026-07-14: "Vino" — RED's own `gold`
+ * token #7e0d10, 9.55:1 on the cream paper vs Forge-gold's 5.62:1 baseline).
+ *
+ * The card keeps its cream paper and near-black ink in every brand — only the accent
+ * (labels, tel, vigencia, MXN suffix, footer) and the NUEVO badge wash re-key. The
+ * `--recibo-*` custom properties and their Forge defaults live in the admin app's
+ * globals (`.recibo-card`); this override MUST keep the `[data-brand="red"]` compound —
+ * a bare `.recibo-card` here would TIE on specificity and lose to the later-in-cascade
+ * defaults (this @import precedes them). Forge can never match this scope.
+ */
+[data-brand="red"] .recibo-card {
+  --recibo-label: #7e0d10;
+  --recibo-badge: rgba(126,13,16,0.12);
+}

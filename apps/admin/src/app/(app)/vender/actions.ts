@@ -13,6 +13,8 @@ import {
   type VentaResult,
 } from "@gym/data/server/ventas";
 
+import { resolveBrand } from "../../../lib/brand";
+import { ticketPalette } from "./_components/ticket-twin";
 import { enviarReciboDeVenta } from "./recibo-envio";
 
 /** The vender screen switches on this: a completed sale (recibo), the RPC's duplicate
@@ -47,7 +49,8 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
   const [invite, reciboEmail] = await Promise.all([
     resolverInvitacion(result),
     // The auto receipt email (#99) — EVERY sale with an email on hand, new and renewal alike.
-    enviarReciboDeVenta(result),
+    // The twin's palette follows the request's brand (#103): card, email body, and PNG agree.
+    enviarReciboDeVenta(result, { palette: ticketPalette((await resolveBrand()).id) }),
   ]);
   return { ok: true, recibo: { ...result, invite, reciboEmail } };
 }
@@ -78,7 +81,10 @@ export async function reenviarReciboAction(
     const dest = override ?? venta.emailCliente;
     return dest ? { estado: "fallo", email: dest } : { estado: "sin-email" };
   }
-  return enviarReciboDeVenta({ ...venta, negocio: brandName }, { email: override });
+  return enviarReciboDeVenta(
+    { ...venta, negocio: brandName },
+    { email: override, palette: ticketPalette((await resolveBrand()).id) },
+  );
 }
 
 /** Fire the auto-invite for a NEW-client sale with an email; map its outcome to the recibo's invite state.
