@@ -30,7 +30,7 @@ export function Recibo({
   onOtra: () => void;
   onVerCliente: (id: string) => void;
 }) {
-  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, coach, invite } = result;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, invite } = result;
   const isNew = c.isNew;
   const primerNombre = c.nombre.split(" ")[0];
   const [showCheck, setShowCheck] = React.useState(false);
@@ -115,7 +115,6 @@ export function Recibo({
               ["FECHA", fechaDisplay.toUpperCase()],
               ["VIGENCIA", `${compradoDisplay.toUpperCase()} → ${venceDisplay.toUpperCase()}`],
               ["MÉTODO", metodoDisplay],
-              ["ATIENDE", coach.toUpperCase()],
             ].map(([k, v], i) => (
               <div key={i} className="flex justify-between" style={{ padding: "4px 0", fontSize: 11.5, color: "#7a5a26", letterSpacing: 0.6 }}>
                 <span>{k}</span>
