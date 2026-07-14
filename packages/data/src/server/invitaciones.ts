@@ -25,6 +25,9 @@ export interface MailMessage {
   html: string;
   text: string;
   from?: string;
+  /** Optional file attachments in Resend's REST shape: `{ filename, content }` where `content` is the
+   *  file's bytes base64-encoded. Carries the receipt PNG twin (#100); absent for plain mail. */
+  attachments?: { filename: string; content: string }[];
 }
 
 /** Transport result — a discriminated object so a bad send is a value, never a throw. */
@@ -59,6 +62,8 @@ export function resendTransport(): MailTransport {
             subject: msg.subject,
             html: msg.html,
             text: msg.text,
+            // Only send the key when there are attachments — a plain invite carries none.
+            ...(msg.attachments ? { attachments: msg.attachments } : {}),
           }),
         });
         if (!res.ok) return { ok: false, error: `resend ${res.status}` };

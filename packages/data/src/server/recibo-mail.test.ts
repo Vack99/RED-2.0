@@ -46,6 +46,20 @@ describe("enviarReciboEmail — the receipt mail's envelope (#99)", () => {
     expect(sent[0].text).toBe("ticket");
   });
 
+  it("carries an attachment (the PNG twin, #100) through to the transport", async () => {
+    const { sent, transport } = recordingTransport({ ok: true });
+    const conAdjunto: MailMessage = {
+      ...MSG,
+      attachments: [{ filename: "recibo-F1001.png", content: "aVZCT1J3MEtHZ29=" }],
+    };
+
+    await enviarReciboEmail(conAdjunto, "RED", { transport });
+
+    expect(sent[0].attachments).toHaveLength(1);
+    expect(sent[0].attachments![0].filename).toBe("recibo-F1001.png");
+    expect(sent[0].attachments![0].content.length).toBeGreaterThan(0);
+  });
+
   it("a failed send is a returned value, never a throw", async () => {
     const { transport } = recordingTransport({ ok: false, error: "resend 429" });
 
