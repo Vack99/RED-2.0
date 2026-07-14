@@ -21,8 +21,28 @@ incomparable, so bump `CONDITIONS_ID` if you do, and take a fresh baseline.
 - One login, session reused across all authenticated routes.
 - Gate is on `html`, **not `ttfb`** — Next streams SSR, so a first byte can arrive in 5 ms
   while the page is still blocked on the DB. `ttfb` and `lcp` are recorded, not gated.
+- **`lcp` and `bytes` are ratcheted, not gated** (see "The ratchet" below). You optimize the
+  low-noise server metric; the ratchet stops you winning it by pushing work into the browser.
 - **Seeded row volumes are part of the conditions** (see below). Change them and every
   previous number becomes meaningless.
+
+### The ratchet (warn-level — `run.mjs` `ratchet()`)
+
+Gating `html` alone has a hole: convert an SSR data-fetch into a **client-side** fetch and the
+document shrinks (`html` drops, gate "won") while the data wait reappears in the browser (`lcp`
+climbs). Gating `html` instead of `ttfb` does **not** catch this — the document really does
+arrive fast, it just no longer carries the data. So after every run the harness compares two
+recorded-but-ungated metrics against the previous run and **warns** (never fails):
+
+- **LCP regression** — flagged if a route's LCP rose by >30% *and* >25 ms. Generous on purpose:
+  LCP is 5 cold-context Playwright samples and swings hard, so a tight gate would cry wolf. It
+  is warn-level until its noise floor is characterized over a few iterations; promote it to a
+  fail-gate only then.
+- **Bytes moved materially** — flagged on a >15% *and* >1 KB move in **either** direction. Not
+  a one-way ratchet: a big DROP is how the empty-page bug announced itself; a big RISE is
+  unexpected in a pure-optimization loop. This is the home-page preflight, generalized to all
+  19 routes. **If the ratchet flags a bytes drop, the run is probably measuring an empty page —
+  do not trust its `html` numbers.**
 
 ### The seed (`pnpm perf:seed` → `tools/perf/seed-local.mjs`)
 
@@ -56,6 +76,12 @@ PERF_DB=live pnpm perf <label> # live remote DB — 9 public routes only. Never 
 Each run writes `tools/perf/results/NNN-<label>.json` and prints a per-route diff against
 the previous run. **A change is only real if the diff moves by more than 2 ms** — below
 that is measurement noise, not signal.
+
+⚠️ The 2 ms rule holds for the **cheap, stable** routes. The **expensive and borderline**
+ones (`admin/asistencia`, `admin/vender`, `client/reservar`, and the three near-misses) have
+a much wider run-to-run spread — two identical-code runs saw `admin/agenda` flip 48.7→50.9
+(PASS→FAIL) and `reservar` move 50.8→67.8. **Do not trust a single run's pass/fail within
+~15 ms of the gate on those routes; re-run before believing a borderline flip either way.**
 
 ## Status
 
@@ -114,6 +140,32 @@ the old conclusions are dead.**
 - `ttfb ≈ html` on every route → still nothing streams; the document arrives in one piece.
 - `lcp ≈ html + 60–90 ms` → the client bundle and hydration remain cheap. **The cost is
   server + DB. Do not spend the loop on bundle size.**
+
+## What the 50 ms gate does and does not capture (read before trusting the proxy)
+
+The local gate is a **proxy** for production, and it is easy to mis-state which proxy. Three
+different latencies get conflated into one; keep them apart.
+
+1. **User → server (WAN + CDN).** The latency a real user in the field pays before the server
+   even starts. The gate **does not capture this at all**, and it is the main reason a green
+   50 ms local run is *not* a 50 ms experience for a user. This is the honest caveat — not the
+   DB round-trip.
+2. **Server → DB, in production (Vercel function → Supabase).** This is inside the `html`
+   number and is the thing the gate is really pressure-testing. **If Vercel and Supabase are
+   co-located in one region, this is single-digit ms** — close to localhost — which would make
+   the local gate a *good* proxy for production server-render time, not merely a directional
+   one. ⚠️ **KNOWN UNKNOWN: region colocation is unconfirmed. Confirm it before leaning on
+   either the optimistic or pessimistic reading of these numbers.**
+3. **Dev-machine → live Supabase.** The 112–152 ms round-trip and the ~200 ms live-baseline
+   floor were measured on *this* path — home broadband to remote Supabase. It is **not** the
+   production serving path, so "prod round-trips cost 150 ms, therefore no page loads in 50 ms"
+   does not follow: that reasoning measures path 3 but the production render pays path 2.
+
+**What genuinely transfers to production is round-trip COUNT and row VOLUME** — a page that
+does 5 sequential DB round-trips or drags back 5000 rows is slow on any path, co-located or
+not. That is exactly what the failures below are, and why the loop is worth running even though
+the absolute local milliseconds are optimistic. Optimize the transferable quantity; don't
+mistake the local number for the user's number.
 
 ## Ranked hypotheses (highest expected win first)
 
@@ -183,4 +235,5 @@ Newest last. Every entry: what changed, the measured delta, kept or reverted, an
 |---|--------|--------|-------|
 | — | baseline, live DB | 0/9 pass, worst 509 ms, floor ~200 ms | — |
 | — | local DB, run 002 | 17/19 "pass", worst 21 ms — **VOID**, measured empty pages (missing local grants) | — |
-| — | local grants fixed + preflight added | run 003: **15/19 pass, worst 318 ms, 0 BROKEN** — the real baseline | ✔ |
+| — | local grants fixed + preflight added | run 003: **15/19 pass, worst 318 ms, 0 BROKEN** — the real baseline of record | ✔ |
+| — | LCP + bytes ratchet added (warn-level) | self-test vs 003 was clean — no false alarm even though reservar's LCP swung +28 ms (+18%) on identical code; the >30%-AND-25 ms threshold held. Self-test run discarded so 003 stays the reference | ✔ |
