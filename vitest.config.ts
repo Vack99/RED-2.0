@@ -73,13 +73,28 @@ export default defineConfig({
         },
       },
       {
-        // apps/admin — app-local utils (auth/nav/swipe). After the @/* alias was
-        // deleted (the boundary cutover), every app import resolves via @gym/*
-        // workspace specifiers or relative paths, so no resolve alias is needed.
+        // apps/admin — app-local utils (auth/nav/swipe) plus the vender receipt
+        // send seam (recibo-envio.test.ts). After the @/* alias was deleted (the
+        // boundary cutover), every app import resolves via @gym/* workspace
+        // specifiers or relative paths. The recibo-envio test pulls the @gym/data
+        // ./server modules (recibo-mail), which keep the `import 'server-only'`
+        // poison-pill, so stub that runtime guard with the same empty module the
+        // @gym/data project uses — nothing calls createClient when a transport is
+        // injected, so loading the chain is enough.
         test: {
           name: "admin",
           environment: "node",
           include: ["apps/admin/src/**/*.test.ts"],
+        },
+        resolve: {
+          alias: {
+            "server-only": fileURLToPath(
+              new URL(
+                "./packages/data/node_modules/server-only/empty.js",
+                import.meta.url,
+              ),
+            ),
+          },
         },
       },
       {

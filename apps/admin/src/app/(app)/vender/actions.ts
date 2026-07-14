@@ -1,11 +1,14 @@
 "use server";
 
+import { requireOperator } from "@gym/data/server/_auth";
 import { enviarInvitacion } from "@gym/data/server/invitaciones";
+import { createClient } from "@gym/data/server/supabase";
 import {
   crearVenta,
   DuplicadoError,
   EmailEnUsoError,
   type InviteState,
+  type ReciboEmailState,
   type ReciboResult,
   type VentaResult,
 } from "@gym/data/server/ventas";
@@ -47,6 +50,31 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
     enviarReciboDeVenta(result),
   ]);
   return { ok: true, recibo: { ...result, invite, reciboEmail } };
+}
+
+/**
+ * The card's manual (re)send (#101): retry a failed auto-send, or send after the operator captured an
+ * address the client just gave. Strictly an in-session retry from the sale's own return values — no
+ * receipt archive, and capturing the address here does NOT write it to the client row (that's the ficha's
+ * job). `emailOverride` (the just-captured address) wins over the sale-time resolution; it is deliberately
+ * NOT `.email()`-validated (same posture as the sale path — garbage bounces, it doesn't block).
+ *
+ * Guarded so an unauthenticated caller can never pump mail (defense-in-depth; the route is already
+ * auth-gated). A failed presence check reports without sending: `fallo` to the known address, else the
+ * unchanged `sin-email`. Best-effort throughout: `enviarReciboDeVenta` never throws.
+ */
+export async function reenviarReciboAction(
+  venta: VentaResult,
+  emailOverride?: string,
+): Promise<ReciboEmailState> {
+  const override = emailOverride?.trim() || undefined;
+  try {
+    await requireOperator(await createClient());
+  } catch {
+    const dest = override ?? venta.emailCliente;
+    return dest ? { estado: "fallo", email: dest } : { estado: "sin-email" };
+  }
+  return enviarReciboDeVenta(venta, { email: override });
 }
 
 /** Fire the auto-invite for a NEW-client sale with an email; map its outcome to the recibo's invite state.

@@ -3,9 +3,11 @@
 import * as React from "react";
 import { Icon } from "@gym/ui/forge/icon";
 import { MensajePicker } from "@gym/ui/forge/mensaje-picker";
-import { Button, Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
-import type { InviteState, ReciboEmailState, ReciboResult } from "@gym/data/server/ventas";
+import { Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
+import type { InviteState, ReciboEmailState, ReciboResult, VentaResult } from "@gym/data/server/ventas";
 import { pesos, waLink } from "@gym/format";
+
+import { reenviarReciboAction } from "../actions";
 
 export function Recibo({
   result,
@@ -75,7 +77,7 @@ export function Recibo({
                 : `Folio listo y paquete activo en la ficha de ${primerNombre}.`}
           </div>
           {isNew && <InviteNote invite={invite} />}
-          <ReciboEmailNote envio={reciboEmail} isNew={isNew} />
+          <ReciboEmailRail initial={reciboEmail} venta={result} />
         </div>
 
         {/* Receipt — fixed cream palette in both themes */}
@@ -187,18 +189,70 @@ function InviteNote({ invite }: { invite: InviteState }) {
   return <Nota accent={accent} text={text} />;
 }
 
-/** The post-sale receipt-mail state (#99), the send-outcome sibling of InviteNote — rendered for
- *  EVERY sale (the receipt mail has no `no-aplica`). A NEW sale's missing email is already the
- *  invite note's message, so `sin-email` renders only for a renewal — the operator's prompt to
- *  capture the address (spec #96). */
-function ReciboEmailNote({ envio, isNew }: { envio: ReciboEmailState; isNew: boolean }) {
+/** The receipt-mail rail (#99 note + #101 manual send): local state seeded from the sale result drives the
+ *  note, and the operator can (re)send from here without leaving the celebration screen. Two affordances,
+ *  both quiet and best-effort (a failure never breaks the card):
+ *    · a known address (enviado/fallo) → a subtle REENVIAR that re-sends to that same address;
+ *    · no address (sin-email) → an inline capture field to type the address the client just gave and send
+ *      to it. Nothing here is persisted to the client row (that's the ficha's job; spec #96). */
+function ReciboEmailRail({ initial, venta }: { initial: ReciboEmailState; venta: VentaResult }) {
+  const [envio, setEnvio] = React.useState<ReciboEmailState>(initial);
+  const [correo, setCorreo] = React.useState("");
+  const [pending, startSend] = React.useTransition();
+
+  const enviar = (override?: string) =>
+    startSend(async () => {
+      setEnvio(await reenviarReciboAction(venta, override));
+    });
+
+  if (envio.estado === "enviado" || envio.estado === "fallo") {
+    const address = envio.email;
+    return (
+      <>
+        <ReciboEmailNote envio={envio} />
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => enviar(address)}
+            disabled={pending}
+            className="uppercase font-bold"
+            style={{ background: "transparent", border: "none", color: "var(--muted)", fontSize: 10.5, letterSpacing: 1.4, cursor: pending ? "default" : "pointer", opacity: pending ? 0.5 : 1, padding: "8px 6px 0" }}
+          >
+            {pending ? "ENVIANDO…" : "REENVIAR"}
+          </button>
+        </div>
+      </>
+    );
+  }
+
+  // sin-email — the in-session capture path. Offered for renewals AND new sales (for a new sale the invite
+  // note above already explains the missing email; this sits under it as the receipt-only send).
+  return (
+    <div style={{ maxWidth: 300, margin: "12px auto 0", textAlign: "left" }}>
+      <div className="uppercase" style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1.4, marginBottom: 6 }}>
+        ENVIAR RECIBO POR EMAIL
+      </div>
+      <div className="flex" style={{ gap: 8, alignItems: "stretch" }}>
+        <Input placeholder="correo@ejemplo.com" value={correo} onChange={setCorreo} inputMode="email" className="flex-1" />
+        <Button variant="secondary" size="sm" onClick={() => enviar(correo)} disabled={pending || !correo.trim()}>
+          {pending ? "…" : "ENVIAR"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** The post-sale receipt-mail note (#99): the send-outcome sibling of InviteNote. The rail renders it only
+ *  for a known address (enviado/fallo); `sin-email` is handled by the rail's capture field, so its branch
+ *  is a no-op here. */
+function ReciboEmailNote({ envio }: { envio: ReciboEmailState }) {
   switch (envio.estado) {
     case "enviado":
       return <Nota accent="var(--yellow)" text={`Recibo enviado a ${envio.email}.`} />;
     case "fallo":
       return <Nota accent="var(--gold)" text={`No pudimos enviar el recibo a ${envio.email}.`} />;
     case "sin-email":
-      return isNew ? null : <Nota accent="var(--gold)" text="Sin email — captura su correo en la ficha para enviarle el recibo." />;
+      return null;
   }
 }
 
