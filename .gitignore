@@ -62,5 +62,6 @@ next-env.d.ts
 # archived docs (local-only, not version-controlled)
 /docs/archived-files/
 
-# scratch-project data dumps
+# scratch-project data dumps + credentials (never committed)
 /docs/supabase-throwaway-project/data/
+/docs/db-testing-throwaway-project/
