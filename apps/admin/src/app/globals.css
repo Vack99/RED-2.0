@@ -143,3 +143,17 @@ textarea {
 
 /* Product `forge-*` keyframes and the reduced-motion block now live in the shared
    @gym/ui motion sheet imported at the top of this file. */
+
+/* The receipt card's palette (#102). The card's colors were inline literals — and an inline
+   declaration beats any class selector, so no brand stylesheet could ever re-key them. The card
+   now reads these receipt-scoped custom properties; the DEFAULTS below are the Forge cream card
+   byte-for-byte. RED's override lands under `[data-brand="red"] .recibo-card` in the brand
+   package's literal stylesheet (#103, the neon.css precedent) — never as Tailwind classes
+   (packages/brand is not `@source`-scanned here, so brand-authored classes tree-shake to nothing
+   in this app). */
+.recibo-card {
+  --recibo-paper: #f5f1ea;
+  --recibo-ink: #1c1917;
+  --recibo-label: #7a5a26;
+  --recibo-badge: rgba(199,149,69,0.18);
+}
