@@ -81,9 +81,8 @@ export interface AltaMes {
   fecha: Date;
 }
 
-/** The month corte the respaldo's Resumen sheet (and any future chart) consumes.
- *  Raw numbers only — Excel needs them summable, a chart needs them numeric;
- *  formatting is the shaper's job. */
+/** The month corte the respaldo's Resumen sheet consumes. Raw numbers only —
+ *  Excel needs them summable; formatting is the shaper's job. */
 export interface CorteMes {
   ingresos: number;
   ventas: number;

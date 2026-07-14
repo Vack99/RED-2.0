@@ -302,10 +302,8 @@ export function calcularResumenMes(
  * closed month (e.g. hoy = last day of February) would cut January to Jan 28.
  * Prefer a little duplication over the wrong abstraction.
  *
- * Returns raw numbers only — Excel needs them summable, a chart needs them
- * numeric. `ticketPromedio` is 0 (never NaN) for an empty month. This shape is
- * what defuses the future analytics N+1: a 12-month trend calls the fold 12×
- * over one in-memory set.
+ * Returns raw numbers only — Excel needs them summable. `ticketPromedio` is 0
+ * (never NaN) for an empty month.
  */
 export function calcularCorteMes(
   ventas: VentaMes[],

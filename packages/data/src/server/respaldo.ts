@@ -273,13 +273,16 @@ export const getMesesRespaldo = cache(async (client?: SupabaseServer): Promise<M
       .maybeSingle(),
   ]);
 
+  // Guarded against a garbage timestamp: an Invalid Date would make `inicio` NaN
+  // and silently empty the whole picker (even the current month).
   const primeros: Date[] = [];
   if (vRes.data?.fecha) primeros.push(fechaEnZona(vRes.data.fecha, tz));
   if (cRes.data?.created_at) primeros.push(fechaEnZona(cRes.data.created_at, tz));
+  const validos = primeros.filter((d) => !Number.isNaN(d.getTime()));
   const mesActual = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const inicio = primeros.length
+  const inicio = validos.length
     ? new Date(
-        Math.min(...primeros.map((d) => new Date(d.getFullYear(), d.getMonth(), 1).getTime())),
+        Math.min(...validos.map((d) => new Date(d.getFullYear(), d.getMonth(), 1).getTime())),
       )
     : mesActual;
 

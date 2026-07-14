@@ -281,17 +281,20 @@ function shapeResumen(mes: Date, corte: CorteMes, hoy: Date): RespaldoSheet {
     ["Altas del mes", "", corte.altas],
     ["Asistencias del mes", "", corte.asistencias],
     [],
+  ];
+  const prevIdx = rows.length; // captured, not hardcoded — inserting a row above can't un-bold it
+  rows.push(
     [prevTitulo, "", ""],
     ["Ingresos", corte.prev.ingresos, ""],
     ["Ventas", "", corte.prev.ventas],
     ["Asistencias", "", corte.prev.asistencias],
-  ];
+  );
   return {
     name: "Resumen",
     headers: ["Concepto", "Monto", "Cantidad"],
     rows,
     money: [1],
-    boldRows: [0, 11],
+    boldRows: [0, prevIdx],
   };
 }
 
