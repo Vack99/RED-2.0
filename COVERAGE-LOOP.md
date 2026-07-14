@@ -71,6 +71,40 @@ widening the exclude glob. If unreachable branches turn out to be widespread, th
 fix is switching `coverage.provider` to `istanbul`, which models branches closer to the
 source — raise that rather than papering over dozens of lines.
 
+## Escalation: when to STOP chasing 100% and ask the owner
+
+**Expect the tail to cost more than the body.** 68 files, ~496 lines and ~580 branches
+remain. The first ~20 points are ordinary test-writing. The last few are v8 branch
+artifacts, and they can consume more effort than everything before them combined while
+buying close to zero real safety. Do not discover this the hard way at iteration 40.
+
+**The stall rule.** After each iteration, compare against the previous one. You are
+stalled when **two consecutive iterations** both:
+
+- reduce total uncovered branches by fewer than ~5, **and**
+- bring no file to 100%.
+
+On a stall: **stop the loop and report to the owner.** Do not grind, and do not start
+mass-applying `v8 ignore` to escape. Report with numbers:
+
+- current totals per metric, and how many files remain,
+- how many of the remaining branches you have examined and judged *provably unreachable*
+  vs. merely awkward,
+- your recommendation between the two honest exits below.
+
+**The two honest exits** (owner's call, not the loop's):
+
+1. **Swap `coverage.provider` to `istanbul`.** It models branches against the source
+   rather than the downleveled output, so most artifacts simply disappear. Costs a slower
+   run. This is the better exit if the unreachable branches are widespread.
+2. **Keep 100% on statements / functions / lines, and set a high branch floor** (e.g.
+   `branches: 95`) with the shortfall itemized. Coverage of *behavior* is then complete;
+   what is conceded is a set of named instrumentation artifacts, not untested logic.
+
+Both are legitimate. What is **not** legitimate is silently editing `thresholds` down, or
+burying the gap under unjustified ignores, and calling the loop done. If the target
+changes, the owner changes it.
+
 ## Baseline (worktree `worktree-coverage-100`, from `main` @ dcfd9b3)
 
 ```
