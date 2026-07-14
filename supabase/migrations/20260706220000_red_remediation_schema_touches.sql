@@ -3,7 +3,7 @@
 -- all-nullable columns feeding three screens; no new table, per that doc's
 -- keep-it-lean instruction to prefer existing homes over new structure. A fourth
 -- candidate (the confirmada "Estudio" address row) needed NO column: `gym_contact`
--- (20260706170000_create_gym_contact) already carries `address_line`/`address_note`.
+-- (20260706165900_create_gym_contact) already carries `address_line`/`address_note`.
 --
 -- Expand-only (add-column-if-not-exists only, no existing object altered otherwise),
 -- idempotent, safe on a fresh scratch AND out-of-order on the live project. Reads

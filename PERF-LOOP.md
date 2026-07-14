@@ -17,76 +17,163 @@ incomparable, so bump `CONDITIONS_ID` if you do, and take a fresh baseline.
 - Production build (`next build` + `next start`), never `next dev`.
 - Fixed ports (client 3100, admin 3200), one request at a time, keep-alive connection.
 - 5 warmup requests discarded, then 20 timed samples. **p50 reported, never the mean.**
-- Every request pins the tenant with `?gym=forge-demo`, so request 1 and request 20 travel
-  an identical path.
+- Every request pins the tenant with `?gym=forge-demo`.
 - One login, session reused across all authenticated routes.
 - Gate is on `html`, **not `ttfb`** — Next streams SSR, so a first byte can arrive in 5 ms
-  while the page is still blocked on the DB. Gating TTFB would let us "win" by streaming an
-  empty shell. `ttfb` and `lcp` are still recorded every run, just not gated.
+  while the page is still blocked on the DB. `ttfb` and `lcp` are recorded, not gated.
+- **Seeded row volumes are part of the conditions** (see below). Change them and every
+  previous number becomes meaningless.
+
+### The seed (`pnpm perf:seed` → `tools/perf/seed-local.mjs`)
+
+One gym, `forge-demo`, rebuilt from scratch on every run (idempotent).
+
+| | seeded | production today |
+|---|---|---|
+| `clientes` | **500** | 48 |
+| `ventas` | **3000** | 53 |
+| `asistencias` | **5000** | 285 |
+| `class_session` | **197** | 219 |
+| `reservation` | **1000** | 14 |
+
+Production is a demo-scale dataset. Mirroring it would seed a fixture too small for a
+per-row cost to show up on localhost — the gate would pass while a real gym crawled — so
+the owner chose to seed **one real operating gym** instead. Read every number below
+against that.
+
+The seeded operator (`perf@local.test`) is both **staff** (`gym_membership` role `owner`)
+and **member** (a `clientes` row with `auth_user_id`), so one login covers all 19 routes.
 
 ## How to run
 
 ```bash
+pnpm perf:seed                 # rebuild the local dataset (after ANY db reset)
 pnpm perf <label>              # local DB (Docker) — all 19 routes. The real gate.
-PERF_DB=live pnpm perf <label> # live remote DB — 9 public routes only. Never writes to prod.
 pnpm perf <label> --no-build   # skip the rebuild (only if you changed nothing but data)
+PERF_DB=live pnpm perf <label> # live remote DB — 9 public routes only. Never writes to prod.
 ```
 
 Each run writes `tools/perf/results/NNN-<label>.json` and prints a per-route diff against
-the previous run. **A change is only real if the diff moves by more than 2 ms** — below that
-is measurement noise, not signal.
+the previous run. **A change is only real if the diff moves by more than 2 ms** — below
+that is measurement noise, not signal.
 
 ## Status
 
 | | |
 |---|---|
-| Baseline (live DB, 9 public routes) | `001-baseline.json` — **0/9 under 50 ms**, worst 509 ms |
-| Baseline (local DB, all 19 routes) | not taken yet — **blocked on Docker Desktop** |
+| Baseline (live DB, 9 public routes) | `001-baseline.json` — 0/9 under 50 ms, worst 509 ms |
+| ~~Local, run 002~~ | **VOID — do not trust it.** Measured empty pages (see "The grants trap") |
+| **Baseline (local DB, all 19 routes)** | **`003-local-baseline.json` — 15/19 under 50 ms, worst 318 ms, 0 BROKEN** |
 
-### The blocker
+## The baseline (`003-local-baseline`)
 
-The 50 ms gate is only physically reachable against a **local** database. Measured from this
-machine, one round-trip to the live remote Supabase costs **~112–152 ms** (TCP connect ~29 ms,
-TLS ~63 ms, query ~50 ms on a warm connection). A page making even one query therefore cannot
-finish in 50 ms, no matter how good the code is. Localhost Postgres answers in ~1–3 ms.
-
-Docker Desktop is not installed. Until it is, `PERF_DB=live` measures the 9 public routes and
-we track the *round-trip count* coming down rather than absolute milliseconds.
+| ms (p50) | route | bytes | |
+|---|---|---|---|
+| **317.9** | `admin/asistencia` | 57KB | **FAIL** |
+| **167.4** | `admin/vender` | 25KB | **FAIL** |
+| **65.8** | `admin/clientes` | 47KB | **FAIL** |
+| **50.8** | `client/reservar` | 19KB | **FAIL** |
+| 49.2 | `admin/inicio` | 12KB | *near miss* |
+| 48.7 | `admin/agenda` | 12KB | *near miss* |
+| 44.7 | `admin/cuenta` | 14KB | *near miss* |
+| 32.3 | `admin/clientes/[id]` | 15KB | |
+| 30.0 | `client/confirmada/[id]` | 7KB | |
+| 29.5 | `client/clase/[id]` | 7KB | |
+| 24.5 | `client/` | 11KB | |
+| 21.7 | `client/precios` | 14KB | |
+| 16.9 | `client/nosotros` | 13KB | |
+| 15.2 | `client/contacto` | 10KB | |
+| 13.3 | `admin/login` | 9KB | |
+| 10.6 | `client/entrar` | 10KB | |
+| 10.2 | `client/registro` | 10KB | |
+| 9.6 | `client/legal` | 8KB | |
+| 9.3 | `client/restablecer` | 9KB | |
 
 ## What the baseline actually says
 
-Read the numbers, not the vibes:
+Read the numbers, not the vibes. **This is a different world from the live-DB baseline —
+the old conclusions are dead.**
 
-- **There is a ~200 ms floor on every single page, including pages with no data at all.**
-  `/legal`, `/entrar`, `/registro`, `/restablecer`, `/login` are all 197–209 ms and none of
-  them fetch anything. 200 ms ≈ 2 × the ~100 ms remote round-trip.
-- That floor is almost certainly `resolveTenant` (`packages/data/src/server/resolve-tenant.ts`),
-  which the proxy runs on **every request** and which does **two sequential queries**
-  (`gym_domain` → then `gym`), with the source explicitly noting "no cache (v1)".
-- Data pages sit on top of that floor: `/` 509 ms, `/precios` 416 ms, `/nosotros` 411 ms,
-  `/contacto` 393 ms.
-- `ttfb ≈ html` on every route → nothing is streaming; the document arrives in one piece.
-- `lcp ≈ html + 40 ms` → the client bundle and hydration are cheap. **The cost is server + DB.**
-  Do not spend the loop on bundle size until the server numbers come down.
+- **The ~200 ms floor is gone.** It was network, exactly as suspected. The pages that fetch
+  nothing (`/legal`, `/restablecer`, `/registro`, `/entrar`, `admin/login`) now land at
+  **9–13 ms**, down from 197–209 ms. `resolveTenant`'s two sequential queries now cost a
+  couple of ms, not two round-trips.
+- **Every failure is now row-volume driven, and they are all admin roster pages.** The cost
+  is no longer "does the page touch the DB" but "how many rows does it drag back".
+- **`admin/asistencia` (318 ms) is the worst by 2×.** `getMarcadas()` reads the **entire**
+  `asistencias` history with no date filter, paginated at 1000 rows/page — with 5000 rows
+  that is **5 sequential round-trips** before the page can render. It gets strictly worse
+  every day the gym operates.
+- **`admin/vender` (167 ms)** — `getClientesLite()` selects 500 `clientes` with an embedded
+  `ventas(count)`, i.e. a correlated count **per client row**.
+- **`admin/clientes` (66 ms)** — 500 `clientes` plus this month's `asistencias`.
+- **The three "near misses" are not safe.** `admin/inicio` (49.2), `admin/agenda` (48.7) and
+  `admin/cuenta` (44.7) are inside the gate only because the gym is small. They read the
+  same unbounded shapes and will cross 50 ms as data grows. Treat them as failures in
+  waiting, not as passes.
+- `ttfb ≈ html` on every route → still nothing streams; the document arrives in one piece.
+- `lcp ≈ html + 60–90 ms` → the client bundle and hydration remain cheap. **The cost is
+  server + DB. Do not spend the loop on bundle size.**
 
 ## Ranked hypotheses (highest expected win first)
 
 Each one gets measured, not assumed. Record the result in the Attempt log even when it loses.
 
-1. **Cache the host→tenant resolution.** Kills 2 sequential round-trips on *every* request of
-   *both* apps. Expected to remove the entire ~200 ms floor. Biggest single win available.
-   Note the two queries are also *sequential* — even uncached, the `gym_domain` and `gym` reads
-   could collapse into one join/RPC.
-2. **`getClaims()` in the proxy** — check whether it costs a network call per request or verifies
-   the JWT locally. If it hits the network, that is another round-trip on every request.
-3. **Per-page query waterfalls.** `/` costs ~300 ms *above* the floor. Find out whether that is
-   one slow query or several sequential ones; parallelize with `Promise.all`, or fold into one RPC.
-4. **Static/ISR the pages that do not need per-request data.** `/legal`, `/nosotros`, `/precios`
-   are prime candidates. A cached page skips the DB entirely and is trivially under 50 ms.
-5. **The RLS predicate.** Memory note `adr-0013-rls-per-row-claim-is-false` records that the gym
-   RLS helper is a correlated SubPlan evaluated **per row**, not once per statement — despite
-   ADR-0013 §2/§3 claiming otherwise and *forbidding* the fix. This will not show up against a
-   remote DB (network dominates) but will matter a lot once round-trips are ~1 ms.
+1. **Kill the unbounded reads on the admin pages.** This is where 4/4 of the failures live.
+   `admin/asistencia` fetching all-history attendance in 5 sequential pages is the single
+   biggest number on the board (318 ms); it needs a bounded window or an aggregate, not
+   pagination. `admin/vender`'s per-row `ventas(count)` (167 ms) wants one grouped count,
+   not 500 correlated ones. Expect the largest wins here by a wide margin.
+2. **The RLS predicate — now that it is finally visible.** `adr-0013-rls-per-row-claim-is-false`
+   records that the gym RLS helper is a correlated SubPlan evaluated **per row**, not once
+   per statement (ADR-0013 §2/§3 claim otherwise and *forbid* the fix — the ADR is wrong).
+   With the network gone and 500–5000 row reads, this is exactly the regime where it bites.
+   Measure it with `EXPLAIN ANALYZE` before and after, on the roster queries above.
+3. **Cache / collapse `resolveTenant`.** Locally this is now worth only a few ms per route —
+   but it runs on **every request of both apps**, and against the live DB it *is* the entire
+   ~200 ms floor. Cheap, safe, and the one item on this list that matters more in production
+   than it does on the bench. Do it, but do not expect it to move the local gate.
+4. **`getClaims()` in the proxy** — check whether it verifies the JWT locally or costs a
+   network call per request.
+5. **Static/ISR for the pages that need no per-request data** (`/legal`, `/nosotros`,
+   `/precios`). All three already pass comfortably; this is now a polish item, not a fix.
+
+## Two defects found while standing this up (both real, neither is perf)
+
+**1. Duplicate migration versions — FIXED here.** `supabase start` was hard-broken: two pairs
+of migrations shared a version timestamp, and `version` is the primary key of
+`schema_migrations`. Fixed by an order-preserving rename (`…170000_create_gym_contact` →
+`…165900`, `…180000_asistencias_reservation_link` → `…175900`); replay order is byte-identical.
+Nothing had ever caught it because the CLI's local replay is the only path where the filename
+is a primary key, and this repo had never run it.
+
+**2. ⚠️ Prod's `schema_migrations` does not match the migration filenames — NOT fixed.**
+`apply_migration` stamps its own version at apply time, so **56 of the 78 local migration
+filenames have versions prod has never recorded**. `supabase db push` diffs on exactly those
+versions, so against prod it would try to re-apply all 56 — *including the seed migrations* —
+over live client data. It is currently unreachable only because the repo is **unlinked**
+(no `supabase/.temp/project-ref`). **Never `supabase link` this repo to prod, and never
+`db push`/`db reset` against a remote.** Migrations keep going up via `apply_migration`.
+
+### The grants trap (cost a whole baseline run — do not fall in it again)
+
+Run 002 came back **17/19 under 50 ms, worst 21 ms** and was completely worthless: every page
+was rendering an empty state.
+
+The migrations assume Supabase's *platform* default privileges, which grant table-level
+SELECT to `anon`/`authenticated`. **The local Docker stack does not** — migrations there run
+as `postgres`, whose default ACL grants only `Dxtm` (no SELECT). PostgREST could read nothing,
+`resolveTenant` found no tenant, and every page fell back to its "no gym" copy — while still
+answering **200**, in ~10 ms, because it touched no data.
+
+Two guards now exist:
+- `seed-local.mjs` grants the missing table privileges locally, mirroring prod exactly
+  (including the deliberate #93/D3 `gym` anon column-narrowing). It is **not** a migration:
+  prod already has these grants, and a migration would *broaden* anon's surface on prod.
+- `run.mjs` **preflights** the client home for the seeded gym's brand name and aborts the run
+  if it is missing. A hollow page can no longer masquerade as a fast one.
+
+**If a run ever looks suspiciously fast, check the `bytes` column before believing it.**
 
 ## Attempt log
 
@@ -95,3 +182,5 @@ Newest last. Every entry: what changed, the measured delta, kept or reverted, an
 | # | Change | Result | Kept? |
 |---|--------|--------|-------|
 | — | baseline, live DB | 0/9 pass, worst 509 ms, floor ~200 ms | — |
+| — | local DB, run 002 | 17/19 "pass", worst 21 ms — **VOID**, measured empty pages (missing local grants) | — |
+| — | local grants fixed + preflight added | run 003: **15/19 pass, worst 318 ms, 0 BROKEN** — the real baseline | ✔ |

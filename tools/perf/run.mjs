@@ -7,6 +7,7 @@ import {
   DB_MODE,
   GATE_METRIC,
   GATE_MS,
+  GYM_BRAND_NAME,
   GYM_SLUG,
   PORTS,
   SAMPLES,
@@ -21,6 +22,33 @@ import { closeAgent, summarize, timeRequest } from "./lib/timing.mjs";
 const RESULTS_DIR = path.join("tools", "perf", "results");
 const label = process.argv[2] ?? "run";
 const skipBuild = process.argv.includes("--no-build");
+
+/**
+ * Refuse to measure a database the app cannot actually read.
+ *
+ * The status code is not enough to tell a healthy page from a hollow one. When the tenant
+ * fails to resolve, `resolveTenant` returns null, no `x-gym` header is stamped, and every
+ * page renders its "no gym" fallback — while still answering **200**, and fast, because it
+ * touched no data. An entire 19-route baseline once came back at ~10ms/route that way (a
+ * missing local table grant), and looked like a spectacular result.
+ *
+ * So: prove the seeded tenant renders before timing anything. Local only — `PERF_DB=live`
+ * points at a real project whose brand name is not ours to assert on.
+ */
+async function assertTenantResolves() {
+  const res = await fetch(`http://127.0.0.1:${PORTS.client}/?gym=${GYM_SLUG}`);
+  const html = await res.text();
+
+  if (!html.includes(GYM_BRAND_NAME)) {
+    throw new Error(
+      `PREFLIGHT FAILED: the client home answered ${res.status} but does not render the seeded ` +
+        `gym ("${GYM_BRAND_NAME}").\n` +
+        `  The tenant is not resolving, so every route would render an empty state and every\n` +
+        `  number in this run would be a lie. Almost always: the database was reset without\n` +
+        `  re-seeding. Fix with:  pnpm perf:seed`,
+    );
+  }
+}
 
 /**
  * One measurement pass over every route in scope, under the conditions frozen in
@@ -47,6 +75,8 @@ async function main() {
   const results = [];
 
   try {
+    if (DB_MODE === "local") await assertTenantResolves();
+
     const needsAuth = routes.some((r) => r.auth);
     const session = needsAuth ? await login(browser) : { cookieHeader: "", cookies: [] };
     if (needsAuth) console.log("logged in; reusing session for all authed routes\n");

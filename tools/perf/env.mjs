@@ -9,21 +9,26 @@ import { writeFileSync } from "node:fs";
  *
  * Written from Node rather than shelling `supabase status -o env > file`, because on
  * Windows a PowerShell redirect writes UTF-16 and the parser would choke on it.
+ *
+ * Invoked via `npx`: the Supabase CLI is a devDependency, not a global install, so a
+ * bare `supabase` is not on PATH.
  */
-const out = execFileSync("supabase", ["status", "-o", "env"], {
+const out = execFileSync("npx", ["supabase", "status", "-o", "env"], {
   encoding: "utf8",
   shell: true,
 });
 
 // `supabase status` names them API_URL / ANON_KEY / SERVICE_ROLE_KEY; the apps want the
-// NEXT_PUBLIC_* names, and the seed script wants the service-role key.
+// NEXT_PUBLIC_* names, and the seed script wants the service-role key and a direct
+// Postgres URL (it writes some rows in bulk over psql rather than PostgREST).
 const get = (key) => out.match(new RegExp(`^${key}="?(.*?)"?$`, "m"))?.[1];
 
 const url = get("API_URL");
 const anon = get("ANON_KEY");
 const service = get("SERVICE_ROLE_KEY");
+const dbUrl = get("DB_URL");
 
-if (!url || !anon || !service) {
+if (!url || !anon || !service || !dbUrl) {
   console.error("could not parse `supabase status` — is the local stack running?\n");
   console.error(out);
   process.exit(1);
@@ -37,6 +42,7 @@ writeFileSync(
     `NEXT_PUBLIC_SUPABASE_URL=${url}`,
     `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${anon}`,
     `SUPABASE_SERVICE_ROLE_KEY=${service}`,
+    `SUPABASE_DB_URL=${dbUrl}`,
     // The app refuses to start without this (D2 tenant binding, issue #93). Any value
     // works locally as long as it MATCHES the `tenant_assertion_key` the seed puts in
     // the local Vault — see seed-local.mjs.
