@@ -257,25 +257,10 @@ export function CuentaScreen({
         </div>
       </Card>
 
-      {/* Respaldo — descargable Excel del registro completo del gimnasio */}
-      <SectionHeader
-        trailing={
-          // Real download anchor: a plain GET to the route handler, whose
-          // Content-Disposition fires the browser save dialog. No fetch/blob
-          // dance needed. Styled to mirror the gold inline action above.
-          <a
-            href="/cuenta/respaldo"
-            download
-            className="inline-flex items-center uppercase font-extrabold"
-            style={{ gap: 5, textDecoration: "none", fontSize: 10.5, letterSpacing: 1.2, color: "var(--gold)" }}
-          >
-            <Icon name="arrow" size={12} color="var(--gold)" />
-            DESCARGAR
-          </a>
-        }
-      >
-        RESPALDO
-      </SectionHeader>
+      {/* Respaldo — descargable Excel, por mes o últimos 24 meses. ONE download
+          affordance (the form's submit) — a second header anchor would silently
+          ignore the month the operator just picked. */}
+      <SectionHeader>RESPALDO</SectionHeader>
       <div style={{ margin: "0 16px" }}>
         {/* Native GET form (spec 2026-07-13 §2.5): no client JS — the route's
             Content-Disposition: attachment fires the save dialog. The select

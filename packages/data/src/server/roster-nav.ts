@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient, type SupabaseServer } from "./supabase";
+import { getOperatorGym } from "./gym";
 
 /** PostgREST silently caps an un-ranged response at ~1000 rows; page through it. */
 const PAGE = 1000;
@@ -47,11 +48,13 @@ export function vecinosDe(orderedIds: string[], targetId: string): Vecinos {
  */
 export async function getVecinos(targetId: string, client?: SupabaseServer): Promise<Vecinos> {
   const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase); // gym-scoped read (§1.1 — scope selector, not boundary)
   const ids: string[] = [];
   for (let from = 0; ; from += PAGE) {
     const { data } = await supabase
       .from("clientes")
       .select("id")
+      .eq("gym_id", gym.id)
       .order("nombre")
       .range(from, from + PAGE - 1);
     const page = data ?? [];

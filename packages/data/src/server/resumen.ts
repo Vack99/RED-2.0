@@ -20,7 +20,11 @@ import { getOperatorGym } from "./gym";
 export const getResumenMes = cache(
   async (client?: SupabaseServer): Promise<ResumenMes> => {
     const supabase = client ?? (await createClient());
-    const { timezone: tz } = await getOperatorGym(supabase);
+    // Gym-scoped like every staff read (§1.1 — the .eq is a scope selector; RLS
+    // stays the boundary): this is the inicio dashboard's hottest read, and the
+    // 2026-07-13 senior audit caught it still riding the cross-tenant seq scan.
+    const gym = await getOperatorGym(supabase);
+    const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
 
     // Window: first day of the PRIOR calendar month (covers mes + prev + semana).
@@ -34,10 +38,11 @@ export const getResumenMes = cache(
     const desdeIso = toIsoDay(desde);
 
     const [ventasRes, asisRes] = await Promise.all([
-      supabase.from("ventas").select("fecha, monto").gte("fecha", desdeInstante),
+      supabase.from("ventas").select("fecha, monto").eq("gym_id", gym.id).gte("fecha", desdeInstante),
       supabase
         .from("asistencias")
         .select("fecha, deleted_at")
+        .eq("gym_id", gym.id)
         .gte("fecha", desdeIso)
         .is("deleted_at", null),
     ]);

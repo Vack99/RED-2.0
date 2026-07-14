@@ -61,4 +61,15 @@ describe("getVecinos — paginated ordered-id roster (injected fake)", () => {
     const { client } = makeFake({ clientes: [{ id: "a" }, { id: "b" }, { id: "c" }] });
     expect(await getVecinos("b", client)).toEqual({ prevId: "a", nextId: "c" });
   });
+
+  it("scopes the roster walk to the operator's gym on every page (§1.1; audit 2026-07-13)", async () => {
+    const clientes = Array.from({ length: 1001 }, (_, i) => ({ id: `cli-${i}` }));
+    const { client, eqCalls } = makeFake({ clientes });
+    await getVecinos("cli-0", client);
+    // Both pagination pages carry the scope selector.
+    expect(eqCalls["clientes"]).toEqual([
+      ["gym_id", "test-gym"],
+      ["gym_id", "test-gym"],
+    ]);
+  });
 });

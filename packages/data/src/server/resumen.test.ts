@@ -45,6 +45,13 @@ describe("getResumenMes — window bounds", () => {
     expect(gteCalls["ventas"]).toEqual([["fecha", "2026-06-01T06:00:00.000Z"]]);
   });
 
+  it("scopes BOTH reads to the operator's gym (§1.1 — the dashboard is the hottest read; audit 2026-07-13)", async () => {
+    const { client, eqCalls } = makeFake({ ventas: VENTAS, asistencias: ASISTENCIAS });
+    await getResumenMes(client);
+    expect(eqCalls["ventas"]).toContainEqual(["gym_id", "test-gym"]);
+    expect(eqCalls["asistencias"]).toContainEqual(["gym_id", "test-gym"]);
+  });
+
   it("bounds asistencias (a `date` column) by the bare day string — the deliberate asymmetry with ventas", async () => {
     const { client, gteCalls } = makeFake({ ventas: VENTAS, asistencias: ASISTENCIAS });
     await getResumenMes(client);
