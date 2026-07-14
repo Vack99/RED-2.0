@@ -53,10 +53,13 @@ export interface BrandModule {
   /**
    * Brand lockup — recolors via the CSS-var contract. Static by default (chrome:
    * headers/footers/receipts); `animate` opts the landing/hero into a bespoke
-   * ignition where a brand ships one (RED's neon ring). Static modules ignore the
-   * flag — a single widened slot, not a second single-caller `heroMark` member.
+   * ignition where a brand ships one (RED's neon ring). `glow` is the same idea from
+   * the other side: the receipt is a fixed CREAM card in both themes, and a lockup
+   * that carries a neon halo on the dark chrome prints as a pink smudge there, so
+   * that one caller opts out. Modules whose mark has no halo ignore both flags — one
+   * widened slot, not a second single-caller member.
    */
-  readonly logo: ComponentType<{ size?: number; animate?: boolean }>;
+  readonly logo: ComponentType<{ size?: number; animate?: boolean; glow?: boolean }>;
   /**
    * Self-contained square app-icon SVG markup for the dynamic `/icon` favicon
    * route — flat token-value colors, no `var(--…)`/gradients (a favicon paints
@@ -74,8 +77,20 @@ export interface BrandModule {
    * that drops it ships a login with no way to sign in — that is what the RED
    * adapter exists to prevent). The form carries the Supabase seam that cannot
    * cross into @gym/brand.
+   *
+   * `tagline` labels WHICH side of the platform you are signing in to, so one hero
+   * can serve both apps: the admin login passes "ADMINISTRADOR"; the client's auth
+   * screens pass nothing and show no line at all (a member on /entrar does not need
+   * to be sold the gym they are already logging into). Opt-in, no default. It is
+   * deliberately NOT `copy.tagline` — the client LANDING renders that one, which is
+   * the one place the sell belongs. A hero free to ignore it (Forge does) stays
+   * byte-identical.
    */
-  readonly loginAnimation?: ComponentType<{ readonly name: string; readonly children?: ReactNode }>;
+  readonly loginAnimation?: ComponentType<{
+    readonly name: string;
+    readonly tagline?: string;
+    readonly children?: ReactNode;
+  }>;
   /** Which token scheme the app SSR-stamps onto `<html>` by default. Omitted = light. */
   readonly defaultScheme?: "light" | "dark";
 }

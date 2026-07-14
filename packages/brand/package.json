@@ -5,7 +5,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./forge/logo": "./src/forge/logo.tsx"
+    "./forge/logo": "./src/forge/logo.tsx",
+    "./red/neon.css": "./src/red/neon.css"
   },
   "dependencies": {
     "zod": "catalog:"

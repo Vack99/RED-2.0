@@ -5,6 +5,12 @@
    animates and its reduced-motion gap closes with zero duplication. */
 @import "@gym/ui/motion.css";
 
+/* RED's neon copy (the `.cm-sub` band + `.cm-vals` tagline). The admin login renders
+   the RED brand module's own hero, so this app needs the same stylesheet the client
+   does — without it the hero's neon classes are inert and the tagline paints as plain
+   unstyled text. Forge cannot match its `[data-brand="red"]` scope. */
+@import "@gym/brand/red/neon.css";
+
 /* Register @gym/ui's source with Tailwind v4 (ADR-0011 §7). Tailwind 4 (CSS-first)
    auto-detects classes only from this Next project's root (apps/admin) and ignores
    out-of-root files, so the UI kit under packages/ui/src — now outside the app —

@@ -59,10 +59,20 @@ export default async function RootLayout({
   const brand = await resolveBrand();
   const css = brandCss(brand, fetchTokenOverrides(brand.id));
 
+  // `data-brand` is the hook the brand's own stylesheets select on (@gym/brand's
+  // red/neon.css). Without it the RED hero's neon classes are inert here and its
+  // tagline paints as plain unstyled text — the client app has stamped it since
+  // ADR-0012 §3; this app renders the same brand heroes and needs the same hook.
+  //
   // suppressHydrationWarning: next-themes sets the `class` on <html> before
   // hydration, so the server/client mismatch on that attribute is expected.
   return (
-    <html lang="es-MX" className={outfit.variable} suppressHydrationWarning>
+    <html
+      lang="es-MX"
+      className={outfit.variable}
+      data-brand={brand.id}
+      suppressHydrationWarning
+    >
       <head>
         <style dangerouslySetInnerHTML={{ __html: css }} />
       </head>

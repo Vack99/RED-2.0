@@ -21,7 +21,8 @@ export default async function Page({
     getOperatorGym(),
   ]);
   // The receipt lockup is the resolved marca's logo (grill lock (g)), rendered
-  // server-side and slotted into the client receipt.
+  // server-side and slotted into the client receipt. `glow={false}`: the receipt is a
+  // fixed cream card in both themes, and a neon halo prints there as a pink smudge.
   const Lockup = brand.logo;
   return (
     <VenderScreen
@@ -33,7 +34,7 @@ export default async function Page({
       // "Hasta …" hint — and it must anchor on the gym's timezone (ADR-0003), the
       // same way PaqueteDTO.hasta is precomputed here for registered plans.
       hoyGym={toIsoDay(hoyEnZona(gym.timezone))}
-      lockup={<Lockup size={11} />}
+      lockup={<Lockup size={11} glow={false} />}
     />
   );
 }

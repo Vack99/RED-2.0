@@ -1,0 +1,125 @@
+/* RED · neon copy — the brand chrome under the ring (§3.3). The label band
+   ("Entrenamiento funcional") turns on like a neon sign (copyNeonOn) between two
+   hairline rules that draw in and breathe (copyDashDraw/copyDashBreathe); the
+   crimson tagline below it is rule-LESS and idles on copyTextBreathe. Everything is
+   phase-anchored at 2.4s with the ring's own redBreathe (./ring-mark).
+
+   It lives in @gym/brand, not @gym/ui: these are RED's literal neon hexes (brand
+   furniture, NOT contract tokens — §3.1 crosswalk (b)), and the UI kit is
+   brand-neutral. Both apps @import it. Shipping it as a stylesheet is also what
+   makes it reach the ADMIN app at all: admin's globals.css @sources only
+   packages/ui/src, so a Tailwind class authored in this package tree-shakes to
+   nothing there — a literal class from a stylesheet always survives.
+
+   Scoped on [data-brand="red"] ALONE, not .dark[data-brand="red"]: RED's light and
+   dark token sets are identical (a dark-only brand — ./tokens), while the admin app
+   runs next-themes at defaultTheme="light", so a `.dark` prefix would never match
+   there and the neon would silently not paint. Forge still cannot match — its <html>
+   carries data-brand="forge" and keeps painting the calm token base layer.
+
+   Every turn-on carries a `both` fill, so @gym/ui's universal reduced-motion collapse
+   lands on the fully-lit final frame rather than a half-played one; no per-component
+   media query is needed. */
+[data-brand="red"] .cm-sub {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 16px;
+  width: 100%;
+}
+[data-brand="red"] .cm-sub .ln {
+  flex: 1;
+  max-width: 46px;
+  height: 1.5px;
+  background: #ff2c19;
+  box-shadow: 0 0 3px #ff2c19, 0 0 8px #cc0f00;
+  transform: scaleX(0);
+  animation: copyDashDraw 0.5s ease-out 1.5s both,
+    copyDashBreathe 4.2s ease-in-out 2.4s infinite both;
+}
+[data-brand="red"] .cm-sub .ln:first-child {
+  transform-origin: right;
+}
+[data-brand="red"] .cm-sub .ln:last-child {
+  transform-origin: left;
+}
+[data-brand="red"] .cm-sub span {
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 2.5px;
+  text-indent: 2.5px;
+  text-transform: uppercase;
+  color: #f2f2f2;
+  text-shadow: 0 0 1px rgba(255, 255, 255, 0.35);
+  opacity: 0;
+  animation: copyNeonOn 0.7s ease-out 1.3s both;
+}
+[data-brand="red"] .cm-vals {
+  margin-top: 18px;
+}
+[data-brand="red"] .cm-vals span {
+  color: #ff3a2a;
+  text-shadow: 0 0 2px #ff6b5a, 0 0 6px #ff2c19, 0 0 15px #cc0f00;
+  opacity: 0;
+  animation: copyNeonOn 0.7s ease-out 1.9s both,
+    copyTextBreathe 4.2s ease-in-out 2.4s infinite both;
+}
+@keyframes copyNeonOn {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.6;
+  }
+  22% {
+    opacity: 0.12;
+  }
+  35% {
+    opacity: 0.85;
+  }
+  48% {
+    opacity: 0.3;
+  }
+  60% {
+    opacity: 1;
+  }
+  72% {
+    opacity: 0.6;
+  }
+  84% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes copyDashDraw {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes copyTextBreathe {
+  0%,
+  100% {
+    text-shadow: 0 0 2px #ff6b5a, 0 0 6px #ff2c19, 0 0 15px #cc0f00;
+  }
+  50% {
+    text-shadow: 0 0 4px #ff8a7a, 0 0 12px #ff3a26, 0 0 24px #e21500;
+  }
+}
+@keyframes copyDashBreathe {
+  0%,
+  100% {
+    box-shadow: 0 0 3px #ff2c19, 0 0 8px #cc0f00;
+  }
+  50% {
+    box-shadow: 0 0 6px #ff3a26, 0 0 14px #e21500;
+  }
+}

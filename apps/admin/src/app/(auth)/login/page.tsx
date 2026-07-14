@@ -16,7 +16,7 @@ export default async function LoginPage() {
   const LoginHero = brand.loginAnimation;
 
   return LoginHero ? (
-    <LoginHero name={brand.copy.name}>
+    <LoginHero name={brand.copy.name} tagline="ADMINISTRADOR">
       <LoginForm afterHero />
     </LoginHero>
   ) : (
