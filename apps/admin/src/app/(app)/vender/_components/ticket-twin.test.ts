@@ -38,12 +38,16 @@ describe("construirReciboEmail — the ticket twin rendered as the email (#99)",
     expect(html).toContain("RED · CHIHUAHUA");
   });
 
-  it("inline styles only, literal Forge palette, no CSS custom properties (Gmail/Satori-safe)", () => {
+  it("Gmail-safe body: table layout, inline styles, literal palette — no flex, no vars, no opacity", () => {
     const { html } = construirReciboEmail(VENTA);
+    expect(html).toContain("<table");
     expect(html).toContain(FORGE_TICKET.paper);
     expect(html).toContain(FORGE_TICKET.label);
     expect(html).not.toContain("var(");
     expect(html).not.toContain("class=");
+    // Gmail strips flex-direction (the flex twin collapsed to one line, walked 2026-07-14) and opacity.
+    expect(html).not.toContain("flex");
+    expect(html).not.toContain("opacity");
   });
 
   it("the plain-text twin mirrors the ticket lines", () => {
