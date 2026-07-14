@@ -153,8 +153,10 @@ function persist(results) {
       `\n  worst route: ${run.worst}ms\n`,
   );
 
-  if (prev && prev.conditions === CONDITIONS_ID) diff(prev, run);
-  else if (prev) console.log("  (conditions changed — not comparable to the previous run)\n");
+  if (prev && prev.conditions === CONDITIONS_ID) {
+    diff(prev, run);
+    ratchet(prev, run);
+  } else if (prev) console.log("  (conditions changed — not comparable to the previous run)\n");
 
   console.log(`  written: ${file}\n`);
 }
@@ -177,6 +179,63 @@ function diff(prev, run) {
     const sign = d.delta < 0 ? "" : "+";
     console.log(`    ${sign}${d.delta.toFixed(1)}ms  ${d.was} -> ${d.now}   ${d.key}`);
   }
+  console.log("");
+}
+
+/**
+ * Ratchet the metrics we RECORD but do not gate — LCP and bytes — against the previous run.
+ *
+ * The gate is on `html` because it is the low-noise server number we optimize. But `html` can
+ * be "won" without making anything faster: convert an SSR data-fetch into a client-side fetch
+ * and the document shrinks (html drops) while the data wait reappears in the browser (LCP
+ * climbs). Gating `html` alone — even not `ttfb` — cannot see that, because the document
+ * genuinely does arrive fast; it just no longer carries the data. So we watch LCP for
+ * regressions here: gate what you optimize, ratchet what you actually care about.
+ *
+ * Bytes is a TWO-WAY integrity tripwire, not a one-directional ratchet — a page has no single
+ * "good" direction for byte count. A large DROP is exactly how the empty-page bug announced
+ * itself (a route that quietly stopped rendering its data while still answering 200); a large
+ * RISE is unexpected in a pure-optimization loop. Either is worth a human's eye. This
+ * generalizes main()'s home-page preflight to all 19 routes, per route.
+ *
+ * WARN-LEVEL ON PURPOSE — it prints, it does not fail the run. LCP here is 5 cold-context
+ * Playwright samples and swings a lot; a hard gate on it would block the loop on jitter.
+ * Characterize the noise floor over a few loop iterations first, THEN decide whether to
+ * promote the LCP check to a real fail-gate.
+ */
+function ratchet(prev, run) {
+  const before = new Map(
+    prev.routes.map((r) => [`${r.app}${r.path}`, { lcp: r.lcp, bytes: r.bytes }]),
+  );
+  const warnings = [];
+
+  for (const r of run.routes) {
+    const was = before.get(`${r.app}${r.path}`);
+    if (!was) continue;
+
+    // LCP regression: deliberately generous (>30% AND >25ms) because LCP is noisy. Both runs
+    // must have measured it (a BROKEN route records lcp=null).
+    if (was.lcp != null && r.lcp != null && r.lcp > was.lcp * 1.3 && r.lcp - was.lcp > 25) {
+      warnings.push(
+        `LCP   +${(r.lcp - was.lcp).toFixed(0)}ms   ${was.lcp} -> ${r.lcp}   ${r.app}${r.path}`,
+      );
+    }
+
+    // Bytes moved materially either way (>15% AND >1KB), which ignores per-render jitter
+    // (timestamps, tokens) while still catching a page that went hollow or ballooned.
+    const dBytes = r.bytes - was.bytes;
+    if (was.bytes > 0 && Math.abs(dBytes) / was.bytes > 0.15 && Math.abs(dBytes) > 1024) {
+      const sign = dBytes < 0 ? "" : "+";
+      warnings.push(
+        `bytes ${sign}${(dBytes / 1024).toFixed(1)}KB   ${(was.bytes / 1024).toFixed(0)}KB -> ` +
+          `${(r.bytes / 1024).toFixed(0)}KB   ${r.app}${r.path}`,
+      );
+    }
+  }
+
+  if (!warnings.length) return;
+  console.log("  ratchet (recorded-but-ungated metrics moved — warn only, NOT a gate failure):");
+  for (const w of warnings) console.log(`    ${w}`);
   console.log("");
 }
 
