@@ -101,10 +101,12 @@ function makeFake(
           return builder(null, rows.plantillas ?? []);
         // Slice #25: getOperatorGym's membership + gym lookups — default to
         // Forge's real zone, matching the shared supabase-fake.test-helper.
+        // brand_name (#97) is the injected negocio fallback — a distinct mixed-case
+        // value proves it passes through to result.negocio when perfil is absent.
         case "gym_membership":
           return builder({ gym_id: "test-gym" }, []);
         case "gym":
-          return builder({ timezone: "America/Chihuahua" }, []);
+          return builder({ timezone: "America/Chihuahua", brand_name: "Forge" }, []);
         default:
           return builder(null, []);
       }
@@ -300,6 +302,13 @@ describe("crearVenta — write orchestration (injected fake)", () => {
 
     await expect(crearVenta(input(), fake.client)).rejects.toThrow("No autenticado");
     expect(fake.rpcCalls).toHaveLength(0); // never reached the write
+  });
+
+  it("falls the recibo negocio back to the gym's brand_name when no perfil row exists (#97)", async () => {
+    // No perfil row (rows.perfil undefined → null): the identity default is the
+    // caller's gym brand_name ("Forge"), never a hard-coded platform default.
+    const res = await crearVenta(input({ mode: "new" }), fake.client);
+    expect(res.negocio).toBe("Forge");
   });
 
   it("renders the recibo mensajes with the FULL token set resolved (clases/dias/precios/datos_pago)", async () => {

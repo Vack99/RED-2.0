@@ -173,7 +173,8 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // Presence check only — the RPC stamps the operator server-side, so the sub is
   // discarded here.
   await requireOperator(supabase);
-  const { timezone: tz } = await getOperatorGym(supabase);
+  const gym = await getOperatorGym(supabase);
+  const tz = gym.timezone;
 
   // Display-only reads (never cross the write boundary). Paquete + (existing mode)
   // the client's name/tel are independent, so fire them concurrently; NEW mode has
@@ -271,7 +272,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // missing cobro/paquetes only blanks a token (fmt* tolerate null/[]) — it never
   // fails the sale result.
   const [{ data: perfil }, plantillas, paquetes, cobro] = await Promise.all([
-    supabase.from("perfil").select("negocio, coach, ciudad").maybeSingle(),
+    supabase.from("perfil").select("negocio, coach, ciudad").eq("gym_id", gym.id).maybeSingle(),
     listarPlantillas(supabase),
     getPaquetes(supabase, tz).catch(() => []),
     getCobro(supabase).catch(() => null),
@@ -279,7 +280,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   // Resolve the identity defaults in one place (kept off getPerfil — it's
   // cache()-wrapped and would break the injected-fake test). The recibo omits a
   // blank ciudad, so this consumer keeps the empty-string behavior.
-  const id = resolverIdentidad(perfil ?? { negocio: null, coach: null, ciudad: null });
+  const id = resolverIdentidad(perfil ?? { negocio: null, coach: null, ciudad: null }, gym.brandName);
   const negocio = id.negocio;
   const coach = id.coach;
   const ciudad = id.ciudad ?? "";

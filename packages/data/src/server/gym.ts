@@ -10,6 +10,8 @@ export interface OperatorGym {
   timezone: string;
   /** URL-safe gym identifier — the respaldo filename stamps it (spec §2.4). */
   slug: string;
+  /** Per-tenant brand, mixed-case as stored (e.g. "RED", "Forge"); render sites uppercase. */
+  brandName: string;
 }
 
 /**
@@ -49,11 +51,16 @@ export const getOperatorGym = cache(
 
     const { data: gym } = await supabase
       .from("gym")
-      .select("timezone, slug")
+      .select("timezone, slug, brand_name")
       .eq("id", membership.gym_id)
       .maybeSingle();
     if (!gym) throw new Error("Gym no encontrado");
 
-    return { id: membership.gym_id, timezone: gym.timezone, slug: gym.slug };
+    return {
+      id: membership.gym_id,
+      timezone: gym.timezone,
+      slug: gym.slug,
+      brandName: gym.brand_name,
+    };
   },
 );

@@ -19,6 +19,7 @@ function makeFake(opts: {
   membership?: Record<string, unknown>[];
   gymTimezone?: string;
   gymSlug?: string;
+  gymBrandName?: string;
 }) {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
   const membership = opts.membership ?? [{ gym_id: "gym-1", role: "owner" }];
@@ -57,6 +58,7 @@ function makeFake(opts: {
                 data: {
                   timezone: opts.gymTimezone ?? "America/Chihuahua",
                   slug: opts.gymSlug ?? "forge",
+                  brand_name: opts.gymBrandName ?? "Forge",
                 },
                 error: null,
               }),
@@ -71,22 +73,32 @@ function makeFake(opts: {
 }
 
 describe("getOperatorGym", () => {
-  it("resolves the gym/tz/slug for an owner", async () => {
+  it("resolves the gym/tz/slug/brand for an owner", async () => {
     const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "owner" }] });
     expect(await getOperatorGym(client)).toEqual({
       id: "gym-1",
       timezone: "America/Chihuahua",
       slug: "forge",
+      brandName: "Forge",
     });
   });
 
-  it("resolves the gym/tz/slug for an operator", async () => {
+  it("resolves the gym/tz/slug/brand for an operator", async () => {
     const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "operator" }] });
     expect(await getOperatorGym(client)).toEqual({
       id: "gym-1",
       timezone: "America/Chihuahua",
       slug: "forge",
+      brandName: "Forge",
     });
+  });
+
+  it("passes gym.brand_name through as the mixed-case brandName (render sites uppercase)", async () => {
+    const { client } = makeFake({
+      membership: [{ gym_id: "gym-1", role: "owner" }],
+      gymBrandName: "RED",
+    });
+    expect((await getOperatorGym(client)).brandName).toBe("RED");
   });
 
   it("filters to staff roles and orders by gym_id IN THE QUERY (the determinism lives in SQL, not JS)", async () => {

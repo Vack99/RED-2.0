@@ -173,6 +173,6 @@ export interface PlantillaContext {
   dias?: string;
   precios?: string;
   datos_pago?: string;
-  /** The operator's brand, sourced from perfil.negocio (e.g. "FORGE"). */
+  /** The operator's brand, sourced from perfil.negocio with gym.brand_name as the injected fallback. */
   negocio?: string;
 }

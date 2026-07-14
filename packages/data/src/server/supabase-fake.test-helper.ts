@@ -30,6 +30,8 @@ export interface FakeRows {
   gymTimezone?: string;
   /** Overrides the default `gym.slug` ("forge") getOperatorGym resolves to. */
   gymSlug?: string;
+  /** Overrides the default `gym.brand_name` ("Forge") getOperatorGym resolves to (#97). */
+  gymBrandName?: string;
 }
 
 export interface FakeClient {
@@ -144,7 +146,11 @@ export function makeFake(
         return builder(table, [{ gym_id: "test-gym", role: "owner" }]);
       if (table === "gym")
         return builder(table, [
-          { timezone: rows.gymTimezone ?? "America/Chihuahua", slug: rows.gymSlug ?? "forge" },
+          {
+            timezone: rows.gymTimezone ?? "America/Chihuahua",
+            slug: rows.gymSlug ?? "forge",
+            brand_name: rows.gymBrandName ?? "Forge",
+          },
         ]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },

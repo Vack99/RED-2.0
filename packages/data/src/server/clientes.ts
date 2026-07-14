@@ -232,7 +232,8 @@ export type ClienteFichaDTO = FichaDerivada & {
 export const getClienteFicha = cache(
   async (id: string, client?: SupabaseServer): Promise<ClienteFichaDTO | null> => {
     const supabase = client ?? (await createClient());
-    const { timezone: tz } = await getOperatorGym(supabase);
+    const gym = await getOperatorGym(supabase);
+    const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
     const hoyIso = toIsoDay(hoy);
 
@@ -269,17 +270,20 @@ export const getClienteFicha = cache(
           .eq("cliente_id", id)
           .order("fecha", { ascending: false }),
         getVecinos(id, supabase),
-        supabase.from("perfil").select("negocio").maybeSingle(),
+        supabase.from("perfil").select("negocio").eq("gym_id", gym.id).maybeSingle(),
         listarPlantillas(supabase),
         getPaquetes(supabase, tz).catch(() => []),
         getCobro(supabase).catch(() => null),
       ]);
 
-    const negocio = resolverIdentidad({
-      negocio: perfilRes.data?.negocio ?? null,
-      coach: null,
-      ciudad: null,
-    }).negocio;
+    const negocio = resolverIdentidad(
+      {
+        negocio: perfilRes.data?.negocio ?? null,
+        coach: null,
+        ciudad: null,
+      },
+      gym.brandName,
+    ).negocio;
 
     // Classes consumed since the last purchase (Part B clases-gauge denominator):
     // count `consumio` rows at/after the purchase INSTANT, not just its calendar day

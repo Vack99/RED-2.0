@@ -365,7 +365,7 @@ const FIXTURE_CLIENTES = [
 const OPERATOR_ROWS: Rows = {
   clientes: FIXTURE_CLIENTES,
   gym_membership: [{ gym_id: "g-1", role: "operator" }],
-  gym: [{ id: "g-1", timezone: "America/Chihuahua" }],
+  gym: [{ id: "g-1", timezone: "America/Chihuahua", brand_name: "Forge" }],
   asistencias: [],
 };
 
@@ -479,7 +479,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     const rows: Record<string, Record<string, unknown>[]> = {
       clientes: [FICHA_CLIENTE],
       gym_membership: [{ gym_id: "g-1", role: "operator" }],
-      gym: [{ id: "g-1", timezone: TZ }],
+      gym: [{ id: "g-1", timezone: TZ, brand_name: "Forge" }], // #97: injected negocio fallback
       asistencias,
       ventas: [venta],
       perfil: [],

@@ -201,8 +201,8 @@ describe("renderPlantilla", () => {
   });
   it("substitutes the negocio (brand) token", () => {
     expect(
-      renderPlantilla("Gracias por tu compra en {negocio}.", { negocio: "FORGE" }),
-    ).toBe("Gracias por tu compra en FORGE.");
+      renderPlantilla("Gracias por tu compra en {negocio}.", { negocio: "RED Demo" }),
+    ).toBe("Gracias por tu compra en RED Demo.");
   });
   it("renders a realistic multi-token template body", () => {
     const body =
