@@ -44,6 +44,17 @@ export const LCP_SAMPLES = 5;
 export const GYM_SLUG = "forge-demo";
 
 /**
+ * The seeded gym's `brand_name`. seed-local.mjs writes it; run.mjs preflights on it.
+ *
+ * It exists because the harness's only integrity check used to be the HTTP status, and a
+ * page whose tenant failed to resolve still answers **200** — it just renders its "no gym"
+ * fallback. That is not a hypothetical: a missing local table grant did exactly this, and
+ * a whole baseline of ~10ms "PASS" rows turned out to be empty pages. The preflight fails
+ * the run instead of quietly measuring nothing.
+ */
+export const GYM_BRAND_NAME = "Forge Demo";
+
+/**
  * Deterministic fixture ids for the dynamic routes. These uuids are literals in
  * supabase/seed.perf.sql — the seed and the route table MUST agree, which is why
  * they are declared once, here.
