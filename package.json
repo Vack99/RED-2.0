@@ -16,6 +16,7 @@
     "typecheck:root": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "test:denial": "node supabase/tests/run-denial-suite.mjs",
     "prepare": "husky"
   },
@@ -23,6 +24,7 @@
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
+    "@vitest/coverage-v8": "^4.1.10",
     "dependency-cruiser": "^17.4.2",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
