@@ -31,6 +31,8 @@ const cliente = (over: Partial<RespaldoCliente> = {}): RespaldoCliente => ({
 const venta = (over: Partial<RespaldoVenta> = {}): RespaldoVenta => ({
   folio: 1001,
   fecha: "2026-05-20T15:00:00.000Z",
+  // Default: written the same day it happened (not backdated) → blank Registrado cell.
+  created_at: "2026-05-20T15:00:00.000Z",
   cliente_id: "c1",
   paquete_nombre: "8 clases",
   monto: 1250.5,
@@ -99,6 +101,7 @@ describe("buildRespaldoRows — headers", () => {
       "Monto",
       "Método",
       "Vigencia",
+      "Registrado",
     ]);
     expect(r.asistencias.headers).toEqual(["Fecha", "Hora", "Cliente"]);
     expect(r.paquetes.headers).toEqual(["Paquete", "Clases", "Precio", "Vigencia"]);
@@ -340,6 +343,34 @@ describe("buildRespaldoRows — Email fallback + Vigencia + metodo labels", () =
   });
 });
 
+describe("buildRespaldoRows — backdate marker (Registrado column, spec D5/F1)", () => {
+  it('leaves Registrado blank when fecha and created_at fall on the same gym-local day', () => {
+    const r = buildRespaldoRows(
+      data({
+        ventas: [venta({ fecha: "2026-05-20T15:00:00.000Z", created_at: "2026-05-20T22:00:00.000Z" })],
+      }),
+    );
+    // Same Chihuahua day (15:00Z = 09:00, 22:00Z = 16:00 local) → not backdated.
+    expect(r.ventas.rows[0][7]).toBe("");
+  });
+
+  it('annotates a backdated row "registrado el DD mmm" from created_at (gym-local)', () => {
+    const r = buildRespaldoRows(
+      data({
+        ventas: [
+          venta({
+            // Effective (backdated) date 20 may; actually written 27 may.
+            fecha: "2026-05-20T15:00:00.000Z",
+            created_at: "2026-05-27T18:30:00.000Z",
+          }),
+        ],
+      }),
+    );
+    expect(r.ventas.rows[0][1]).toBe("2026-05-20"); // Fecha = the effective day
+    expect(r.ventas.rows[0][7]).toBe("registrado el 27 may"); // marker = the write day
+  });
+});
+
 describe("buildRespaldoRows — Paquetes clases label", () => {
   it('"Ilimitado" when clases is null', () => {
     const r = buildRespaldoRows(data({ paquetes: [paquete({ clases: null })] }));
@@ -397,7 +428,7 @@ describe("buildRespaldoRows — empty state (PRD US#17)", () => {
     expect(r.paquetes.rows).toEqual([]);
     // headers still present
     expect(r.clientes.headers.length).toBe(10);
-    expect(r.ventas.headers.length).toBe(7);
+    expect(r.ventas.headers.length).toBe(8);
     expect(r.asistencias.headers.length).toBe(3);
     expect(r.paquetes.headers.length).toBe(4);
   });
@@ -453,10 +484,12 @@ describe("buildRespaldoSheets", () => {
     expect(ventas.rows[0][0]).toBe(1);
     expect(ventas.rows[1][0]).toBe(2);
     expect(ventas.rows[2]).toEqual([]);
-    // TOTAL: label col A, count under Paquete (col 3), sum under Monto (col 4).
+    // TOTAL: label col A, count under Paquete (col 3), sum under Monto (col 4);
+    // trailing Registrado cell keeps the row at the sheet's 8-column width.
     expect(ventas.rows[3][0]).toBe("TOTAL");
     expect(ventas.rows[3][3]).toBe("2 ventas");
     expect(ventas.rows[3][4]).toBe(800);
+    expect(ventas.rows[3]).toHaveLength(8);
     expect(ventas.boldRows).toEqual([3]);
   });
 

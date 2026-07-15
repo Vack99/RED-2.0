@@ -49,9 +49,12 @@ export const LIMITES = {
   diasMax: 365,
 } as const;
 
-/** Backdate look-back cap (spec D1/D2): a flat 30 days, the same vocabulary the renewal
- *  flow uses. 30 days guarantees the sale still lands inside the current-or-prior-month
- *  Resumen window, so no revenue goes invisible. The RPC enforces this too (the real gate). */
+/** Backdate look-back cap (spec D1/D2): a flat 30 days — the same vocabulary the renewal flow
+ *  uses, chosen to keep a backdate recent. NOT a strict Resumen-window guarantee: across a
+ *  short-month (Feb) boundary a ~30-day backdate can land just before the rolling
+ *  current+prior-month tile. The sale is still written to its true effective date, so its
+ *  revenue is booked to that day's real calendar month and shown in that month's respaldo
+ *  export. The RPC enforces the cap too (the real gate). */
 export const BACKDATE_MAX_DIAS = 30;
 
 /**

@@ -49,7 +49,7 @@ async function readAllVentas(
   for (let from = 0; ; from += PAGE) {
     let q = supabase
       .from("ventas")
-      .select("folio, fecha, cliente_id, paquete_nombre, monto, metodo, vigencia_tipo, vigencia_dias")
+      .select("folio, fecha, created_at, cliente_id, paquete_nombre, monto, metodo, vigencia_tipo, vigencia_dias")
       .eq("gym_id", gymId)
       .gte("fecha", ventana.gte); // INSTANT bound — ventas.fecha is a timestamptz (§1.8)
     if (ventana.lt !== null) q = q.lt("fecha", ventana.lt);
@@ -63,6 +63,7 @@ async function readAllVentas(
       ...page.map((v) => ({
         folio: v.folio,
         fecha: v.fecha,
+        created_at: v.created_at,
         cliente_id: v.cliente_id,
         paquete_nombre: v.paquete_nombre,
         monto: v.monto,

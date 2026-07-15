@@ -23,8 +23,16 @@
 -- BOUNDS (the RPC is the only real gate, G5 — all four expressed against v_inicio, so
 -- each is a structural no-op when p_fecha_inicio is null):
 --   1. no future date          v_inicio > v_hoy               (v_inicio = v_hoy when null)
---   2. flat 30-day look-back    v_inicio < v_hoy - 30          (30d keeps the sale inside
---                                                               the inicio Resumen window)
+--   2. flat 30-day look-back    v_inicio < v_hoy - 30          (recent-only cap; matches the
+--                                                               renewal flow's flat-30 vocab.
+--                                                               NOT a strict Resumen-window
+--                                                               guarantee — across a short-month
+--                                                               (Feb) boundary a ~30d backdate can
+--                                                               land just before the rolling
+--                                                               current+prior-month tile; the sale
+--                                                               is still written to its true
+--                                                               effective date, so its revenue is
+--                                                               booked to that day's real month)
 --   3. existing clients only    v_inicio < cli.created_at day  (paradox: sale predates the
 --                                                               client; new clients exempt —
 --                                                               their created_at day IS today)

@@ -40,6 +40,7 @@ const cliente = (over: Record<string, unknown> = {}) => ({
 const venta = (over: Record<string, unknown> = {}) => ({
   folio: 1001,
   fecha: "2026-05-20T16:00:00.000Z",
+  created_at: "2026-05-20T16:00:00.000Z",
   cliente_id: "cli-1",
   paquete_nombre: "8 clases",
   monto: 800,

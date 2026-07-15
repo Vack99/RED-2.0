@@ -12,7 +12,7 @@
 - **Written ledger date (A1):** when backdated, `ventas.fecha := (v_inicio::timestamp + interval '12 hours') at time zone v_tz` (midday gym-tz — immune to UTC date-boundary flips); when not backdated, keep the `now()` default.
 - **Bounds — all enforced by `raise` in the RPC (the only real gate, G5), mirrored in `vender-vm.LIMITES` and the zod schema (A5, three-layer pattern):**
   1. **No future dates** (A2): `p_fecha_inicio > (now() at time zone v_tz)::date` ⇒ raise.
-  2. **Flat 30-day look-back cap** (A3/D2): `p_fecha_inicio < today − 30` ⇒ raise. 30 days guarantees the sale always lands inside the inicio Resumen window (current + prior month), so no invisible revenue; consistent with the renewal flow's flat-30 vocabulary.
+  2. **Flat 30-day look-back cap** (A3/D2): `p_fecha_inicio < today − 30` ⇒ raise. Keeps a backdate recent; consistent with the renewal flow's flat-30 vocabulary. It does **not** strictly guarantee the sale lands inside the rolling inicio Resumen window (current + prior month) — across a short-month/Feb boundary a ~30-day backdate can fall just before it — but the sale is always written to its true effective date, so its revenue is booked to that day's real calendar month and surfaced (marked) in that month's respaldo export.
   3. **Existing clients only** (A4): `p_fecha_inicio < cli.created_at::date` (gym tz) ⇒ raise (paradox: sale predates the client). New clients (created this txn) exempt.
   4. **No dead-on-arrival sales** (E2 at the write boundary): if the computed `v_new_vence < today` ⇒ raise ("la venta ya estaría vencida"). Blocks the pathological already-expired backdate; the 30-day cap makes it rare anyway.
 - No gate on current `vence` (A6): backdating *inside* an active window is the core "forgot to log it" case.

@@ -31,7 +31,8 @@ export interface RespaldoCliente extends ClienteFacts {
 /** A ventas ledger row (full history). */
 export interface RespaldoVenta {
   folio: number;
-  fecha: string; // timestamptz
+  fecha: string; // timestamptz — the sale's EFFECTIVE (possibly backdated) date
+  created_at: string; // timestamptz — when the row was actually written (backdate marker, spec D5/F1)
   cliente_id: string;
   paquete_nombre: string;
   monto: number;
@@ -205,27 +206,39 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
 }
 
 function shapeVentas(data: RespaldoData, nombreDe: (id: string) => string): RespaldoSheet {
-  const headers = ["Folio", "Fecha", "Cliente", "Paquete", "Monto", "Método", "Vigencia"];
+  // "Registrado" is the backdate marker column (spec D5/F1): a sale whose Fecha
+  // (effective date) differs from the day it was actually written reads "registrado
+  // el DD mmm", so a re-exported month whose total changed — or a folio out of Fecha
+  // order — is legible as intentional, not corruption. Blank for the 99% today-sale.
+  const headers = ["Folio", "Fecha", "Cliente", "Paquete", "Monto", "Método", "Vigencia", "Registrado"];
   // Month mode: the gather's window spans the prior month (the corte's prev block
   // needs those rows) — the SHEET shows only the requested month (the Altas pattern).
   const enMes = data.mes
     ? data.ventas.filter((v) => mismoMesLocal(fechaEnZona(v.fecha, data.tz), data.mes!))
     : data.ventas;
-  const rows: Array<Array<string | number>> = enMes.map((v) => [
-    v.folio,
-    isoDay(fechaEnZona(v.fecha, data.tz)),
-    nombreDe(v.cliente_id),
-    v.paquete_nombre,
-    v.monto, // raw NUMBER — peso-formatted in the workbook
-    METODO_LABEL[v.metodo] ?? v.metodo,
-    vigenciaLabel(v.vigencia_tipo, v.vigencia_dias),
-  ]);
+  const rows: Array<Array<string | number>> = enMes.map((v) => {
+    const fechaLocal = fechaEnZona(v.fecha, data.tz);
+    const creadoLocal = fechaEnZona(v.created_at, data.tz);
+    // Derived marker, zero new columns on the DB (spec F1): backdated iff the effective
+    // day ≠ the write day, both in the gym's zone.
+    const backdated = isoDay(fechaLocal) !== isoDay(creadoLocal);
+    return [
+      v.folio,
+      isoDay(fechaLocal),
+      nombreDe(v.cliente_id),
+      v.paquete_nombre,
+      v.monto, // raw NUMBER — peso-formatted in the workbook
+      METODO_LABEL[v.metodo] ?? v.metodo,
+      vigenciaLabel(v.vigencia_tipo, v.vigencia_dias),
+      backdated ? `registrado el ${fmtShort(creadoLocal)}` : "",
+    ];
+  });
   if (!data.mes) return { name: "Ventas", headers, rows, money: [4] };
   // Month mode closes with a blank row + a bold TOTAL row: label in col A, the
   // count in the Paquete col, the sum in the Monto col (under the numbers it totals).
   const total = enMes.reduce((s, v) => s + Number(v.monto), 0);
   rows.push([]);
-  rows.push(["TOTAL", "", "", `${enMes.length} venta${enMes.length === 1 ? "" : "s"}`, total, "", ""]);
+  rows.push(["TOTAL", "", "", `${enMes.length} venta${enMes.length === 1 ? "" : "s"}`, total, "", "", ""]);
   return { name: "Ventas", headers, rows, money: [4], boldRows: [rows.length - 1] };
 }
 

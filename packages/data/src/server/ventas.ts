@@ -346,7 +346,10 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   return {
     folio: result.folio,
     fechaDisplay,
-    compradoDisplay: fechaDisplay,
+    // VIGENCIA renders `compradoDisplay → venceDisplay`. On a backdated sale the vigencia
+    // truly runs from the INICIO date, not the transaction day — so the span's left endpoint
+    // is the backdated start (E1). A normal today-sale keeps compradoDisplay = today.
+    compradoDisplay: fechaInicioDisplay ?? fechaDisplay,
     venceDisplay,
     cliente: {
       id: result.cliente_id,
