@@ -1,0 +1,1034 @@
+<!--
+  T5 · Tracker look & gamification language — VISUAL MOCK
+  Wayfinder asset · resolves T5 (#110) on map #105 · 2026-07-14
+
+  A self-contained static mock of the gamified localhost scope tracker.
+  No external fonts / CDNs / network. Inline CSS + vanilla JS only.
+
+  WHAT TO NOTICE
+  - The RED crimson accent means exactly ONE thing everywhere: EARNED territory.
+    Foundation glows as conquered base camp; ahead worlds (2-7) read as frontier fog.
+    Every crimson pixel is really earned — the fog is honest emptiness.
+  - Renders from a hardcoded DATA object shaped EXACTLY like the T2 scope-model schema
+    (world -> subgroup -> quest, github/status/caveats/depends_on/kind). This proves the
+    schema renders and hands the real T6 renderer a head start.
+  - Fields prefixed `_` (e.g. `_gh`) are MOCK stand-ins for live `gh` resolution — the
+    real renderer calls `gh` to get closed/total. They are NOT part of the T2 schema.
+  - Quests / issue numbers under Foundation are REAL (from the T1 catalogue). Ahead-world
+    quests marked `SAMPLE:` in comments are plausible invented placeholders — the real
+    quest lists for worlds 2-7 are being authored in parallel (T3/T4).
+
+  RE-SKIN: every color, font and motion value is a CSS custom property in the single
+  :root block below. Swap that block to re-theme; the render code touches no raw hex.
+-->
+<title>RED · Wayfinder — scope tracker</title>
+<style>
+  /* ============================================================
+     THE RE-SKIN SURFACE — one :root block. Swap these to re-theme.
+     ============================================================ */
+  :root {
+    /* --- type roles --- */
+    --font-display: "Outfit", "Segoe UI", system-ui, -apple-system, "Helvetica Neue", sans-serif;
+    --font-body:    "Outfit", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --font-mono:    "JetBrains Mono", "Cascadia Code", ui-monospace, "SF Mono", Consolas, monospace;
+
+    /* --- canvas & surfaces (dark, faint blue-violet depth) --- */
+    --canvas:       #07080f;   /* page plane */
+    --canvas-2:     #0a0c17;   /* deep gradient stop */
+    --surface:      #101324;   /* world panel */
+    --surface-2:    #161a2e;   /* elevated (quest row, chips) */
+    --surface-3:    #1d2238;   /* hover / inset track */
+    --hairline:     rgba(255,255,255,0.08);
+    --hairline-hi:  rgba(255,255,255,0.14);
+
+    /* --- ink --- */
+    --ink:          #eef1fb;
+    --ink-2:        #aab1cc;   /* secondary */
+    --ink-3:        #6a7194;   /* muted / frontier default */
+    --ink-faint:    #454b68;
+
+    /* --- THE hot accent: RED crimson neon = EARNED territory --- */
+    --earned:       #ff2e4d;
+    --earned-soft:  #ff5c74;
+    --earned-deep:  #7e0d10;   /* owner's recibo Vino — deepest earned tone */
+    --earned-glow:  rgba(255,46,77,0.55);
+    --earned-glow-2:rgba(255,46,77,0.14);
+
+    /* --- frontier / fog (cool, dim — the unearned axis) --- */
+    --fog:          #2a3050;
+    --fog-track:    #141829;   /* empty bar track */
+    --fog-line:     rgba(140,150,190,0.16);
+
+    /* --- status palette (semantic, icon+label always paired) --- */
+    --st-shipped:   #2ee08a;   /* good  */
+    --st-inflight:  #f5b13d;   /* warning */
+    --st-todo:      #7078a0;   /* neutral / not started */
+    --st-deferred:  #5b6390;   /* dim, dormant */
+    --st-blocked:   #c85a63;   /* serious, but locked/dormant not loud */
+    /* owner-action states are LOUD — the owner's to-do */
+    --st-decision:  #b06bff;   /* needs your call */
+    --st-walk:      #ffcf4a;   /* awaiting your walk */
+
+    /* --- geometry & motion --- */
+    --radius:       14px;
+    --radius-sm:    9px;
+    --radius-pill:  999px;
+    --gap:          20px;
+    --ease:         cubic-bezier(.22,.61,.36,1);
+    --fill-dur:     1100ms;
+    --pulse-dur:    3.4s;
+  }
+
+  /* ---------- reset-ish ---------- */
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    font-family: var(--font-body);
+    color: var(--ink);
+    background:
+      radial-gradient(1100px 640px at 78% -8%, rgba(255,46,77,0.10), transparent 60%),
+      radial-gradient(900px 700px at 12% 108%, rgba(80,100,190,0.07), transparent 55%),
+      linear-gradient(180deg, var(--canvas-2), var(--canvas) 40%);
+    background-attachment: fixed;
+    min-height: 100vh;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: inherit; text-decoration: none; }
+  .mono { font-family: var(--font-mono); font-feature-settings: "tnum" 1; }
+
+  .wrap { max-width: 940px; margin: 0 auto; padding: 40px 22px 90px; }
+
+  /* ============================================================
+     HEADER — the destination + overall arc readout
+     ============================================================ */
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .34em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 18px;
+  }
+  .eyebrow .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--earned);
+    box-shadow: 0 0 10px var(--earned-glow);
+  }
+  .destination {
+    font-family: var(--font-display);
+    font-weight: 700;
+    font-size: clamp(28px, 5.4vw, 52px);
+    line-height: 1.04;
+    letter-spacing: -0.02em;
+    margin: 0 0 4px;
+  }
+  .destination .accent {
+    color: var(--earned);
+    text-shadow: 0 0 26px var(--earned-glow);
+  }
+  .subline { color: var(--ink-2); font-size: 15px; margin-bottom: 30px; }
+
+  /* overall arc readout */
+  .arc {
+    background: linear-gradient(180deg, var(--surface), rgba(16,19,36,0.55));
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 18px 26px;
+    align-items: center;
+    margin-bottom: 42px;
+  }
+  .arc-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .arc-pct { font-family: var(--font-mono); font-size: 34px; font-weight: 600; color: var(--earned); letter-spacing: -.02em; line-height: 1; }
+  .arc-pct .sym { font-size: 18px; color: var(--earned-soft); }
+  .arc-label { font-size: 13px; color: var(--ink-2); }
+  .arc-track {
+    grid-column: 1 / -1;
+    height: 12px; border-radius: var(--radius-pill);
+    background: var(--fog-track);
+    border: 1px solid var(--hairline);
+    overflow: hidden; position: relative;
+  }
+  .arc-fill {
+    height: 100%; width: 0;
+    border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, var(--earned-deep), var(--earned) 70%, var(--earned-soft));
+    box-shadow: 0 0 18px var(--earned-glow), inset 0 0 8px rgba(255,255,255,.18);
+    transition: width var(--fill-dur) var(--ease);
+  }
+  .arc-stats { display: flex; gap: 26px; }
+  .stat { text-align: right; }
+  .stat b { font-family: var(--font-mono); font-size: 20px; font-weight: 600; display: block; letter-spacing: -.01em; }
+  .stat span { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); }
+
+  /* ============================================================
+     THE ROUTE — vertical spine threading the 7 worlds
+     ============================================================ */
+  .route { position: relative; margin-left: 8px; }
+  .route::before {   /* the trail line: crimson at base, fading into fog upward-then-down the page */
+    content: "";
+    position: absolute;
+    left: 15px; top: 8px; bottom: 40px;
+    width: 2px;
+    background: linear-gradient(180deg,
+      var(--earned) 0%, var(--earned-deep) 14%,
+      var(--fog) 30%, var(--fog-line) 62%, transparent 100%);
+    opacity: .9;
+  }
+
+  .world { position: relative; padding-left: 46px; margin-bottom: 26px; }
+  /* node marker on the spine */
+  .node {
+    position: absolute; left: 6px; top: 20px;
+    width: 20px; height: 20px; border-radius: 50%;
+    background: var(--canvas); border: 2px solid var(--fog);
+    display: grid; place-items: center;
+    z-index: 2;
+  }
+  .node::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--fog); }
+  .world.earned .node { border-color: var(--earned); box-shadow: 0 0 0 4px var(--earned-glow-2), 0 0 16px var(--earned-glow); }
+  .world.earned .node::after { background: var(--earned); box-shadow: 0 0 8px var(--earned-glow); }
+  .world.frontier-active .node { border-color: var(--earned-soft); }
+  .world.frontier-active .node::after { background: var(--earned-soft); }
+  .world.deep-fog .node { opacity: .5; }
+
+  /* world panel */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius);
+    overflow: hidden;
+    transition: border-color .25s var(--ease);
+  }
+  .world.earned .panel {
+    border-color: rgba(255,46,77,0.28);
+    box-shadow: 0 0 0 1px rgba(255,46,77,0.06), 0 18px 50px -30px var(--earned-glow);
+    background:
+      radial-gradient(600px 200px at 0% 0%, rgba(255,46,77,0.07), transparent 60%),
+      var(--surface);
+  }
+  .world.frontier-active .panel { border-color: rgba(255,92,116,0.22); }
+  .world.deep-fog .panel { opacity: .82; }
+
+  .w-head {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 18px;
+    cursor: pointer;
+    user-select: none;
+  }
+  .w-emoji {
+    font-size: 26px; line-height: 1;
+    filter: saturate(1.05);
+    width: 34px; text-align: center;
+    flex: none;
+  }
+  .world.frontier .w-emoji, .world.deep-fog .w-emoji { filter: grayscale(.35) opacity(.85); }
+  .w-titles { flex: 1 1 auto; min-width: 0; }
+  .w-name {
+    font-family: var(--font-display); font-weight: 650; font-size: 19px; letter-spacing: -.01em;
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .w-idx { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); font-weight: 500; }
+  .realm-tag {
+    font-family: var(--font-mono);
+    font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: var(--radius-pill);
+    border: 1px solid var(--hairline-hi);
+    color: var(--ink-3);
+  }
+  .world.earned .realm-tag { color: var(--earned-soft); border-color: rgba(255,46,77,.4); background: var(--earned-glow-2); }
+  .world.frontier-active .realm-tag { color: var(--earned-soft); border-color: rgba(255,92,116,.35); }
+  .w-sub { font-size: 12.5px; color: var(--ink-3); margin-top: 3px; }
+
+  /* per-world rolled-up bar (lives in the head, right side) */
+  .w-bar-wrap { flex: none; width: 132px; text-align: right; }
+  .w-bar-pct { font-family: var(--font-mono); font-size: 13px; color: var(--ink-2); margin-bottom: 5px; }
+  .world.earned .w-bar-pct { color: var(--earned-soft); }
+  .w-bar {
+    height: 7px; border-radius: var(--radius-pill);
+    background: var(--fog-track); border: 1px solid var(--hairline);
+    overflow: hidden;
+  }
+  .w-bar > i {
+    display: block; height: 100%; width: 0; border-radius: var(--radius-pill);
+    background: linear-gradient(90deg, var(--earned-deep), var(--earned));
+    box-shadow: 0 0 10px var(--earned-glow);
+    transition: width var(--fill-dur) var(--ease);
+  }
+  .chev { flex: none; color: var(--ink-3); transition: transform .25s var(--ease); font-family: var(--font-mono); font-size: 13px; }
+  .world.open .chev { transform: rotate(90deg); }
+
+  /* active-frontier glow pulse ring */
+  .world.frontier-active .panel::before {
+    content: ""; position: absolute; inset: -1px; border-radius: var(--radius);
+    pointer-events: none;
+    box-shadow: 0 0 0 1px rgba(255,92,116,.0);
+    animation: frontierPulse var(--pulse-dur) var(--ease) infinite;
+  }
+  .world.frontier-active { position: relative; }
+  @keyframes frontierPulse {
+    0%,100% { box-shadow: 0 0 0 1px rgba(255,92,116,.10), 0 0 0px rgba(255,92,116,0); }
+    50%     { box-shadow: 0 0 0 1px rgba(255,92,116,.42), 0 0 26px -4px rgba(255,92,116,.35); }
+  }
+
+  /* ---------- world body (collapsible) ---------- */
+  .w-body { border-top: 1px solid var(--hairline); padding: 6px 18px 18px; display: none; }
+  .world.open .w-body { display: block; }
+
+  /* Foundation: subgroups render as compact CONQUERED CLUSTERS */
+  .clusters { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px,1fr)); gap: 10px; margin-top: 14px; }
+  .cluster {
+    background: var(--surface-2); border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm); padding: 11px 13px;
+    display: flex; flex-direction: column; gap: 8px;
+    cursor: pointer;
+  }
+  .cluster:hover { border-color: rgba(255,46,77,.3); background: var(--surface-3); }
+  .cluster-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+  .cluster-name { font-size: 13px; font-weight: 600; color: var(--ink); line-height: 1.3; }
+  .cluster-count { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); flex: none; }
+  .cluster-bar { height: 5px; border-radius: var(--radius-pill); background: var(--fog-track); overflow: hidden; }
+  .cluster-bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--earned-deep), var(--earned)); box-shadow: 0 0 8px var(--earned-glow); border-radius: var(--radius-pill); }
+  .cluster.threads .cluster-name::after { content: " ⚠️"; font-size: 11px; }
+
+  /* expanded quest list (inside a cluster, or an ahead world's body) */
+  .quests { display: flex; flex-direction: column; gap: 7px; margin-top: 12px; }
+  .subgroup-h {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+    color: var(--ink-3); margin: 16px 0 8px; display: flex; align-items: center; gap: 8px;
+  }
+  .subgroup-h::after { content: ""; flex: 1; height: 1px; background: var(--hairline); }
+
+  /* ---------- quest row ---------- */
+  .quest {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    background: var(--surface-2);
+    border: 1px solid var(--hairline);
+    border-radius: var(--radius-sm);
+    transition: border-color .2s var(--ease), background .2s var(--ease);
+  }
+  .quest:hover { border-color: var(--hairline-hi); background: var(--surface-3); }
+  .quest.earned-ahead { background: linear-gradient(90deg, rgba(255,46,77,.09), var(--surface-2) 60%); border-color: rgba(255,46,77,.22); }
+  .quest.blocked { opacity: .62; }
+  .quest.decision, .quest.walk { border-color: rgba(176,107,255,.0); }
+  .quest.decision { box-shadow: inset 3px 0 0 var(--st-decision); }
+  .quest.walk     { box-shadow: inset 3px 0 0 var(--st-walk); }
+  .quest.loud { animation: loudPulse var(--pulse-dur) var(--ease) infinite; }
+  @keyframes loudPulse {
+    0%,100% { background: var(--surface-2); }
+    50%     { background: var(--surface-3); }
+  }
+
+  /* status chip */
+  .chip {
+    flex: none;
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 500;
+    letter-spacing: .04em; text-transform: uppercase;
+    padding: 4px 9px; border-radius: var(--radius-pill);
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid transparent; white-space: nowrap;
+  }
+  .chip .cdot { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+  .chip.shipped   { color: var(--st-shipped);  background: rgba(46,224,138,.11); border-color: rgba(46,224,138,.28); }
+  .chip.shipped .cdot   { background: var(--st-shipped); box-shadow: 0 0 7px rgba(46,224,138,.6); }
+  .chip.inflight  { color: var(--st-inflight); background: rgba(245,177,61,.11); border-color: rgba(245,177,61,.28); }
+  .chip.inflight .cdot  { background: var(--st-inflight); }
+  .chip.todo      { color: var(--st-todo);     background: rgba(112,120,160,.10); border-color: rgba(112,120,160,.24); }
+  .chip.todo .cdot      { background: var(--st-todo); }
+  .chip.deferred  { color: var(--st-deferred); background: rgba(91,99,144,.10); border-color: rgba(91,99,144,.22); font-style: italic; }
+  .chip.deferred .cdot  { background: var(--st-deferred); }
+  .chip.blocked   { color: var(--st-blocked);  background: rgba(200,90,99,.10); border-color: rgba(200,90,99,.26); }
+  .chip.blocked .cdot   { background: var(--st-blocked); }
+  .chip.decision  { color: var(--st-decision); background: rgba(176,107,255,.14); border-color: rgba(176,107,255,.4); }
+  .chip.decision .cdot  { background: var(--st-decision); box-shadow: 0 0 8px rgba(176,107,255,.7); }
+  .chip.walk      { color: var(--st-walk);     background: rgba(255,207,74,.13); border-color: rgba(255,207,74,.38); }
+  .chip.walk .cdot      { background: var(--st-walk); box-shadow: 0 0 8px rgba(255,207,74,.6); }
+
+  .q-main { flex: 1 1 auto; min-width: 0; }
+  .q-title { font-size: 13.5px; color: var(--ink); line-height: 1.35; }
+  .quest.blocked .q-title { color: var(--ink-2); }
+  .q-what { font-size: 12px; color: var(--ink-3); margin-top: 2px; }
+  .q-what .lock-by { color: var(--st-blocked); }
+
+  /* derived-state markers (emoji, right of title) */
+  .markers { display: inline-flex; gap: 5px; margin-left: 7px; vertical-align: middle; }
+  .marker { font-size: 12.5px; cursor: help; }
+
+  /* per-quest github mini-bar */
+  .q-gh { flex: none; width: 96px; text-align: right; }
+  .q-gh .n { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); margin-bottom: 4px; }
+  .q-gh .n b { color: var(--ink-2); }
+  .q-mini { height: 5px; border-radius: var(--radius-pill); background: var(--fog-track); border: 1px solid var(--hairline); overflow: hidden; }
+  .q-mini > i { display: block; height: 100%; width: 0; border-radius: var(--radius-pill); transition: width var(--fill-dur) var(--ease); }
+  .q-mini.on > i { background: linear-gradient(90deg, var(--earned-deep), var(--earned)); box-shadow: 0 0 8px var(--earned-glow); }
+  .q-mini.part > i { background: linear-gradient(90deg, var(--st-inflight), var(--earned-soft)); }
+
+  .q-link { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); padding: 3px 6px; border-radius: 6px; }
+  .q-link:hover { color: var(--earned-soft); background: var(--earned-glow-2); }
+
+  /* caveats — visible small print, not hidden */
+  .caveats { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; }
+  .caveat {
+    font-size: 11.5px; color: var(--ink-3); line-height: 1.4;
+    padding-left: 18px; position: relative;
+  }
+  .caveat::before { content: "⚠"; position: absolute; left: 0; top: 0; color: var(--st-inflight); font-size: 11px; }
+  .caveat a { color: var(--ink-2); border-bottom: 1px dotted var(--ink-faint); }
+  .w-caveats { margin: 12px 0 2px; padding: 12px 14px; background: rgba(245,177,61,.05); border: 1px solid rgba(245,177,61,.14); border-radius: var(--radius-sm); }
+  .w-caveats .ch { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em; text-transform: uppercase; color: var(--st-inflight); margin-bottom: 8px; }
+
+  /* ============================================================
+     UNMAPPED ISSUES inbox
+     ============================================================ */
+  .inbox {
+    margin-top: 40px;
+    background: var(--surface);
+    border: 1px dashed var(--hairline-hi);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+  }
+  .inbox-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+  .inbox-head h3 { font-family: var(--font-display); font-weight: 650; font-size: 17px; margin: 0; }
+  .inbox-head .cnt { font-family: var(--font-mono); font-size: 12px; color: var(--ink-3); }
+  .inbox-sub { font-size: 12.5px; color: var(--ink-3); margin-bottom: 16px; }
+  .inbox-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: var(--radius-sm);
+    border: 1px solid var(--hairline); background: var(--surface-2);
+    margin-bottom: 8px;
+  }
+  .inbox-row .num { font-family: var(--font-mono); font-size: 12px; color: var(--ink-2); flex: none; }
+  .inbox-row .txt { flex: 1 1 auto; font-size: 13px; color: var(--ink); }
+  .inbox-row .txt em { color: var(--ink-3); font-style: normal; font-size: 12px; display: block; margin-top: 1px; }
+  .inbox-row .tag { font-family: var(--font-mono); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--st-decision); border: 1px solid rgba(176,107,255,.3); padding: 3px 8px; border-radius: var(--radius-pill); flex: none; }
+  .inbox-row .tag.bug { color: var(--st-blocked); border-color: rgba(200,90,99,.3); }
+
+  /* legend / footer */
+  .legend { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--hairline); display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; }
+  .legend .li { display: inline-flex; align-items: center; gap: 7px; font-size: 11.5px; color: var(--ink-3); }
+  .legend .sw { width: 11px; height: 11px; border-radius: 3px; flex: none; }
+  .foot { margin-top: 22px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); line-height: 1.7; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 680px) {
+    .arc { grid-template-columns: 1fr; }
+    .arc-stats { justify-content: flex-start; }
+    .stat { text-align: left; }
+    .w-head { flex-wrap: wrap; }
+    .w-bar-wrap { width: 100%; text-align: left; order: 3; }
+    .w-bar-pct { text-align: left; }
+    .q-gh { display: none; }
+    .clusters { grid-template-columns: 1fr; }
+  }
+
+  /* ---------- motion respect ---------- */
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; }
+    .arc-fill, .w-bar > i, .cluster-bar > i, .q-mini > i { transition: none !important; }
+  }
+
+  /* keyboard focus */
+  .w-head:focus-visible, .q-link:focus-visible, .cluster:focus-visible { outline: 2px solid var(--earned-soft); outline-offset: 2px; border-radius: 6px; }
+</style>
+
+<div class="wrap">
+
+  <div class="eyebrow"><span class="dot"></span> Wayfinder · localhost scope tracker · RED&nbsp;2.0</div>
+  <h1 class="destination">RED is sellable across<br><span class="accent">Latin America</span></h1>
+  <p class="subline">The whole arc as seven realms. Crimson is earned ground — everything crimson is really conquered. The rest is honest frontier.</p>
+
+  <!-- OVERALL ARC READOUT -->
+  <div class="arc">
+    <div>
+      <div class="arc-head">
+        <div class="arc-pct" id="arcPct">0<span class="sym">%</span></div>
+        <div class="arc-label">of the arc to <b>LatAm-sellable</b> is earned<br>— rolled up honestly from every quest below</div>
+      </div>
+    </div>
+    <div class="arc-stats">
+      <div class="stat"><b id="worldsConq">–</b><span>realms held</span></div>
+      <div class="stat"><b id="questsShip">–</b><span>quests earned</span></div>
+    </div>
+    <div class="arc-track"><div class="arc-fill" id="arcFill"></div></div>
+  </div>
+
+  <!-- THE ROUTE -->
+  <div class="route" id="route"></div>
+
+  <!-- UNMAPPED ISSUES INBOX -->
+  <div class="inbox" id="inbox"></div>
+
+  <!-- LEGEND -->
+  <div class="legend" id="legend"></div>
+
+  <div class="foot">
+    wayfinder asset · T5 #110 on map #105 · 2026-07-14 · renders from a hardcoded DATA object shaped to the T2 scope-model schema<br>
+    fields prefixed <span class="mono">_gh</span> are mock stand-ins for live <span class="mono">gh</span> resolution · ahead-world quests marked SAMPLE are placeholders (T3/T4 author the real lists)
+  </div>
+</div>
+
+<script>
+/* ================================================================
+   DATA — shaped EXACTLY like the T2 scope-model schema.
+   world -> subgroups -> quests, with github / status / caveats /
+   depends_on / kind. Foundation content is REAL (T1 catalogue).
+   `_gh` = MOCK stand-in for live gh closed/total (real renderer
+   calls gh). Ahead-world quests tagged `// SAMPLE` are invented
+   placeholders; T3/T4 author the real worlds 2-7.
+   ================================================================ */
+const DATA = {
+  repo: "Vack99/RED-2.0",
+  destination: "RED is sellable across Latin America",
+  worlds: [
+
+    /* ========================= WORLD 1 — FOUNDATION (conquered) ========================= */
+    {
+      id: "foundation", name: "Foundation", emoji: "🏗️",
+      caveats: [
+        { note: "ADR-0013 §2/§3 O(1)-per-statement RLS claim is FALSE — correlated per-row SubPlan; the .eq(gym_id) fix shipped (#92) but ADR-locking the predicate rewrite is owner-pending.",
+          ref: { type: "memory", ref: "adr-0013-rls-per-row-claim-is-false" } },
+        { note: "Migration version drift — prod schema_migrations doesn't recognize 56/78 filenames; supabase link / db push against prod is permanently unsafe (ops constraint, not a fix)." }
+      ],
+      subgroups: [
+        { name: "Monorepo refactor (Phase 1)", quests: [
+          { id: "monorepo-workspace", title: "Turborepo + pnpm workspace + shared @gym/* core",
+            what: "Behaviour-preserving conversion: workspace, domain/format/data/ui packages, boundary cutover",
+            github: { issues: ["2-8"], label: "monorepo-phase1-2026-06" }, _gh: { closed: 7, total: 7 } },
+          { id: "monorepo-deploy-verify", title: "Deploy-verify — Forge admin deploys identically",
+            what: "Human confirmed the relocated app deploys byte-identically", kind: "gate",
+            github: { issues: [9] }, _gh: { closed: 1, total: 1 }, depends_on: ["monorepo-workspace"] }
+        ]},
+        { name: "Multi-tenant tracer (Phase 2)", quests: [
+          { id: "host-brand-seam", title: "host→brand seam · @gym/brand shared by both apps",
+            what: "Pure resolveBrandId(host,override), SSR no-FOUC tokens, 0 B per-brand JS delta",
+            github: { issues: ["11-15"], label: "platform-phase2-tracer-2026-07" }, _gh: { closed: 5, total: 5 } },
+          { id: "tracer-deploy-verify", title: "2-Vercel-project deploy-verify", kind: "gate",
+            what: "One client deploy serves forge+red by host; curl+browser verified",
+            github: { issues: [16] }, _gh: { closed: 1, total: 1 }, depends_on: ["host-brand-seam"] }
+        ]},
+        { name: "Gym-scoped RLS (Phase 3)", quests: [
+          { id: "rls-policies", title: "Tenant spine + 22 gym-scoped RLS policies",
+            what: "gym/gym_domain/gym_membership, gym_id across 7 tables, denial-test-first policies",
+            github: { issues: ["18-26"], label: "platform-phase3-rls-2026-07" }, _gh: { closed: 9, total: 9 },
+            caveats: [ { note: "Do not trust ADR-0013's O(1) claim here (see world caveat)." } ] },
+          { id: "rls-cutover", title: "Terminal RLS cutover — dropped 21 legacy policies live", kind: "gate",
+            what: "Dropped per-auth.uid() policies + 7 user_id columns live, zero data loss; rollback tested",
+            github: { issues: [28] }, _gh: { closed: 1, total: 1 }, depends_on: ["rls-policies"] }
+        ]},
+        { name: "Brand system (Phase 4)", quests: [
+          { id: "brand-tokens", title: "Brand-is-DATA: token sets, override schema, motion sheet",
+            what: "zod-guarded base⊕overrides merge, per-brand motion honoring reduced-motion, 0 B delta",
+            github: { issues: ["30-35"], label: "platform-phase4-brand-2026-07" }, _gh: { closed: 6, total: 6 } }
+        ]},
+        { name: "Admin reframe + Agenda (Phase 5)", quests: [
+          { id: "agenda", title: "Catalog + scheduling spine + full Agenda",
+            what: "class_type/coach/room, class_session absolute starts_at, atomic idempotent RPCs, Agenda UI",
+            github: { issues: ["37-47"], label: "platform-phase5-agenda-2026-07" }, _gh: { closed: 11, total: 11 } }
+        ]},
+        { name: "Client app build — RED (Phase 6)", quests: [
+          { id: "client-app", title: "Member client app — marketing, auth, booking, membership",
+            what: "12 screens to mock fidelity; reservar_clase/cancelar_reserva; dark neon RED remediation + re-walk",
+            github: { issues: ["49-63"], label: "platform-phase6-client-2026-07" }, _gh: { closed: 15, total: 15 } }
+        ]},
+        { name: "Member-reg + RPC hardening (Phase 7a)", quests: [
+          { id: "invite-claim-rail", title: "Invite/claim rail + renewal correctness + denial gate",
+            what: "reclamar_por_codigo, email-verified claim, re-deriving idempotent registrar_venta, unique-email merge",
+            github: { issues: ["64-82"], label: "member-reg-invite-2026-07" }, _gh: { closed: 20, total: 20 },
+            caveats: [ { note: "#82.4 message→error rename deferred (travels with next touch); orphaned test auth users pending destructive-delete confirmation." } ] }
+        ]},
+        { name: "Scaling + branding + receipts (Phase 7b)", quests: [
+          { id: "respaldo-scaling", title: "Month-scoped respaldo + multi-tenant scale audit + tenant-scope hardening",
+            what: "?mes= 5-sheet export (replaces OOM), .eq(gym_id) leak fix, Vault HMAC tenant binding; 10k-gym verdict",
+            github: { issues: ["90-95"] }, _gh: { closed: 6, total: 6 } },
+          { id: "recibo-cycle", title: "Recibo (sale receipt) — de-Forge identity + RED re-skin",
+            what: "gym.brand_name identity, HTML ticket auto-send, --recibo-* tokens, RED Vino #7e0d10",
+            github: { issues: ["96-103"] }, _gh: { closed: 8, total: 8 },
+            caveats: [ { note: "#104 — recibo PNG attachment nulls under the real Next runtime (works unbundled); repro harness in #100's closing comment.",
+              ref: { type: "issue", ref: "104" } } ] },
+          { id: "forge-branding", title: "Forge branding + program seed",
+            what: "Forge dark scheme, F-mark ignition + tagline, real program seed, forge-demo mirror",
+            github: { issues: ["84-87"], label: "forge-client-branding-2026-07" }, _gh: { closed: 4, total: 4 } },
+          { id: "forge-branding-walk", title: "Forge branding HITL exit gate", kind: "gate",
+            what: "Vercel forge-demo domain attach + member walkthrough — PRD #83 stays open until it closes",
+            github: { issues: [88] }, _gh: { closed: 0, total: 1 }, depends_on: ["forge-branding"] }
+        ]}
+      ]
+    },
+
+    /* ========================= WORLD 2 — SELLABLE PRODUCT (frontier · active) ========================= */
+    {
+      id: "sellable", name: "Sellable Product", emoji: "🛒",
+      subgroups: [
+        { name: "Member self-registration (earned ahead)", quests: [
+          { id: "member-self-registration", title: "Member self-register + email-verified claim",
+            what: "Registration + atomic definer claim-by-verified-email; phone never claims — shipped inside Foundation, its capability is World-2 scope",
+            github: { issues: [26, 55, 65], label: "member-reg-invite-2026-07" }, _gh: { closed: 3, total: 3 } }
+        ]},
+        { name: "Self-serve gym onboarding", quests: [
+          // SAMPLE — plausible World-2 quest, invented placeholder (T3/T4 author the real list)
+          { id: "gym-signup", title: "Self-serve gym signup + provisioning",
+            what: "A new gym creates its tenant, brand row and first admin without us in the loop",
+            status: "todo", github: { label: "quest:gym-signup" }, _gh: { closed: 1, total: 6 } },
+          // SAMPLE
+          { id: "trial-provisioning", title: "Free-trial / demo-gym provisioning",
+            what: "One-click seeded demo twin so a prospect can walk the product",
+            status: "todo", github: { label: "quest:trial" }, _gh: { closed: 0, total: 4 } },
+          // SAMPLE — a business call the owner still owns
+          { id: "packaging-decision", title: "Decide the product packaging / tiers",
+            what: "What a gym gets at each tier — an owner strategy call, not built yet",
+            status: "needs-decision" }
+        ]}
+      ]
+    },
+
+    /* ========================= WORLD 3 — MONETIZATION (frontier) ========================= */
+    {
+      id: "monetization", name: "Monetization", emoji: "💳",
+      subgroups: [
+        { name: "Subscription billing (gyms → us)", quests: [
+          { id: "revenue-cut-decision", title: "Decide the member-payment revenue model",
+            what: "BYO-Stripe, no-cut is the locked strategy; pricing/cut specifics stay an owner call",
+            status: "needs-decision" },
+          { id: "plan-change-seam", title: "Membership plan-change UI · “paga en tu gym” (earned-ahead seam)",
+            what: "Plan-selection surface + confirm-sheet shipped (#61); the Stripe mechanism behind it is the deferred seam World 3 plugs into",
+            github: { issues: [61] }, _gh: { closed: 1, total: 1 } },
+          // SAMPLE
+          { id: "stripe-subscriptions", title: "Stripe subscriptions — gyms pay RED",
+            what: "BYO-Stripe subscription so RED takes no cut of member pay",
+            status: "todo", github: { label: "quest:stripe-subs" }, _gh: { closed: 0, total: 5 } },
+          // SAMPLE
+          { id: "stripe-connect", title: "Stripe Connect — gyms bill their own members",
+            what: "Members pay their gym directly; RED never touches the money",
+            status: "todo", github: { label: "quest:stripe-connect" }, _gh: { closed: 0, total: 4 },
+            depends_on: ["revenue-cut-decision", "stripe-subscriptions"] }
+        ]}
+      ]
+    },
+
+    /* ========================= WORLD 4 — GROWTH & REACH (frontier) ========================= */
+    {
+      id: "growth", name: "Growth & Reach", emoji: "🚀",
+      subgroups: [
+        { name: "Scaling headroom (earned ahead)", quests: [
+          { id: "scale-audit", title: "Multi-tenant scale audit + tenant-scope + month-scoped export",
+            what: "Host→brand verified to 10k gyms; .eq(gym_id) leak closed; bounded ?mes= export — earned ahead of need",
+            github: { issues: [92, 94] }, _gh: { closed: 2, total: 2 } },
+          { id: "rpc-safety-net", title: "RPC denial harness + scratch-project gate",
+            what: "Derives writer RPCs from migration replay; fails a new uncovered writer — reliability that scales with write-RPC count",
+            github: { issues: [80, 81] }, _gh: { closed: 2, total: 2 } }
+        ]},
+        { name: "Reach & reliability", quests: [
+          // SAMPLE
+          { id: "observability", title: "Error-tracking / observability / RPC-failure alerts",
+            what: "Roadmap Phase-7 exit criterion that was never built — surfaces failures before members feel them",
+            status: "todo", github: { label: "quest:observability" }, _gh: { closed: 0, total: 5 } },
+          // SAMPLE — the one real remaining scaling-eng piece per the Vercel research
+          { id: "byo-domain-queue", title: "Rate-limited BYO-domain onboarding queue",
+            what: "The one real remaining scaling-eng piece — gyms attach their own domain at volume",
+            status: "todo", github: { label: "quest:byo-domain" }, _gh: { closed: 0, total: 3 },
+            caveats: [ { note: "Vercel's own docs contradict on throughput (100/hr vs ~100/min) — unverified; confirm before building the limiter." } ] }
+        ]}
+      ]
+    },
+
+    /* ========================= WORLD 5 — GO-TO-MARKET (frontier) ========================= */
+    {
+      id: "gtm", name: "Go-To-Market", emoji: "📣",
+      subgroups: [
+        { name: "Brand & collateral (earned ahead)", quests: [
+          { id: "red-brand-identity", title: "RED brand identity — neon ring, exact-hex tokens, animations, copy",
+            what: "Phase-6 remediation shipped the full RED visual identity; Forge F-mark/tagline/seed too — GTM collateral, earned ahead",
+            github: { issues: [85, 86] }, _gh: { closed: 2, total: 2 } },
+          { id: "branded-auth-mail", title: "Gym-branded auth mail (Send Email Hook)",
+            what: "Edge fn renders all auth mail per-gym (link on gym host, per-gym From) — a GTM-adjacent contact channel",
+            github: { issues: [75] }, _gh: { closed: 1, total: 1 } }
+        ]},
+        { name: "Market entry", quests: [
+          // SAMPLE
+          { id: "pricing-page", title: "Public pricing + marketing site (RED.mx)",
+            what: "A prospect-facing site that sells RED to gym owners, not the member app",
+            status: "todo", github: { label: "quest:marketing-site" }, _gh: { closed: 0, total: 6 } },
+          // SAMPLE
+          { id: "pricing-decision", title: "Set the go-to-market pricing",
+            what: "What a gym pays RED and how it's positioned — owner call, informed by pilot",
+            status: "needs-decision" },
+          // SAMPLE
+          { id: "demo-assets", title: "Sales demo + onboarding walkthrough assets",
+            what: "The guided demo a gym owner sees on first contact",
+            status: "todo", github: { label: "quest:demo-assets" }, _gh: { closed: 0, total: 3 } }
+        ]}
+      ]
+    },
+
+    /* ========================= WORLD 6 — CUSTOMER & SUPPORT (deep fog) ========================= */
+    {
+      id: "support", name: "Customer & Support", emoji: "🎧",
+      subgroups: [
+        { name: "Contact channels (earned ahead)", quests: [
+          { id: "contact-intake", title: "Contacto + contact_message intake",
+            what: "Working anon contact-intake channel (#53) — a World-6 contact channel, shipped",
+            github: { issues: [53] }, _gh: { closed: 1, total: 1 } },
+          { id: "delivery-infra", title: "Custom SMTP / Resend delivery infra",
+            what: "Outbound member-comms delivery; SPF/DKIM/DMARC pass (#27/#72) — earned ahead",
+            github: { issues: [27, 72] }, _gh: { closed: 2, total: 2 } }
+        ]},
+        { name: "Support surface", quests: [
+          // SAMPLE
+          { id: "support-channel", title: "Per-gym support-contact channel",
+            what: "A member can reach their gym for help from inside the app",
+            status: "todo", github: { label: "quest:support-channel" }, _gh: { closed: 0, total: 4 } },
+          // SAMPLE
+          { id: "help-center", title: "Help center / self-serve docs",
+            what: "Answers before a ticket — member + operator facing",
+            status: "todo", github: { label: "quest:help-center" }, _gh: { closed: 0, total: 3 } }
+        ]}
+      ]
+    },
+
+    /* ========================= WORLD 7 — LATAM EXPANSION (deepest fog) ========================= */
+    {
+      id: "latam", name: "LatAm Expansion", emoji: "🌎",
+      subgroups: [
+        { name: "Cross-border readiness", quests: [
+          // SAMPLE — the destination itself, all ahead
+          { id: "country-order", title: "Decide the country launch order",
+            what: "Which market after Mexico — an owner strategy call at the north star",
+            status: "needs-decision" },
+          // SAMPLE
+          { id: "localization", title: "Localization beyond es-MX (es-AR, es-CO, …)",
+            what: "Copy, currency, tz and date rails per country",
+            status: "todo", github: { label: "quest:l10n" }, _gh: { closed: 0, total: 8 } },
+          // SAMPLE
+          { id: "payment-rails", title: "Per-country payment rails (Mercado Pago, …)",
+            what: "Local payment methods gyms and members actually use",
+            status: "todo", github: { label: "quest:payment-rails" }, _gh: { closed: 0, total: 5 },
+            depends_on: ["stripe-connect"] },
+          // SAMPLE
+          { id: "legal-tax", title: "Per-country legal / tax / invoicing",
+            what: "CFDI-equivalents, data residency, contracts per market",
+            status: "needs-decision" }
+        ]}
+      ]
+    }
+
+  ]
+};
+
+/* Which open issues carry no quest label and are enumerated nowhere.
+   The real renderer diffs all open repo issues against DATA; here it's mocked.
+   #89, #104 are REAL open unmapped issues; the third is a SAMPLE. */
+const UNMAPPED = [
+  { num: 89,  txt: "Attendance ledger: two-same-day-class mark-present entitlement", note: "Needs an owner ruling before build", kind: "decision" },
+  { num: 104, txt: "Recibo PNG attachment nulls under the real Next runtime", note: "Known bug — works unbundled; repro harness in #100's closing comment", kind: "bug" },
+  { num: 118, txt: "Mobile Safari date-strip mis-snaps on first paint", note: "SAMPLE — unlabeled bug drifting with no quest; lands here until triaged", kind: "bug" }
+];
+
+/* ================================================================
+   DERIVATION — mirrors the T2 rules the real renderer applies.
+   ================================================================ */
+const REDUCED = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+// auto-status from gh closed/total (engineering quests)
+function ghStatus(gh){ if(!gh) return null; if(gh.closed===0) return "todo"; if(gh.closed>=gh.total) return "shipped"; return "in-flight"; }
+
+// resolve a quest to a single effective status + flags (T2 derivation)
+function resolve(q, shippedIds){
+  const auto = ghStatus(q._gh);
+  let status = q.status || auto || "todo";   // status overrides derived when both present
+  const hasThreads = (status === "shipped") && Array.isArray(q.caveats) && q.caveats.length > 0;
+  const blocked = Array.isArray(q.depends_on) && q.depends_on.some(d => shippedIds.has(d) === false);
+  const isGate = q.kind === "gate";
+  // a gate with deps shipped + own issue still open => awaiting owner walk
+  const awaitingWalk = isGate && !blocked && auto !== "shipped" && q.status == null;
+  return { status, hasThreads, blocked, awaitingWalk, auto };
+}
+
+// a quest counts as "earned" for rollup if it effectively shipped
+function isEarned(q){
+  const auto = ghStatus(q._gh);
+  const s = q.status || auto;
+  return s === "shipped";
+}
+
+// first pass: collect the set of shipped quest ids (for depends_on / blocked)
+const shippedIds = new Set();
+DATA.worlds.forEach(w => w.subgroups.forEach(sg => sg.quests.forEach(q => { if(isEarned(q)) shippedIds.add(q.id); })));
+
+/* ================================================================
+   RENDER
+   ================================================================ */
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;" }[c]));
+const ghIssueUrl = n => `https://github.com/${DATA.repo}/issues/${n}`;
+
+// pick a primary issue number for a quest's link
+function primaryIssue(q){
+  if(q.github && Array.isArray(q.github.issues) && q.github.issues.length){
+    const first = q.github.issues[0];
+    if(typeof first === "number") return first;
+    const m = String(first).match(/^(\d+)/); if(m) return +m[1];
+  }
+  return null;
+}
+
+const CHIP = {
+  "shipped":        { cls:"shipped",  label:"Shipped" },
+  "in-flight":      { cls:"inflight", label:"In flight" },
+  "todo":           { cls:"todo",     label:"Not started" },
+  "deferred":       { cls:"deferred", label:"Deferred" },
+  "needs-decision": { cls:"decision", label:"Needs your call" },
+  "blocked":        { cls:"blocked",  label:"Blocked" },
+  "walk":           { cls:"walk",     label:"Awaiting your walk" }
+};
+
+function chipHtml(r){
+  let key = r.status;
+  if(r.blocked) key = "blocked";
+  if(r.awaitingWalk) key = "walk";
+  const c = CHIP[key] || CHIP["todo"];
+  return `<span class="chip ${c.cls}"><span class="cdot"></span>${c.label}</span>`;
+}
+
+function markersHtml(r, q){
+  const m = [];
+  if(r.hasThreads) m.push(`<span class="marker" title="Shipped, but open threads remain">⚠️</span>`);
+  if(r.blocked)    m.push(`<span class="marker" title="Blocked by: ${esc((q.depends_on||[]).join(', '))}">🔒</span>`);
+  if(r.status === "needs-decision") m.push(`<span class="marker" title="Owner strategy call">🧭</span>`);
+  if(r.awaitingWalk) m.push(`<span class="marker" title="Owner must walk this gate">🚶</span>`);
+  return m.length ? `<span class="markers">${m.join("")}</span>` : "";
+}
+
+function caveatsHtml(list){
+  if(!Array.isArray(list) || !list.length) return "";
+  return `<div class="caveats">${list.map(c => {
+    const text = typeof c === "string" ? c : c.note;
+    let ref = "";
+    if(c && typeof c === "object" && c.ref && c.ref.type === "issue"){
+      ref = ` <a href="${ghIssueUrl(c.ref.ref)}" target="_blank" rel="noopener">#${esc(c.ref.ref)}</a>`;
+    }
+    return `<div class="caveat">${esc(text)}${ref}</div>`;
+  }).join("")}</div>`;
+}
+
+function questRowHtml(q){
+  const r = resolve(q, shippedIds);
+  const earnedAhead = isEarned(q); // world context added by caller via class
+  const gh = q._gh;
+  let ghHtml = "";
+  if(gh){
+    const pct = gh.total ? Math.round(gh.closed/gh.total*100) : 0;
+    const cls = gh.closed>=gh.total && gh.total>0 ? "on" : (gh.closed>0 ? "part" : "");
+    ghHtml = `<div class="q-gh">
+        <div class="n"><b>${gh.closed}</b>/${gh.total}</div>
+        <div class="q-mini ${cls}"><i data-w="${pct}"></i></div>
+      </div>`;
+  }
+  const issue = primaryIssue(q);
+  const link = issue ? `<a class="q-link" href="${ghIssueUrl(issue)}" target="_blank" rel="noopener">#${issue}</a>`
+                     : (q.github && q.github.label ? `<span class="q-link mono" title="auto-collects issues tagged ${esc(q.github.label)}">:label</span>` : "");
+
+  const loud = (r.status === "needs-decision" || r.awaitingWalk);
+  const rowCls = [
+    "quest",
+    earnedAhead ? "earned-ahead" : "",
+    r.blocked ? "blocked" : "",
+    r.status === "needs-decision" ? "decision" : "",
+    r.awaitingWalk ? "walk" : "",
+    (loud && !REDUCED) ? "loud" : ""
+  ].filter(Boolean).join(" ");
+
+  const blockNote = r.blocked ? ` <span class="lock-by">· blocked by ${esc((q.depends_on||[]).join(', '))}</span>` : "";
+
+  return `<div class="${rowCls}">
+    ${chipHtml(r)}
+    <div class="q-main">
+      <div class="q-title">${esc(q.title)}${markersHtml(r,q)}</div>
+      ${q.what ? `<div class="q-what">${esc(q.what)}${blockNote}</div>` : ""}
+      ${caveatsHtml(q.caveats)}
+    </div>
+    ${ghHtml}
+    ${link}
+  </div>`;
+}
+
+// world rollup: earned quests / total quests
+function worldProgress(w){
+  let earned=0, total=0;
+  w.subgroups.forEach(sg => sg.quests.forEach(q => { total++; if(isEarned(q)) earned++; }));
+  return { earned, total, pct: total ? Math.round(earned/total*100) : 0 };
+}
+
+function subgroupCounts(sg){
+  let earned=0, total=0, threads=false;
+  sg.quests.forEach(q => { total++; if(isEarned(q)) earned++; const r=resolve(q,shippedIds); if(r.hasThreads) threads=true; });
+  return { earned, total, pct: total?Math.round(earned/total*100):0, threads };
+}
+
+function worldHtml(w, idx){
+  const p = worldProgress(w);
+  const earned = w.id === "foundation";        // Foundation is the conquered base camp
+  const active = w.id === "sellable";           // the next frontier — gets the glow pulse
+  const deepFog = (w.id === "support" || w.id === "latam");
+  const realmTag = earned ? "Conquered" : active ? "Frontier · active" : deepFog ? "Deep fog" : "Frontier";
+
+  const cls = ["world",
+    earned ? "earned" : "frontier",
+    active ? "frontier-active" : "",
+    deepFog ? "deep-fog" : "",
+    (earned || active) ? "open" : ""            // Foundation + active frontier open by default
+  ].filter(Boolean).join(" ");
+
+  // BODY
+  let body = "";
+  if(w.caveats && w.caveats.length){
+    body += `<div class="w-caveats"><div class="ch">Open threads — kept visible so the map never over-claims “done”</div>${caveatsHtml(w.caveats)}</div>`;
+  }
+  if(earned){
+    // Foundation: compact conquered CLUSTERS, each expandable to its quests
+    body += `<div class="clusters">` + w.subgroups.map((sg,si) => {
+      const c = subgroupCounts(sg);
+      return `<div class="cluster${c.threads?' threads':''}" data-world="${idx}" data-sg="${si}" tabindex="0" role="button" aria-expanded="false">
+        <div class="cluster-top"><span class="cluster-name">${esc(sg.name)}</span><span class="cluster-count mono">${c.earned}/${c.total}</span></div>
+        <div class="cluster-bar"><i data-w="${c.pct}"></i></div>
+      </div>`;
+    }).join("") + `</div>`;
+    // hidden expandable quest lists per subgroup
+    body += w.subgroups.map((sg,si) =>
+      `<div class="quests sg-quests" id="sg-${idx}-${si}" style="display:none">
+        <div class="subgroup-h">${esc(sg.name)}</div>
+        ${sg.quests.map(questRowHtml).join("")}
+      </div>`
+    ).join("");
+  } else {
+    // ahead worlds: full quest lists grouped by subgroup
+    body += w.subgroups.map(sg =>
+      `<div class="quests">
+        <div class="subgroup-h">${esc(sg.name)}</div>
+        ${sg.quests.map(questRowHtml).join("")}
+      </div>`
+    ).join("");
+  }
+
+  return `<div class="${cls}" data-world="${idx}">
+    <div class="node"></div>
+    <div class="panel">
+      <div class="w-head" tabindex="0" role="button" aria-expanded="${(earned||active)?'true':'false'}">
+        <span class="w-emoji">${w.emoji||"◆"}</span>
+        <div class="w-titles">
+          <div class="w-name"><span class="w-idx">${idx+1}</span> ${esc(w.name)} <span class="realm-tag">${realmTag}</span></div>
+          <div class="w-sub">${p.earned} of ${p.total} quests earned${earned?" · the base camp everything else stands on":""}</div>
+        </div>
+        <div class="w-bar-wrap">
+          <div class="w-bar-pct mono">${p.pct}%</div>
+          <div class="w-bar"><i data-w="${p.pct}"></i></div>
+        </div>
+        <span class="chev">▶</span>
+      </div>
+      <div class="w-body">${body}</div>
+    </div>
+  </div>`;
+}
+
+// ---- overall arc rollup ----
+let totalEarned=0, totalQuests=0, realmsHeld=0;
+DATA.worlds.forEach(w => {
+  const p = worldProgress(w);
+  totalEarned += p.earned; totalQuests += p.total;
+  if(p.pct >= 90) realmsHeld++;
+});
+const arcPct = Math.round(totalEarned/totalQuests*100);
+
+// ---- paint DOM ----
+document.getElementById("route").innerHTML = DATA.worlds.map((w,i)=>worldHtml(w,i)).join("");
+document.getElementById("worldsConq").textContent = `${realmsHeld}/${DATA.worlds.length}`;
+document.getElementById("questsShip").textContent = `${totalEarned}/${totalQuests}`;
+
+// unmapped inbox
+document.getElementById("inbox").innerHTML = `
+  <div class="inbox-head"><span style="font-size:20px">📥</span><h3>Unmapped issues</h3><span class="cnt mono">${UNMAPPED.length} open</span></div>
+  <div class="inbox-sub">Open issues carrying no quest label, enumerated nowhere. Nothing filed silently vanishes — it lands here until labeled into a quest or consciously ignored.</div>
+  ${UNMAPPED.map(u => `<div class="inbox-row">
+    <span class="num"><a href="${ghIssueUrl(u.num)}" target="_blank" rel="noopener">#${u.num}</a></span>
+    <span class="txt">${esc(u.txt)}<em>${esc(u.note)}</em></span>
+    <span class="tag ${u.kind==='bug'?'bug':''}">${u.kind==='bug'?'bug':'needs ruling'}</span>
+  </div>`).join("")}
+`;
+
+// legend
+document.getElementById("legend").innerHTML = [
+  ["var(--earned)","Earned ground"],
+  ["var(--st-shipped)","Shipped"],
+  ["var(--st-inflight)","In flight"],
+  ["var(--st-todo)","Not started"],
+  ["var(--st-decision)","🧭 Needs your call"],
+  ["var(--st-walk)","🚶 Awaiting your walk"],
+  ["var(--st-blocked)","🔒 Blocked"]
+].map(([c,l]) => `<span class="li"><span class="sw" style="background:${c}"></span>${l}</span>`).join("")
+ + `<span class="li">⚠️ shipped · open threads</span>`;
+
+/* ================================================================
+   MOTION — bar fills on load; count-up; respect reduced-motion
+   ================================================================ */
+function fillBars(){
+  document.querySelectorAll("[data-w]").forEach(el => { el.style.width = el.getAttribute("data-w") + "%"; });
+}
+if(REDUCED){
+  document.querySelectorAll("[data-w]").forEach(el => { el.style.transition="none"; el.style.width = el.getAttribute("data-w")+"%"; });
+  document.getElementById("arcFill").style.transition="none";
+  document.getElementById("arcFill").style.width = arcPct+"%";
+  document.getElementById("arcPct").innerHTML = arcPct + '<span class="sym">%</span>';
+} else {
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    fillBars();
+    document.getElementById("arcFill").style.width = arcPct+"%";
+    // count up the arc %
+    const el = document.getElementById("arcPct"); const t0 = performance.now(); const dur=1100;
+    (function tick(now){
+      const k = Math.min(1,(now-t0)/dur);
+      const v = Math.round(k*arcPct);
+      el.innerHTML = v + '<span class="sym">%</span>';
+      if(k<1) requestAnimationFrame(tick);
+    })(t0);
+  }));
+}
+
+/* ================================================================
+   INTERACTION — collapse toggles
+   ================================================================ */
+document.getElementById("route").addEventListener("click", e => {
+  // subgroup cluster -> toggle its quest list
+  const cluster = e.target.closest(".cluster");
+  if(cluster){
+    const id = `sg-${cluster.dataset.world}-${cluster.dataset.sg}`;
+    const list = document.getElementById(id);
+    if(list){
+      const showing = list.style.display !== "none";
+      list.style.display = showing ? "none" : "block";
+      cluster.setAttribute("aria-expanded", String(!showing));
+      if(!showing) list.querySelectorAll("[data-w]").forEach(el => el.style.width = el.getAttribute("data-w")+"%");
+      list.scrollIntoView({ behavior: REDUCED?"auto":"smooth", block:"nearest" });
+    }
+    return;
+  }
+  // world head -> toggle world body
+  const head = e.target.closest(".w-head");
+  if(head){
+    const world = head.closest(".world");
+    world.classList.toggle("open");
+    head.setAttribute("aria-expanded", String(world.classList.contains("open")));
+    if(world.classList.contains("open")) world.querySelectorAll("[data-w]").forEach(el => el.style.width = el.getAttribute("data-w")+"%");
+  }
+});
+// keyboard: Enter/Space on head or cluster
+document.getElementById("route").addEventListener("keydown", e => {
+  if((e.key==="Enter"||e.key===" ") && (e.target.classList.contains("w-head")||e.target.classList.contains("cluster"))){
+    e.preventDefault(); e.target.click();
+  }
+});
+</script>
