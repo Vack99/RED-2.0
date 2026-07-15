@@ -84,6 +84,21 @@ export function ActivarForm({
     );
   }
 
+  if (state.status === "cuentaExistente") {
+    return (
+      <div className="flex w-full flex-col text-center" style={{ maxWidth: 340, gap: 16 }}>
+        <h1 className="text-[22px] font-light uppercase tracking-[5px] text-fg">Revisa tu correo</h1>
+        <p role="status" className="text-[13px] text-muted">
+          Ya tienes una cuenta con este correo. Te enviamos un enlace para confirmar y vincular tu
+          membresía — revisa tu correo.
+        </p>
+        <Link href="/entrar" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
+          Iniciar sesión
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <>
       <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
@@ -110,16 +125,27 @@ export function ActivarForm({
         </div>
 
         {state.status === "error" && (
-          <div
-            role="alert"
-            className="flex items-start gap-2 border px-4 py-3 text-[12.5px] font-medium"
-            style={{ color: "var(--red)", borderColor: "var(--red)", background: "var(--red-soft)" }}
-          >
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="mt-0.5 shrink-0">
-              <path d="M10 3l8 14H2z" />
-              <path d="M10 9v3M10 14v.5" />
-            </svg>
-            <span>{state.mensaje}</span>
+          <div className="flex flex-col gap-2.5">
+            <div
+              role="alert"
+              className="flex items-start gap-2 border px-4 py-3 text-[12.5px] font-medium"
+              style={{ color: "var(--red)", borderColor: "var(--red)", background: "var(--red-soft)" }}
+            >
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden className="mt-0.5 shrink-0">
+                <path d="M10 3l8 14H2z" />
+                <path d="M10 9v3M10 14v.5" />
+              </svg>
+              <span>{state.mensaje}</span>
+            </div>
+            {state.login && (
+              <p className="text-center text-[12.5px] text-muted">
+                Si ya activaste tu cuenta,{" "}
+                <Link href="/entrar" className="font-semibold text-accent">
+                  inicia sesión
+                </Link>
+                .
+              </p>
+            )}
           </div>
         )}
 

@@ -86,7 +86,8 @@ export type ErrorActivacion =
   | "codigo_invalido"
   | "ya_reclamado"
   | "sin_email"
-  | "email_no_coincide";
+  | "email_no_coincide"
+  | "cuenta_existente";
 
 /** The roster columns the decision reads (service-role lookup by claim_code). */
 export interface FilaRoster {
@@ -122,9 +123,10 @@ export function decidir(params: {
 }
 
 /**
- * Existing-account pass-through: `admin.createUser` fails when the email already has an
- * account (a member of a second gym) — not an error but the existing-account path (skip
- * creation, still mint a recovery link against the existing user). Supabase marks it
+ * Existing-account detector: `admin.createUser` fails when the email already has an
+ * account (a member of a second gym). This is NOT provisioned by the activation, so the
+ * shell must NOT mint a server-consumable token for it — it returns `cuenta_existente`
+ * (409) and the caller falls to the recovery rail (inbox proof). Supabase marks it
  * `code === 'email_exists'` (legacy: an "already been registered" message). Any OTHER
  * createUser failure is real and the shell must surface it.
  */
@@ -144,6 +146,7 @@ const ESTADO: Record<ErrorActivacion, number> = {
   ya_reclamado: 409,
   sin_email: 409,
   email_no_coincide: 422,
+  cuenta_existente: 409,
 };
 
 /**

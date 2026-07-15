@@ -150,5 +150,11 @@ describe("respuesta — HTTP shaping", () => {
       status: 422,
       body: JSON.stringify({ error: "email_no_coincide" }),
     });
+    // A pre-existing account is NOT provisioned here, so its response carries an error
+    // (no token) — the shell mints only for newly-provisioned accounts.
+    expect(respuesta({ ok: false, error: "cuenta_existente" })).toEqual({
+      status: 409,
+      body: JSON.stringify({ error: "cuenta_existente" }),
+    });
   });
 });

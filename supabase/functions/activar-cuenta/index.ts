@@ -77,13 +77,20 @@ Deno.serve(async (req: Request) => {
     return responder(out.status, out.body);
   }
 
-  // Provision the auth user with the email pre-confirmed. If it already exists (a member
-  // of a second gym), skip creation and mint against the existing account.
+  // Provision the auth user with the email pre-confirmed. A server-consumable token is
+  // minted ONLY for accounts this activation itself provisions. If the email already has
+  // an account (a member of a second gym), return `cuenta_existente` and mint NOTHING —
+  // handing a live session to a pre-existing account with no inbox proof would let a
+  // hostile operator take it over. The caller falls to the recovery rail (inbox proof).
   const { error: createErr } = await admin.auth.admin.createUser({
     email: decision.email,
     email_confirm: true,
   });
-  if (createErr && !esErrorEmailExistente(createErr)) {
+  if (createErr) {
+    if (esErrorEmailExistente(createErr)) {
+      const out = respuesta({ ok: false, error: "cuenta_existente" });
+      return responder(out.status, out.body);
+    }
     console.error(`activar-cuenta: createUser ${createErr.code ?? createErr.status ?? "error"}`);
     return responder(500, JSON.stringify({ error: "error_interno" }));
   }

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { iniciarActivacion } from "@gym/data/server/activacion";
 import { parseCodigoInvitacion } from "@gym/data/server/registro";
+import { solicitarReset } from "@gym/data/server/sesion";
 
 import { verificarTurnstile } from "../../lib/turnstile";
 
@@ -17,11 +18,18 @@ import { verificarTurnstile } from "../../lib/turnstile";
  *
  * The claim is NOT run here — it happens only after the password is set (#126), so an
  * abandoned activation leaves the emailed link re-usable.
+ *
+ * `cuenta_existente` (the email already has an account) is the one path that gets NO
+ * server-consumable token — provisioning a session for a pre-existing account with no
+ * inbox proof would let a hostile operator take it over. Instead we send that account
+ * the recovery-rail email; clicking it proves the inbox, claims this gym's membership
+ * by code at `/auth/confirm`, and lands on set-password.
  */
 export type ActivarActionState =
   | { status: "idle" }
   | { status: "yaReclamado" }
-  | { status: "error"; mensaje: string };
+  | { status: "cuentaExistente" }
+  | { status: "error"; mensaje: string; login?: boolean };
 
 const GENERICO = "No pudimos activar tu cuenta. Intenta de nuevo.";
 
@@ -31,7 +39,11 @@ export async function activarAction(
 ): Promise<ActivarActionState> {
   const codigo = parseCodigoInvitacion(formData.get("codigo"));
   if (!codigo) {
-    return { status: "error", mensaje: "Esta invitación ya no es válida. Contacta a tu gimnasio." };
+    return {
+      status: "error",
+      mensaje: "Esta invitación ya no es válida. Contacta a tu gimnasio.",
+      login: true,
+    };
   }
   const email = String(formData.get("email") ?? "");
 
@@ -56,8 +68,20 @@ export async function activarAction(
       };
     case "ya_reclamado":
       return { status: "yaReclamado" };
+    case "cuenta_existente": {
+      // No token was minted (inbox proof required). Send the recovery-rail email — the
+      // same helper /entrar's reset uses — pointed at /auth/confirm, which claims this
+      // gym's membership by code on the recovery arm, then lands on set-password.
+      const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+      await solicitarReset(email, `${origin}/auth/confirm?codigo=${codigo}&next=/restablecer`);
+      return { status: "cuentaExistente" };
+    }
     case "codigo_invalido":
-      return { status: "error", mensaje: "Esta invitación ya no es válida. Contacta a tu gimnasio." };
+      return {
+        status: "error",
+        mensaje: "Esta invitación ya no es válida. Contacta a tu gimnasio.",
+        login: true,
+      };
     default:
       return { status: "error", mensaje: GENERICO };
   }

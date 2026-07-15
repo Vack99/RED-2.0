@@ -110,6 +110,7 @@ describe("iniciarActivacion", () => {
     [409, "ya_reclamado"],
     [409, "sin_email"],
     [422, "email_no_coincide"],
+    [409, "cuenta_existente"],
   ])("maps edge %i %s to the typed error", async (status, error) => {
     vi.stubEnv("TENANT_ASSERTION_KEY", KEY);
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://proj.supabase.co");

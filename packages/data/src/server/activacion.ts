@@ -21,16 +21,18 @@ import { createClient, type SupabaseServer } from "./supabase";
  * once the member finishes. `client` is injectable for tests (ADR-0001).
  */
 
-/** The activation error taxonomy the form keys on. The first five mirror the edge
+/** The activation error taxonomy the form keys on. The first six mirror the edge
  *  function's codes (nucleo.ts `ErrorActivacion`); `error_interno` folds together
  *  405/500, a network failure, a missing token, and a failed session verify — every
- *  path where the member should just retry. */
+ *  path where the member should just retry. `cuenta_existente` is the pre-existing
+ *  account — no token is minted; the action routes it to the recovery rail. */
 export type ErrorActivacion =
   | "firma_invalida"
   | "codigo_invalido"
   | "ya_reclamado"
   | "sin_email"
   | "email_no_coincide"
+  | "cuenta_existente"
   | "error_interno";
 
 /** The edge codes that map through 1:1 (everything else collapses to error_interno). */
@@ -40,6 +42,7 @@ const CODIGOS_EDGE: ReadonlySet<string> = new Set<ErrorActivacion>([
   "ya_reclamado",
   "sin_email",
   "email_no_coincide",
+  "cuenta_existente",
 ]);
 
 /** Discriminated result — expected failures are values, never throws, so the action
