@@ -114,9 +114,9 @@ describe("enviarInvitacion — send orchestration (injected fake + transport dou
     expect(sent[0].html).toContain("https://app.forge.mx/activar?codigo=ABC23456");
     expect(sent[0].text).toContain("https://app.forge.mx/activar?codigo=ABC23456");
     expect(sent[0].html).toContain("Forge");
-    // Copy states the one-email promise: confirm your registered email, set a password, you're in.
-    expect(sent[0].html).toContain("el único correo que necesitas");
-    expect(sent[0].text).toContain("el único correo que necesitas");
+    // The one-email-promise line was cut on owner request (2026-07-15) — the button + link say it all.
+    expect(sent[0].html).not.toContain("el único correo que necesitas");
+    expect(sent[0].text).not.toContain("el único correo que necesitas");
     // Stamped exactly once, on success.
     expect(stampCalls(fake)).toEqual([{ name: "marcar_invitacion_enviada", args: { p_cliente_id: "cli-1" } }]);
   });

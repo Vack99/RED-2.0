@@ -135,7 +135,6 @@ export function mensajeInvitacion({
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;background:#ffffff">
   <p style="font-size:16px;margin:0 0 16px">Hola ${saludo}:</p>
   <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Tu gimnasio <strong>${gymNombre}</strong> te invita a activar tu cuenta en su app, donde puedes reservar tus clases y ver tu paquete.</p>
-  <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Este es el único correo que necesitas: abre el enlace, confirma el correo con el que tu gimnasio te registró, elige una contraseña y quedas dentro.</p>
   <p style="margin:0 0 24px">
     <a href="${url}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:14px 28px;font-weight:700;letter-spacing:0.4px;font-size:14px">ACTIVAR MI CUENTA</a>
   </p>
@@ -146,8 +145,6 @@ export function mensajeInvitacion({
   const text = `Hola ${saludo}:
 
 Tu gimnasio ${gymNombre} te invita a activar tu cuenta en su app, donde puedes reservar tus clases y ver tu paquete.
-
-Este es el único correo que necesitas: abre el enlace, confirma el correo con el que tu gimnasio te registró, elige una contraseña y quedas dentro.
 
 Activa tu cuenta aquí:
 ${url}
