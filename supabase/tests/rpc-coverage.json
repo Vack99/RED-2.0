@@ -25,7 +25,7 @@
     "preparar_invitacion": { "suites": ["preparar_invitacion_rules.sql", "actualizar_cliente_email_rules.sql"] },
     "reclamar_o_crear_cliente": { "suites": ["registro_claim.sql", "gym2_probe.sql"] },
     "reclamar_por_codigo": { "suites": ["reclamar_por_codigo.sql"] },
-    "registrar_venta": { "suites": ["registrar_venta_stacking.sql", "registrar_venta_personalizado.sql", "registrar_venta_stamps_gym_id.sql", "registrar_venta_email.sql", "folio_per_gym.sql", "reclamar_por_codigo.sql", "gym2_probe.sql", "rls_cross_tenant_denial.sql"] },
+    "registrar_venta": { "suites": ["registrar_venta_stacking.sql", "registrar_venta_personalizado.sql", "registrar_venta_backdate.sql", "registrar_venta_stamps_gym_id.sql", "registrar_venta_email.sql", "folio_per_gym.sql", "reclamar_por_codigo.sql", "gym2_probe.sql", "rls_cross_tenant_denial.sql"] },
     "reservar_clase": { "suites": ["reservar_clase_rules.sql", "cancelar_reserva_rules.sql", "pasar_lista_sesion_rules.sql", "reservation_rls_denial.sql"] },
     "sembrar_plantillas_default": { "suites": ["plantillas_rules.sql"] },
     "set_plan_features": { "suites": ["paquete_marketing_rules.sql"] },

@@ -49,6 +49,7 @@ export const SUITE = [
   'registrar_venta_email.sql',
   'registrar_venta_stacking.sql',
   'registrar_venta_personalizado.sql',
+  'registrar_venta_backdate.sql',
   'renewal_schema_prep.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',

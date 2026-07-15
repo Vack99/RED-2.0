@@ -35,7 +35,7 @@ declare
   mem_user uuid := gen_random_uuid();  -- a plain MEMBER of gym_stk (V8: staff_gym() = NULL → No autorizado)
   v_today date;
   p_reg uuid;
-  cli_v3 uuid; cli_v5 uuid;
+  cli_v3 uuid; cli_v5 uuid; cli_v9 uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_stk, 'registrar-personalizado-suite-gym', 'Registrar Personalizado Suite', 'America/Mexico_City', 'red');
@@ -59,6 +59,10 @@ begin
   -- V5 target: bounds raise before the client is even read, so any existing row does; assert it stays put.
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre)
     values (gym_stk, 'Base V5 Bounds', '6200000105', 7, v_today + 20, 'Base V5') returning id into cli_v5;
+  -- V9 base: active client created 60d ago (a within-30 backdate clears bound 3) — the CUSTOM-branch
+  -- backdate vector (spec §D1/§D2: p_fecha_inicio threads the personalizado path too).
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at)
+    values (gym_stk, 'Base V9 Backdate', '6200000109', 5, v_today + 10, 'Base V9', now() - interval '60 days') returning id into cli_v9;
 
   perform set_config('t.gym_stk',  gym_stk::text,  true);
   perform set_config('t.op_user',  op_user::text,  true);
@@ -66,6 +70,7 @@ begin
   perform set_config('t.p_reg',    p_reg::text,    true);
   perform set_config('t.cli_v3',   cli_v3::text,   true);
   perform set_config('t.cli_v5',   cli_v5::text,   true);
+  perform set_config('t.cli_v9',   cli_v9::text,   true);
 end $$;
 
 -- All sales run as gym_stk's operator (SECURITY INVOKER → the RPC + these assertions run under RLS).
@@ -295,6 +300,27 @@ begin
   select personalizado, monto into v from public.ventas where idempotency_key = k;
   if v.personalizado is distinct from false then raise exception 'V7 FAIL: venta.personalizado % (expected false for a registered plan)', v.personalizado; end if;
   if v.monto is distinct from 800 then raise exception 'V7 FAIL: venta.monto % (expected the paquete precio 800)', v.monto; end if;
+end $$;
+
+-- ══ V9 — CUSTOM package BACKDATED 5d onto an active base: as-of stacking inherited + fecha moved ═══════
+do $$
+declare
+  ci uuid := current_setting('t.cli_v9', true)::uuid;
+  today date := (now() at time zone 'America/Mexico_City')::date;
+  k uuid := gen_random_uuid();
+  c record; v record; v_dia date;
+begin
+  perform public.registrar_venta(
+    p_metodo := 'efectivo', p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 5,
+    p_custom_nombre := 'Promo Backdate', p_custom_precio := 750, p_custom_clases := 12, p_custom_dias := 45);
+  select clases_restantes, vence into c from public.clientes where id = ci;
+  -- base_dias = (today+10) - (today-5) = 15; +45 ⇒ vence = (today-5)+60 = today+55; clases 5 + 12 = 17.
+  if c.clases_restantes is distinct from 17 then raise exception 'V9 FAIL: clases % (expected 5 + 12 = 17)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 55 then raise exception 'V9 FAIL: vence % (expected today+55)', c.vence; end if;
+  select fecha, personalizado into v from public.ventas where idempotency_key = k;
+  v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
+  if v_dia is distinct from today - 5 then raise exception 'V9 FAIL: ventas.fecha gym-tz day % (expected today-5)', v_dia; end if;
+  if v.personalizado is distinct from true then raise exception 'V9 FAIL: personalizado % (expected true)', v.personalizado; end if;
 end $$;
 
 reset role;

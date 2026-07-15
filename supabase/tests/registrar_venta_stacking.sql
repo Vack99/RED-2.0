@@ -32,7 +32,7 @@ declare
   v_today   date;
   p_fin8_20 uuid; p_mes uuid; p_fin8_30 uuid; p_ilim uuid; p_other uuid;
   cli_v3 uuid; cli_v4 uuid; cli_v5 uuid; cli_v6 uuid; cli_v7 uuid; cli_v10 uuid;
-  cli_v13 uuid; cli_v13b uuid;
+  cli_v13 uuid; cli_v13b uuid; cli_v14 uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_stk,   'registrar-stacking-suite-gym', 'Registrar Stacking Suite', 'America/Mexico_City', 'red'),
@@ -75,6 +75,10 @@ begin
     values (gym_stk, 'Base V13 Target',  '6200000013', 5, v_today + 10, '8 clases 20d') returning id into cli_v13;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, email)
     values (gym_stk, 'Base V13 Owner',   '6200000014', 5, v_today + 10, '8 clases 20d', 'v13owner@stk.mx') returning id into cli_v13b;
+  -- V14: an active client created 60d ago (so a within-30 backdate clears bound 3) — proves the
+  -- registered branch threads p_fecha_inicio (spec §D1/§D2).
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at)
+    values (gym_stk, 'Base V14 Backdate', '6200000015', 5, v_today + 10, '8 clases 20d', now() - interval '60 days') returning id into cli_v14;
 
   perform set_config('t.gym_stk',   gym_stk::text,   true);
   perform set_config('t.op_user',   op_user::text,   true);
@@ -90,6 +94,7 @@ begin
   perform set_config('t.cli_v7',  cli_v7::text,  true);
   perform set_config('t.cli_v10', cli_v10::text, true);
   perform set_config('t.cli_v13', cli_v13::text, true);
+  perform set_config('t.cli_v14', cli_v14::text, true);
 end $$;
 
 -- All sales run as gym_stk's operator (SECURITY INVOKER → the RPC + these assertions run under RLS).
@@ -402,6 +407,30 @@ begin
   select email, clases_restantes into c from public.clientes where id = ci;
   if c.email is not null then raise exception 'V13 FAIL: target email % (expected still null)', c.email; end if;
   if c.clases_restantes is distinct from 5 then raise exception 'V13 FAIL: target saldo % mutated by the failed sale', c.clases_restantes; end if;
+end $$;
+
+-- ══ V14 — registered plan BACKDATED 5d onto an active base: as-of stacking + fecha moved (§D1/§D2) ═════
+do $$
+declare
+  ci uuid := current_setting('t.cli_v14', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
+  today date := (now() at time zone 'America/Mexico_City')::date;
+  k uuid := gen_random_uuid();
+  c record; v record; v_dia date;
+begin
+  perform public.registrar_venta(
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+    p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 5);
+  select clases_restantes, vence into c from public.clientes where id = ci;
+  -- base_dias = (today+10) - (today-5) = 15; +20 ⇒ vence = (today-5)+35 = today+30; clases 5 + 8 = 13.
+  if c.clases_restantes is distinct from 13 then raise exception 'V14 FAIL: clases % (expected 13)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 30 then raise exception 'V14 FAIL: vence % (expected today+30)', c.vence; end if;
+  -- The ledger date moved to the backdated sold day (midday gym-tz), while monto/gym stay stamped.
+  select fecha, monto, gym_id into v from public.ventas where idempotency_key = k;
+  v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
+  if v_dia is distinct from today - 5 then raise exception 'V14 FAIL: ventas.fecha gym-tz day % (expected today-5)', v_dia; end if;
+  if v.monto is distinct from 800 then raise exception 'V14 FAIL: venta.monto %', v.monto; end if;
+  if v.gym_id is distinct from g then raise exception 'V14 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
 reset role;

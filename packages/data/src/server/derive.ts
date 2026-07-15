@@ -282,10 +282,13 @@ export interface FichaDerivada {
  * Shape the ficha from already-fetched rows. PURE — `hoy`/`hoyIso` are passed
  * in (Chihuahua-local), the recordatorio body + negocio are pre-fetched; no I/O.
  * `asistencias` is the rolling 30-day window (widened to the last purchase when
- * older), most-recent first; `ventas` is the full history (most-recent first),
- * so `ventas[0]` is the active package / saldo anchor. `attendedSincePurchase`
- * is the exact count of consumed classes since that purchase, computed by the DAL
- * (which alone knows whether the windowed rows already cover the anchor date).
+ * older), most-recent first; `ventas` is the full history ordered LAST-WRITTEN
+ * first (created_at desc — never fecha, which a backdate can push into the past;
+ * spec §D3), so `ventas[0]` is the active package / saldo anchor. The `fecha`-based
+ * displays below (compradoDisplay / the días-gauge anchor) are the effective/sold
+ * day and stay on `fecha` deliberately. `attendedSincePurchase` is the exact count
+ * of consumed classes since that purchase, computed by the DAL (which alone knows
+ * whether the windowed rows already cover the anchor date).
  */
 export function shapeFicha(
   c: FichaClienteRow,

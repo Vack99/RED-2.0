@@ -592,7 +592,10 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
 
   const FICHA_VENTA = {
     cliente_id: "cli-ficha",
+    // fecha = the effective/sold day; created_at = the real write instant the clases
+    // gauge now anchors on (spec §D3/C2). Equal here (a non-backdated sale).
     fecha: VENTA_INSTANTE,
+    created_at: VENTA_INSTANTE,
     paquete_nombre: "8 clases",
     monto: 500,
     metodo: "efectivo",
@@ -711,7 +714,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
         { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "15:00:00", consumio: true, deleted_at: null },
         { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, deleted_at: null },
       ],
-      { ...FICHA_VENTA, fecha: OLD_INSTANTE },
+      { ...FICHA_VENTA, fecha: OLD_INSTANTE, created_at: OLD_INSTANTE },
     );
 
     const ficha = await getClienteFicha("cli-ficha", client);

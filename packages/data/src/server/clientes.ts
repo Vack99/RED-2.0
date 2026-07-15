@@ -314,9 +314,13 @@ export const getClienteFicha = cache(
           .order("fecha", { ascending: false }),
         supabase
           .from("ventas")
-          .select("fecha, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
+          .select("fecha, created_at, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
           .eq("cliente_id", id)
-          .order("fecha", { ascending: false }),
+          // The saldo anchor is the LAST-WRITTEN sale (created_at desc, id desc — never
+          // fecha, which a backdate can push into the past), matching mi_membresia (spec
+          // §D3/C1). `fecha` still drives the DISPLAY (compradoDisplay / días-gauge anchor).
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: false }),
         getVecinos(id, supabase),
         supabase.from("perfil").select("negocio").eq("gym_id", gym.id).maybeSingle(),
         listarPlantillas(supabase),
@@ -334,16 +338,17 @@ export const getClienteFicha = cache(
     ).negocio;
 
     // Classes consumed since the last purchase (Part B clases-gauge denominator):
-    // count `consumio` rows at/after the purchase INSTANT, not just its calendar day
-    // (C14) — a check-in earlier the SAME day as a renewal was already spent from the
-    // pre-renewal balance, so day-granularity double-counts it against the new package.
-    // ventaDia is the gym-local calendar day; ventaHora is the gym-local "HH:MM:SS"
-    // wall clock, directly string-comparable against asistencias.hora (a Postgres
-    // `time`). Null `hora` (back-entry rows, predating the column) are counted: with
-    // no recorded time there's no way to prove they preceded the venta.
+    // count `consumio` rows at/after the anchor sale's WRITE INSTANT (created_at, not
+    // fecha — C2/C14), not just its calendar day. A check-in earlier the same day as a
+    // renewal was already spent from the pre-renewal balance, so day-granularity
+    // double-counts it; and a backdated fecha would wrongly re-count gap visits that
+    // already decremented the balance live. ventaDia is the gym-local calendar day;
+    // ventaHora is the gym-local "HH:MM:SS" wall clock, directly string-comparable
+    // against asistencias.hora (a Postgres `time`). Null `hora` (back-entry rows,
+    // predating the column) are counted: no recorded time can prove they preceded it.
     const ventas = ventasRes.data ?? [];
     const ventaInstante = ventas[0]
-      ? { dia: toIsoDay(fechaEnZona(ventas[0].fecha, tz)), hora: horaSegEnZona(ventas[0].fecha, tz) }
+      ? { dia: toIsoDay(fechaEnZona(ventas[0].created_at, tz)), hora: horaSegEnZona(ventas[0].created_at, tz) }
       : null;
     let attendedSincePurchase = 0;
     if (ventaInstante) {

@@ -1517,6 +1517,7 @@ export type Database = {
           p_custom_nombre?: string
           p_custom_precio?: number
           p_email?: string
+          p_fecha_inicio?: string
           p_forzar_nuevo?: boolean
           p_idempotency_key: string
           p_metodo: string

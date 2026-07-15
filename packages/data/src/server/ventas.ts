@@ -5,7 +5,7 @@ import { z } from "zod";
 import { diasRestantes } from "@gym/domain/rules";
 import type { Clases, MetodoPago, PlantillaContext } from "@gym/domain/types";
 import { asClienteId, asPaqueteId, type ClienteId, type PaqueteId } from "@gym/domain/ids";
-import { firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay } from "@gym/format";
+import { firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -68,6 +68,14 @@ export const crearVentaSchema = z
     idempotencyKey: z.string().uuid(),
     // Explicit operator override of the RPC's duplicate guard (D2).
     forzarNuevo: z.boolean().optional(),
+    // Backdated sold date (spec D1) — a gym-local "YYYY-MM-DD" day, past-only. Absent /
+    // undefined ⇒ a normal today-sale. Format-checked here for a fast local failure; the
+    // four real bounds (no future, 30-day cap, ≥ alta, no dead-on-arrival) are the RPC's
+    // (the trust boundary — it alone knows the gym tz + today + the client's created_at).
+    fechaInicio: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de inicio inválida")
+      .optional(),
   })
   .refine(
     (v) =>
@@ -100,6 +108,11 @@ export interface VentaResult {
    *  coalesced onto the row inside the RPC, so the pre-RPC read is stale for it), then the client's
    *  stored email, else null. Distinct from `emailIngresado`, which the invite rail keeps (NEW only). */
   emailCliente: string | null;
+  /** The backdated period start as "DD MMM" (es-MX), when the sale was registered with a PAST sold
+   *  date (spec D6/E1); null for a normal today-sale. The recibo / ticket-twin PNG / WhatsApp text /
+   *  email render FECHA = today (`fechaDisplay`, the transaction date) PLUS an "Inicia: {fechaInicio}"
+   *  annotation only when this is set. VIGENCIA always renders from the RPC-returned `vence`. */
+  fechaInicio: string | null;
 }
 
 /**
@@ -265,6 +278,9 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
       ...(input.mode === "new" && { p_nombre: nombre, p_tel: tel }),
       ...(input.email ? { p_email: input.email } : {}),
       ...(input.forzarNuevo ? { p_forzar_nuevo: true } : {}),
+      // Backdated sold date (D1) — spread only when present, so a today-sale sends the
+      // exact 13-arg payload it always did (p_fecha_inicio defaults null in the RPC).
+      ...(input.fechaInicio ? { p_fecha_inicio: input.fechaInicio } : {}),
     })
     .single();
   if (rpcErr) {
@@ -281,6 +297,12 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
 
   const hoy = hoyEnZona(tz);
   const vence = parseDay(result.vence);
+  // "Inicia:" annotation (D6/E1): set only when the sale carried a PAST sold date — a
+  // fechaInicio equal to today is treated as a normal today-sale (no annotation).
+  const fechaInicioDisplay =
+    input.fechaInicio && input.fechaInicio !== toIsoDay(hoy)
+      ? fmtShort(parseDay(input.fechaInicio))
+      : null;
 
   // Best-effort message context, read AFTER the sale RPC already committed. A
   // missing cobro/paquetes only blanks a token (fmt* tolerate null/[]) — it never
@@ -342,5 +364,6 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     mensajes,
     emailIngresado: isNew ? (input.email || null) : null,
     emailCliente: input.email || emailFicha || null,
+    fechaInicio: fechaInicioDisplay,
   };
 }
