@@ -9,8 +9,10 @@
 -- that don't need to cross a privilege boundary). The explicit `gym_id = p_gym_id`
 -- filter is defense-in-depth ON TOP of RLS, not a substitute for it.
 --
--- Postgres grants EXECUTE on functions to PUBLIC by default (unlike tables), so
--- no explicit grant is needed here.
+-- NOTE: this function is left without an explicit EXECUTE grant here. Under Supabase's
+-- default ACL, PUBLIC is NOT granted EXECUTE on new functions, so this definition alone
+-- is not reachable by anon/authenticated — this is superseded by 20260714090000, which
+-- recreates the function (windowed signature) WITH explicit grants to the API roles.
 create or replace function public.marcadas_por_gym(p_gym_id uuid)
 returns jsonb
 language sql

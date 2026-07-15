@@ -127,24 +127,20 @@ async function resolverMiembroGym(
   supabase: SupabaseServer,
   hostGymSlug?: string | null,
 ): Promise<{ gymId: string; tz: string } | null> {
+  // ONE request (embedded FK join) instead of the old membership-then-gym pair (perf):
+  // gym_membership.gym_id → gym is a many-to-one FK, so PostgREST embeds `gym` as a
+  // single object per row (verified against the local stack), never an array.
   const { data: memberships } = await supabase
     .from("gym_membership")
-    .select("gym_id, created_at")
+    .select("gym_id, created_at, gym(id, slug, timezone)")
     .order("created_at", { ascending: true });
   if (!memberships || memberships.length === 0) return null;
 
-  const gymIds = [...new Set(memberships.map((m) => m.gym_id))];
-  const { data: gyms } = await supabase
-    .from("gym")
-    .select("id, slug, timezone")
-    .in("id", gymIds);
-  const gymById = new Map((gyms ?? []).map((g) => [g.id, g]));
-
   const enHost = hostGymSlug
-    ? memberships.find((m) => gymById.get(m.gym_id)?.slug === hostGymSlug)
+    ? memberships.find((m) => m.gym?.slug === hostGymSlug)
     : undefined;
   const elegido = enHost ?? memberships[0]; // host match, else the oldest (stable fallback)
-  const gym = gymById.get(elegido.gym_id);
+  const gym = elegido.gym;
   if (!gym?.timezone) return null;
   return { gymId: elegido.gym_id, tz: gym.timezone };
 }

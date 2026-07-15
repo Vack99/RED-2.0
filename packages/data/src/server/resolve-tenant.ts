@@ -49,8 +49,11 @@ interface HostResolution {
  * process-wide cache is correct (unlike session/user data). Positive AND negative
  * results are cached under the same 60s TTL: a host that is later mapped starts
  * working within ~60s, and the unmapped-host case (local/dev + any misdirected
- * request) is spared a DB round trip on every navigation. Bounded FIFO (Map insertion
- * order) at 500 entries. Plain JS (Map + Date.now) — Edge-runtime safe, no deps.
+ * request) is spared a DB round trip on every navigation. A TRANSIENT read error
+ * (PostgREST `error` set) is NEVER cached: it yields the request's fallback but no
+ * cache write, so one DB blip can't pin a real customer domain to default branding
+ * for 60s. Bounded FIFO (Map insertion order) at 500 entries. Plain JS (Map +
+ * Date.now) — Edge-runtime safe, no deps.
  */
 const CACHE_TTL_MS = 60_000;
 const CACHE_MAX_ENTRIES = 500;
@@ -98,35 +101,48 @@ export function clearTenantCache(): void {
   slugCache.clear();
 }
 
+/** A resolved value plus whether it is safe to CACHE. `cacheable` is false only when a
+ *  TRANSIENT read error produced `value` as a request-scoped fallback — the caller returns
+ *  it for THIS request but must not write it to the TTL cache (else one blip pins the wrong
+ *  resolution for 60s). A genuine miss (no row, no error) is `cacheable: true` (negative
+ *  caching is intended). */
+interface Resolved<T> {
+  value: T;
+  cacheable: boolean;
+}
+
 /** Host arm, uncached: `gym_domain` row → load its `gym`. `matched` mirrors whether
- *  the domain row existed, so the host-wins short-circuit survives caching. */
+ *  the domain row existed, so the host-wins short-circuit survives caching. A transient
+ *  PostgREST error yields the fall-through fallback but is flagged non-cacheable. */
 async function resolveHostUncached(
   client: SupabaseServer,
   hostname: string,
-): Promise<HostResolution> {
-  const { data: domain } = await client
+): Promise<Resolved<HostResolution>> {
+  const { data: domain, error } = await client
     .from("gym_domain")
     .select("gym_id")
     .eq("hostname", hostname)
     .maybeSingle();
-  if (!domain) return { matched: false, tenant: null };
-  return { matched: true, tenant: await gymTenant(client, "id", domain.gym_id) };
+  if (error) return { value: { matched: false, tenant: null }, cacheable: false };
+  if (!domain) return { value: { matched: false, tenant: null }, cacheable: true };
+  const gym = await gymTenant(client, "id", domain.gym_id);
+  return { value: { matched: true, tenant: gym.value }, cacheable: gym.cacheable };
 }
 
 async function cachedHost(client: SupabaseServer, hostname: string): Promise<HostResolution> {
   const cached = hostCache.get(hostname);
   if (cached) return cached.value;
   const resolved = await resolveHostUncached(client, hostname);
-  hostCache.set(hostname, resolved);
-  return resolved;
+  if (resolved.cacheable) hostCache.set(hostname, resolved.value);
+  return resolved.value;
 }
 
 async function cachedSlug(client: SupabaseServer, slug: string): Promise<Tenant | null> {
   const cached = slugCache.get(slug);
   if (cached) return cached.value;
   const resolved = await gymTenant(client, "slug", slug);
-  slugCache.set(slug, resolved);
-  return resolved;
+  if (resolved.cacheable) slugCache.set(slug, resolved.value);
+  return resolved.value;
 }
 
 /**
@@ -163,18 +179,24 @@ export async function resolveTenant(
 }
 
 /** Load a gym row by a unique column (host arm → `id`, override arm → `slug`) and
- *  shape it into the `Tenant`; a miss (unknown slug) resolves to `null`. */
+ *  shape it into the `Tenant`; a miss (unknown slug) resolves to `null`. A transient
+ *  PostgREST error resolves to `null` too, but flagged non-cacheable so the request's
+ *  fallback is not pinned in the TTL cache. */
 async function gymTenant(
   client: SupabaseServer,
   column: "id" | "slug",
   value: string,
-): Promise<Tenant | null> {
-  const { data } = await client
+): Promise<Resolved<Tenant | null>> {
+  const { data, error } = await client
     .from("gym")
     .select("id, slug, brand_module_id")
     .eq(column, value)
     .maybeSingle();
-  return data ? { id: data.id, slug: data.slug, brandModuleId: data.brand_module_id } : null;
+  if (error) return { value: null, cacheable: false };
+  return {
+    value: data ? { id: data.id, slug: data.slug, brandModuleId: data.brand_module_id } : null,
+    cacheable: true,
+  };
 }
 
 /**

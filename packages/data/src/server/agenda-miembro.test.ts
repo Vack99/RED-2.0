@@ -52,8 +52,11 @@ interface Rows {
 function makeFake(
   rows: Rows = {},
   rpc?: (name: string, args: Record<string, unknown>) => { data: unknown; error: unknown },
+  // Tables whose reads resolve with a transient error (data:null + error set) — lets the
+  // restored per-consumer error contracts on the shared clientes read be pinned.
+  errorTables: string[] = [],
 ) {
-  function builder(list: Record<string, unknown>[]) {
+  function builder(list: Record<string, unknown>[], erroring = false) {
     let filtered = list;
     let orderCol: string | null = null;
     const b: Record<string, unknown> = {
@@ -83,8 +86,10 @@ function makeFake(
         return b;
       },
       limit: () => b,
-      maybeSingle: async () => ({ data: filtered[0] ?? null, error: null }),
-      then: (resolve: (v: { data: unknown[]; error: null }) => unknown) => {
+      maybeSingle: async () =>
+        erroring ? { data: null, error: { message: "transient" } } : { data: filtered[0] ?? null, error: null },
+      then: (resolve: (v: { data: unknown[] | null; error: unknown }) => unknown) => {
+        if (erroring) return resolve({ data: null, error: { message: "transient" } });
         const out = orderCol
           ? [...filtered].sort((a, b2) =>
               (a[orderCol as string] as string) > (b2[orderCol as string] as string) ? 1 : -1,
@@ -103,11 +108,28 @@ function makeFake(
     rows.gym ??
     [{ id: "gym-1", slug: "gym-1", timezone: rows.gymTimezone ?? TZ, brand_name: rows.marca ?? "RED" }];
 
+  // resolverMiembroGym now reads gym_membership with an embedded `gym(...)` FK join (one
+  // request, perf) instead of a separate `gym` query — PostgREST returns that embed as a
+  // single object per row (verified against the real stack), so the fake pre-joins here.
+  const gymById = new Map(gyms.map((g) => [g.id, g]));
+  const membershipWithGym = membership.map((m) => ({ ...m, gym: gymById.get(m.gym_id as string) ?? null }));
+
+  // fetchProximasReservas now reads reservation with an embedded `class_session(...)` FK join
+  // (one request, perf) instead of a separate class_session query — same embed-shape convention
+  // as gym_membership → gym above, so the fake pre-joins here too.
+  const sesionesById = new Map((rows.class_session ?? []).map((s) => [s.id as string, s]));
+  const reservationWithSesion = (rows.reservation ?? []).map((r) => ({
+    ...r,
+    class_session: sesionesById.get(r.class_session_id as string) ?? null,
+  }));
+
   const client = {
     from: (table: string) => {
-      if (table === "gym_membership") return builder(membership);
-      if (table === "gym") return builder(gyms);
-      return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
+      const erroring = errorTables.includes(table);
+      if (table === "gym_membership") return builder(membershipWithGym, erroring);
+      if (table === "gym") return builder(gyms, erroring);
+      if (table === "reservation") return builder(reservationWithSesion, erroring);
+      return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? [], erroring);
     },
     rpc: (name: string, args: Record<string, unknown>) =>
       Promise.resolve(rpc ? rpc(name, args) : { data: [], error: null }),
@@ -247,6 +269,13 @@ describe("getAgendaSemanaMiembro", () => {
     expect(semana.dias.flatMap((d) => d.sesiones).every((s) => s.favorita === false)).toBe(true);
   });
 
+  it("swallows a transient clientes read error for the favorita flag (best-effort — no throw, favorita false)", async () => {
+    const rows = pastRows();
+    rows.clientes = [{ gym_id: "gym-1", favorite_class_type_id: "ct2" }];
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows, undefined, ["clientes"]));
+    expect(semana.dias.flatMap((d) => d.sesiones).every((s) => s.favorita === false)).toBe(true);
+  });
+
   it("carries the class-type sala / nivel / descripción for the booking sheet", async () => {
     const rows = pastRows();
     rows.class_type = [
@@ -334,6 +363,12 @@ describe("getSaldoMiembro", () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [] }));
     expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0 });
   });
+
+  it("PROPAGATES a transient clientes read error (the balance is load-bearing, never a silent 0)", async () => {
+    await expect(
+      getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: 7 }] }, undefined, ["clientes"])),
+    ).rejects.toThrow();
+  });
 });
 
 describe("getPerfilResumenMiembro", () => {
@@ -365,6 +400,18 @@ describe("getPerfilResumenMiembro", () => {
     expect(perfil.desde).toBeNull();
   });
 
+  it("is best-effort on a transient clientes read error — degrades to no-date / opted-in, never throws", async () => {
+    const perfil = await getPerfilResumenMiembro(
+      makeFake(
+        { clientes: [{ gym_id: "gym-1", created_at: iso(new Date(2024, 2, 10), "12:00"), notificaciones_activadas: false }], reservation: [] },
+        undefined,
+        ["clientes"],
+      ),
+    );
+    expect(perfil.desde).toBeNull();
+    expect(perfil.notificaciones).toBe(true);
+  });
+
   it("returns a safe empty default (never throws) when the caller has no membership yet (audit #10/#15)", async () => {
     const perfil = await getPerfilResumenMiembro(makeFake({ gym_membership: [] }));
     expect(perfil).toEqual({
@@ -375,6 +422,54 @@ describe("getPerfilResumenMiembro", () => {
       membresia: null,
       planes: [],
     });
+  });
+});
+
+/**
+ * fetchProximasReservas (perf): reservation → class_session is now ONE embedded-join request
+ * instead of a reservation-then-session pair, so the cancelled / not-yet-started filter and the
+ * soonest-first sort moved from DB predicates into JS over the embedded rows. These pin that the
+ * moved logic still behaves exactly like the old DB-side filters.
+ */
+describe("getPerfilResumenMiembro — reservas (fetchProximasReservas embedded join)", () => {
+  const rows = (): Rows => ({
+    class_session: [
+      { id: "prox2", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "06:15"), duration_min: 45, cancelled_at: null },
+      { id: "prox1", class_type_id: "ct2", starts_at: iso(LUNES_FUTURO, "18:15"), duration_min: 60, cancelled_at: null },
+      {
+        id: "cancelada",
+        class_type_id: "ct1",
+        starts_at: iso(LUNES_FUTURO, "09:00"),
+        duration_min: 45,
+        cancelled_at: "2026-01-01T00:00:00Z",
+      },
+      { id: "pasada", class_type_id: "ct1", starts_at: iso(LUNES_PASADO, "06:15"), duration_min: 45, cancelled_at: null },
+    ],
+    class_type: [
+      { id: "ct1", name: "Fuerza", sala: "Sala Yunque" },
+      { id: "ct2", name: "Metcon", sala: "Sala Brasa" },
+    ],
+    reservation: [
+      { class_session_id: "prox1", status: "reservada" },
+      { class_session_id: "prox1", status: "reservada" }, // duplicate — the dedupe guard
+      { class_session_id: "prox2", status: "reservada" },
+      { class_session_id: "cancelada", status: "reservada" },
+      { class_session_id: "pasada", status: "reservada" },
+    ],
+    clientes: [],
+  });
+
+  it("excludes a cancelled session and an already-started session, dedupes, and sorts soonest first", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake(rows()));
+    expect(perfil.reservas.map((r) => r.sessionId)).toEqual(["prox2", "prox1"]);
+  });
+
+  it("formats the returned booking (tipo, sala, hora) from the embedded class_session", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake(rows()));
+    const prox1 = perfil.reservas.find((r) => r.sessionId === "prox1");
+    expect(prox1?.tipo).toBe("Metcon");
+    expect(prox1?.sala).toBe("Sala Brasa");
+    expect(prox1?.hora).toBe("18:15");
   });
 });
 

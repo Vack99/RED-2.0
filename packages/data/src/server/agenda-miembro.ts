@@ -137,24 +137,20 @@ const resolverMiembroGym = cache(async function resolverMiembroGym(
   supabase: SupabaseServer,
   hostGymSlug?: string | null,
 ): Promise<{ id: string; tz: string; marca: string } | null> {
+  // ONE request (embedded FK join) instead of the old membership-then-gym pair (perf):
+  // gym_membership.gym_id → gym is a many-to-one FK, so PostgREST embeds `gym` as a
+  // single object per row (verified against the local stack), never an array.
   const { data: memberships } = await supabase
     .from("gym_membership")
-    .select("gym_id, created_at")
+    .select("gym_id, created_at, gym(id, slug, timezone, brand_name)")
     .order("created_at", { ascending: true });
   if (!memberships || memberships.length === 0) return null;
 
-  const gymIds = [...new Set(memberships.map((m) => m.gym_id))];
-  const { data: gyms } = await supabase
-    .from("gym")
-    .select("id, slug, timezone, brand_name")
-    .in("id", gymIds);
-  const gymById = new Map((gyms ?? []).map((g) => [g.id, g]));
-
   const enHost = hostGymSlug
-    ? memberships.find((m) => gymById.get(m.gym_id)?.slug === hostGymSlug)
+    ? memberships.find((m) => m.gym?.slug === hostGymSlug)
     : undefined;
   const elegido = enHost ?? memberships[0]; // host match, else the oldest (stable fallback)
-  const gym = gymById.get(elegido.gym_id);
+  const gym = elegido.gym;
   if (!gym) return null;
 
   return { id: elegido.gym_id, tz: gym.timezone, marca: gym.brand_name };
@@ -271,28 +267,34 @@ interface ClienteRow {
  *  / `notificaciones_activadas` for the perfil header, `favorite_class_type_id` for the "Tu
  *  favorita" tag). `cache()`-wrapped (perf): those readers used to each run their own narrow
  *  `.select()` against the same row — up to 4 round trips per request for one row. Keyed on
- *  `(supabase, gymId)`, same per-request-identity guarantee as `resolverMiembroGym`. Returns
- *  `null` when the caller has no cliente row in this gym (edge case every consumer already
- *  handles with its own safe default). */
+ *  `(supabase, gymId)`, same per-request-identity guarantee as `resolverMiembroGym`.
+ *
+ *  Returns the RAW `{ data, error }` — NOT a pre-swallowed row — because each consumer's error
+ *  contract differs and pre-dates this dedupe: the saldo read THROWS on error (a balance is
+ *  load-bearing; a silent 0 would be wrong), while the perfil header and the favorita flag are
+ *  best-effort (a swallowed error degrades to "no date" / "not a favorite", never a crash). The
+ *  shared query keeps the single round trip; the caller decides throw-vs-swallow. `data` is `null`
+ *  when the caller has no cliente row in this gym. */
 const fetchClienteRow = cache(async function fetchClienteRow(
   supabase: SupabaseServer,
   gymId: string,
-): Promise<ClienteRow | null> {
-  const { data } = await supabase
+): Promise<{ data: ClienteRow | null; error: { message: string } | null }> {
+  const { data, error } = await supabase
     .from("clientes")
     .select("clases_restantes, created_at, notificaciones_activadas, favorite_class_type_id")
     .eq("gym_id", gymId)
     .limit(1)
     .maybeSingle();
-  return data ?? null;
+  return { data: data ?? null, error };
 });
 
 /** The signed-in member's favorite class-type id, from the shared `fetchClienteRow` seam; null
- *  when unset or the row is unreadable. Drives the "Tu favorita" tag across the week, the summary
- *  sheet, and mis reservas. */
+ *  when unset OR the row is unreadable. Best-effort (swallows a read error) — the "Tu favorita"
+ *  tag is decorative, so a transient failure degrades to "no favorite" rather than crashing the
+ *  agenda. Drives the tag across the week, the summary sheet, and mis reservas. */
 async function fetchFavoritoId(supabase: SupabaseServer, gymId: string): Promise<string | null> {
-  const cli = await fetchClienteRow(supabase, gymId);
-  return cli?.favorite_class_type_id ?? null;
+  const { data } = await fetchClienteRow(supabase, gymId);
+  return data?.favorite_class_type_id ?? null;
 }
 
 function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMiembroDTO {
@@ -381,7 +383,11 @@ export const getSaldoMiembro = cache(
     const supabase = client ?? (await createClient());
     const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return { ilimitado: false, clasesRestantes: 0 };
-    const cli = await fetchClienteRow(supabase, miembro.id);
+    // The balance is load-bearing, so this read PROPAGATES a transient error (a swallowed 0
+    // would silently understate the member's classes) — unlike the best-effort perfil/favorita
+    // reads that share the same `fetchClienteRow` row.
+    const { data: cli, error } = await fetchClienteRow(supabase, miembro.id);
+    if (error) throw error;
     if (!cli) return { ilimitado: false, clasesRestantes: 0 };
     return { ilimitado: cli.clases_restantes === null, clasesRestantes: cli.clases_restantes };
   },
@@ -508,8 +514,10 @@ export const getPerfilResumenMiembro = cache(
     if (!miembro) return PERFIL_SIN_MEMBRESIA;
     const { id: gymId, tz, marca } = miembro;
 
-    // host-reconciled clientes row (#74), shared with the saldo/favorito reads via fetchClienteRow
-    const cli = await fetchClienteRow(supabase, gymId);
+    // host-reconciled clientes row (#74), shared with the saldo/favorito reads via fetchClienteRow.
+    // Best-effort (swallows a read error): the perfil header degrades to "no date" / opted-in
+    // rather than crashing the overlay — the original per-consumer contract before the dedupe.
+    const { data: cli } = await fetchClienteRow(supabase, gymId);
     const desde = cli?.created_at
       ? (() => {
           const d = fechaEnZona(cli.created_at, tz);
@@ -550,7 +558,17 @@ export const getPerfilResumenMiembro = cache(
 
 /** The member's own reservada bookings for not-yet-started sessions, soonest first,
  *  joined to class_type + coaches — the same three-plain-reads assembly the week reader
- *  uses, keyed here off the reservation rows instead of a week window. */
+ *  uses, keyed here off the reservation rows instead of a week window.
+ *
+ *  ONE request (embedded FK join) instead of the old reservation-then-session pair (perf):
+ *  reservation.class_session_id → class_session is a many-to-one FK (verified against
+ *  database.types.ts Relationships: `reservation_class_session_id_fkey`, isOneToOne: false),
+ *  so PostgREST embeds `class_session` as a single object per row — same embed shape as
+ *  `resolverMiembroGym`'s gym_membership → gym join above. The cancelled / not-yet-started
+ *  filter and the starts_at sort that used to be DB predicates on the second query now run
+ *  in JS over the embedded rows: the row volume here is the member's OWN active reservations
+ *  (single digits), so this is free. The dedupe-by-session-id guard is preserved from the
+ *  old `new Set(...)` even though a member shouldn't hold two reservada rows for one session. */
 async function fetchProximasReservas(
   supabase: SupabaseServer,
   tz: string,
@@ -558,21 +576,22 @@ async function fetchProximasReservas(
 ): Promise<ProximaReservaDTO[]> {
   const { data: reservas, error } = await supabase
     .from("reservation")
-    .select("class_session_id")
+    .select("class_session_id, class_session(id, class_type_id, starts_at, duration_min, cancelled_at)")
     .eq("status", "reservada");
   if (error) throw error;
-  const sessionIds = [...new Set((reservas ?? []).map((r) => r.class_session_id))];
-  if (sessionIds.length === 0) return [];
 
-  const { data: sesiones, error: sesErr } = await supabase
-    .from("class_session")
-    .select("id, class_type_id, starts_at, duration_min")
-    .in("id", sessionIds)
-    .is("cancelled_at", null)
-    .gte("starts_at", new Date().toISOString())
-    .order("starts_at");
-  if (sesErr) throw sesErr;
-  const rows = sesiones ?? [];
+  const nowMs = Date.now();
+  const vistos = new Set<string>();
+  const rows: { id: string; class_type_id: string; starts_at: string; duration_min: number }[] = [];
+  for (const r of reservas ?? []) {
+    const sesion = r.class_session;
+    if (!sesion || sesion.cancelled_at !== null) continue;
+    if (new Date(sesion.starts_at).getTime() < nowMs) continue;
+    if (vistos.has(sesion.id)) continue;
+    vistos.add(sesion.id);
+    rows.push(sesion);
+  }
+  rows.sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
   if (rows.length === 0) return [];
 
   const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];

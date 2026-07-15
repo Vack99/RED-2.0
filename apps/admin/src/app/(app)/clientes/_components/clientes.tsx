@@ -6,18 +6,13 @@ import { useRouter } from "next/navigation";
 import { Icon } from "@gym/ui/forge/icon";
 import { AppBar, Avatar, Badge, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useFlip } from "@gym/ui/forge/use-flip";
+import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
 import { markInAppNav } from "../../../../lib/nav";
 
 type Sort = "dias" | "nombre" | "asist";
-
-/** Rows painted in the initial SSR/first-hydration pass before the mount effect
- *  reveals the rest. Sized to overfill the tallest plausible viewport at this
- *  layout's ~70px row height (avatar 42 + 14/14 padding), so the reveal only ever
- *  extends the list below the fold — never a visible shift. */
-const ROSTER_WINDOW = 50;
 
 /** The numeric classes a client has left ("ilimitado" → no ceiling). */
 function clasesNum(c: ClienteRosterDTO): number {
@@ -81,24 +76,13 @@ export function ClientesScreen({
   const anyFilter = activeCount > 0 || !!query;
   const clearAll = () => { setRenovar(false); setOnline(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
 
-  // Windowed initial paint. The server (and the matching first hydration render)
-  // emit only the first ROSTER_WINDOW rows — enough to overfill the tallest
-  // plausible viewport at this ~70px row height — then a mount effect reveals the
-  // full list. This halves the initial HTML/SSR cost of a 500-row roster with no
-  // data change (every row is already in `clientes` props) and no visible shift:
-  // the window already exceeds one screen, so the remaining rows grow in below the
-  // fold. Filtering/sorting/search still run over the FULL dataset from the first
-  // keystroke (that is `list` above); only how many of `list` we paint is gated,
-  // and `list.length` — the header count — stays exact.
-  const [revealAll, setRevealAll] = React.useState(false);
-  React.useEffect(() => {
-    // Reveal on the frame after the first paint, so the initial paint stays the
-    // window. rAF (not a bare setState in the effect body) also keeps this off the
-    // synchronous commit path.
-    const id = requestAnimationFrame(() => setRevealAll(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  const visible = revealAll ? list : list.slice(0, ROSTER_WINDOW);
+  // Windowed initial paint (useRevealedWindow): the server + first hydration paint only the
+  // opening window, then a mount effect reveals the full list below the fold. Filtering/
+  // sorting/search still run over the FULL dataset from the first keystroke (that is `list`
+  // above); only how many of `list` we paint is gated, and `list.length` — the header count —
+  // stays exact. `revealAll` feeds the FLIP deps below, so the layout effect re-measures on the
+  // reveal commit and the newly-mounted rows are captured without a spurious slide.
+  const { visible, revealAll } = useRevealedWindow(list);
 
   // FLIP: animate rows to their new spot when the order/contents change.
   // `showFilters` is included not because it reorders rows, but because toggling
@@ -107,7 +91,7 @@ export function ClientesScreen({
   // rects and slide every row a spurious ~panel-height (FLIP fighting layout).
   // `revealAll` is a dep so the layout effect re-measures on the reveal commit,
   // capturing the newly-mounted rows' rects. Those rows have no "before" rect, so
-  // they mount without a spurious slide; the first ROSTER_WINDOW rows keep their
+  // they mount without a spurious slide; the initially-windowed rows keep their
   // exact positions (delta 0), so the reveal animates nothing.
   const flipRow = useFlip([sort, renovar, online, diasMax, clasesMax, query, showFilters, revealAll]);
 

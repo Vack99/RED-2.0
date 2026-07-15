@@ -53,6 +53,35 @@ function spyDb(gyms: GymRow[] = GYMS, domains: DomainRow[] = DOMAINS) {
   return { client: { from } as unknown as SupabaseServer, from };
 }
 
+// Like spyDb, but the named table's FIRST `.maybeSingle()` resolves with a transient
+// PostgREST error (data:null + error set) instead of a row; every later read succeeds.
+// Models one DB blip so the "errors are not cached" contract is falsifiable via the spy.
+function spyErringDb(errorTable: "gym" | "gym_domain") {
+  let erred = false;
+  const table = (rows: Record<string, unknown>[], name: string) => {
+    let filtered = rows;
+    const b = {
+      select: () => b,
+      eq: (col: string, val: unknown) => {
+        filtered = filtered.filter((r) => r[col] === val);
+        return b;
+      },
+      maybeSingle: () => {
+        if (name === errorTable && !erred) {
+          erred = true;
+          return Promise.resolve({ data: null, error: { message: "transient" } });
+        }
+        return Promise.resolve({ data: filtered[0] ?? null, error: null });
+      },
+    };
+    return b;
+  };
+  const from = vi.fn((t: string) =>
+    table((t === "gym" ? GYMS : DOMAINS) as unknown as Record<string, unknown>[], t),
+  );
+  return { client: { from } as unknown as SupabaseServer, from };
+}
+
 // The cache is module-level (correct: host/slug→tenant is GLOBAL public mapping, not
 // user data), so every case starts from an empty cache to stay isolated + falsifiable.
 beforeEach(() => clearTenantCache());
@@ -141,6 +170,36 @@ describe("resolveTenant cache", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("does NOT cache a transient HOST lookup error — the next call re-queries, then caches", async () => {
+    const { client, from } = spyErringDb("gym_domain");
+    // The gym_domain read errors → the request falls through to NO tenant, but nothing is cached.
+    expect(await resolveTenant("red.localhost", null, client)).toBeNull();
+    const afterErr = from.mock.calls.length; // 1 gym_domain read, no gym read (errored before it)
+    expect(afterErr).toBe(1);
+    // Not cached → this call re-queries and now succeeds (gym_domain + gym = 2 fresh trips).
+    expect(await resolveTenant("red.localhost", null, client)).toMatchObject({ slug: "red" });
+    const afterSuccess = from.mock.calls.length;
+    expect(afterSuccess).toBe(afterErr + 2);
+    // The successful resolution DID cache normally — no further trips.
+    expect(await resolveTenant("red.localhost", null, client)).toMatchObject({ slug: "red" });
+    expect(from.mock.calls.length).toBe(afterSuccess);
+  });
+
+  it("does NOT cache a transient SLUG lookup error — the next call re-queries, then caches", async () => {
+    const { client, from } = spyErringDb("gym");
+    // Unmapped host (a benign negative that DOES cache) + a `?gym=` slug whose read errors.
+    expect(await resolveTenant("unmapped.example.com", "red", client)).toBeNull();
+    const afterErr = from.mock.calls.length; // gym_domain miss (cached) + gym error (NOT cached) = 2
+    expect(afterErr).toBe(2);
+    // Only the slug read repeats (host stays cached); it now succeeds.
+    expect(await resolveTenant("unmapped.example.com", "red", client)).toMatchObject({ slug: "red" });
+    const afterSuccess = from.mock.calls.length;
+    expect(afterSuccess).toBe(afterErr + 1);
+    // The successful slug resolution cached — no further trips.
+    expect(await resolveTenant("unmapped.example.com", "red", client)).toMatchObject({ slug: "red" });
+    expect(from.mock.calls.length).toBe(afterSuccess);
   });
 
   it("bounds the cache — the oldest entry is evicted past the cap and re-resolves", async () => {

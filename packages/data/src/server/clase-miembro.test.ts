@@ -86,9 +86,15 @@ function makeFake(
 
   const gyms = rows.gym ?? [{ id: "gym-1", slug: "gym-1", timezone: TZ }];
 
+  // resolverMiembroGym now reads gym_membership with an embedded `gym(...)` FK join (one
+  // request, perf) instead of a separate `gym` query — PostgREST returns that embed as a
+  // single object per row (verified against the real stack), so the fake pre-joins here.
+  const gymById = new Map(gyms.map((g) => [g.id, g]));
+  const membershipWithGym = membership.map((m) => ({ ...m, gym: gymById.get(m.gym_id as string) ?? null }));
+
   const client = {
     from: (table: string) => {
-      if (table === "gym_membership") return builder(membership);
+      if (table === "gym_membership") return builder(membershipWithGym);
       if (table === "gym") return builder(gyms);
       return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },

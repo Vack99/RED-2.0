@@ -25,7 +25,7 @@ export async function togglePaseAction(raw: unknown): Promise<TogglePaseOutcome>
 
 /**
  * Lazy-load one past month's PRESENCE dots ("YYYY-MM") when the calendar browses outside
- * the initial window getMarcadas ships (perf wave 4/5). Thin read seam over the DAL, which
+ * the initial window getMarcadas ships. Thin read seam over the DAL, which
  * zod-validates the month, re-auths, and gym-scopes the RPC. The client merges the counts
  * into local state and caches the month so re-navigation is instant.
  */
@@ -35,7 +35,7 @@ export async function marcadasDeMesAction(mes: string): Promise<Presencia> {
 
 /**
  * Lazy-load ONE picked day's roster ids ("YYYY-MM-DD") when the operator selects a past day
- * outside the initial payload (which carries only today's ids; perf wave 5). Thin read seam
+ * outside the initial payload (which carries only today's ids). Thin read seam
  * over the DAL, which zod-validates the day, re-auths, and gym-scopes the RPC. The client
  * caches the day's ids in state so its checks render and re-selection is instant.
  */
