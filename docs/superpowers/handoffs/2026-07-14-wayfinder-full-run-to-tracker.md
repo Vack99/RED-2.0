@@ -104,3 +104,13 @@ Invoke `to-tickets` on that spec. Expect a *small* slice set — the map's Notes
 > Handoff: `docs/superpowers/handoffs/2026-07-14-wayfinder-full-run-to-tracker.md`
 >
 > I'm AFK for this whole session and you're on Fable — orchestrate it end-to-end. Go **all the way**: resolve every remaining wayfinder ticket on map #105 (T3 #108, T4 #109, T5 #110, T6 #111), then run `to-spec` → `to-tickets`, then **execute** — write the real `docs/scope-model.yaml` and build the localhost tracker/renderer in a sibling folder outside the repo, and verify it runs. This deliberately overrides wayfinder's one-ticket-per-session and plan-only defaults (authorized in the handoff + the map's Notes). Hold the line on **capture-don't-resolve** — never invent my pricing/positioning/country-order/ad strategy; those become `needs-decision` quests. Conserve Fable quota: delegate decomposition, the mock, and the build to opus/sonnet subagents; you orchestrate and make the taste calls. Read the handoff for the phase plan, guardrails, and model routing before starting.
+
+---
+
+## ✅ RUN COMPLETE (2026-07-14→15) — all four phases done in one session
+
+- **Phase A:** T3/T4/T5/T6 all resolved + closed (3 opus subagents in parallel + T6 by the orchestrator); assets in `docs/superpowers/wayfinder/`; map #105 body updated, fog empty.
+- **Phase B/C:** spec #119 → slices #120/#121/#122 (all `ready-for-agent`, published in dependency order).
+- **Phase D:** `docs/scope-model.yaml` on `main` @ `58c4fc4` (56 quests · 7 worlds · 14 needs-decision · issues #1–#122 each bound exactly once); tracker built at `Repos\red-tracker` and **driven end-to-end** (arc 39%, inbox caught 9 real unmapped issues #123/#128–#135 filed mid-session by the single-email-activation effort). #119–#122 closed.
+- **Open residue (owner):** map #105 stays open for the "in use" walk — double-click `Repos\red-tracker\track.bat`. `config.json` reads the model from this worktree until the primary checkout's diverged `main` (unpushed perf-50ms commits, ahead 6 / behind 6+) is reconciled — then flip `modelPath` to `../RED-2.0/docs/scope-model.yaml`. The 9 inbox issues want a `quest:*` label or a new quest block.
+- **Capture-don't-resolve held:** no pricing/positioning/country-order/ad/support/Meta-agent/caching strategy decided anywhere; all live as `needs-decision` quests in the model.
