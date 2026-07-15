@@ -3,7 +3,6 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { resumirRoster } from "@gym/domain/rules";
 import type { ResumenRoster } from "@gym/domain/types";
 import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
@@ -49,7 +48,8 @@ export interface ClienteLiteDTO {
   invitacion: InvitacionDerivada;
   /** True when the member has never had a sale (#77) — the Vender preselect /
    *  picker marks it PRIMERA COMPRA and the receipt snapshots it. Precomputed via
-   *  the `ventas(count)` embed (never a fallback query). */
+   *  the ventas_count_por_cliente RPC (a grouped DB-side count, run once per read
+   *  in parallel with the roster select — never a per-row embed or fallback query). */
   primeraCompra: boolean;
 }
 
@@ -63,15 +63,21 @@ export const getClientesLite = cache(
     // multi-membership operator's roster to THIS gym.
     const gym = await getOperatorGym(supabase);
     const tz = gym.timezone;
-    const { data } = await supabase
-      .from("clientes")
-      .select(
-        "id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id, ventas(count)",
-      )
-      .eq("gym_id", gym.id)
-      .order("nombre");
+    // Two independent reads instead of a correlated `ventas(count)` embed (which Postgres
+    // evaluates once PER row of the 500-cliente roster): the roster select stays a plain
+    // index scan, and ventas_count_por_cliente does the grouping DB-side in one pass.
+    const [{ data }, { data: counts }] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id")
+        .eq("gym_id", gym.id)
+        .order("nombre"),
+      supabase.rpc("ventas_count_por_cliente", { p_gym_id: gym.id }),
+    ]);
 
     if (!data) return [];
+
+    const ventasPorCliente = new Map((counts ?? []).map((r) => [r.cliente_id, r.n]));
 
     return data.map((c) => ({
       id: c.id,
@@ -81,7 +87,7 @@ export const getClientesLite = cache(
       paqueteLabel: c.paquete_nombre ?? "Sin paquete",
       email: c.email,
       invitacion: derivarInvitacion(c, tz),
-      primeraCompra: esPrimeraCompra(c.ventas?.[0]?.count ?? 0),
+      primeraCompra: esPrimeraCompra(ventasPorCliente.get(c.id) ?? 0),
     }));
   },
 );
@@ -148,7 +154,10 @@ export const getClientesRoster = cache(
     const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
 
-    const [clientesRes, asistRes] = await Promise.all([
+    // The roster genuinely needs every cliente row; the asistencias leg only feeds a
+    // per-cliente count, so that leg is a grouped DB-side count (asistencias_mes_por_cliente)
+    // instead of pulling the whole month's rows just to tally them in JS.
+    const [clientesRes, countsRes] = await Promise.all([
       supabase
         .from("clientes")
         .select(
@@ -156,19 +165,17 @@ export const getClientesRoster = cache(
         )
         .eq("gym_id", gym.id)
         .order("nombre"),
-      supabase
-        .from("asistencias")
-        .select("cliente_id")
-        .eq("gym_id", gym.id)
-        .is("deleted_at", null)
-        .gte("fecha", monthStartIso(hoy)),
+      supabase.rpc("asistencias_mes_por_cliente", {
+        p_gym_id: gym.id,
+        p_desde: monthStartIso(hoy),
+      }),
     ]);
 
     const clientes = clientesRes.data;
     if (!clientes) return [];
 
     const counts: Record<string, number> = {};
-    for (const a of asistRes.data ?? []) counts[a.cliente_id] = (counts[a.cliente_id] ?? 0) + 1;
+    for (const r of countsRes.data ?? []) counts[r.cliente_id] = r.n;
 
     return clientes.map((c) => {
       const base = derivarCliente(c, hoy, counts[c.id] ?? 0);
@@ -185,8 +192,9 @@ export const getClientesRoster = cache(
 /** The two roster headline counts (vigentes / totalActivos) for the dashboard,
  *  derived-at-read (ADR-0002). The full getClientesRoster is for the directory —
  *  it needs every cliente + asistEsteMes, so it fires a whole-month asistencias
- *  query. The dashboard reads only the two counts, and `estado` never reads
- *  asistencias, so this slim read skips that join and the `.order` entirely. */
+ *  query. The dashboard never needs the client rows themselves for vigentes/
+ *  totalActivos (two count-only queries, no `.order`) — only nuevosOnline still
+ *  reads rows, and only the auth-linked subset (see getRosterResumen below). */
 /** The roster headline counts plus `nuevosOnline` — the dashboard's "Nuevos
  *  registros online" tile: auth-linked (Door 2) members with no active package,
  *  the same population the roster filter chip surfaces (esRegistroOnlinePendiente). */
@@ -194,24 +202,64 @@ export interface RosterResumenDTO extends ResumenRoster {
   nuevosOnline: number;
 }
 
+/** `vigentes`/`totalActivos` restated as raw-column predicates (no client row fetch — see
+ *  getRosterResumen). Both derive from derivarCliente + derivarEstado (derive.ts / domain
+ *  rules.ts); this comment is the proof the two stay in lockstep with that pure logic, so a
+ *  change there must be re-derived here too:
+ *   - forfeit() only ever zeroes `clasesRest` when `diasRest < 0`, and derivarEstado already
+ *     forces "sin_clases" whenever `diasRest < 0` regardless of clases — so forfeit never
+ *     changes which estado a client lands in, and the predicates below can read the STORED
+ *     `clases_restantes` directly.
+ *   - totalActivos (estado !== "sin_clases"): tienePaquete AND diasRest >= 0 AND
+ *     (clases_restantes IS NULL OR clases_restantes > 0). diasRest >= 0 ⟺ vence >= hoy.
+ *   - vigentes (estado === "activo"): tienePaquete AND diasRest > 5 AND
+ *     (clases_restantes IS NULL OR clases_restantes > 2). diasRest > 5 ⟺ vence >= hoy + 6d
+ *     (both sides are whole-day midnights, so the comparison is exact — no fractional day). */
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
     const gym = await getOperatorGym(supabase);
     const hoy = hoyEnZona(gym.timezone);
+    const hoyIso = toIsoDay(hoy);
+    const vigenteDesdeIso = toIsoDay(addDays(hoy, 6));
 
-    const { data } = await supabase
-      .from("clientes")
-      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id")
-      .eq("gym_id", gym.id);
+    const [totalActivosRes, vigentesRes, onlineRes] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id", { count: "exact", head: true })
+        .eq("gym_id", gym.id)
+        .not("paquete_nombre", "is", null)
+        .gte("vence", hoyIso)
+        .or("clases_restantes.is.null,clases_restantes.gt.0"),
+      supabase
+        .from("clientes")
+        .select("id", { count: "exact", head: true })
+        .eq("gym_id", gym.id)
+        .not("paquete_nombre", "is", null)
+        .gte("vence", vigenteDesdeIso)
+        .or("clases_restantes.is.null,clases_restantes.gt.2"),
+      // nuevosOnline needs the full derivation (estadoInvitacion + derivarCliente), but only
+      // over auth-linked rows — esRegistroOnlinePendiente is false for every other row, so
+      // scoping the fetch to `auth_user_id is not null` drops the rest of the 500-cliente
+      // roster without changing the count.
+      supabase
+        .from("clientes")
+        .select(
+          "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
+        )
+        .eq("gym_id", gym.id)
+        .not("auth_user_id", "is", null),
+    ]);
 
-    if (!data) return { vigentes: 0, totalActivos: 0, nuevosOnline: 0 };
-
-    const estados = data.map((c) => derivarCliente(c, hoy, 0).estado);
-    const nuevosOnline = data.filter((c, i) =>
-      esRegistroOnlinePendiente(estadoInvitacion(c), estados[i]),
+    const nuevosOnline = (onlineRes.data ?? []).filter((c) =>
+      esRegistroOnlinePendiente(estadoInvitacion(c), derivarCliente(c, hoy, 0).estado),
     ).length;
-    return { ...resumirRoster(estados), nuevosOnline };
+
+    return {
+      vigentes: vigentesRes.count ?? 0,
+      totalActivos: totalActivosRes.count ?? 0,
+      nuevosOnline,
+    };
   },
 );
 

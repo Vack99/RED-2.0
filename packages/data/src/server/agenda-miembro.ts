@@ -125,8 +125,15 @@ interface SesionMiembroRaw {
  *  the host tenant (`hostGymSlug` = the proxy's `x-gym`, presentation-only per ADR-0008),
  *  falling back to the OLDEST membership (a stable, deterministic choice — never the
  *  `limit(1)` roulette). It only picks among the caller's OWN memberships; RLS still scopes
- *  every downstream read, so the host can never surface data the caller doesn't already hold. */
-async function resolverMiembroGym(
+ *  every downstream read, so the host can never surface data the caller doesn't already hold.
+ *
+ *  `cache()`-wrapped (perf): the page's three branches (agenda / saldo / perfil) each resolve
+ *  the SAME member's gym for the SAME request — without this, that's 3 independent sequential
+ *  2-query pairs (6 round trips) for identical input. React `cache()` keys on argument identity;
+ *  `supabase` is safe to key on because `createClient()` (supabase.ts) is itself `cache()`-wrapped,
+ *  so every caller in one request that passes `client: undefined` resolves the SAME instance —
+ *  this is still per-request (React's request-scoped memoization), never module-level state. */
+const resolverMiembroGym = cache(async function resolverMiembroGym(
   supabase: SupabaseServer,
   hostGymSlug?: string | null,
 ): Promise<{ id: string; tz: string; marca: string } | null> {
@@ -151,7 +158,7 @@ async function resolverMiembroGym(
   if (!gym) return null;
 
   return { id: elegido.gym_id, tz: gym.timezone, marca: gym.brand_name };
-}
+});
 
 /**
  * Whether the signed-in caller currently holds a `gym_membership` row (the same
@@ -193,7 +200,7 @@ async function fetchSesionesMiembro(
   const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
   const sessionIds = rows.map((r) => r.id);
 
-  const [tiposRes, joinsRes, misReservasRes, favoritoId] = await Promise.all([
+  const [tiposRes, joinsRes, misReservasRes, favoritoId, activosBySession] = await Promise.all([
     supabase.from("class_type").select("id, name, sala, level, description").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", sessionIds),
     // The member's OWN active reservations among these sessions (RLS returns only their rows).
@@ -203,6 +210,10 @@ async function fetchSesionesMiembro(
       .in("class_session_id", sessionIds)
       .in("status", ["reservada", "asistida"]),
     fetchFavoritoId(supabase, gymId),
+    // Occupancy only needs sessionIds (known since the class_session select above) — batched
+    // here instead of sequenced after this Promise.all, so it no longer gates the coach fetch
+    // below for no reason (perf).
+    contarActivos(supabase, sessionIds),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
@@ -210,7 +221,6 @@ async function fetchSesionesMiembro(
 
   const tipoById = new Map((tiposRes.data ?? []).map((t) => [t.id, t]));
   const misReservas = new Set((misReservasRes.data ?? []).map((r) => r.class_session_id));
-  const activosBySession = await contarActivos(supabase, sessionIds);
   const joins = joinsRes.data ?? [];
   const coachIds = [...new Set(joins.map((j) => j.coach_id))];
 
@@ -249,20 +259,40 @@ async function fetchSesionesMiembro(
   });
 }
 
-/** The signed-in member's favorite class-type id (self-read of their own clientes row);
- *  null when unset or the row is unreadable. Drives the "Tu favorita" tag across the week,
- *  the summary sheet, and mis reservas. Scoped to the host-reconciled `gymId` (#74): a member
- *  with clientes rows in several gyms reads the row of the SAME gym the agenda resolved — never
- *  the `limit(1)` roulette. RLS still scopes the read; `gym_id` only disambiguates among the
- *  caller's own rows. */
-async function fetchFavoritoId(supabase: SupabaseServer, gymId: string): Promise<string | null> {
+interface ClienteRow {
+  clases_restantes: number | null;
+  created_at: string | null;
+  notificaciones_activadas: boolean | null;
+  favorite_class_type_id: string | null;
+}
+
+/** The signed-in member's own `clientes` row (self-read, host-reconciled `gymId`, #74) — the
+ *  ONE seam every reader below pulls its slice from (`clases_restantes` for the saldo, `created_at`
+ *  / `notificaciones_activadas` for the perfil header, `favorite_class_type_id` for the "Tu
+ *  favorita" tag). `cache()`-wrapped (perf): those readers used to each run their own narrow
+ *  `.select()` against the same row — up to 4 round trips per request for one row. Keyed on
+ *  `(supabase, gymId)`, same per-request-identity guarantee as `resolverMiembroGym`. Returns
+ *  `null` when the caller has no cliente row in this gym (edge case every consumer already
+ *  handles with its own safe default). */
+const fetchClienteRow = cache(async function fetchClienteRow(
+  supabase: SupabaseServer,
+  gymId: string,
+): Promise<ClienteRow | null> {
   const { data } = await supabase
     .from("clientes")
-    .select("favorite_class_type_id")
+    .select("clases_restantes, created_at, notificaciones_activadas, favorite_class_type_id")
     .eq("gym_id", gymId)
     .limit(1)
     .maybeSingle();
-  return data?.favorite_class_type_id ?? null;
+  return data ?? null;
+});
+
+/** The signed-in member's favorite class-type id, from the shared `fetchClienteRow` seam; null
+ *  when unset or the row is unreadable. Drives the "Tu favorita" tag across the week, the summary
+ *  sheet, and mis reservas. */
+async function fetchFavoritoId(supabase: SupabaseServer, gymId: string): Promise<string | null> {
+  const cli = await fetchClienteRow(supabase, gymId);
+  return cli?.favorite_class_type_id ?? null;
 }
 
 function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMiembroDTO {
@@ -351,15 +381,9 @@ export const getSaldoMiembro = cache(
     const supabase = client ?? (await createClient());
     const miembro = await resolverMiembroGym(supabase, hostGymSlug);
     if (!miembro) return { ilimitado: false, clasesRestantes: 0 };
-    const { data, error } = await supabase
-      .from("clientes")
-      .select("clases_restantes")
-      .eq("gym_id", miembro.id)
-      .limit(1)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) return { ilimitado: false, clasesRestantes: 0 };
-    return { ilimitado: data.clases_restantes === null, clasesRestantes: data.clases_restantes };
+    const cli = await fetchClienteRow(supabase, miembro.id);
+    if (!cli) return { ilimitado: false, clasesRestantes: 0 };
+    return { ilimitado: cli.clases_restantes === null, clasesRestantes: cli.clases_restantes };
   },
 );
 
@@ -484,12 +508,8 @@ export const getPerfilResumenMiembro = cache(
     if (!miembro) return PERFIL_SIN_MEMBRESIA;
     const { id: gymId, tz, marca } = miembro;
 
-    const { data: cli } = await supabase
-      .from("clientes")
-      .select("created_at, notificaciones_activadas")
-      .eq("gym_id", gymId) // host-reconciled clientes row (#74), consistent with the saldo/favorito reads
-      .limit(1)
-      .maybeSingle();
+    // host-reconciled clientes row (#74), shared with the saldo/favorito reads via fetchClienteRow
+    const cli = await fetchClienteRow(supabase, gymId);
     const desde = cli?.created_at
       ? (() => {
           const d = fechaEnZona(cli.created_at, tz);

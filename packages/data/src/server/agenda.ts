@@ -116,9 +116,14 @@ async function fetchSesionesEnRango(
   const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
   const sessionIds = rows.map((r) => r.id);
 
-  const [tiposRes, joinsRes] = await Promise.all([
+  // class_type, class_session_coach, and the occupancy count all only need tipoIds/
+  // sessionIds (known since the class_session select above) — batched here instead of
+  // sequencing contarActivos after the conditional coach query, so it no longer adds a
+  // 4th sequential round trip for no reason (perf; same pattern as agenda-miembro.ts).
+  const [tiposRes, joinsRes, activosBySession] = await Promise.all([
     supabase.from("class_type").select("id, name").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", sessionIds),
+    contarActivos(supabase, sessionIds),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
@@ -141,8 +146,6 @@ async function fetchSesionesEnRango(
     list.push({ id: j.coach_id, nombre });
     coachesBySession.set(j.session_id, list);
   }
-
-  const activosBySession = await contarActivos(supabase, sessionIds);
 
   return rows.map((r) => ({
     id: r.id,

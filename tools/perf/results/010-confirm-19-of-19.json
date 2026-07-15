@@ -1,0 +1,362 @@
+{
+  "label": "confirm-19-of-19",
+  "conditions": "c1",
+  "db": "local",
+  "gate": {
+    "metric": "html",
+    "ms": 50
+  },
+  "machine": {
+    "cpus": 32,
+    "node": "v24.15.0",
+    "platform": "win32"
+  },
+  "passing": 18,
+  "total": 19,
+  "broken": 0,
+  "worst": 50.6,
+  "routes": [
+    {
+      "app": "client",
+      "path": "/",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 16.3,
+        "p95": 19.4
+      },
+      "html": {
+        "p50": 18.3,
+        "p95": 21.6
+      },
+      "bytes": 11774,
+      "status": 200,
+      "lcp": 76,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/precios",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 15,
+        "p95": 20.6
+      },
+      "html": {
+        "p50": 17.4,
+        "p95": 22.7
+      },
+      "bytes": 14430,
+      "status": 200,
+      "lcp": 96,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/nosotros",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 13.4,
+        "p95": 15.6
+      },
+      "html": {
+        "p50": 15.1,
+        "p95": 17.7
+      },
+      "bytes": 12944,
+      "status": 200,
+      "lcp": 96,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/contacto",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 10.6,
+        "p95": 22.9
+      },
+      "html": {
+        "p50": 11.7,
+        "p95": 24.7
+      },
+      "bytes": 10128,
+      "status": 200,
+      "lcp": 64,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/legal",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 4.2,
+        "p95": 11.2
+      },
+      "html": {
+        "p50": 5.6,
+        "p95": 12.6
+      },
+      "bytes": 8101,
+      "status": 200,
+      "lcp": 76,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/entrar",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 5.3,
+        "p95": 7
+      },
+      "html": {
+        "p50": 6.8,
+        "p95": 8.7
+      },
+      "bytes": 9958,
+      "status": 200,
+      "lcp": 48,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/registro",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 3.5,
+        "p95": 6.3
+      },
+      "html": {
+        "p50": 4.9,
+        "p95": 7.5
+      },
+      "bytes": 10214,
+      "status": 200,
+      "lcp": 76,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/restablecer",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 4.4,
+        "p95": 7.3
+      },
+      "html": {
+        "p50": 5.7,
+        "p95": 15.3
+      },
+      "bytes": 9540,
+      "status": 200,
+      "lcp": 68,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/reservar",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 39,
+        "p95": 55.3
+      },
+      "html": {
+        "p50": 41.8,
+        "p95": 58.2
+      },
+      "bytes": 19939,
+      "status": 200,
+      "lcp": 140,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/clase/22222222-2222-4222-8222-222222222222",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 29.6,
+        "p95": 32.3
+      },
+      "html": {
+        "p50": 31.2,
+        "p95": 34.8
+      },
+      "bytes": 7568,
+      "status": 200,
+      "lcp": 104,
+      "broken": false
+    },
+    {
+      "app": "client",
+      "path": "/confirmada/22222222-2222-4222-8222-222222222222",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 24.4,
+        "p95": 31.6
+      },
+      "html": {
+        "p50": 25.7,
+        "p95": 38.5
+      },
+      "bytes": 7421,
+      "status": 200,
+      "lcp": 80,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/login",
+      "auth": false,
+      "public": true,
+      "ttfb": {
+        "p50": 6.9,
+        "p95": 8.9
+      },
+      "html": {
+        "p50": 8.7,
+        "p95": 14.1
+      },
+      "bytes": 9661,
+      "status": 200,
+      "lcp": null,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/inicio",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 31.2,
+        "p95": 41.4
+      },
+      "html": {
+        "p50": 33.3,
+        "p95": 43.7
+      },
+      "bytes": 11823,
+      "status": 200,
+      "lcp": 164,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/clientes",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 25.9,
+        "p95": 32.6
+      },
+      "html": {
+        "p50": 29.4,
+        "p95": 36.9
+      },
+      "bytes": 29000,
+      "status": 200,
+      "lcp": 296,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/clientes/11111111-1111-4111-8111-111111111111",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 13.7,
+        "p95": 21.3
+      },
+      "html": {
+        "p50": 23.2,
+        "p95": 39
+      },
+      "bytes": 15777,
+      "status": 200,
+      "lcp": 72,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/vender",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 20.2,
+        "p95": 22.7
+      },
+      "html": {
+        "p50": 22.8,
+        "p95": 25.6
+      },
+      "bytes": 25860,
+      "status": 200,
+      "lcp": 60,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/agenda",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 37.1,
+        "p95": 45.8
+      },
+      "html": {
+        "p50": 38.6,
+        "p95": 47.3
+      },
+      "bytes": 12067,
+      "status": 200,
+      "lcp": 76,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/asistencia",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 44.6,
+        "p95": 49.2
+      },
+      "html": {
+        "p50": 50.6,
+        "p95": 55
+      },
+      "bytes": 46526,
+      "status": 200,
+      "lcp": 160,
+      "broken": false
+    },
+    {
+      "app": "admin",
+      "path": "/cuenta",
+      "auth": true,
+      "public": false,
+      "ttfb": {
+        "p50": 29.8,
+        "p95": 32.9
+      },
+      "html": {
+        "p50": 31.8,
+        "p95": 34.9
+      },
+      "bytes": 14164,
+      "status": 200,
+      "lcp": 128,
+      "broken": false
+    }
+  ]
+}

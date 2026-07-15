@@ -899,7 +899,7 @@ export type Database = {
           created_at?: string
           gym_id: string
           id?: string
-          negocio?: string
+          negocio: string
           tel?: string | null
         }
         Update: {
@@ -1000,6 +1000,7 @@ export type Database = {
           cancelled_at: string | null
           checked_at: string | null
           class_session_id: string
+          consumio: boolean
           created_at: string
           gym_id: string
           id: string
@@ -1011,6 +1012,7 @@ export type Database = {
           cancelled_at?: string | null
           checked_at?: string | null
           class_session_id: string
+          consumio?: boolean
           created_at?: string
           gym_id: string
           id?: string
@@ -1022,6 +1024,7 @@ export type Database = {
           cancelled_at?: string | null
           checked_at?: string | null
           class_session_id?: string
+          consumio?: boolean
           created_at?: string
           gym_id?: string
           id?: string
@@ -1354,6 +1357,13 @@ export type Database = {
         Args: { p_body: string; p_id: string; p_nombre: string }
         Returns: undefined
       }
+      asistencias_mes_por_cliente: {
+        Args: { p_desde: string; p_gym_id: string }
+        Returns: {
+          cliente_id: string
+          n: number
+        }[]
+      }
       cancel_class_session: {
         Args: { p_session_id: string }
         Returns: undefined
@@ -1441,6 +1451,14 @@ export type Database = {
       }
       is_member_of: { Args: { p_gym: string }; Returns: boolean }
       is_staff_of: { Args: { p_gym: string }; Returns: boolean }
+      marcadas_por_gym: {
+        Args: { p_desde: string; p_gym_id: string; p_hasta: string }
+        Returns: Json
+      }
+      marcadas_presencia: {
+        Args: { p_desde: string; p_gym_id: string; p_hasta: string }
+        Returns: Json
+      }
       marcar_invitacion_enviada: {
         Args: { p_cliente_id: string }
         Returns: undefined
@@ -1470,7 +1488,7 @@ export type Database = {
         Args: { p_cliente_id: string }
         Returns: {
           codigo: string
-          email: string | null
+          email: string
           gym_id: string
           gym_nombre: string
           gym_slug: string
@@ -1545,6 +1563,13 @@ export type Database = {
         Returns: {
           hora: string
           present: boolean
+        }[]
+      }
+      ventas_count_por_cliente: {
+        Args: { p_gym_id: string }
+        Returns: {
+          cliente_id: string
+          n: number
         }[]
       }
     }
