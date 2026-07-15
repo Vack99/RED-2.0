@@ -2,20 +2,23 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
-import { confirmarTokenHash } from "./sesion";
-import { type SupabaseServer } from "./supabase";
+import { reclamarPorCodigo } from "./registro";
+import { actualizarPassword, confirmarTokenHash } from "./sesion";
+import { createClient, type SupabaseServer } from "./supabase";
 
 /**
- * Single-email member activation DAL (PRD #130, issue #132). The client-app side of
- * the activation door: `iniciarActivacion` mints the tenant firma, calls the
+ * Single-email member activation DAL (PRD #130, issues #132/#133). The client-app
+ * side of the activation door: `iniciarActivacion` mints the tenant firma, calls the
  * `activar-cuenta` edge function (issue #131), and — on success — consumes the
- * returned recovery `token_hash` to establish a live session in the SAME request. The
- * privileged provisioning (createUser/generateLink) lives ONLY in the edge function's
- * environment — the apps keep the no-service-role property (ADR/#126).
+ * returned recovery `token_hash` to establish a live session in the SAME request;
+ * `completarActivacion` then sets the member's password and claims the paid roster
+ * row. The privileged provisioning (createUser/generateLink) lives ONLY in the edge
+ * function's environment — the apps keep the no-service-role property (ADR/#126).
  *
- * Ordering (the #126 ruling): the claim NEVER runs in `iniciarActivacion` — it waits
- * for the set-password step (#133), so an abandoned activation leaves the claim code
- * intact and the emailed link re-usable. `client` is injectable for tests (ADR-0001).
+ * Ordering (the #126 ruling): the claim runs in `completarActivacion`, AFTER the
+ * password is set — NEVER in `iniciarActivacion`. So an abandoned activation leaves
+ * the claim code intact and the emailed link re-usable; the code is single-use only
+ * once the member finishes. `client` is injectable for tests (ADR-0001).
  */
 
 /** The activation error taxonomy the form keys on. The first five mirror the edge
@@ -117,4 +120,43 @@ export async function iniciarActivacion(
   // Consume the recovery token → session cookies, same path the Send Email Hook uses.
   const sesion = await confirmarTokenHash("recovery", tokenHash, opts.client);
   return sesion.ok ? { ok: true } : { ok: false, error: "error_interno" };
+}
+
+/** completarActivacion outcome. `sin_sesion` means no live session (the recovery
+ *  session expired / the member deep-linked here cold) — the action bounces them
+ *  back to the door. A password-set failure surfaces its message; a claim failure is
+ *  swallowed (see below), so `ok:true` covers "claimed" AND "already-claimed". */
+export type CompletarActivacionResultado =
+  | { ok: true }
+  | { ok: false; error: "sin_sesion" | string };
+
+/**
+ * Finish activation: set the password on the established session user, THEN claim the
+ * paid roster row by code. Order is load-bearing (#126): password first means an
+ * abandoned attempt (no password yet) leaves the code live and the link re-usable.
+ * The claim is best-effort — a dead/already-owned code THROWS from `reclamarPorCodigo`
+ * and is swallowed here, exactly like `/auth/confirm`'s `finalizarAuth`: the member is
+ * logged in, so a claim hiccup must never strand them (an operator reconciles; the RPC
+ * is idempotent). Re-entry with an already-claimed code is therefore a success path.
+ */
+export async function completarActivacion(
+  input: { password: string; codigo: string },
+  opts: { client?: SupabaseServer } = {},
+): Promise<CompletarActivacionResultado> {
+  const supabase = opts.client ?? (await createClient());
+
+  const { data: claims } = await supabase.auth.getClaims();
+  if (!claims?.claims?.sub) return { ok: false, error: "sin_sesion" };
+
+  // Same updateUser path /restablecer uses (its recovery session sets a new password).
+  const set = await actualizarPassword(input.password, supabase);
+  if (!set.ok) return { ok: false, error: set.error };
+
+  try {
+    await reclamarPorCodigo(input.codigo, supabase);
+  } catch {
+    // Swallowed — the member is logged in; a dead/already-claimed code must not strand
+    // them (mirrors finalizarAuth). Redirect in regardless.
+  }
+  return { ok: true };
 }

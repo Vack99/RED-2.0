@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { firmaActivacion, iniciarActivacion, type ErrorActivacion } from "./activacion";
+import {
+  completarActivacion,
+  firmaActivacion,
+  iniciarActivacion,
+  type ErrorActivacion,
+} from "./activacion";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -153,5 +158,58 @@ describe("iniciarActivacion", () => {
     );
     expect(res).toEqual({ ok: false, error: "error_interno" });
     vi.unstubAllEnvs();
+  });
+});
+
+describe("completarActivacion", () => {
+  /** A client capturing the order of updateUser vs the claim rpc. */
+  function fakeSession(opts: {
+    sub: string | null;
+    updateError?: unknown;
+    rpcError?: unknown;
+  }): { client: SupabaseServer; orden: string[] } {
+    const orden: string[] = [];
+    const client = {
+      auth: {
+        getClaims: async () => ({ data: opts.sub ? { claims: { sub: opts.sub } } : null }),
+        updateUser: async () => {
+          orden.push("password");
+          return { error: opts.updateError ?? null };
+        },
+      },
+      rpc: () => {
+        orden.push("claim");
+        return { single: async () => ({ data: opts.rpcError ? null : { gym_slug: "forge" }, error: opts.rpcError ?? null }) };
+      },
+    } as unknown as SupabaseServer;
+    return { client, orden };
+  }
+
+  it("sets the password BEFORE claiming, then returns ok", async () => {
+    const { client, orden } = fakeSession({ sub: "u-1" });
+    const res = await completarActivacion({ password: "unbuenpass", codigo: "ABCD2345" }, { client });
+    expect(res).toEqual({ ok: true });
+    expect(orden).toEqual(["password", "claim"]);
+  });
+
+  it("still returns ok when the claim fails (never strands a logged-in member)", async () => {
+    const { client, orden } = fakeSession({ sub: "u-1", rpcError: { message: "Código ya utilizado" } });
+    const res = await completarActivacion({ password: "unbuenpass", codigo: "ABCD2345" }, { client });
+    expect(res).toEqual({ ok: true });
+    expect(orden).toEqual(["password", "claim"]); // password was set before the doomed claim
+  });
+
+  it("returns sin_sesion and never sets a password when there is no session", async () => {
+    const { client, orden } = fakeSession({ sub: null });
+    const res = await completarActivacion({ password: "unbuenpass", codigo: "ABCD2345" }, { client });
+    expect(res).toEqual({ ok: false, error: "sin_sesion" });
+    expect(orden).toEqual([]);
+  });
+
+  it("surfaces a password-set failure without claiming", async () => {
+    const { client, orden } = fakeSession({ sub: "u-1", updateError: { message: "weak password" } });
+    const res = await completarActivacion({ password: "short", codigo: "ABCD2345" }, { client });
+    expect(res).toEqual({ ok: false, error: "weak password" });
+    expect(orden).toEqual(["password"]); // bailed before the claim
   });
 });
