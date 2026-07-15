@@ -19,6 +19,7 @@ const VENTA: VentaResult = {
   mensajes: [],
   emailIngresado: "socia@correo.mx",
   emailCliente: "socia@correo.mx",
+  fechaInicio: null,
 };
 
 describe("construirReciboEmail — the ticket twin rendered as the email (#99)", () => {
@@ -74,5 +75,20 @@ describe("construirReciboEmail — the ticket twin rendered as the email (#99)",
     const { html, text } = construirReciboEmail(renovacion);
     expect(html).not.toContain("NUEVO");
     expect(text).not.toContain("(NUEVO)");
+  });
+
+  it("a backdated sale annotates INICIO (period start) — FECHA stays the transaction day (D6/E1)", () => {
+    const backdated: VentaResult = { ...VENTA, fechaInicio: "11 jul" };
+    const { html, text } = construirReciboEmail(backdated);
+    expect(html).toContain("INICIO");
+    expect(html).toContain("11 JUL");
+    expect(html).toContain("13 JUL 2026"); // FECHA (transaction day) still present
+    expect(text).toContain("INICIO: 11 JUL");
+  });
+
+  it("a today-sale carries no INICIO row (fechaInicio null)", () => {
+    const { html, text } = construirReciboEmail(VENTA);
+    expect(html).not.toContain("INICIO");
+    expect(text).not.toContain("INICIO");
   });
 });

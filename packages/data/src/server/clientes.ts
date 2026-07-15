@@ -46,6 +46,10 @@ export interface ClienteLiteDTO {
   email: string | null;
   /** Derived invite state + es-MX badge for the picker (ADR-0015). */
   invitacion: InvitacionDerivada;
+  /** The client's alta day as a gym-tz "YYYY-MM-DD" (from created_at) — the floor for
+   *  the Vender backdate picker (spec D6: min = max(today−30, alta); a sale can never
+   *  predate the client). The RPC is the real bound; this only constrains the calendar. */
+  altaIso: string;
   /** True when the member has never had a sale (#77) — the Vender preselect /
    *  picker marks it PRIMERA COMPRA and the receipt snapshots it. Precomputed via
    *  the ventas_count_por_cliente RPC (a grouped DB-side count, run once per read
@@ -69,7 +73,7 @@ export const getClientesLite = cache(
     const [{ data }, { data: counts }] = await Promise.all([
       supabase
         .from("clientes")
-        .select("id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id")
+        .select("id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id, created_at")
         .eq("gym_id", gym.id)
         .order("nombre"),
       supabase.rpc("ventas_count_por_cliente", { p_gym_id: gym.id }),
@@ -87,6 +91,7 @@ export const getClientesLite = cache(
       paqueteLabel: c.paquete_nombre ?? "Sin paquete",
       email: c.email,
       invitacion: derivarInvitacion(c, tz),
+      altaIso: toIsoDay(fechaEnZona(c.created_at, tz)),
       primeraCompra: esPrimeraCompra(ventasPorCliente.get(c.id) ?? 0),
     }));
   },

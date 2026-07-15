@@ -1,5 +1,5 @@
 import type { PaqueteSeleccion } from "@gym/data/server/ventas";
-import { isTelValido, telDigits } from "@gym/format";
+import { addDays, isTelValido, parseDay, telDigits, toIsoDay } from "@gym/format";
 
 /** The NUEVO/EXISTENTE toggle — the two sale doors. */
 type Mode = "new" | "existing";
@@ -48,6 +48,41 @@ export const LIMITES = {
   diasMin: 1,
   diasMax: 365,
 } as const;
+
+/** Backdate look-back cap (spec D1/D2): a flat 30 days, the same vocabulary the renewal
+ *  flow uses. 30 days guarantees the sale still lands inside the current-or-prior-month
+ *  Resumen window, so no revenue goes invisible. The RPC enforces this too (the real gate). */
+export const BACKDATE_MAX_DIAS = 30;
+
+/**
+ * The earliest sold date the backdate picker allows — `max(today − 30, the client's alta)`,
+ * as a gym-tz "YYYY-MM-DD". `altaIso` is the existing client's creation day; pass `null` for a
+ * NUEVO sale (no alta yet — the RPC exempts a client created in the same txn, so only the
+ * 30-day floor applies). Mirrors the RPC's bound 2 (cap) + bound 3 (≥ alta); the RPC is the
+ * trust boundary, this only keeps an out-of-range day untappable.
+ */
+export function inicioMinIso(hoyIso: string, altaIso: string | null): string {
+  const floor = toIsoDay(addDays(parseDay(hoyIso), -BACKDATE_MAX_DIAS));
+  // ISO "YYYY-MM-DD" compares lexicographically == chronologically.
+  return altaIso && altaIso > floor ? altaIso : floor;
+}
+
+/**
+ * Clamp a picked sold date into `[inicioMin, hoy]` and report whether it is a real backdate.
+ * The stored pick can fall out of range when the operator changes the selected client after
+ * picking a date (a later alta raises the floor); rather than reset it eagerly at every client
+ * set-site, the effective date silently reverts to today, so the label, preview, confirm line
+ * and submit all agree on what will actually be sent.
+ */
+export function inicioEfectivo(
+  pickIso: string,
+  hoyIso: string,
+  altaIso: string | null,
+): { iso: string; backdate: boolean } {
+  const min = inicioMinIso(hoyIso, altaIso);
+  const iso = pickIso >= min && pickIso <= hoyIso ? pickIso : hoyIso;
+  return { iso, backdate: iso !== hoyIso };
+}
 
 /** The form holds strings — that is what an <Input> gives you. Parsing lives here, so
  *  "12abc", "" and "750.5" all have one tested behavior instead of three at the call sites. */

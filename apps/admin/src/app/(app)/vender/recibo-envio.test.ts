@@ -35,6 +35,7 @@ const VENTA: VentaResult = {
   mensajes: [],
   emailIngresado: null,
   emailCliente: "socia@correo.mx",
+  fechaInicio: null,
 };
 
 describe("enviarReciboDeVenta — the receipt (re)send seam (#101)", () => {

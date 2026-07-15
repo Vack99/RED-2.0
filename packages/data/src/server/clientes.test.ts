@@ -382,6 +382,7 @@ const FIXTURE_CLIENTES = [
     invitacion_enviada_at: null,
     auth_user_id: "auth-1",
     claim_code: "ABCD2345",
+    created_at: "2026-05-02T05:00:00Z", // → 01 may in Chihuahua (UTC−6): the alta floor
   },
   {
     id: "cli-desk",
@@ -395,6 +396,7 @@ const FIXTURE_CLIENTES = [
     invitacion_enviada_at: "2026-07-08T03:00:00Z",
     auth_user_id: null,
     claim_code: "WXYZ6789",
+    created_at: "2026-06-15T18:00:00Z",
   },
 ];
 
@@ -461,6 +463,7 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(desk.email).toBe("ana@mail.com"); // for the NUEVO soft duplicate warn
     expect(desk.invitacion.badge).toBe("Invitada 7 jul");
     expect(desk.primeraCompra).toBe(false); // 3 ventas on record (RPC-supplied)
+    expect(desk.altaIso).toBe("2026-06-15"); // gym-tz alta day → backdate picker floor
 
     const online = lite.find((c) => c.id === "cli-online")!;
     expect(online.primeraCompra).toBe(true); // missing from the RPC result → 0 ventas

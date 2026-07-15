@@ -32,7 +32,7 @@ export function Recibo({
   onOtra: () => void;
   onVerCliente: (id: string) => void;
 }) {
-  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, invite, reciboEmail } = result;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, invite, reciboEmail, fechaInicio } = result;
   const isNew = c.isNew;
   const primerNombre = c.nombre.split(" ")[0];
   const [showCheck, setShowCheck] = React.useState(false);
@@ -117,7 +117,10 @@ export function Recibo({
             <div style={{ height: 1, background: "var(--recibo-ink)", opacity: 0.15, margin: "14px 0" }} />
 
             {[
+              // FECHA is the transaction day (today). When the sale was backdated, INICIO
+              // annotates the period start; VIGENCIA always renders from the RPC's vence.
               ["FECHA", fechaDisplay.toUpperCase()],
+              ...(fechaInicio ? ([["INICIO", fechaInicio.toUpperCase()]] as [string, string][]) : []),
               ["VIGENCIA", `${compradoDisplay.toUpperCase()} → ${venceDisplay.toUpperCase()}`],
               ["MÉTODO", metodoDisplay],
             ].map(([k, v], i) => (

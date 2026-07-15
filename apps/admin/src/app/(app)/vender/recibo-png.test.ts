@@ -28,6 +28,7 @@ const VENTA: VentaResult = {
   mensajes: [],
   emailIngresado: "socia@correo.mx",
   emailCliente: "socia@correo.mx",
+  fechaInicio: null,
 };
 
 describe("generarReciboPng — the receipt PNG twin (#100)", () => {

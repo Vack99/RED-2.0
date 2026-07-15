@@ -75,7 +75,7 @@ export interface TicketModel {
 }
 
 export function ticketModel(venta: VentaResult): TicketModel {
-  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad } = venta;
+  const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, fechaInicio } = venta;
   return {
     marca: negocio.toUpperCase(),
     folio: `F-${folio}`,
@@ -86,7 +86,10 @@ export function ticketModel(venta: VentaResult): TicketModel {
     precioLinea: `${pesos(p.precio)}.00`,
     vigenciaLinea: `Vigencia · ${p.vigencia}`,
     filas: [
+      // FECHA is the transaction day. INICIO appears only on a backdated sale (the period
+      // start); one `filas` addition feeds the PNG twin, the email HTML and the text mirror.
       ["FECHA", fechaDisplay.toUpperCase()],
+      ...(fechaInicio ? ([["INICIO", fechaInicio.toUpperCase()]] as [string, string][]) : []),
       ["VIGENCIA", `${compradoDisplay.toUpperCase()} → ${venceDisplay.toUpperCase()}`],
       ["MÉTODO", metodoDisplay],
     ],

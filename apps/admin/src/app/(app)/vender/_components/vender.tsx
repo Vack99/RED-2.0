@@ -11,7 +11,7 @@ import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
 import { calcVigenciaEnd } from "@gym/domain/rules";
-import { fmtShort, parseDay, pesos } from "@gym/format";
+import { DOW, fmtFull, fmtNavegadorDia, fmtShort, isoDay, MON, parseDay, pesos, sameDay } from "@gym/format";
 import { crearVentaAction } from "../actions";
 import { PersonalizadoEditor } from "./personalizado-editor";
 import { Recibo } from "./recibo";
@@ -20,6 +20,8 @@ import {
   CUSTOM_VACIO,
   customSeleccion,
   customValido,
+  inicioEfectivo,
+  inicioMinIso,
   paqueteListo,
   PERSONALIZADO,
   precioSeleccionado,
@@ -71,6 +73,11 @@ export function VenderScreen({
   const [sel, setSel] = React.useState<string | null>(null);
   const [custom, setCustom] = React.useState<CustomForm>(CUSTOM_VACIO);
   const [metodo, setMetodo] = React.useState<Metodo | null>(null);
+  // Backdated sold date (spec D6). The raw pick defaults to today (== "not backdated");
+  // `inicioEfectivo` clamps it against the current client's alta floor so the label,
+  // preview, confirm line and submit always agree on the day that will actually be sent.
+  const [inicioPick, setInicioPick] = React.useState<string>(hoyGym);
+  const [inicioOpen, setInicioOpen] = React.useState(false);
   // Submission-stable idempotency key (C6): one key per sale ATTEMPT. A retry after
   // an error (or the "crear nuevo de todos modos" override) replays the SAME key, so
   // the RPC returns the already-written sale instead of double-charging. Reset only
@@ -103,12 +110,25 @@ export function VenderScreen({
   const paq = sel && !esCustom ? (paquetes.find((p) => p.id === sel) ?? null) : null;
   const vigenciaEnd = paq?.hasta ?? null;
 
+  // Backdate resolution (spec D6). `altaIso` is null for a NUEVO sale — only the 30-day
+  // floor applies there (the RPC exempts a client born in the same txn). The effective
+  // date is what the label, preview, confirm and submit all read.
+  const altaIso = existing?.altaIso ?? null;
+  const inicioMin = inicioMinIso(hoyGym, altaIso);
+  const { iso: inicioIso, backdate: esBackdate } = inicioEfectivo(inicioPick, hoyGym, altaIso);
+  const hoyGymDate = parseDay(hoyGym);
+
   // The custom package's expiry, derived in the GYM's timezone from the typed `dias`.
-  const customHasta = React.useMemo(() => {
+  // Anchored on the (possibly backdated) sold date, not today — so the "Hasta …" preview
+  // reads as-of the day the sale is being registered for. Fresh-sale semantics only (base
+  // 0, no stacking); an EXISTENTE backdate with carry is not previewed here (RPC is truth).
+  // Plain value (React Compiler memoizes it): a manual useMemo can't be preserved once the
+  // dep is the derived `inicioIso`.
+  const customHasta = (() => {
     const dias = Number(custom.dias);
     if (!Number.isSafeInteger(dias) || dias < 1) return null;
-    return fmtShort(calcVigenciaEnd(parseDay(hoyGym), dias));
-  }, [custom.dias, hoyGym]);
+    return fmtShort(calcVigenciaEnd(parseDay(inicioIso), dias));
+  })();
 
   // Soft (never blocking) NUEVO duplicate warn (audit #7): a NEW sale whose typed
   // phone or email already matches an existing member in the gym almost certainly
@@ -143,13 +163,17 @@ export function VenderScreen({
     }
     return existing ? `${existing.nombre} · ${existing.tel}` : null;
   })();
-  const paqueteSummary = esCustom
+  // The relative sold-date label ("Hoy" / "Ayer" / "Hace N días") — the affordance row's
+  // value and the collapsed-section suffix, so a backdate reads even with PAQUETE closed.
+  const inicioLabel = fmtNavegadorDia(parseDay(inicioIso), hoyGymDate);
+  const paqueteBase = esCustom
     ? customValido(custom)
       ? `${custom.nombre.trim().toUpperCase()} · ${pesos(precio ?? 0)}`
       : "PERSONALIZADO"
     : paq
       ? `${paq.nombre.toUpperCase()} · ${pesos(paq.precio)}`
       : null;
+  const paqueteSummary = paqueteBase && esBackdate ? `${paqueteBase} · Inicia ${inicioLabel}` : paqueteBase;
   const pagoSummary = metodo ? metodo.toUpperCase() : null;
 
   const toggle = (k: string) => setOpenSection((s) => (s === k ? null : k));
@@ -221,6 +245,9 @@ export function VenderScreen({
         metodo: METODO_ENUM[metodo],
         idempotencyKey: idemKey,
         forzarNuevo: opts.forzarNuevo,
+        // Backdated sold date (D6) — sent only for a real past date; a today-sale omits it
+        // entirely, so the RPC takes its p_fecha_inicio default and behaves byte-for-byte.
+        fechaInicio: esBackdate ? inicioIso : undefined,
       });
       if (!res.ok) {
         if ("duplicado" in res) {
@@ -258,6 +285,8 @@ export function VenderScreen({
     setSel(null);
     setCustom(CUSTOM_VACIO);
     setMetodo(null);
+    setInicioPick(hoyGym);
+    setInicioOpen(false);
     setOpenSection("cliente");
     advanced.current = { cliente: false, paquete: false, metodo: false };
     setRecibo(null);
@@ -342,6 +371,9 @@ export function VenderScreen({
             custom={custom}
             setCustom={setCustomForm}
             customHasta={customHasta}
+            inicioLabel={inicioLabel}
+            inicioBackdate={esBackdate}
+            onEditInicio={() => setInicioOpen(true)}
           />
         </AccordionSection>
 
@@ -368,6 +400,13 @@ export function VenderScreen({
             <span style={{ fontSize: 12, color: "var(--muted)", marginLeft: 6, fontWeight: 600 }}>MXN</span>
           </span>
         </div>
+        {/* F2 confirm (spec D6): a quiet, non-blocking line so a backdated sale can't be
+            charged by surprise. Only shown when the sold date differs from today. */}
+        {esBackdate && (
+          <div style={{ marginBottom: 10, fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.2, textAlign: "center" }}>
+            Se registrará con fecha <span className="font-bold" style={{ color: "var(--fg)" }}>{fmtShort(parseDay(inicioIso))}</span>
+          </div>
+        )}
         <Button variant="primary" size="lg" full disabled={!canSubmit} iconRight={submitting ? undefined : "arrow"} onClick={() => finish()}>
           {submitting ? "PROCESANDO…" : precio !== null ? `COBRAR ${pesos(precio)}` : "CONFIRMAR VENTA"}
         </Button>
@@ -377,6 +416,26 @@ export function VenderScreen({
           </div>
         )}
       </div>
+
+      {/* Backdate picker (spec D6): the same Sheet + calendar pattern as the asistencia
+          day-picker. Future days are disabled; days before the alta/30-day floor are too. */}
+      <Sheet open={inicioOpen} onClose={() => setInicioOpen(false)}>
+        <div style={{ padding: "8px 22px 4px" }}>
+          <H1 size={22}>FECHA DE INICIO</H1>
+          <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)", lineHeight: 1.5 }}>
+            El día en que arranca la vigencia. Úsalo solo para registrar una venta que ya ocurrió.
+          </div>
+        </div>
+        <InicioCalendar
+          hoy={hoyGymDate}
+          min={parseDay(inicioMin)}
+          sel={parseDay(inicioIso)}
+          onPick={(d) => {
+            setInicioPick(isoDay(d));
+            setInicioOpen(false);
+          }}
+        />
+      </Sheet>
 
       {/* Existing-client picker */}
       <Sheet open={pickerOpen} onClose={() => setPickerOpen(false)}>
@@ -702,6 +761,9 @@ function PaqueteEditor({
   custom,
   setCustom,
   customHasta,
+  inicioLabel,
+  inicioBackdate,
+  onEditInicio,
 }: {
   paquetes: PaqueteDTO[];
   sel: string | null;
@@ -710,6 +772,11 @@ function PaqueteEditor({
   custom: CustomForm;
   setCustom: (f: CustomForm) => void;
   customHasta: string | null;
+  /** Relative sold-date label — "Hoy" for a normal sale, "Ayer"/"Hace N días" backdated. */
+  inicioLabel: string;
+  /** The sold date is a real past date — highlights the row so it doesn't read as a default. */
+  inicioBackdate: boolean;
+  onEditInicio: () => void;
 }) {
   const onCustom = sel === PERSONALIZADO;
   return (
@@ -751,6 +818,129 @@ function PaqueteEditor({
             <PersonalizadoEditor form={custom} setForm={setCustom} hasta={customHasta} />
           </div>
         )}
+      </div>
+
+      {/* Quiet backdate affordance (spec D6): reads "Inicia: Hoy" by default and stays out
+          of the way; tap to register a sale that already happened on a past date. */}
+      <button
+        onClick={onEditInicio}
+        className="forge-pressable flex items-center justify-between text-left"
+        style={{ marginTop: 2, padding: "12px 4px", background: "transparent", border: "none", cursor: "pointer", color: "var(--fg)" }}
+      >
+        <span style={{ fontSize: 12.5, color: "var(--muted)", letterSpacing: 0.2 }}>
+          Inicia:{" "}
+          <span className="font-semibold" style={{ color: inicioBackdate ? "var(--gold)" : "var(--fg)" }}>{inicioLabel}</span>
+        </span>
+        <Icon name="chev" size={13} color="var(--muted)" />
+      </button>
+    </div>
+  );
+}
+
+/** The backdate month calendar — the asistencia PaseCalendar pattern, minus the presence
+ *  dots, plus a lower `min` bound. Both future days (> hoy) and days before the alta/30-day
+ *  floor (< min) are disabled and unselectable; the RPC re-checks all of it (the real gate). */
+function InicioCalendar({
+  hoy,
+  min,
+  sel,
+  onPick,
+}: {
+  hoy: Date;
+  min: Date;
+  sel: Date;
+  onPick: (d: Date) => void;
+}) {
+  const [view, setView] = React.useState({ y: sel.getFullYear(), m: sel.getMonth() });
+
+  const first = new Date(view.y, view.m, 1);
+  const lead = first.getDay();
+  const daysInMonth = new Date(view.y, view.m + 1, 0).getDate();
+  const atCurrentMonth = view.y === hoy.getFullYear() && view.m === hoy.getMonth();
+  // The previous month has a selectable day iff its last day is still ≥ the floor.
+  const prevMonthLast = new Date(view.y, view.m, 0);
+  const atFloorMonth = prevMonthLast < min;
+
+  const cells: (Date | null)[] = [];
+  for (let i = 0; i < lead; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(view.y, view.m, d));
+
+  const stepMonth = (delta: number) => {
+    const next = new Date(view.y, view.m + delta, 1);
+    setView({ y: next.getFullYear(), m: next.getMonth() });
+  };
+
+  return (
+    <div style={{ padding: "8px 18px 18px" }}>
+      {/* month nav */}
+      <div className="flex items-center justify-between" style={{ padding: "6px 2px 14px" }}>
+        <button
+          onClick={() => stepMonth(-1)}
+          disabled={atFloorMonth}
+          aria-label="Mes anterior"
+          className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface"
+          style={{ width: 34, height: 34, cursor: atFloorMonth ? "not-allowed" : "pointer", opacity: atFloorMonth ? 0.35 : 1 }}
+        >
+          <Icon name="back" size={16} color="var(--fg)" />
+        </button>
+        <div className="uppercase font-extrabold" style={{ fontSize: 15, letterSpacing: 1 }}>
+          {MON[view.m]} {view.y}
+        </div>
+        <button
+          onClick={() => stepMonth(1)}
+          disabled={atCurrentMonth}
+          aria-label="Mes siguiente"
+          className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface"
+          style={{ width: 34, height: 34, cursor: atCurrentMonth ? "not-allowed" : "pointer", opacity: atCurrentMonth ? 0.35 : 1 }}
+        >
+          <Icon name="chev" size={16} color="var(--fg)" />
+        </button>
+      </div>
+
+      {/* weekday header */}
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+        {DOW.map((d) => (
+          <div key={d} style={{ textAlign: "center", fontSize: 9, fontWeight: 700, color: "var(--muted)", letterSpacing: 0.5 }}>{d}</div>
+        ))}
+      </div>
+
+      {/* days */}
+      <div className="grid" style={{ gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+        {cells.map((d, i) => {
+          if (!d) return <div key={`b${i}`} />;
+          const disabled = d > hoy || d < min;
+          const isSel = sameDay(d, sel);
+          const isToday = sameDay(d, hoy);
+          return (
+            <button
+              key={isoDay(d)}
+              onClick={() => !disabled && onPick(d)}
+              disabled={disabled}
+              className="relative flex aspect-square items-center justify-center"
+              style={{
+                background: isSel ? "var(--yellow)" : "transparent",
+                border: `1px solid ${isSel ? "var(--yellow)" : isToday ? "var(--yellow-edge)" : "var(--line)"}`,
+                color: isSel ? "var(--ink)" : disabled ? "var(--muted-soft)" : "var(--fg)",
+                cursor: disabled ? "default" : "pointer",
+                transition: "background-color 150ms cubic-bezier(.32,.72,0,1), border-color 150ms cubic-bezier(.32,.72,0,1)",
+              }}
+            >
+              <Tnum style={{ fontSize: 14, fontWeight: 700 }}>{d.getDate()}</Tnum>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* footer */}
+      <div className="flex items-center justify-between" style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--line)" }}>
+        <div className="uppercase" style={{ fontSize: 13, fontWeight: 700, letterSpacing: 0.4 }}>{fmtFull(sel)}</div>
+        <button
+          onClick={() => onPick(hoy)}
+          className="forge-pressable uppercase font-extrabold"
+          style={{ padding: "10px 16px", background: "var(--yellow)", color: "var(--ink)", fontSize: 12, letterSpacing: 1, cursor: "pointer" }}
+        >
+          HOY
+        </button>
       </div>
     </div>
   );
