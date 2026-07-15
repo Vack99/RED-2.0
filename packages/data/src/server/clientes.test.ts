@@ -277,21 +277,31 @@ describe("reenviarInvitacion — REENVIAR re-sends the same code (injected fake 
  * and returns fixture rows, so we can prove the invite-state contract WITHOUT a DB:
  * the invite columns are selected and derived, and `claim_code` — a single-use bearer
  * credential (ADR-0015) — is NEVER selected into any query nor exposed on any DTO.
+ *
+ * `.not()`/`.gte()`/`.or()` REALLY filter the seeded rows (not just record the call) —
+ * getRosterResumen's vigentes/totalActivos counts (Fix 3, perf) are now built entirely
+ * from these PostgREST filters (no row-derivation fallback), so the fake has to apply
+ * them for real or a wrong predicate would pass silently.
  */
 interface Rows {
   clientes?: Record<string, unknown>[];
   gym_membership?: Record<string, unknown>[];
   gym?: Record<string, unknown>[];
-  asistencias?: Record<string, unknown>[];
+  /** `.rpc(fnName, args)` responses, keyed by function name — ventas_count_por_cliente /
+   *  asistencias_mes_por_cliente resolve directly (no `.single()`), mirroring the DAL. */
+  rpc?: Record<string, { cliente_id: string; n: number }[]>;
 }
 
 function makeReadFake(rows: Rows) {
   const selects: Record<string, string[]> = {};
+  const rpcCalls: { name: string; args: unknown }[] = [];
   function builder(table: string, list: Record<string, unknown>[]) {
     let filtered = [...list];
+    let headCount = false;
     const b: Record<string, unknown> = {
-      select: (cols: string) => {
+      select: (cols: string, opts?: { head?: boolean }) => {
         (selects[table] ??= []).push(cols);
+        if (opts?.head) headCount = true;
         return b;
       },
       eq: (col: string, val: unknown) => {
@@ -306,7 +316,29 @@ function makeReadFake(rows: Rows) {
         filtered = filtered.filter((r) => r[col] === val);
         return b;
       },
-      gte: () => b,
+      not: (col: string, _op: string, val: unknown) => {
+        filtered = filtered.filter((r) => (val === null ? r[col] != null : r[col] !== val));
+        return b;
+      },
+      gte: (col: string, val: unknown) => {
+        filtered = filtered.filter((r) => r[col] != null && String(r[col]) >= String(val));
+        return b;
+      },
+      // Mirrors PostgREST's `.or("col.op.val,col.op.val")` — an OR-group of simple
+      // `is.null` / `gt.N` terms, ANDed with every filter already applied above.
+      or: (expr: string) => {
+        const terms = expr.split(",");
+        filtered = filtered.filter((r) =>
+          terms.some((term) => {
+            const [col, op, val] = term.split(".");
+            const v = r[col];
+            if (op === "is") return val === "null" ? v == null : v === val;
+            if (op === "gt") return typeof v === "number" && v > Number(val);
+            return false;
+          }),
+        );
+        return b;
+      },
       order: () => b,
       limit: (n: number) => {
         filtered = filtered.slice(0, n);
@@ -314,16 +346,24 @@ function makeReadFake(rows: Rows) {
       },
       range: () => b,
       maybeSingle: () => Promise.resolve({ data: filtered[0] ?? null, error: null }),
-      then: (resolve: (v: { data: unknown; error: null }) => unknown) =>
-        resolve({ data: filtered, error: null }),
+      then: (resolve: (v: { data: unknown; error: null; count?: number }) => unknown) =>
+        headCount
+          ? resolve({ data: null, error: null, count: filtered.length })
+          : resolve({ data: filtered, error: null }),
     };
     return b;
   }
   const client = {
     auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
-    from: (table: string) => builder(table, rows[table as keyof Rows] ?? []),
+    from: (table: string) =>
+      builder(table, (rows as Record<string, Record<string, unknown>[] | undefined>)[table] ?? []),
+    rpc: (name: string, args: unknown) => {
+      rpcCalls.push({ name, args });
+      const data = rows.rpc?.[name] ?? [];
+      return { then: (resolve: (v: { data: unknown; error: null }) => unknown) => resolve({ data, error: null }) };
+    },
   };
-  return { selects, client: client as unknown as SupabaseServer };
+  return { selects, rpcCalls, client: client as unknown as SupabaseServer };
 }
 
 // A live-shaped roster: one self-registered pending row (Door 2, no package) and one
@@ -342,8 +382,6 @@ const FIXTURE_CLIENTES = [
     invitacion_enviada_at: null,
     auth_user_id: "auth-1",
     claim_code: "ABCD2345",
-    // Self-registered, never charged: 0 ventas → primeraCompra true (#77).
-    ventas: [{ count: 0 }],
   },
   {
     id: "cli-desk",
@@ -357,8 +395,6 @@ const FIXTURE_CLIENTES = [
     invitacion_enviada_at: "2026-07-08T03:00:00Z",
     auth_user_id: null,
     claim_code: "WXYZ6789",
-    // Desk client with a sale on record → primeraCompra false.
-    ventas: [{ count: 3 }],
   },
 ];
 
@@ -366,7 +402,13 @@ const OPERATOR_ROWS: Rows = {
   clientes: FIXTURE_CLIENTES,
   gym_membership: [{ gym_id: "g-1", role: "operator" }],
   gym: [{ id: "g-1", timezone: "America/Chihuahua", brand_name: "Forge" }],
-  asistencias: [],
+  rpc: {
+    // Self-registered cli-online, never charged: 0 ventas → primeraCompra true (#77).
+    // Desk client cli-desk has a sale on record → primeraCompra false. Rows missing
+    // from the RPC result (neither here) fall back to 0 in the DAL.
+    ventas_count_por_cliente: [{ cliente_id: "cli-desk", n: 3 }],
+    asistencias_mes_por_cliente: [],
+  },
 };
 
 describe("invite-state readers — claim_code is never selected nor exposed", () => {
@@ -392,6 +434,12 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(desk.invitacion.estado).toBe("invitacion_enviada");
     expect(desk.invitacion.badge).toBe("Invitada 7 jul"); // gym-local send date
     expect(desk.pendienteOnline).toBe(false);
+
+    // Perf (Fix 2): this month's attendance count comes from a grouped RPC in
+    // Promise.all, not a whole-month asistencias row pull counted in JS.
+    expect(fake.rpcCalls).toContainEqual(
+      expect.objectContaining({ name: "asistencias_mes_por_cliente", args: { p_gym_id: "g-1", p_desde: expect.any(String) } }),
+    );
   });
 
   it("getClientesLite carries email + invite badge for the picker, never claim_code", async () => {
@@ -400,16 +448,22 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
 
     const clientesSelect = fake.selects.clientes.join(" ");
     expect(clientesSelect).not.toContain("claim_code");
-    expect(clientesSelect).toContain("ventas(count)"); // primeraCompra embed (#77)
+    // Perf (Fix 1): no correlated `ventas(count)` embed on the roster select — the
+    // count comes from a grouped RPC call, fired alongside the select.
+    expect(clientesSelect).not.toContain("ventas(count)");
+    expect(fake.rpcCalls).toContainEqual({
+      name: "ventas_count_por_cliente",
+      args: { p_gym_id: "g-1" },
+    });
     expect(JSON.stringify(lite)).not.toContain("claim_code");
 
     const desk = lite.find((c) => c.id === "cli-desk")!;
     expect(desk.email).toBe("ana@mail.com"); // for the NUEVO soft duplicate warn
     expect(desk.invitacion.badge).toBe("Invitada 7 jul");
-    expect(desk.primeraCompra).toBe(false); // 3 ventas on record
+    expect(desk.primeraCompra).toBe(false); // 3 ventas on record (RPC-supplied)
 
     const online = lite.find((c) => c.id === "cli-online")!;
-    expect(online.primeraCompra).toBe(true); // never charged
+    expect(online.primeraCompra).toBe(true); // missing from the RPC result → 0 ventas
   });
 
   it("getRosterResumen counts nuevosOnline (auth-linked, no active package)", async () => {
@@ -418,6 +472,82 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(resumen.nuevosOnline).toBe(1); // only cli-online
     const clientesSelect = fake.selects.clientes.join(" ");
     expect(clientesSelect).not.toContain("claim_code");
+  });
+});
+
+/**
+ * Fix 3 (perf): vigentes/totalActivos used to come from fetching every cliente row and
+ * running each through derivarCliente/derivarEstado in JS. They now come from two
+ * count-only PostgREST queries whose filters restate that same estado logic directly on
+ * the stored columns (see the derivation comment above getRosterResumen in clientes.ts).
+ * This fixture exercises the estado boundary the filters must reproduce EXACTLY:
+ *  - activo (vigente): far-future vence, plenty of clases.
+ *  - por_vencer (counts toward totalActivos, NOT vigentes): vence 3 days out.
+ *  - sin_clases via expiry (counts toward neither): vence in the past.
+ *  - sin_clases via no package (counts toward neither): paquete_nombre null.
+ * `makeReadFake`'s `.not()`/`.gte()`/`.or()` REALLY filter these rows (see its docstring),
+ * so a wrong predicate in clientes.ts would show up here as a wrong count, not just a
+ * recorded call.
+ */
+describe("getRosterResumen — vigentes/totalActivos from count-only queries (Fix 3)", () => {
+  const TZ = "America/Chihuahua";
+  const HOY = hoyEnZona(TZ);
+
+  const RESUMEN_CLIENTES = [
+    {
+      id: "activo-1",
+      gym_id: "g-1",
+      paquete_nombre: "Ilimitado",
+      clases_restantes: null, // ilimitado — never excluded by the clases leg
+      vence: toIsoDay(addDays(HOY, 30)),
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "por-vencer-1",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 5,
+      vence: toIsoDay(addDays(HOY, 3)), // <= 5 días → por_vencer, not activo
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "expirado-1",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 5,
+      vence: toIsoDay(addDays(HOY, -10)), // dias < 0 → sin_clases
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "sin-paquete-1",
+      gym_id: "g-1",
+      paquete_nombre: null,
+      clases_restantes: null,
+      vence: null,
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+  ];
+
+  it("vigentes counts only the fully-active row; totalActivos also counts por_vencer", async () => {
+    const fake = makeReadFake({
+      clientes: RESUMEN_CLIENTES,
+      gym_membership: [{ gym_id: "g-1", role: "operator" }],
+      gym: [{ id: "g-1", timezone: TZ, brand_name: "Forge" }],
+    });
+
+    const resumen = await getRosterResumen(fake.client);
+
+    expect(resumen.vigentes).toBe(1); // activo-1 only
+    expect(resumen.totalActivos).toBe(2); // activo-1 + por-vencer-1
+    expect(resumen.nuevosOnline).toBe(0); // no auth-linked rows in this fixture
   });
 });
 

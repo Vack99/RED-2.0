@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseServer } from "./supabase";
-import { resolveTenant, tenantHeaders, type Tenant } from "./resolve-tenant";
+import { clearTenantCache, resolveTenant, tenantHeaders, type Tenant } from "./resolve-tenant";
 
 // resolveTenant is the DB-backed host→gym seam both proxies run (ADR-0012 §5, as
 // amended 2026-07-02). These arms pin host-wins precedence — a `gym_domain` row ›
@@ -44,6 +44,19 @@ function fakeDb(gyms: GymRow[], domains: DomainRow[]): SupabaseServer {
 
 const db = () => fakeDb(GYMS, DOMAINS);
 
+// A `.from`-counting wrapper: every table read is one `from` call, so the spy count
+// is the number of DB round trips a resolution actually spent — the observable the
+// cache is meant to drive to zero on a hit.
+function spyDb(gyms: GymRow[] = GYMS, domains: DomainRow[] = DOMAINS) {
+  const base = fakeDb(gyms, domains) as unknown as { from: (t: string) => unknown };
+  const from = vi.fn(base.from);
+  return { client: { from } as unknown as SupabaseServer, from };
+}
+
+// The cache is module-level (correct: host/slug→tenant is GLOBAL public mapping, not
+// user data), so every case starts from an empty cache to stay isolated + falsifiable.
+beforeEach(() => clearTenantCache());
+
 describe("resolveTenant", () => {
   it("resolves a mapped host to its gym, port-stripped and case-insensitive", async () => {
     expect(await resolveTenant("red.localhost", null, db())).toEqual({
@@ -73,6 +86,73 @@ describe("resolveTenant", () => {
 
   it("lets the host win over a conflicting override (host-wins precedence)", async () => {
     expect(await resolveTenant("forge.localhost", "red", db())).toMatchObject({ slug: "forge" });
+  });
+});
+
+// The perf hinge (PERF-LOOP.md hypothesis #3): a 60s in-process TTL cache over the
+// host/slug→tenant reads, so repeat navigations for the same host/slug spend zero DB
+// round trips. Resolution stays bit-identical; only the trip count changes.
+describe("resolveTenant cache", () => {
+  it("serves a repeat host resolution from cache — zero further DB reads", async () => {
+    const { client, from } = spyDb();
+    expect(await resolveTenant("red.localhost", null, client)).toMatchObject({ slug: "red" });
+    const afterFirst = from.mock.calls.length; // gym_domain + gym = 2 trips
+    expect(afterFirst).toBe(2);
+    expect(await resolveTenant("red.localhost", null, client)).toMatchObject({ slug: "red" });
+    expect(from.mock.calls.length).toBe(afterFirst); // no new trips
+  });
+
+  it("caches a NEGATIVE host result (unmapped host) — the local/dev case", async () => {
+    const { client, from } = spyDb();
+    expect(await resolveTenant("unmapped.example.com", null, client)).toBeNull();
+    expect(from.mock.calls.length).toBe(1); // one gym_domain miss
+    expect(await resolveTenant("unmapped.example.com", null, client)).toBeNull();
+    expect(from.mock.calls.length).toBe(1); // negative cached, no re-query
+  });
+
+  it("caches a NEGATIVE slug result (?gym= naming no real gym)", async () => {
+    const { client, from } = spyDb();
+    expect(await resolveTenant("unmapped.example.com", "banana", client)).toBeNull();
+    const afterFirst = from.mock.calls.length; // gym_domain miss + gym-by-slug miss = 2
+    expect(afterFirst).toBe(2);
+    expect(await resolveTenant("unmapped.example.com", "banana", client)).toBeNull();
+    expect(from.mock.calls.length).toBe(afterFirst);
+  });
+
+  it("keeps host-wins precedence when both host and slug are cache-warm", async () => {
+    const { client } = spyDb();
+    // Warm the slug cache with a real "red" resolution on an unmapped host…
+    expect(await resolveTenant("unmapped.example.com", "red", client)).toMatchObject({
+      slug: "red",
+    });
+    // …then a mapped Forge host with ?gym=red must still resolve Forge (host wins).
+    expect(await resolveTenant("forge.localhost", "red", client)).toMatchObject({ slug: "forge" });
+  });
+
+  it("re-resolves once the 60s TTL expires", async () => {
+    vi.useFakeTimers();
+    try {
+      const { client, from } = spyDb();
+      await resolveTenant("red.localhost", null, client);
+      const afterFirst = from.mock.calls.length;
+      vi.advanceTimersByTime(61_000);
+      await resolveTenant("red.localhost", null, client);
+      expect(from.mock.calls.length).toBe(afterFirst * 2); // TTL lapsed → fresh trips
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("bounds the cache — the oldest entry is evicted past the cap and re-resolves", async () => {
+    const { client, from } = spyDb();
+    await resolveTenant("a.localhost", null, client); // 1 trip, cached as oldest
+    // Fill the host cache past its 500-entry cap so "a.localhost" is evicted (FIFO).
+    for (let i = 0; i < 500; i++) {
+      await resolveTenant(`fill-${i}.localhost`, null, client);
+    }
+    const beforeReResolve = from.mock.calls.length;
+    await resolveTenant("a.localhost", null, client); // evicted → must re-query
+    expect(from.mock.calls.length).toBe(beforeReResolve + 1);
   });
 });
 

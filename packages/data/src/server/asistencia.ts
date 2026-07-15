@@ -3,75 +3,183 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { hoyEnZona, iniciales, toIsoDay } from "@gym/format";
+import { addDays, hoyEnZona, iniciales, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
 import { getOperatorGym } from "./gym";
 
 /**
- * PostgREST silently caps a single response (commonly ~1000 rows). `getMarcadas`
- * reads the WHOLE active-attendance ledger — the day-strip + month calendar can
- * browse ANY past month, so it must be full history, not a date window — so a single
- * unbounded select would silently truncate once the gym passes ~1000 lifetime
- * check-ins, dropping attendance with no error. We page through `.range()` to gather
- * the complete ledger (mirrors respaldo's readAll* loops).
+ * The attendance screen's day strip reaches this many days back from today (its
+ * `DAYS_BACK`), each rendering a "has-marks" dot — so the INITIAL window must cover
+ * at least this range or those dots regress to blank. The strip is a "use client"
+ * module and cannot import from this `server-only` file, so the value is duplicated
+ * there with a cross-reference; the two MUST stay equal (an off-by-one here drops
+ * marks off the far end of the strip). This is the same deliberate, commented
+ * duplication as @gym/format's difDias across the format/domain boundary.
  */
-const PAGE = 1000;
+export const DIAS_TIRA_INICIAL = 104;
+
+/** First day of `d`'s calendar month (local fields). */
+function primerDiaMes(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), 1);
+}
 
 /**
- * Active attendance, as { "YYYY-MM-DD": clienteId[] }. Keyed by absolute
- * Chihuahua date (ADR-0003) — the offset grid is gone.
+ * Per-day PRESENCE over a window: { "YYYY-MM-DD": n } where n is the count of DISTINCT
+ * clientes marked that day. This is what the day strip and month calendar dots need — a
+ * day either has attendance or it doesn't (n > 0) — WITHOUT shipping the ids. The count
+ * (not a bare boolean) rides along free: it is the same `distinct cliente_id` the id-map
+ * already dedupes, and gives the dot a number a future badge can grow from.
+ */
+export type Presencia = Record<string, number>;
+
+/**
+ * Presence counts over a half-open `[desde, hasta)` gym-local date window via the
+ * `marcadas_presencia` RPC (one round trip; RLS scopes the rows). Shared by the initial
+ * window (dots) and the per-month lazy fetch.
+ */
+async function presenciaEnVentana(
+  supabase: SupabaseServer,
+  gymId: string,
+  desde: Date,
+  hasta: Date,
+): Promise<Presencia> {
+  const { data } = await supabase.rpc("marcadas_presencia", {
+    p_gym_id: gymId,
+    p_desde: toIsoDay(desde),
+    p_hasta: toIsoDay(hasta),
+  });
+  return (data as Presencia) ?? {};
+}
+
+/**
+ * The active-attendance IDS map over a half-open `[desde, hasta)` gym-local date window
+ * via the `marcadas_por_gym` RPC (one round trip; RLS scopes the rows). This is the
+ * IDENTITY read — which clientes attended — needed only for the day the operator is
+ * looking at (today on first paint, a picked day thereafter), never the whole window.
  *
- * ALL surfaces (ruling C15): this reads front-desk AND session-linked rows. One
- * attended class = one consumed class regardless of surface, so a member marked via
- * the Agenda / app booking (a `class_session_id`-linked row) must show CHECKED here
- * too — otherwise the operator taps them present and `toggle_pase` writes a SECOND
- * consuming row. `toggle_pase` no longer blindly consumes on a tap: reaching a
- * session-marked member is a mistap it refuses ('Asistencia de clase ya registrada'),
- * and a still-active booking marks with no re-consume — so display and toggle agree
- * without this map hiding the session rows. (Session pases also appear in the
- * read-only feeds, getAsistenciasHoy.)
+ * ALL surfaces (ruling C15): reads front-desk AND session-linked rows. One attended class
+ * = one consumed class regardless of surface, so a member marked via the Agenda / app
+ * booking (a `class_session_id`-linked row) shows CHECKED here too — otherwise the operator
+ * taps them present and `toggle_pase` writes a SECOND consuming row. `toggle_pase` refuses a
+ * session-marked mistap ('Asistencia de clase ya registrada') and re-marks a still-active
+ * booking with no re-consume, so display and toggle agree. SECURITY INVOKER — the caller's
+ * own role runs the function, so the `asistencias` RLS policy enforces gym scoping.
+ */
+async function marcadasEnVentana(
+  supabase: SupabaseServer,
+  gymId: string,
+  desde: Date,
+  hasta: Date,
+): Promise<Record<string, string[]>> {
+  const { data } = await supabase.rpc("marcadas_por_gym", {
+    p_gym_id: gymId,
+    p_desde: toIsoDay(desde),
+    p_hasta: toIsoDay(hasta),
+  });
+  return (data as Record<string, string[]>) ?? {};
+}
+
+/**
+ * The attendance screen's initial payload (perf wave 5). Split by purpose:
  *
- * Paginated (see PAGE above) so PostgREST's per-response cap can't silently drop
- * attendance. If check-in volume grows very large, a date-windowed read (only the
- * months the calendar actually browses) is the cost optimization — but that would
- * change the seam's full-history contract, so it's deliberately deferred.
+ * - `presencia` — per-day COUNTS across the whole initial window, for the strip/calendar
+ *   dots. ~2 KB on the seed, versus the ~105 KB the id arrays for the same window cost.
+ * - `marcadasDelDia` — the full ids for TODAY only, keyed by today's iso so the screen can
+ *   merge it straight into its per-day ids cache. Today's ids MUST be in the initial payload
+ *   because the pase flow toggles today's roster and must not wait on a fetch to do it.
  *
- * @returns the date→clienteIds map · best-effort: returns {} on error (error is
- * not destructured, so any failure reads as "no attendance").
+ * Identity for any OTHER day is lazy: the screen fetches a picked past day's ids on demand
+ * (getMarcadasDelDia), and a browsed month's dots on demand (getMarcadasDeMes).
+ */
+export interface MarcadasInicial {
+  presencia: Presencia;
+  marcadasDelDia: Record<string, string[]>;
+}
+
+/**
+ * The attendance screen's initial load: presence dots for the whole window + today's ids.
+ * Keyed by absolute gym-local date (ADR-0003).
+ *
+ * WINDOWED (perf wave 4): the presence window runs from the first of the month containing
+ * today − DIAS_TIRA_INICIAL through the first of next month — sized to cover the day strip's
+ * full reach so every strip dot renders on first paint. Older months the calendar browses to
+ * are lazy-fetched by `getMarcadasDeMes` (presence) and merged into client state.
+ *
+ * TWO RPCs, run CONCURRENTLY (perf wave 5): presence counts over the window + the id map for
+ * TODAY's 1-day window. They overlap, so wall-clock ≈ one round trip, while the payload drops
+ * from ~105 KB of id arrays to ~2 KB of counts plus today's ~1 KB of ids. `toggle_pase`
+ * operates on today, whose ids are therefore always in the initial payload.
+ *
+ * @returns { presencia, marcadasDelDia } · best-effort: each leg reads as empty on RPC error
+ * (errors are not destructured, so any failure reads as "no attendance").
  */
 export const getMarcadas = cache(
-  async (client?: SupabaseServer): Promise<Record<string, string[]>> => {
+  async (client?: SupabaseServer): Promise<MarcadasInicial> => {
     const supabase = client ?? (await createClient());
     const gym = await getOperatorGym(supabase); // gym-scoped read (spec §1.1)
 
-    const map: Record<string, string[]> = {};
-    // A cliente can hold BOTH a front-desk row and a session-linked row on one day
-    // (e.g. the desk marks a booked member present, then the coach runs the agenda
-    // pase for the same class) — dedupe per (fecha, cliente) so the mark renders
-    // once and the day counts aren't inflated.
-    const seen = new Set<string>();
-    for (let from = 0; ; from += PAGE) {
-      const { data } = await supabase
-        .from("asistencias")
-        .select("fecha, cliente_id")
-        .eq("gym_id", gym.id)
-        .is("deleted_at", null)
-        .order("fecha")
-        .range(from, from + PAGE - 1);
-      const page = data ?? [];
-      for (const row of page) {
-        const key = `${row.fecha}:${row.cliente_id}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        (map[row.fecha] ??= []).push(row.cliente_id);
-      }
-      if (page.length < PAGE) break;
-    }
-    return map;
+    const hoy = hoyEnZona(gym.timezone); // gym-local "today" (ADR-0003)
+    const desde = primerDiaMes(addDays(hoy, -DIAS_TIRA_INICIAL)); // covers the whole day strip
+    const hasta = primerDiaMes(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1)); // first of next month (exclusive)
+    const manana = addDays(hoy, 1);
+
+    const [presencia, idsHoy] = await Promise.all([
+      presenciaEnVentana(supabase, gym.id, desde, hasta),
+      marcadasEnVentana(supabase, gym.id, hoy, manana), // today's 1-day [hoy, mañana) window
+    ]);
+
+    const hoyIso = toIsoDay(hoy);
+    return { presencia, marcadasDelDia: { [hoyIso]: idsHoy[hoyIso] ?? [] } };
   },
 );
+
+/** A single month "YYYY-MM" — the lazy-load unit for presence dots. */
+export const mesSchema = z.string().regex(/^\d{4}-\d{2}$/);
+
+/**
+ * PRESENCE counts for ONE calendar month ("YYYY-MM"), the lazy-load leg of getMarcadas'
+ * windowing — the dots for a month the calendar browses outside the initial window. Same
+ * gym scoping (getOperatorGym re-auths and scopes), addressed as the half-open month
+ * `[firstOf(mes), firstOf(nextMes))`. Called by `marcadasDeMesAction`.
+ *
+ * @returns the date→count map for that month · best-effort: {} on RPC error.
+ */
+export async function getMarcadasDeMes(mes: string, client?: SupabaseServer): Promise<Presencia> {
+  const [y, m] = mesSchema.parse(mes).split("-").map(Number);
+  const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase); // re-auth + gym scope (spec §1.1)
+
+  return presenciaEnVentana(supabase, gym.id, new Date(y, m - 1, 1), new Date(y, m, 1));
+}
+
+/** A single day "YYYY-MM-DD" — the identity lazy-load unit (a picked past day's roster). */
+export const fechaSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+/**
+ * The IDS of clientes marked present on ONE day — the identity read a picked past day needs
+ * to render (and toggle) its roster. Reuses the `marcadas_por_gym` id-map RPC over that day's
+ * 1-day `[fecha, fecha+1)` window (no overload — same signature as today's fetch), and returns
+ * just that day's array. Today never routes here (its ids ship in the initial payload).
+ * Called by `marcadasDelDiaAction`.
+ *
+ * @returns the clienteId[] for `fecha` (empty when none) · best-effort: [] on RPC error.
+ */
+export async function getMarcadasDelDia(fecha: string, client?: SupabaseServer): Promise<string[]> {
+  const dia = fechaSchema.parse(fecha);
+  const [y, m, d] = dia.split("-").map(Number);
+  const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase); // re-auth + gym scope (spec §1.1)
+
+  const map = await marcadasEnVentana(
+    supabase,
+    gym.id,
+    new Date(y, m - 1, d),
+    new Date(y, m - 1, d + 1), // Date normalizes month/year rollover
+  );
+  return map[dia] ?? [];
+}
 
 export const togglePaseSchema = z.object({
   clienteId: z.string().min(1),

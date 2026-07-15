@@ -34,10 +34,16 @@ export interface OperatorGym {
  * row (a socio who self-registered — audit #19) and lock the real operator out
  * of their own admin app. With the filter in the query, a member-only session
  * simply resolves no row → SinGimnasio. RLS is untouched.
+ *
+ * `cache()` keys on argument identity, so it MUST wrap a function keyed on the
+ * already-resolved client — never on `client?: SupabaseServer` directly. A page
+ * calling `getOperatorGym()` (no arg) and a DAL read calling `getOperatorGym(supabase)`
+ * would otherwise land in different buckets and run the 2-query resolution twice per
+ * page (perf audit 2026-07-14). `createClient` is itself `cache()`d, so resolving here
+ * yields the SAME instance every DAL caller already holds — one bucket, one round trip.
  */
-export const getOperatorGym = cache(
-  async (client?: SupabaseServer): Promise<OperatorGym> => {
-    const supabase = client ?? (await createClient());
+const resolveOperatorGym = cache(
+  async (supabase: SupabaseServer): Promise<OperatorGym> => {
     await requireOperator(supabase);
 
     const { data: membership } = await supabase
@@ -64,3 +70,8 @@ export const getOperatorGym = cache(
     };
   },
 );
+
+export async function getOperatorGym(client?: SupabaseServer): Promise<OperatorGym> {
+  const supabase = client ?? (await createClient());
+  return resolveOperatorGym(supabase);
+}

@@ -51,14 +51,18 @@ export interface FakeClient {
   inCalls: Record<string, [string, unknown[]][]>;
   /** Per-table record of `.order(col)` calls — the pagination-tiebreaker assertion target. */
   orderCalls: Record<string, string[]>;
+  /** Every `.rpc(fn, args)` call, in order — the RPC-mechanic assertion target
+   *  (e.g. getMarcadas' `marcadas_por_gym` call, gym-scoped by args). */
+  rpcCalls: [string, unknown][];
 }
 
 export function makeFake(
   rows: FakeRows,
   opts: {
     error?: { table: string; err: unknown };
-    /** What `client.rpc(...).single()` resolves — the RPC-outcome assertion target
-     *  (e.g. togglePase's typed ok/refusal mapping). Defaults to a null row. */
+    /** What `client.rpc(...)` resolves — both directly awaited (e.g. getMarcadas'
+     *  `marcadas_por_gym`, a scalar-returning function) and via `.single()` (e.g.
+     *  togglePase's typed ok/refusal mapping). Defaults to a null row. */
     rpc?: { data?: unknown; error?: { message: string } | null };
   } = {},
 ): FakeClient {
@@ -69,6 +73,7 @@ export function makeFake(
   const eqCalls: Record<string, [string, unknown][]> = {};
   const inCalls: Record<string, [string, unknown[]][]> = {};
   const orderCalls: Record<string, string[]> = {};
+  const rpcCalls: [string, unknown][] = [];
 
   const builder = (table: string, list: unknown[]) => {
     // A paginating read calls `.from(table)` once PER page, each returning a fresh
@@ -154,9 +159,17 @@ export function makeFake(
         ]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },
-    rpc: () => ({
-      single: async () => ({ data: opts.rpc?.data ?? null, error: opts.rpc?.error ?? null }),
-    }),
+    // A scalar-returning function (e.g. marcadas_por_gym) is awaited directly —
+    // `then` resolves it. A set-returning function (e.g. toggle_pase) chains
+    // `.single()` to pick its one row. Both read the same seeded opts.rpc.
+    rpc: (fn: string, args?: unknown) => {
+      rpcCalls.push([fn, args]);
+      const resolved = { data: opts.rpc?.data ?? null, error: opts.rpc?.error ?? null };
+      return {
+        single: async () => resolved,
+        then: (resolve: (v: typeof resolved) => unknown) => resolve(resolved),
+      };
+    },
   };
 
   return {
@@ -168,5 +181,6 @@ export function makeFake(
     eqCalls,
     inCalls,
     orderCalls,
+    rpcCalls,
   };
 }

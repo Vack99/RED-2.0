@@ -9,46 +9,161 @@ import { Avatar, Card, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
 import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
+import type { MarcadasInicial, Presencia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
-import { togglePaseAction } from "../actions";
+import { marcadasDelDiaAction, marcadasDeMesAction, togglePaseAction } from "../actions";
 import { setMarcada, type Marcadas } from "./marcadas";
 
+// The day strip reaches this many days back from today, each rendering a has-marks dot.
+// getMarcadas' INITIAL window (in @gym/data's asistencia.ts, DIAS_TIRA_INICIAL) is sized to
+// cover exactly this reach, so every strip dot renders on first paint. This is a
+// "use client" file and cannot import that `server-only` constant — the two are duplicated
+// deliberately and MUST stay equal (an off-by-one drops marks off the far end of the strip).
 const DAYS_BACK = 104;
+
+/** Rows painted in the initial SSR/first-hydration pass before the mount effect
+ *  reveals the rest. Sized to overfill the tallest plausible viewport at this
+ *  layout's ~68px row height (avatar 40 + 12/12 padding), so the reveal only ever
+ *  extends the list below the fold — never a visible shift. Mirrors clientes.tsx's
+ *  ROSTER_WINDOW. */
+const ROSTER_WINDOW = 50;
+
+/** "YYYY-MM" key for a Date's calendar month — the lazy-load bookkeeping unit. */
+function monthKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 export function AsistenciaScreen({
   clientes,
-  marcadas: marcadasInicial,
+  marcadas: inicial,
   hoyIso,
 }: {
   clientes: PaseClienteDTO[];
-  marcadas: Marcadas;
+  marcadas: MarcadasInicial;
   hoyIso: string;
 }) {
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
 
-  const [marcadas, setMarcadas] = React.useState<Marcadas>(marcadasInicial);
-  // Mirror of `marcadas` for the toggle callback to read current presence at
-  // call time WITHOUT closing over `marcadas` — that would change the callback
-  // identity on every flip and defeat PaseRow's React.memo (re-rendering the
-  // whole roster per tap). Kept in sync on every commit.
-  const marcadasRef = React.useRef(marcadas);
+  // Two maps, split by purpose (perf wave 5):
+  //  • `presencia` — per-day COUNTS across the window, driving the strip/calendar dots.
+  //    Grows as the calendar browses past months (getMarcadasDeMes).
+  //  • `idsPorDia` — the ids of clientes marked, per LOADED day, driving the selected-day
+  //    roster checks and the toggle. Seeded with TODAY (shipped in the initial payload);
+  //    a picked past day's ids are fetched on demand and merged.
+  const [presencia, setPresencia] = React.useState<Presencia>(inicial.presencia);
+  const [idsPorDia, setIdsPorDia] = React.useState<Marcadas>(inicial.marcadasDelDia);
+  // Mirror of `idsPorDia` for the toggle callback to read current presence at call time
+  // WITHOUT closing over `idsPorDia` — that would change the callback identity on every
+  // flip and defeat PaseRow's React.memo (re-rendering the whole roster per tap). Kept in
+  // sync on every commit.
+  const idsRef = React.useRef(idsPorDia);
   React.useEffect(() => {
-    marcadasRef.current = marcadas;
-  }, [marcadas]);
+    idsRef.current = idsPorDia;
+  }, [idsPorDia]);
   const [selDate, setSelDate] = React.useState<Date>(() => parseDay(hoyIso));
   const [query, setQuery] = React.useState("");
   const [calOpen, setCalOpen] = React.useState(false);
 
+  // A day's dot/count reads its LOADED ids' length when known (so an optimistic toggle
+  // moves the dot instantly), and falls back to the presence count otherwise. This is the
+  // count↔ids reconciliation: for a loaded day the ids are authoritative; for an unloaded
+  // day the RPC's presence count stands in. Stable identity (no deps) so DayStrip's props
+  // don't churn every render.
+  const countFor = React.useCallback(
+    (iso: string): number => idsPorDia[iso]?.length ?? presencia[iso] ?? 0,
+    [idsPorDia, presencia],
+  );
+
+  // Lazy-load past months' presence dots (perf wave 4/5). The server ships only the INITIAL
+  // window; older months the calendar can browse to are fetched on demand and merged in.
+  // Refs, not state — they gate refetching without themselves driving a render (dots
+  // re-render off `presencia` when a fetch merges). `loadedMonths` is seeded with the window
+  // the server already sent, computed identically to getMarcadas' bound so the two agree.
+  const loadedMonths = React.useRef<Set<string> | null>(null);
+  if (loadedMonths.current === null) {
+    const s = new Set<string>();
+    let cur = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+    const first = addDays(hoy, -DAYS_BACK);
+    const floor = new Date(first.getFullYear(), first.getMonth(), 1);
+    while (cur >= floor) {
+      s.add(monthKey(cur));
+      cur = new Date(cur.getFullYear(), cur.getMonth() - 1, 1);
+    }
+    loadedMonths.current = s;
+  }
+  const fetchingMonths = React.useRef<Set<string>>(new Set());
+
+  // Days whose ids are loaded (seeded with today) / in flight — gates the identity fetch.
+  const loadedDays = React.useRef<Set<string>>(new Set(Object.keys(inicial.marcadasDelDia)));
+  const fetchingDays = React.useRef<Set<string>>(new Set());
+
+  // Fetch a month's presence once and merge it in, never clobbering existing counts on key
+  // collision. Best-effort: a failed fetch stays unloaded so a later navigation retries.
+  const ensureMonth = React.useCallback((d: Date) => {
+    const mk = monthKey(d);
+    if (loadedMonths.current!.has(mk) || fetchingMonths.current.has(mk)) return;
+    fetchingMonths.current.add(mk);
+    void marcadasDeMesAction(mk)
+      .then((pres) => {
+        loadedMonths.current!.add(mk);
+        setPresencia((p) => ({ ...pres, ...p }));
+      })
+      .catch(() => {})
+      .finally(() => fetchingMonths.current.delete(mk));
+  }, []);
+
+  // Fetch a day's ids once and merge them in (existing wins, so it never clobbers a toggle).
+  // Best-effort: a failed fetch stays unloaded so re-selecting retries. Today is pre-seeded,
+  // so this never fires for it — selecting today is instant.
+  const ensureDiaIds = React.useCallback((iso: string) => {
+    if (loadedDays.current.has(iso) || fetchingDays.current.has(iso)) return;
+    fetchingDays.current.add(iso);
+    void marcadasDelDiaAction(iso)
+      .then((ids) => {
+        loadedDays.current.add(iso);
+        setIdsPorDia((m) => (m[iso] !== undefined ? m : { ...m, [iso]: ids }));
+      })
+      .catch(() => {})
+      .finally(() => fetchingDays.current.delete(iso));
+  }, []);
+
+  // Selecting a day loads its month's dots (a calendar pick of an old month) AND that day's
+  // roster ids (any non-today pick). Strip picks stay inside the initial window, so the month
+  // fetch is a no-op for them; today's ids are already seeded, so its fetch is a no-op too.
   const selIso = isoDay(selDate);
-  const presentes = marcadas[selIso] ?? [];
+  React.useEffect(() => {
+    ensureMonth(selDate);
+    ensureDiaIds(selIso);
+  }, [selDate, selIso, ensureMonth, ensureDiaIds]);
+
+  const presentes = idsPorDia[selIso]; // undefined while a picked past day's ids load
+  const diaCargando = presentes === undefined;
   const total = clientes.length;
-  const count = presentes.length;
+  const count = countFor(selIso);
   const pct = total ? Math.round((count / total) * 100) : 0;
   const esHoy = sameDay(selDate, hoy);
 
   const filtered = clientes.filter((c) =>
     c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
   );
+
+  // Windowed initial paint (mirrors clientes.tsx's ROSTER_WINDOW). The server (and the
+  // matching first hydration render) emit only the first ROSTER_WINDOW rows — enough to
+  // overfill the tallest plausible viewport at this ~68px row height — then a mount effect
+  // reveals the full list. This halves the initial HTML/SSR cost of a 500-row roster with no
+  // data change (every row is already in `clientes` props) and no visible shift: the window
+  // already exceeds one screen, so the remaining rows grow in below the fold. Search still runs
+  // over the FULL dataset from the first keystroke (that is `filtered` above); only how many of
+  // `filtered` we paint is gated, and `filtered.length` (used for the empty-state check and the
+  // header counts) stays exact.
+  const [revealAll, setRevealAll] = React.useState(false);
+  React.useEffect(() => {
+    // Reveal on the frame after the first paint, so the initial paint stays the window. rAF
+    // (not a bare setState in the effect body) also keeps this off the synchronous commit path.
+    const id = requestAnimationFrame(() => setRevealAll(true));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const visible = revealAll ? filtered : filtered.slice(0, ROSTER_WINDOW);
 
   // Ids whose toggle is mid-flight, keyed by `${iso}:${id}`. A second tap on the
   // same row before the server answers is ignored, so the already-applied
@@ -57,16 +172,19 @@ export function AsistenciaScreen({
 
   const toggle = React.useCallback(
     async (c: PaseClienteDTO) => {
+      // Toggling is only reachable on a LOADED day (the roster is hidden while a day's ids
+      // load), so idsRef.current[selIso] is defined here. The dot/count for selIso follows
+      // idsPorDia's length via countFor, so the optimistic flip moves it with no separate
+      // presence write — that IS the reconciliation.
       const key = `${selIso}:${c.id}`;
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
 
-      // Flip optimistically on this tick so the bounce, tint, avatar fill and
-      // counts fire instantly; the server result reconciles below. Read the
-      // current presence from the ref (not a closed-over `marcadas`) so this
-      // callback stays referentially stable across flips.
-      const willBePresent = !(marcadasRef.current[selIso] ?? []).includes(c.id);
-      setMarcadas((m) => setMarcada(m, selIso, c.id, willBePresent));
+      // Flip optimistically on this tick so the bounce, tint, avatar fill and counts fire
+      // instantly; the server result reconciles below. Read current presence from the ref
+      // (not a closed-over `idsPorDia`) so this callback stays referentially stable.
+      const willBePresent = !(idsRef.current[selIso] ?? []).includes(c.id);
+      setIdsPorDia((m) => setMarcada(m, selIso, c.id, willBePresent));
 
       try {
         const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
@@ -74,12 +192,12 @@ export function AsistenciaScreen({
           // The RPC refused with a reason ('Paquete vencido', the C15 already-marked-on-a-session
           // guard, …) — a typed result, because prod Next.js masks thrown action messages. Roll the
           // optimistic flip back and tell the operator WHY, not a blind "try again".
-          setMarcadas((m) => setMarcada(m, selIso, c.id, !willBePresent));
+          setIdsPorDia((m) => setMarcada(m, selIso, c.id, !willBePresent));
           forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
           return;
         }
         // Reconcile against the authoritative result (usually a no-op).
-        setMarcadas((m) => setMarcada(m, selIso, c.id, res.present));
+        setIdsPorDia((m) => setMarcada(m, selIso, c.id, res.present));
         if (res.present) {
           forgeToast({
             tone: "success",
@@ -89,7 +207,7 @@ export function AsistenciaScreen({
         }
       } catch {
         // Unexpected failure (network, invalid input) — roll the optimistic flip back.
-        setMarcadas((m) => setMarcada(m, selIso, c.id, !willBePresent));
+        setIdsPorDia((m) => setMarcada(m, selIso, c.id, !willBePresent));
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
       } finally {
         inFlight.current.delete(key);
@@ -127,7 +245,7 @@ export function AsistenciaScreen({
       </div>
 
       {/* Day strip */}
-      <DayStrip hoy={hoy} marcadas={marcadas} selDate={selDate} onSelect={setSelDate} />
+      <DayStrip hoy={hoy} countFor={countFor} selDate={selDate} onSelect={setSelDate} />
 
       {/* Progress hero */}
       <Card style={{ margin: "8px 16px 0" }}>
@@ -158,21 +276,31 @@ export function AsistenciaScreen({
         </Link>
       </div>
 
-      {/* Client list */}
+      {/* Client list — while a picked past day's ids load, show the same "Cargando…"
+          affordance the agenda roster uses (identity is fetched on demand; today is
+          seeded so this never shows for it). */}
       <div style={{ paddingTop: 8 }}>
-        {filtered.map((c, i) => (
-          <PaseRow
-            key={c.id}
-            cliente={c}
-            present={presentes.includes(c.id)}
-            first={i === 0}
-            onToggle={toggle}
-          />
-        ))}
-        {filtered.length === 0 && (
+        {diaCargando ? (
           <div style={{ padding: "40px 22px", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
-            Sin clientes que coincidan.
+            Cargando asistencias…
           </div>
+        ) : (
+          <>
+            {visible.map((c, i) => (
+              <PaseRow
+                key={c.id}
+                cliente={c}
+                present={presentes.includes(c.id)}
+                first={i === 0}
+                onToggle={toggle}
+              />
+            ))}
+            {filtered.length === 0 && (
+              <div style={{ padding: "40px 22px", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
+                Sin clientes que coincidan.
+              </div>
+            )}
+          </>
         )}
       </div>
 
@@ -181,8 +309,9 @@ export function AsistenciaScreen({
       <Sheet open={calOpen} onClose={() => setCalOpen(false)}>
         <PaseCalendar
           hoy={hoy}
-          marcadas={marcadas}
+          countFor={countFor}
           selDate={selDate}
+          onViewMonth={ensureMonth}
           onPick={(d) => {
             setSelDate(d);
             setCalOpen(false);
@@ -195,12 +324,13 @@ export function AsistenciaScreen({
 
 function DayStrip({
   hoy,
-  marcadas,
+  countFor,
   selDate,
   onSelect,
 }: {
   hoy: Date;
-  marcadas: Marcadas;
+  /** Presence count for a day's iso — its length-or-count reconciliation (see parent). */
+  countFor: (iso: string) => number;
   selDate: Date;
   onSelect: (d: Date) => void;
 }) {
@@ -246,7 +376,7 @@ function DayStrip({
     }
     const isSel = sameDay(d, selDate);
     const isToday = off === 0;
-    const hasMarks = (marcadas[isoDay(d)]?.length ?? 0) > 0;
+    const hasMarks = countFor(isoDay(d)) > 0;
     items.push(
       <button
         key={`d${off}`}
@@ -366,16 +496,28 @@ const PaseRow = React.memo(function PaseRow({
 
 function PaseCalendar({
   hoy,
-  marcadas,
+  countFor,
   selDate,
+  onViewMonth,
   onPick,
 }: {
   hoy: Date;
-  marcadas: Marcadas;
+  /** Presence count for a day's iso — its length-or-count reconciliation (see parent). */
+  countFor: (iso: string) => number;
   selDate: Date;
+  /** Notified with the first-of-month whenever the viewed month changes, so the parent
+   *  can lazy-load a past month's marks and its dots fill in (perf wave 4). */
+  onViewMonth: (d: Date) => void;
   onPick: (d: Date) => void;
 }) {
   const [view, setView] = React.useState({ y: selDate.getFullYear(), m: selDate.getMonth() });
+
+  // Load the viewed month's marks on open and on every nav. The current month (initial
+  // view) is already in the window, so this is a no-op until the user steps to an older
+  // one — which then fills its dots (an empty→filled flash on far-past months is fine).
+  React.useEffect(() => {
+    onViewMonth(new Date(view.y, view.m, 1));
+  }, [view, onViewMonth]);
 
   const first = new Date(view.y, view.m, 1);
   const lead = first.getDay();
@@ -392,7 +534,7 @@ function PaseCalendar({
     setView({ y: next.getFullYear(), m: next.getMonth() });
   };
 
-  const selCount = (marcadas[isoDay(selDate)]?.length ?? 0);
+  const selCount = countFor(isoDay(selDate));
 
   return (
     <div style={{ padding: "8px 18px 6px" }}>
@@ -429,7 +571,7 @@ function PaseCalendar({
           const future = d > hoy;
           const isSel = sameDay(d, selDate);
           const isToday = sameDay(d, hoy);
-          const has = (marcadas[isoDay(d)]?.length ?? 0) > 0;
+          const has = countFor(isoDay(d)) > 0;
           return (
             <button
               key={isoDay(d)}

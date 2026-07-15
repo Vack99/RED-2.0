@@ -54,6 +54,17 @@ What actually holds:
   `.eq`" from a convention into a property. Adopt when any gym-scoped admin result set routinely exceeds
   ~50k rows or admin p95 exceeds 500ms.
 
+  > **Adopted 2026-07-14 (migration `20260714080000_rls_uncorrelated_predicates.sql`).** Shipped early:
+  > the perf bench measured the correlated SubPlan at **42ms per 5k-row `asistencias` statement**
+  > (`SubPlan 1 … loops=5000`) vs 3ms with RLS off — the per-row cost bites well below the 50k trigger.
+  > All 25 gym-scoped **SELECT** predicates now use `gym_id in (select m.gym_id from gym_membership m
+  > where m.user_id = (select auth.uid()) and <role>)`, a hashed InitPlan built once per statement
+  > (asistencias 42→3ms, clientes 3.8→0.3ms; row counts and denial proven identical before/after).
+  > INSERT/UPDATE/DELETE predicates keep the correlated helper form (writes touch few rows), and
+  > `gym_membership_staff_select` keeps the DEFINER helper — an inline self-read of `gym_membership`
+  > inside its own policy would recurse (§1). The `.eq("gym_id", …)` reader scope and the helpers
+  > themselves are unchanged; the rewrite makes the scoping a property rather than replacing it.
+
 ### 3. One standard predicate per RLS class
 
 - **Curated / showcased** — writes `using ((select public.is_staff_of(gym_id)))`; authenticated reads `(select public.is_member_of(gym_id))`. Anon reads only where a surface demands it — **in Phase 3 that is exactly `gym_domain` and `gym`** (the pre-auth proxy lookup: hostnames are public DNS facts and the `gym` row is already the shield's public/anon marketing read class). Phase 3 grants **no other anon reads**; the catalog tables' anon-read policies ride Phases 5/6 with the tables themselves.

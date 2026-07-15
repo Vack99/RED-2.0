@@ -32,6 +32,104 @@ function anonClient(): SupabaseServer {
 }
 
 /**
+ * Host resolution result. `matched` records whether a `gym_domain` row existed for
+ * the host — the precedence hinge: a matched host WINS even when its `gym` row is
+ * absent (`tenant: null`), so a mapped host never falls through to the `?gym=`
+ * override. `matched: false` is the "no `gym_domain` row" case that DOES fall
+ * through. Preserving this flag keeps resolution bit-identical to the pre-cache code.
+ */
+interface HostResolution {
+  matched: boolean;
+  tenant: Tenant | null;
+}
+
+/**
+ * Module-level in-process TTL cache for the GLOBAL host/slug→tenant mappings. This
+ * data is per-host/per-slug PUBLIC mapping (ADR-0012 §5), never user-scoped, so a
+ * process-wide cache is correct (unlike session/user data). Positive AND negative
+ * results are cached under the same 60s TTL: a host that is later mapped starts
+ * working within ~60s, and the unmapped-host case (local/dev + any misdirected
+ * request) is spared a DB round trip on every navigation. Bounded FIFO (Map insertion
+ * order) at 500 entries. Plain JS (Map + Date.now) — Edge-runtime safe, no deps.
+ */
+const CACHE_TTL_MS = 60_000;
+const CACHE_MAX_ENTRIES = 500;
+
+interface CacheEntry<T> {
+  value: T;
+  expires: number;
+}
+
+class TtlCache<T> {
+  private readonly map = new Map<string, CacheEntry<T>>();
+
+  /** A miss returns `undefined`; a hit returns `{ value }` so a cached `null`/`false`
+   *  result is still a hit (negative caching), never confused with an absent entry. */
+  get(key: string): { value: T } | undefined {
+    const entry = this.map.get(key);
+    if (!entry) return undefined;
+    if (entry.expires <= Date.now()) {
+      this.map.delete(key);
+      return undefined;
+    }
+    return { value: entry.value };
+  }
+
+  set(key: string, value: T): void {
+    if (!this.map.has(key) && this.map.size >= CACHE_MAX_ENTRIES) {
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
+    }
+    this.map.set(key, { value, expires: Date.now() + CACHE_TTL_MS });
+  }
+
+  clear(): void {
+    this.map.clear();
+  }
+}
+
+const hostCache = new TtlCache<HostResolution>();
+const slugCache = new TtlCache<Tenant | null>();
+
+/** Drop all cached host/slug resolutions. Exported for tests (cache-hit, TTL, and
+ *  eviction assertions need a clean cache between cases); harmless in production. */
+export function clearTenantCache(): void {
+  hostCache.clear();
+  slugCache.clear();
+}
+
+/** Host arm, uncached: `gym_domain` row → load its `gym`. `matched` mirrors whether
+ *  the domain row existed, so the host-wins short-circuit survives caching. */
+async function resolveHostUncached(
+  client: SupabaseServer,
+  hostname: string,
+): Promise<HostResolution> {
+  const { data: domain } = await client
+    .from("gym_domain")
+    .select("gym_id")
+    .eq("hostname", hostname)
+    .maybeSingle();
+  if (!domain) return { matched: false, tenant: null };
+  return { matched: true, tenant: await gymTenant(client, "id", domain.gym_id) };
+}
+
+async function cachedHost(client: SupabaseServer, hostname: string): Promise<HostResolution> {
+  const cached = hostCache.get(hostname);
+  if (cached) return cached.value;
+  const resolved = await resolveHostUncached(client, hostname);
+  hostCache.set(hostname, resolved);
+  return resolved;
+}
+
+async function cachedSlug(client: SupabaseServer, slug: string): Promise<Tenant | null> {
+  const cached = slugCache.get(slug);
+  if (cached) return cached.value;
+  const resolved = await gymTenant(client, "slug", slug);
+  slugCache.set(slug, resolved);
+  return resolved;
+}
+
+/**
  * DB-backed host→gym resolution both proxies run (ADR-0012 §5, amended 2026-07-02) —
  * the swap that retires the static in-code host→brand map. Host-wins precedence:
  *
@@ -40,8 +138,12 @@ function anonClient(): SupabaseServer {
  *   3. NO tenant (`null`) — chrome falls back to `DEFAULT_BRAND` and tenant-requiring
  *      writes refuse rather than silently defaulting.
  *
- * Host wins, so on a mapped customer domain the override is structurally inert.
- * Server-only, async, no cache (v1). `client` is injectable for tests (ADR-0001).
+ * Host wins, so on a mapped customer domain the override is structurally inert. Both
+ * arms read a 60s in-process TTL cache (`hostCache`/`slugCache`) and, on a miss, fire
+ * in PARALLEL — the host lookup and (only when a `?gym=` override is present) the slug
+ * lookup — before the precedence rule above picks the winner. Resolution is
+ * bit-identical to the pre-cache code; the cache only avoids repeat round trips.
+ * Server-only, async. `client` is injectable for tests (ADR-0001).
  */
 export async function resolveTenant(
   host: string | null,
@@ -50,15 +152,13 @@ export async function resolveTenant(
 ): Promise<Tenant | null> {
   const hostname = host?.split(":")[0].toLowerCase() ?? "";
 
-  const { data: domain } = await client
-    .from("gym_domain")
-    .select("gym_id")
-    .eq("hostname", hostname)
-    .maybeSingle();
-  if (domain) return gymTenant(client, "id", domain.gym_id);
+  const [hostResolution, overrideTenant] = await Promise.all([
+    cachedHost(client, hostname),
+    override ? cachedSlug(client, override) : Promise.resolve(null),
+  ]);
 
-  if (override) return gymTenant(client, "slug", override);
-
+  if (hostResolution.matched) return hostResolution.tenant;
+  if (override) return overrideTenant;
   return null;
 }
 

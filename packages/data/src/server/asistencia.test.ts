@@ -1,116 +1,159 @@
 import { describe, expect, it } from "vitest";
 
-import { getMarcadas, togglePase } from "./asistencia";
+import { addDays, hoyEnZona, toIsoDay } from "@gym/format";
+
+import {
+  DIAS_TIRA_INICIAL,
+  getMarcadas,
+  getMarcadasDelDia,
+  getMarcadasDeMes,
+  togglePase,
+} from "./asistencia";
 import { makeFake } from "./supabase-fake.test-helper";
 
+/** First-of-month "YYYY-MM-DD" for a Date — the window-boundary shape getMarcadas sends. */
+const firstOfMonthIso = (d: Date) => toIsoDay(new Date(d.getFullYear(), d.getMonth(), 1));
+
 /**
- * The seam this exercises: `getMarcadas` takes an injectable client (ADR-0001),
- * so its read ORCHESTRATION — the active-only `.is("deleted_at", null)` filter and
- * the PAGINATION that defeats PostgREST's per-response cap — is testable with the
- * shared chain-capturing fake (`./supabase-fake.test-helper`). No Supabase, no DB.
+ * The seam these exercise: each DAL fn takes an injectable client (ADR-0001), so its read
+ * ORCHESTRATION — which RPC, called with which gym-scope AND window args, its result shaped
+ * — is testable with the shared chain-capturing fake (`./supabase-fake.test-helper`). No
+ * Supabase, no DB.
  *
- * `getMarcadas` returns the WHOLE attendance ledger as `{ "YYYY-MM-DD": clienteId[] }`
- * (the attendance day-strip + month calendar can browse any past month, so it must be
- * full history, not a date window). A single unbounded select silently caps at ~1000
- * rows, so once the gym exceeds ~1000 lifetime check-ins it drops attendance with NO
- * error — the bug F-001 fixes by paging through `.range()`.
+ * The COUNTING/GROUPING/DEDUPE logic (per-fecha `count(distinct cliente_id)` for presence,
+ * `array_agg(distinct cliente_id)` for ids, the soft-delete filter, the half-open window) lives
+ * DB-side in the SQL functions — invisible to vitest's RPC mock boundary by design (AGENTS.md:
+ * the real contract for aggregation RPCs is proven by the SQL suites in `supabase/tests/`). What
+ * stays testable here is the MECHANIC: the right RPC(s), the right args, the result shaped.
  *
- * `.range(from, to)` returns the requested inclusive slice of the seeded list, so the
- * paginator's "loop until a short page returns" termination is exercised for real.
+ * Perf wave 5 split: getMarcadas ships per-day PRESENCE counts (dots) for the window PLUS the
+ * ids for TODAY only; identity for any other day is lazy (getMarcadasDelDia). The fake returns
+ * ONE seeded `opts.rpc.data` for every RPC in a call, so each test asserts the PROJECTION of
+ * that seed it cares about (presence passthrough vs today's ids vs the window args).
  */
 
-const asistencia = (over: Record<string, unknown> = {}) => ({
-  fecha: "2026-05-20",
-  cliente_id: "cli-1",
-  ...over,
-});
-
-describe("getMarcadas — full attendance map (injected fake)", () => {
-  it("paginates past the PostgREST cap — returns ALL > PAGE rows, no truncation", async () => {
-    // Seed 1001 asistencias — one past the PAGE (1000) cap — spread across several
-    // days. A single unbounded read would silently drop the 1001st; the day-strip and
-    // month calendar would lose attendance with no error.
-    const dias = ["2026-05-18", "2026-05-19", "2026-05-20", "2026-05-21"];
-    const asistencias = Array.from({ length: 1001 }, (_, i) =>
-      asistencia({ fecha: dias[i % dias.length], cliente_id: `cli-${i}` }),
-    );
-
-    const { client, rangeCalls } = makeFake({ asistencias });
-
-    const map = await getMarcadas(client);
-
-    // (a) NO data is lost — the cliente_ids across all days sum to exactly 1001.
-    const total = Object.values(map).reduce((n, ids) => n + ids.length, 0);
-    expect(total).toBe(1001);
-
-    // (b) it paginated — a full first page [0, 999] then the short second page
-    // [1000, 1999] (1 row → loop terminates).
-    expect(rangeCalls["asistencias"]).toEqual([
-      [0, 999],
-      [1000, 1999],
-    ]);
-  });
-
-  it("reads ALL surfaces — soft-delete only, NO class_session_id filter (ruling C15)", async () => {
-    // C15: one attended class = one consumed class regardless of surface, so the map
-    // must surface session-linked rows too (a member marked via the Agenda now shows
-    // checked here). toggle_pase refuses the mistap instead of double-consuming, so
-    // the class_session_id filter that used to hide those rows is gone.
-    const { client, isCalls } = makeFake({ asistencias: [asistencia()] });
+describe("getMarcadas — presence for the window + ids for today (injected fake)", () => {
+  it("calls marcadas_presencia windowed AND marcadas_por_gym for today's 1-day window", async () => {
+    const { client, rpcCalls } = makeFake({});
 
     await getMarcadas(client);
 
-    expect(isCalls["asistencias"]).toEqual([["deleted_at", null]]);
+    // The initial window (perf wave 4): first-of-month(today − DIAS_TIRA_INICIAL) through the
+    // first of NEXT month, in the gym's zone (the fake resolves America/Chihuahua).
+    const hoy = hoyEnZona("America/Chihuahua");
+    const desde = firstOfMonthIso(addDays(hoy, -DIAS_TIRA_INICIAL));
+    const hasta = toIsoDay(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1));
+    const hoyIso = toIsoDay(hoy);
+    const manana = toIsoDay(addDays(hoy, 1));
+
+    expect(rpcCalls).toEqual([
+      ["marcadas_presencia", { p_gym_id: "test-gym", p_desde: desde, p_hasta: hasta }],
+      ["marcadas_por_gym", { p_gym_id: "test-gym", p_desde: hoyIso, p_hasta: manana }],
+    ]);
+    // Half-open and forward: the presence window covers the strip's far end; today is a 1-day slice.
+    expect(desde < hasta).toBe(true);
+    expect(hoyIso < manana).toBe(true);
   });
 
-  it("marks BOTH a front-desk row and a session-linked row (ruling C15)", async () => {
-    // A front-desk row (class_session_id null) and a session/Agenda row (class_session_id
-    // set) on the same day — both cliente_ids must appear; neither surface is hidden.
-    const { client } = makeFake({
-      asistencias: [
-        asistencia({ fecha: "2026-05-20", cliente_id: "front-desk", class_session_id: null }),
-        asistencia({ fecha: "2026-05-20", cliente_id: "session", class_session_id: "sess-1" }),
-      ],
-    });
+  it("returns the presence map verbatim as { presencia }", async () => {
+    const presencia = { "2026-05-18": 2, "2026-05-20": 3 };
+    const { client } = makeFake({}, { rpc: { data: presencia } });
 
-    const map = await getMarcadas(client);
+    const { presencia: got } = await getMarcadas(client);
 
-    expect(map).toEqual({ "2026-05-20": ["front-desk", "session"] });
+    expect(got).toEqual(presencia);
   });
 
-  it("dedupes one cliente marked on BOTH surfaces the same day (count not inflated)", async () => {
-    // The same cliente can hold a front-desk row AND a session row for one day; the
-    // map must list them once so the pase screen's counts and marks aren't doubled.
-    const { client } = makeFake({
-      asistencias: [
-        asistencia({ fecha: "2026-05-20", cliente_id: "both", class_session_id: null }),
-        asistencia({ fecha: "2026-05-20", cliente_id: "both", class_session_id: "sess-1" }),
-        asistencia({ fecha: "2026-05-21", cliente_id: "both", class_session_id: null }),
-      ],
-    });
+  it("seeds TODAY's ids into marcadasDelDia (so the pase flow toggles without a fetch)", async () => {
+    const hoyIso = toIsoDay(hoyEnZona("America/Chihuahua"));
+    // The fake returns this for the today RPC too; getMarcadas projects out today's array.
+    const { client } = makeFake({}, { rpc: { data: { [hoyIso]: ["a", "b"] } } });
 
-    const map = await getMarcadas(client);
+    const { marcadasDelDia } = await getMarcadas(client);
 
-    expect(map).toEqual({ "2026-05-20": ["both"], "2026-05-21": ["both"] });
+    expect(marcadasDelDia).toEqual({ [hoyIso]: ["a", "b"] });
   });
 
-  it("groups rows by fecha → correct per-day cliente_id lists (map shape)", async () => {
-    const { client } = makeFake({
-      asistencias: [
-        asistencia({ fecha: "2026-05-18", cliente_id: "a" }),
-        asistencia({ fecha: "2026-05-18", cliente_id: "b" }),
-        asistencia({ fecha: "2026-05-19", cliente_id: "a" }),
-        asistencia({ fecha: "2026-05-20", cliente_id: "c" }),
-      ],
-    });
+  it("is best-effort — empty presence and empty today on RPC error", async () => {
+    const hoyIso = toIsoDay(hoyEnZona("America/Chihuahua"));
+    const { client } = makeFake({}, { rpc: { data: null, error: { message: "boom" } } });
 
-    const map = await getMarcadas(client);
+    const { presencia, marcadasDelDia } = await getMarcadas(client);
 
-    expect(map).toEqual({
-      "2026-05-18": ["a", "b"],
-      "2026-05-19": ["a"],
-      "2026-05-20": ["c"],
-    });
+    expect(presencia).toEqual({});
+    expect(marcadasDelDia).toEqual({ [hoyIso]: [] });
+  });
+});
+
+describe("getMarcadasDeMes — one-month presence lazy load (injected fake)", () => {
+  it("calls marcadas_presencia over the half-open month [firstOf(mes), firstOf(nextMes))", async () => {
+    const { client, rpcCalls } = makeFake({});
+
+    await getMarcadasDeMes("2026-05", client);
+
+    expect(rpcCalls).toEqual([
+      ["marcadas_presencia", { p_gym_id: "test-gym", p_desde: "2026-05-01", p_hasta: "2026-06-01" }],
+    ]);
+  });
+
+  it("rolls the upper bound into the next YEAR for December", async () => {
+    const { client, rpcCalls } = makeFake({});
+
+    await getMarcadasDeMes("2026-12", client);
+
+    expect(rpcCalls).toEqual([
+      ["marcadas_presencia", { p_gym_id: "test-gym", p_desde: "2026-12-01", p_hasta: "2027-01-01" }],
+    ]);
+  });
+
+  it("rejects a malformed month before touching the DB", async () => {
+    const { client, rpcCalls } = makeFake({});
+
+    await expect(getMarcadasDeMes("2026-5", client)).rejects.toThrow();
+    expect(rpcCalls).toEqual([]);
+  });
+
+  it("returns the presence count map verbatim", async () => {
+    const presencia = { "2026-05-18": 4 };
+    const { client } = makeFake({}, { rpc: { data: presencia } });
+
+    expect(await getMarcadasDeMes("2026-05", client)).toEqual(presencia);
+  });
+});
+
+describe("getMarcadasDelDia — one-day roster lazy load (injected fake)", () => {
+  it("calls marcadas_por_gym over the day's 1-day window and returns just that day's ids", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: { data: { "2026-05-18": ["a", "b"] } } });
+
+    const ids = await getMarcadasDelDia("2026-05-18", client);
+
+    expect(rpcCalls).toEqual([
+      ["marcadas_por_gym", { p_gym_id: "test-gym", p_desde: "2026-05-18", p_hasta: "2026-05-19" }],
+    ]);
+    expect(ids).toEqual(["a", "b"]);
+  });
+
+  it("rolls the upper bound across a month boundary", async () => {
+    const { client, rpcCalls } = makeFake({});
+
+    await getMarcadasDelDia("2026-05-31", client);
+
+    expect(rpcCalls).toEqual([
+      ["marcadas_por_gym", { p_gym_id: "test-gym", p_desde: "2026-05-31", p_hasta: "2026-06-01" }],
+    ]);
+  });
+
+  it("returns [] when the day has no marks", async () => {
+    const { client } = makeFake({}, { rpc: { data: { "2026-05-18": ["a"] } } });
+
+    expect(await getMarcadasDelDia("2026-05-19", client)).toEqual([]);
+  });
+
+  it("rejects a malformed day before touching the DB", async () => {
+    const { client, rpcCalls } = makeFake({});
+
+    await expect(getMarcadasDelDia("2026-5-1", client)).rejects.toThrow();
+    expect(rpcCalls).toEqual([]);
   });
 });
 

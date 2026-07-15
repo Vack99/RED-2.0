@@ -89,7 +89,8 @@ a much wider run-to-run spread — two identical-code runs saw `admin/agenda` fl
 |---|---|
 | Baseline (live DB, 9 public routes) | `001-baseline.json` — 0/9 under 50 ms, worst 509 ms |
 | ~~Local, run 002~~ | **VOID — do not trust it.** Measured empty pages (see "The grants trap") |
-| **Baseline (local DB, all 19 routes)** | **`003-local-baseline.json` — 15/19 under 50 ms, worst 318 ms, 0 BROKEN** |
+| Baseline (local DB, all 19 routes) | `003-local-baseline.json` — 15/19 under 50 ms, worst 318 ms, 0 BROKEN |
+| **FINAL (2026-07-14, loop complete)** | **`011` + `012-confirm-final.json` — 19/19 under 50 ms in BOTH runs; worst 39.0 / 43.4 ms. Denial suite 36/36 green on scratch. Awaiting: live migrations → push (see runbook at bottom).** |
 
 ## The baseline (`003-local-baseline`)
 
@@ -227,6 +228,35 @@ Two guards now exist:
 
 **If a run ever looks suspiciously fast, check the `bytes` column before believing it.**
 
+## Known unknowns / owner items surfaced by the loop
+
+- **JWT verification path**: `getClaims()` verifies locally ONLY with asymmetric signing keys (ES*/RS* + JWKS). On the legacy HS256 secret it silently falls back to `getUser()` = one auth-server round trip **per request per app**. Local Docker uses HS256 → part of the measured per-request floor. **Check the prod project's signing-key config; migrating to asymmetric keys is a dashboard action, not code.**
+- **Region colocation** (from "What the gate captures"): still unconfirmed; determines how well these local numbers transfer.
+- **admin/clientes product lever (HELD)**: profiling attributes ~26–35 ms of that route to SSR+flight of all 500 roster rows through one client boundary. If the proxy-cache wave doesn't get it under 50, the remaining lever is server-side search/pagination — a product change needing owner sign-off.
+- ~~**asistencia presence-only follow-up**~~ — SHIPPED in wave 5 (migration 20260714100000).
+
+## Ship runbook (ORDER MATTERS — read before pushing main)
+
+Pushing `main` auto-deploys both Vercel apps, and the new code calls RPCs that do not
+exist on live yet. **Apply the migrations to live FIRST, then push.**
+
+1. **Live migrations** (owner, via MCP `apply_migration` or dashboard SQL — never `db push`),
+   in exactly this order:
+   `20260714060000_marcadas_por_gym_rpc` → `20260714070000_ventas_count_por_cliente_rpc` →
+   `20260714080000_rls_uncorrelated_predicates` → `20260714090000_marcadas_por_gym_windowed` →
+   `20260714100000_marcadas_presencia`.
+   (090000 DROPs the 1-arg `marcadas_por_gym` created by 060000 — apply 060000 anyway so the
+   ledger matches the files; the pair is idempotent in sequence. 080000 is the RLS rewrite —
+   denial-proven on scratch, 36/36.)
+2. Sanity on live (read-only): `select public.marcadas_presencia(...)` for a real gym returns
+   counts; spot-check one staff SELECT (roster loads in admin).
+3. `git push origin main`.
+4. Watch the two Vercel deploys; admin `/asistencia`, `/clientes`, `/vender` are the routes
+   that exercise every new RPC.
+5. Optional but recommended (surfaced by profiling): check the prod project's JWT **signing-key
+   config** — on legacy HS256, `getClaims()` = one auth round trip per request per app;
+   asymmetric keys make verification local. Dashboard action, no code.
+
 ## Attempt log
 
 Newest last. Every entry: what changed, the measured delta, kept or reverted, and why.
@@ -237,3 +267,12 @@ Newest last. Every entry: what changed, the measured delta, kept or reverted, an
 | — | local DB, run 002 | 17/19 "pass", worst 21 ms — **VOID**, measured empty pages (missing local grants) | — |
 | — | local grants fixed + preflight added | run 003: **15/19 pass, worst 318 ms, 0 BROKEN** — the real baseline of record | ✔ |
 | — | LCP + bytes ratchet added (warn-level) | self-test vs 003 was clean — no false alarm even though reservar's LCP swung +28 ms (+18%) on identical code; the >30%-AND-25 ms threshold held. Self-test run discarded so 003 stays the reference | ✔ |
+| — | `004-baseline-reconfirm` (no code change, fresh session) | 14/19 pass, worst 335.3. FAILs: asistencia 335.3, vender 162.1, clientes 72.5, reservar 63.1, inicio 53.8. agenda 46.8 / cuenta 46.4 now barely pass (still failures-in-waiting). Confirms 003 within run-noise; this is the anchor for diffs. | ✔ |
+| 1 | `getMarcadas` → single `marcadas_por_gym(p_gym_id)` SQL RPC (jsonb_object_agg, SECURITY INVOKER, migration 20260714060000). 5 sequential 1000-row pages → 1 round trip. Types regen'd (`gen types --local`, picked up 3 pre-existing hand-file drifts). asistencia.test.ts reasserted on `.rpc()` mechanic; fake helper got `rpcCalls`. | run 005: **asistencia 335.3 → 119.8 (−215.5)**, still FAIL — residual ≈ getClientesParaPase (500 rows) + RLS-per-row + 55KB doc. 15/19. reservar 63.1→53.3, inicio 53.8→47.6 (both borderline-noise per the ±15 ms rule). 962 tests + typecheck green. | ✔ |
+| 2 | Wave 2, three fixes at once: (a) `getClientesLite` ventas(count) embed → `ventas_count_por_cliente` RPC; (b) `getClientesRoster` month-asistencias rows → `asistencias_mes_por_cliente` RPC (both in migration 20260714070000); (c) `getRosterResumen` full-roster read → 2 head-count queries + auth_user_id-scoped subset (predicate proven equivalent on all 500 seeded rows). (d) reservar: `resolverMiembroGym` cache()d (6→2 trips), 4 clientes reads → 1 `fetchClienteRow`, contarActivos into the batch. | run 006: **vender 168.7 → 66.3 (−102.4)**. clientes 72.3→67.4 (−5, weak — cost is the 500-row select itself + RLS, not the count leg). reservar 56.8 (no change — why? see profiling). **APPARENT regression: client/clase/[id] 27.9→60.2 (+32.3), confirmada 26.5→40.5 (+14)** — diagnosed as NOT caused by (d): confirmada makes zero agenda-miembro runtime calls (type-only imports), clase's one touchpoint (getSaldoMiembro) has identical RT depth before/after. Likely run artifact (fresh migrations + cold DB, fixed route order). Re-check next run before believing it. Also learned: (d) deduped work that was already parallel → cuts DB load, cannot cut html p50; reservar's real lever = sequential depth (resolverMiembroGym 2→1 query, fetchProximasReservas 6-deep chain). 12/19. Tests 963 green. | ✔ (d) kept |
+| 3 | Wave 3: (a) migration 20260714080000 — 25 SELECT policies rewritten correlated→uncorrelated set-membership (hashed InitPlan once/statement; `gym_membership_staff_select` left correlated: self-referential = infinite recursion, single-digit rows; write policies untouched; denial re-proven 0 rows for non-member on all 25; ADR-0013 adoption note added). EXPLAIN: asistencias 42.2→2.98 ms, clientes 3.81→0.33 ms. (b) `getOperatorGym` cache-key normalized (inner cache on resolved client) — the only demonstrated double-fire in packages/data; ~15 DAL fns + every page share one bucket now. | run 007: **17/19**. asistencia 115.9→55.9, vender 66.3→28.8 PASS, clientes 67.4→61.5, reservar 43 PASS, inicio 40.4, cuenta 37.5, agenda 48.7 (no margin). clase 28.4 / confirmada 28.9 — **run-006 spike confirmed artifact, not the refactor**. Tests 963 green. ⚠️ RLS migration ⇒ pre-merge `test:denial` on scratch is MANDATORY. | ✔ |
+| 4 | Wave 4: (a) `marcadas_por_gym` windowed (migration 20260714090000, 3-arg only — 1-arg dropped to avoid PGRST203 overload ambiguity); initial window = firstOfMonth(hoy−104d)..firstOfNextMonth (day strip DAYS_BACK=104 is the floor), past months lazy via `marcadasDeMesAction` merged client-side; gzip doc 54→43 KB. (b) `resolveTenant` module-level TTL cache (60 s, negatives cached, FIFO 500, Edge-safe) + host/slug lookups parallel on miss; host-wins precedence bit-identical. (c) agenda `fetchSesionesEnRango` depth 4→3 (contarActivos into the batch; ensure_week_materialized left alone — its writes are read by the fetch). | run 008: **18/19, worst 58.4**. Board-wide −3..−12 ms from (b): agenda 48.7→36.7, inicio 32.1, vender 22, login 7.9, static pages 5–6. asistencia 55.9→49.6 PASS-with-zero-margin. clientes 61.5→58.4 = the only FAIL (SSR/flight of 500 rows — the held lever, now being attacked UX-identically via windowed initial SSR). Tests 973 green. Profiling insight of record: admin/clientes ≈26–35 ms is SSR+flight of 500 rows; every authed route paid ~16–20 ms proxy floor (target of (b)). | ✔ |
+| 5 | Wave 5: (a) clientes roster **windowed initial SSR** (`ROSTER_WINDOW=50` + rAF reveal-all after mount; search/sort stay over the full 500 from first keystroke; Playwright-verified 50 SSR anchors → 500 post-hydration, off-window search instant). Raw HTML 1.2 MB→315 KB, gzip 47→27.5 KB. (b) asistencia **presence contract**: `marcadas_presencia` count-RPC (migration 20260714100000) for strip/calendar dots + ids only for today initially; `getMarcadasDelDia` action per selected day; loaded-day ids authoritative over presence count (toggle-safe). Initial marcadas jsonb 107.6 KB→2.9 KB (−97%). | run 009: **19/19 first time, worst 46.6** (clientes 58.4→27.3). Run 010 (no-change confirm): asistencia flipped back to **50.6 FAIL** on board-wide +2–7 ms drift — borderline rule vindicated, margin was luck. Tests 978 green. | ✔ |
+| 6 | Wave 6: asistencia pase roster gets the same windowed initial SSR (50 rows + reveal; toggle/optimistic/day-select untouched; Playwright-verified). Doc raw 1 MB→268 KB, gzip 45.4→26.4 KB. Local DB re-seeded before measuring (agents' drive-toggles perturbed rows). | run 011: **19/19, worst 39.0** — asistencia 50.6→23.3 (−27). run 012 (no-change confirm): **19/19 again, worst 43.4**, asistencia 26.6. **GOAL MET, stable across two runs.** | ✔ |
+| — | Pre-merge DB contract: scratch project synced via Management API only (no link/push; live ref hard-excluded) — 6 missing migrations applied (recibo drop-default + 5 perf), ledger created/backfilled 83/83. | `pnpm test:denial` vs scratch: **36/36 suites green** (covers the RLS-rewrite migration). | ✔ |
+| — | **Profiling (run 005 state, asistencia residual)**: RLS-on EXPLAIN ANALYZE proves `asistencias_staff_select` is a correlated SubPlan, `is_staff_of` × loops=5000 → 38.2 ms vs 3.4 ms RLS-off (ADR-0013's O(1) claim false, as memory says). RPC wall over PostgREST 75–88 ms: ~35 ms RLS + ~45 ms HTTP/JSON-encode of the **123 KB** jsonb (PostgREST does NOT gzip RPC responses). `getOperatorGym` fires twice per page (cache() keyed on client-arg identity; page passes no arg, DAL passes client). clientes select RLS delta +4.4 ms @ 500 rows, same mechanism. | Levers ranked: (1) RLS uncorrelated rewrite ≈ −35 ms asistencia + −4 ms per 500-row page; (2) getOperatorGym dedupe ≈ −9–18 ms; (3) 123 KB payload — windowing = contract change, hold for wave 4 if needed. | — |
