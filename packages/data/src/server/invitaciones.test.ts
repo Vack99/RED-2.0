@@ -113,6 +113,9 @@ describe("enviarInvitacion — send orchestration (injected fake + transport dou
     // The invitation now lands on the activation door (PRD #130), not the old /registro form.
     expect(sent[0].html).toContain("https://app.forge.mx/activar?codigo=ABC23456");
     expect(sent[0].text).toContain("https://app.forge.mx/activar?codigo=ABC23456");
+    // The email rides the link as a URL-encoded DISPLAY param so the door can pre-fill it (PRD #130).
+    expect(sent[0].html).toContain("&correo=socio%40correo.mx");
+    expect(sent[0].text).toContain("&correo=socio%40correo.mx");
     expect(sent[0].html).toContain("Forge");
     // The one-email-promise line was cut on owner request (2026-07-15) — the button + link say it all.
     expect(sent[0].html).not.toContain("el único correo que necesitas");

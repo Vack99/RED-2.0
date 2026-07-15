@@ -34,11 +34,14 @@ const HELP = "mt-1.5 text-[10.5px] text-muted";
 export function ActivarForm({
   codigo,
   invitacion,
+  correo,
 }: {
   /** The valid invite code to thread through activation; null = no valid code. */
   readonly codigo?: string | null;
   /** The resolved invite identity for the banner; null = no invite. */
   readonly invitacion?: { readonly gym: string; readonly nombre: string } | null;
+  /** Pre-filled email from the invite link (PRD #130); null = typed-input mode (old emails, shield redirects). */
+  readonly correo?: string | null;
 }) {
   const [state, dispatch, pending] = useActionState(activarAction, INICIAL);
 
@@ -55,9 +58,12 @@ export function ActivarForm({
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    const ce = validarCorreo(email);
-    setErrCorreo(ce);
-    if (ce) return;
+    // Pre-filled email rides a hidden input, so client validation only applies to the typed field.
+    if (!correo) {
+      const ce = validarCorreo(email);
+      setErrCorreo(ce);
+      if (ce) return;
+    }
     // Build from the form so Turnstile's injected `cf-turnstile-response` rides along.
     const fd = new FormData(e.currentTarget);
     startTransition(() => dispatch(fd));
@@ -149,28 +155,39 @@ export function ActivarForm({
           </div>
         )}
 
-        <div className="group">
-          <label className={LABEL} style={errCorreo ? { color: "var(--red)" } : undefined}>
-            Correo con el que te registró tu gimnasio
-          </label>
-          <input
-            name="email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={() => setErrCorreo(validarCorreo(email))}
-            placeholder="tu@correo.com"
-            className={INPUT}
-            style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
-          />
-          {errCorreo ? (
-            <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
-          ) : (
-            <p className={HELP}>Debe coincidir con el que registró tu gimnasio.</p>
-          )}
-        </div>
+        {correo ? (
+          <div>
+            <p className={LABEL}>Tu correo:</p>
+            <p className="mt-1 border-b py-3 text-[15px] text-fg" style={{ borderColor: "var(--line-soft)" }}>
+              {correo}
+            </p>
+            <input type="hidden" name="email" value={correo} />
+            <p className={HELP}>¿No es tu correo? Contacta a tu gimnasio.</p>
+          </div>
+        ) : (
+          <div className="group">
+            <label className={LABEL} style={errCorreo ? { color: "var(--red)" } : undefined}>
+              Correo con el que te registró tu gimnasio
+            </label>
+            <input
+              name="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setErrCorreo(validarCorreo(email))}
+              placeholder="tu@correo.com"
+              className={INPUT}
+              style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
+            />
+            {errCorreo ? (
+              <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
+            ) : (
+              <p className={HELP}>Debe coincidir con el que registró tu gimnasio.</p>
+            )}
+          </div>
+        )}
 
         <div
           className="cf-turnstile"

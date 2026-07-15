@@ -26,11 +26,15 @@ import { ActivarForm } from "./_components/activar-form";
 export default async function ActivarPage({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ codigo?: string }>;
+  readonly searchParams: Promise<{ codigo?: string; correo?: string }>;
 }) {
   const hostGym = (await headers()).get("x-gym");
 
-  const codigo = parseCodigoInvitacion((await searchParams).codigo);
+  const sp = await searchParams;
+  const codigo = parseCodigoInvitacion(sp.codigo);
+  // Pre-filled email rides the invite URL as a DISPLAY param (PRD #130, owner 2026-07-15). Empty/absent
+  // falls back to the typed-input mode; enforcement stays server-side (the edge fn matches what's submitted).
+  const correo = sp.correo?.trim().toLowerCase() || null;
   const info = codigo ? await invitacionInfo(codigo).catch(() => null) : null;
 
   // Cross-tenant shield (mirrors /registro): the code→row→gym chain (info.gym_slug) is
@@ -62,7 +66,7 @@ export default async function ActivarPage({
 
   const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
-  const form = <ActivarForm codigo={invitacion ? codigo : null} invitacion={invitacion} />;
+  const form = <ActivarForm codigo={invitacion ? codigo : null} invitacion={invitacion} correo={correo} />;
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>{form}</LoginHero>
