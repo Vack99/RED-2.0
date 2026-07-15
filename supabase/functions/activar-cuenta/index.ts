@@ -56,6 +56,13 @@ Deno.serve(async (req: Request) => {
     return responder(401, JSON.stringify({ error: "firma_invalida" }));
   }
 
+  if (tenantKey === "") {
+    // Web Crypto rejects an empty HMAC key, so without this guard a missing secret
+    // surfaces as an opaque 500 from the runtime. Name the misconfig instead.
+    console.error("activar-cuenta: TENANT_ASSERTION_KEY ausente");
+    return responder(500, JSON.stringify({ error: "error_interno" }));
+  }
+
   const admin = createClient(supabaseUrl, serviceRoleKey);
 
   // Verify the firma BEFORE touching the DB — a forged request costs no query and never
