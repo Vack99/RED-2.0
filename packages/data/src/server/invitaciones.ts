@@ -80,14 +80,16 @@ export function resendTransport(): MailTransport {
 }
 
 /**
- * The gym→client invite URL rule (the single home S6's re-send reuses). Primary: the gym's OWN client host
- * from the domain map — `https://{gym_domain app='client'}/registro?codigo=X`. Unmapped gym (no client row):
- * the platform default host + `?gym={slug}` so every gym's funnel works from day one — `https://{PLATFORM_
- * CLIENT_FALLBACK_HOST}/registro?gym={slug}&codigo=X`. No host and no fallback env → `null` (the caller
- * reports a clean failure; nothing is sent). `client` is injectable for tests (ADR-0001).
+ * The gym→client invite URL rule (the single home for the gym→client-host mapping). `ruta` is the door the
+ * link lands on — `/activar` for the invitation email (PRD #130) and both cross-tenant shields' canonical
+ * redirect, `/registro` for the self-registration shield. Primary: the gym's OWN client host from the domain
+ * map — `https://{gym_domain app='client'}{ruta}?codigo=X`. Unmapped gym (no client row): the platform
+ * default host + `?gym={slug}` so every gym's funnel works from day one — `https://{PLATFORM_CLIENT_
+ * FALLBACK_HOST}{ruta}?gym={slug}&codigo=X`. No host and no fallback env → `null` (the caller reports a
+ * clean failure; nothing is sent). `client` is injectable for tests (ADR-0001).
  */
 export async function construirUrlInvitacion(
-  { gymId, gymSlug, codigo }: { gymId: string; gymSlug: string; codigo: string },
+  { gymId, gymSlug, codigo, ruta }: { gymId: string; gymSlug: string; codigo: string; ruta: "/activar" | "/registro" },
   client: SupabaseServer,
 ): Promise<string | null> {
   // A gym may map several client hosts (dev mirror + live); order by created_at so the choice is
@@ -106,12 +108,12 @@ export async function construirUrlInvitacion(
     .maybeSingle();
 
   if (data?.hostname) {
-    return `https://${data.hostname}/registro?codigo=${codigo}`;
+    return `https://${data.hostname}${ruta}?codigo=${codigo}`;
   }
 
   const fallback = process.env.PLATFORM_CLIENT_FALLBACK_HOST;
   if (!fallback) return null;
-  return `https://${fallback}/registro?gym=${gymSlug}&codigo=${codigo}`;
+  return `https://${fallback}${ruta}?gym=${gymSlug}&codigo=${codigo}`;
 }
 
 /** es-MX, platform-voiced invite copy. The gym's NAME (never a per-gym sender) rides the subject + body
@@ -133,6 +135,7 @@ export function mensajeInvitacion({
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;background:#ffffff">
   <p style="font-size:16px;margin:0 0 16px">Hola ${saludo}:</p>
   <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Tu gimnasio <strong>${gymNombre}</strong> te invita a activar tu cuenta en su app, donde puedes reservar tus clases y ver tu paquete.</p>
+  <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Este es el único correo que necesitas: abre el enlace, confirma el correo con el que tu gimnasio te registró, elige una contraseña y quedas dentro.</p>
   <p style="margin:0 0 24px">
     <a href="${url}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:14px 28px;font-weight:700;letter-spacing:0.4px;font-size:14px">ACTIVAR MI CUENTA</a>
   </p>
@@ -143,6 +146,8 @@ export function mensajeInvitacion({
   const text = `Hola ${saludo}:
 
 Tu gimnasio ${gymNombre} te invita a activar tu cuenta en su app, donde puedes reservar tus clases y ver tu paquete.
+
+Este es el único correo que necesitas: abre el enlace, confirma el correo con el que tu gimnasio te registró, elige una contraseña y quedas dentro.
 
 Activa tu cuenta aquí:
 ${url}
@@ -197,7 +202,10 @@ export async function enviarInvitacion(
     const { codigo, email, nombre, gym_slug, gym_nombre, gym_id } = data;
     if (!email) return { ok: false, motivo: "sin-email" };
 
-    const url = await construirUrlInvitacion({ gymId: gym_id, gymSlug: gym_slug, codigo }, supabase);
+    const url = await construirUrlInvitacion(
+      { gymId: gym_id, gymSlug: gym_slug, codigo, ruta: "/activar" },
+      supabase,
+    );
     if (!url) return { ok: false, motivo: "sin-host" };
 
     const mensaje = mensajeInvitacion({ nombre, gymNombre: gym_nombre, email, url });

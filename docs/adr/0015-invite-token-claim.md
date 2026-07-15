@@ -1,6 +1,6 @@
 # ADR-0015 — Invite-token claim: a deterministic join between the two member doors
 
-**Status:** Accepted · **Date:** 2026-07-08 · **Amends:** [ADR-0009](0009-identity-two-tier-auth-member-claim.md) (claim-by-verified-email becomes the fallback rail) · **Builds on:** [ADR-0014](0014-custom-smtp-platform-sender.md) (Resend, one platform sender) · **Design:** `docs/superpowers/specs/2026-07-08-member-registration-invite-token-design.md` · **Evidence:** the 2026-07-08 gap audit (19 confirmed gaps, one root defect)
+**Status:** Accepted · **Date:** 2026-07-08 · **Amended:** 2026-07-15 (invitation link lands on the activation door `/activar`; claim-code semantics unchanged; see Amendments below) · **Amends:** [ADR-0009](0009-identity-two-tier-auth-member-claim.md) (claim-by-verified-email becomes the fallback rail) · **Builds on:** [ADR-0014](0014-custom-smtp-platform-sender.md) (Resend, one platform sender) · **Design:** `docs/superpowers/specs/2026-07-08-member-registration-invite-token-design.md` · **Evidence:** the 2026-07-08 gap audit (19 confirmed gaps, one root defect)
 
 ## Context
 
@@ -27,3 +27,13 @@ Two doors create a member: the staff sale (`registrar_venta`) and self-registrat
 - The claim code is a bearer credential for a member's balance: it must never be readable by `anon` or members (staff policies only; the pre-signup page sees `{gym, nombre}` via a dedicated SECURITY DEFINER lookup), and holding a code reveals a first name + gym — accepted.
 - Multi-gym membership becomes reachable (an invited member may already belong to another gym), so member-side gym resolution must reconcile against the host tenant instead of `limit(1)` — in scope with this ADR.
 - Resend is now load-bearing twice (auth SMTP + product invites); its quota/abuse posture is a shared blast radius (ADR-0014 consequence, now wider).
+
+## Amendment — 2026-07-15 (the invitation link lands on the activation door)
+
+Locked in [PRD #130](https://github.com/Vack99/RED-2.0/issues/130); architecture in [#126](https://github.com/Vack99/RED-2.0/issues/126). See also [ADR-0009](0009-identity-two-tier-auth-member-claim.md)'s 2026-07-15 amendment (the invited-member door this destination serves).
+
+- **The invitation link now targets the activation door (`/activar`), not the self-registration form (`/registro`).** Same host-mapped-per-gym URL rule and `?gym=` fallback host; only the path changes. Old `/registro?codigo=` links still resolve — no sunset in this effort.
+- **Claim-code semantics are unchanged.** `clientes.claim_code` stays 8-char crypto-random, globally unique, **no expiry, single-use (cleared on claim)**. The code still resolves the row, the row resolves the gym; the emailed link carries only the durable code. The claim itself runs *after* the member sets a password, so an abandoned activation leaves the code intact and the link re-usable (ADR-0009 2026-07-15).
+- **Typed-email match + Turnstile gate the activation.** The member must re-type the email the gym registered (case-insensitive match against the roster row) and pass the bot check before the account is provisioned — a leaked or guessed code cannot be exploited mechanically.
+- **The auth token is minted *and consumed* server-side at click time — it never rides the email.** A new edge function verifies an HMAC `firma`, provisions the account if absent, mints a recovery-type action link and returns its hash; the client-app server action consumes it immediately to establish the session. Because no expiring OTP travels in the mail, the ~1-hour link window and mail-scanner prefetch are structurally irrelevant, and the emailed link is as durable as the claim code already is. The server-consumed token is minted **only** for an account the activation itself provisions; an email that already has an account gets `cuenta_existente` and is routed to the recovery rail for inbox proof, which claims this gym's membership by code on the verified session (ADR-0009 2026-07-15).
+- **The no-service_role-import property is preserved by placement.** The admin-API capability (provision + link-mint) lives only in the edge function's environment; the apps hold no service-role key (owner ruling 2026-07-13, ADR-0009 2026-07-15).

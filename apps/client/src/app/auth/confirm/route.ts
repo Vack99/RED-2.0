@@ -36,25 +36,26 @@ async function finalizarAuth(
   codigo: string | null,
   next: string | null,
 ): Promise<NextResponse> {
-  if (next) {
-    return NextResponse.redirect(new URL(next, request.url));
-  }
   try {
     if (codigo) {
-      // Invite-token claim: bind the login to the code's exact paid row + gym.
+      // Invite-token claim: bind the login to the code's exact paid row + gym. Runs even
+      // when `next` is set — the existing-account activation rail sends a recovery link
+      // carrying BOTH `codigo` and `next=/restablecer`, and the membership must link on
+      // this verified session before the member is handed to set-password.
       await reclamarPorCodigo(codigo, supabase);
-    } else {
-      // Fallback: claim (or create) the cliente by verified email in the host gym.
+    } else if (!next) {
+      // Fallback: claim (or create) the cliente by verified email in the host gym. Never
+      // on a bare `next` recovery (a plain password reset must not claim a membership).
       const tenant = await resolveTenant(request.headers.get("host"), null);
       if (tenant) {
         await reclamarCliente(tenant.id, supabase);
       }
     }
   } catch {
-    // A failed claim must not strand a verified account — land on the panel;
+    // A failed claim must not strand a verified account — land on the destination;
     // the member can retry / an operator reconciles. The RPCs are idempotent.
   }
-  return NextResponse.redirect(new URL("/reservar", request.url));
+  return NextResponse.redirect(new URL(next ?? "/reservar", request.url));
 }
 
 export async function GET(request: NextRequest) {

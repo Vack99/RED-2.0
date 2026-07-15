@@ -53,7 +53,7 @@ export default async function RegistroPage({
     const destino = await resolveTenant(null, info.gym_slug); // code slug → its gym id
     if (destino) {
       const url = await construirUrlInvitacion(
-        { gymId: destino.id, gymSlug: info.gym_slug, codigo },
+        { gymId: destino.id, gymSlug: info.gym_slug, codigo, ruta: "/registro" },
         await createClient(),
       );
       // Absolute cross-host URL — `as Route` is Next's sanctioned marker for an intentional
