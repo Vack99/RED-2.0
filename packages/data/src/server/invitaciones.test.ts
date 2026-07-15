@@ -110,9 +110,13 @@ describe("enviarInvitacion — send orchestration (injected fake + transport dou
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe("socio@correo.mx");
     expect(sent[0].subject).toBe("Tu gimnasio Forge te invita a su app");
-    expect(sent[0].html).toContain("https://app.forge.mx/registro?codigo=ABC23456");
-    expect(sent[0].text).toContain("https://app.forge.mx/registro?codigo=ABC23456");
+    // The invitation now lands on the activation door (PRD #130), not the old /registro form.
+    expect(sent[0].html).toContain("https://app.forge.mx/activar?codigo=ABC23456");
+    expect(sent[0].text).toContain("https://app.forge.mx/activar?codigo=ABC23456");
     expect(sent[0].html).toContain("Forge");
+    // Copy states the one-email promise: confirm your registered email, set a password, you're in.
+    expect(sent[0].html).toContain("el único correo que necesitas");
+    expect(sent[0].text).toContain("el único correo que necesitas");
     // Stamped exactly once, on success.
     expect(stampCalls(fake)).toEqual([{ name: "marcar_invitacion_enviada", args: { p_cliente_id: "cli-1" } }]);
   });
@@ -211,20 +215,29 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
   it("mapped gym → the gym's own client host (?codigo only)", async () => {
     const fake = makeFake({ domainHost: "red.example.mx" });
     const url = await construirUrlInvitacion(
-      { gymId: "gym-1", gymSlug: "red", codigo: "ZZZ23456" },
+      { gymId: "gym-1", gymSlug: "red", codigo: "ZZZ23456", ruta: "/activar" },
       fake.client,
     );
-    expect(url).toBe("https://red.example.mx/registro?codigo=ZZZ23456");
+    expect(url).toBe("https://red.example.mx/activar?codigo=ZZZ23456");
   });
 
   it("unmapped gym → the platform fallback host + ?gym= slug", async () => {
     process.env.PLATFORM_CLIENT_FALLBACK_HOST = "app.plataforma.mx";
     const fake = makeFake({ domainHost: null });
     const url = await construirUrlInvitacion(
-      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456" },
+      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456", ruta: "/activar" },
       fake.client,
     );
-    expect(url).toBe("https://app.plataforma.mx/registro?gym=red-demo&codigo=ZZZ23456");
+    expect(url).toBe("https://app.plataforma.mx/activar?gym=red-demo&codigo=ZZZ23456");
+  });
+
+  it("ruta chooses the door: /registro for the self-registration shield", async () => {
+    const fake = makeFake({ domainHost: "red.example.mx" });
+    const url = await construirUrlInvitacion(
+      { gymId: "gym-1", gymSlug: "red", codigo: "ZZZ23456", ruta: "/registro" },
+      fake.client,
+    );
+    expect(url).toBe("https://red.example.mx/registro?codigo=ZZZ23456");
   });
 
   it("dev `.localhost` rows are never invite targets, even when older than the public host (live regression 2026-07-09)", async () => {
@@ -245,17 +258,17 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     };
     const client = { from: () => b } as unknown as SupabaseServer;
     const url = await construirUrlInvitacion(
-      { gymId: "gym-9", gymSlug: "red-demo", codigo: "NV9HD6IB" },
+      { gymId: "gym-9", gymSlug: "red-demo", codigo: "NV9HD6IB", ruta: "/activar" },
       client,
     );
-    expect(url).toBe("https://red-demo.ibookit.lat/registro?codigo=NV9HD6IB");
+    expect(url).toBe("https://red-demo.ibookit.lat/activar?codigo=NV9HD6IB");
   });
 
   it("no client host and no fallback env → null (caller reports a clean failure)", async () => {
     delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
     const fake = makeFake({ domainHost: null });
     const url = await construirUrlInvitacion(
-      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456" },
+      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456", ruta: "/activar" },
       fake.client,
     );
     expect(url).toBeNull();
@@ -293,7 +306,7 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
         },
         // Mirrors PostgREST `.not(col, "like", pattern)` for the one pattern the DAL uses
         // (`%localhost`): keep rows whose col does NOT end with "localhost".
-        not: (col: string, _op: string, _pattern: string) => {
+        not: (col: string) => {
           filtered = filtered.filter((r) => !String(r[col]).endsWith("localhost"));
           return b;
         },
@@ -318,7 +331,7 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     // The page turns invitacion_info's gym_slug into the gym id, then builds the canonical URL.
     const destino = await resolveTenant(null, "red", db());
     const url = await construirUrlInvitacion(
-      { gymId: destino!.id, gymSlug: "red", codigo: "CODE2345" },
+      { gymId: destino!.id, gymSlug: "red", codigo: "CODE2345", ruta: "/registro" },
       db(),
     );
     expect(url).toBe("https://red.mx/registro?codigo=CODE2345");
@@ -335,7 +348,7 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     const db = () => fakeDb([{ id: "g-demo", slug: "red-demo", brand_module_id: "red" }], []);
     const destino = await resolveTenant(null, "red-demo", db());
     const url = await construirUrlInvitacion(
-      { gymId: destino!.id, gymSlug: "red-demo", codigo: "CODE2345" },
+      { gymId: destino!.id, gymSlug: "red-demo", codigo: "CODE2345", ruta: "/registro" },
       db(),
     );
     expect(url).toBe("https://app.plataforma.mx/registro?gym=red-demo&codigo=CODE2345");

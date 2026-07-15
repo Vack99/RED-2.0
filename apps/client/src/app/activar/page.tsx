@@ -35,18 +35,17 @@ export default async function ActivarPage({
 
   // Cross-tenant shield (mirrors /registro): the code→row→gym chain (info.gym_slug) is
   // the authority; a mismatch — including no tenant on an unmapped host — hard-redirects
-  // to the code's canonical client URL. construirUrlInvitacion is the single home of the
-  // gym→client-host rule (adds the ?gym= fallback for unmapped gyms); it builds a
-  // `/registro` URL, so we retarget the path to this activation door. One hop, no cycle:
-  // on reload hostGym === info.gym_slug and this guard is false.
+  // to the code's canonical activation URL. construirUrlInvitacion is the single home of the
+  // gym→client-host rule (adds the ?gym= fallback for unmapped gyms); `ruta` lands it on this
+  // activation door. One hop, no cycle: on reload hostGym === info.gym_slug and this guard is false.
   if (codigo && info && hostGym !== info.gym_slug) {
     const destino = await resolveTenant(null, info.gym_slug);
     if (destino) {
       const url = await construirUrlInvitacion(
-        { gymId: destino.id, gymSlug: info.gym_slug, codigo },
+        { gymId: destino.id, gymSlug: info.gym_slug, codigo, ruta: "/activar" },
         await createClient(),
       );
-      if (url) redirect(url.replace("/registro?", "/activar?") as Route);
+      if (url) redirect(url as Route);
     }
   }
 
