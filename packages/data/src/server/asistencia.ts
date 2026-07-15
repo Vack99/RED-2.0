@@ -10,13 +10,14 @@ import { requireOperator } from "./_auth";
 import { getOperatorGym } from "./gym";
 
 /**
- * The attendance screen's day strip reaches this many days back from today (its
- * `DAYS_BACK`), each rendering a "has-marks" dot — so the INITIAL window must cover
+ * The attendance screen's day strip reaches this many days back from today (its own
+ * `DIAS_TIRA_INICIAL`), each rendering a "has-marks" dot — so the INITIAL window must cover
  * at least this range or those dots regress to blank. The strip is a "use client"
  * module and cannot import from this `server-only` file, so the value is duplicated
- * there with a cross-reference; the two MUST stay equal (an off-by-one here drops
- * marks off the far end of the strip). This is the same deliberate, commented
- * duplication as @gym/format's difDias across the format/domain boundary.
+ * there under the SAME name; the two MUST stay equal (an off-by-one here drops
+ * marks off the far end of the strip) and asistencia-lockstep.test.ts guards it. This is
+ * the same deliberate, commented duplication as @gym/format's difDias across the
+ * format/domain boundary.
  */
 export const DIAS_TIRA_INICIAL = 104;
 
@@ -82,7 +83,7 @@ async function marcadasEnVentana(
 }
 
 /**
- * The attendance screen's initial payload (perf wave 5). Split by purpose:
+ * The attendance screen's initial payload. Split by purpose:
  *
  * - `presencia` — per-day COUNTS across the whole initial window, for the strip/calendar
  *   dots. ~2 KB on the seed, versus the ~105 KB the id arrays for the same window cost.
@@ -102,12 +103,12 @@ export interface MarcadasInicial {
  * The attendance screen's initial load: presence dots for the whole window + today's ids.
  * Keyed by absolute gym-local date (ADR-0003).
  *
- * WINDOWED (perf wave 4): the presence window runs from the first of the month containing
+ * WINDOWED: the presence window runs from the first of the month containing
  * today − DIAS_TIRA_INICIAL through the first of next month — sized to cover the day strip's
  * full reach so every strip dot renders on first paint. Older months the calendar browses to
  * are lazy-fetched by `getMarcadasDeMes` (presence) and merged into client state.
  *
- * TWO RPCs, run CONCURRENTLY (perf wave 5): presence counts over the window + the id map for
+ * TWO RPCs, run CONCURRENTLY: presence counts over the window + the id map for
  * TODAY's 1-day window. They overlap, so wall-clock ≈ one round trip, while the payload drops
  * from ~105 KB of id arrays to ~2 KB of counts plus today's ~1 KB of ids. `toggle_pase`
  * operates on today, whose ids are therefore always in the initial payload.

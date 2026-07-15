@@ -6,6 +6,7 @@ import { Icon } from "@gym/ui/forge/icon";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
 import { Avatar, Card, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
+import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
 import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
@@ -15,18 +16,12 @@ import { marcadasDelDiaAction, marcadasDeMesAction, togglePaseAction } from "../
 import { setMarcada, type Marcadas } from "./marcadas";
 
 // The day strip reaches this many days back from today, each rendering a has-marks dot.
-// getMarcadas' INITIAL window (in @gym/data's asistencia.ts, DIAS_TIRA_INICIAL) is sized to
-// cover exactly this reach, so every strip dot renders on first paint. This is a
-// "use client" file and cannot import that `server-only` constant — the two are duplicated
-// deliberately and MUST stay equal (an off-by-one drops marks off the far end of the strip).
-const DAYS_BACK = 104;
-
-/** Rows painted in the initial SSR/first-hydration pass before the mount effect
- *  reveals the rest. Sized to overfill the tallest plausible viewport at this
- *  layout's ~68px row height (avatar 40 + 12/12 padding), so the reveal only ever
- *  extends the list below the fold — never a visible shift. Mirrors clientes.tsx's
- *  ROSTER_WINDOW. */
-const ROSTER_WINDOW = 50;
+// getMarcadas' INITIAL window (in @gym/data's asistencia.ts) is sized to cover exactly this
+// reach, so every strip dot renders on first paint. This is a "use client" file and cannot
+// import that `server-only` constant, so the value is duplicated here under the SAME name and
+// MUST stay equal to it (an off-by-one drops marks off the far end of the strip). The lockstep
+// is guarded by asistencia-lockstep.test.ts, which fails if either side changes alone.
+export const DIAS_TIRA_INICIAL = 104;
 
 /** "YYYY-MM" key for a Date's calendar month — the lazy-load bookkeeping unit. */
 function monthKey(d: Date): string {
@@ -44,7 +39,7 @@ export function AsistenciaScreen({
 }) {
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
 
-  // Two maps, split by purpose (perf wave 5):
+  // Two maps, split by purpose:
   //  • `presencia` — per-day COUNTS across the window, driving the strip/calendar dots.
   //    Grows as the calendar browses past months (getMarcadasDeMes).
   //  • `idsPorDia` — the ids of clientes marked, per LOADED day, driving the selected-day
@@ -67,14 +62,16 @@ export function AsistenciaScreen({
   // A day's dot/count reads its LOADED ids' length when known (so an optimistic toggle
   // moves the dot instantly), and falls back to the presence count otherwise. This is the
   // count↔ids reconciliation: for a loaded day the ids are authoritative; for an unloaded
-  // day the RPC's presence count stands in. Stable identity (no deps) so DayStrip's props
-  // don't churn every render.
+  // day the RPC's presence count stands in. Memoized on [idsPorDia, presencia]: its identity
+  // changes only when those maps do (a toggle, or a month/day merge), so unrelated commits hand
+  // DayStrip the same callback. DayStrip is NOT memoized, so it re-renders with the parent
+  // regardless — the useCallback just avoids a gratuitously fresh function on those commits.
   const countFor = React.useCallback(
     (iso: string): number => idsPorDia[iso]?.length ?? presencia[iso] ?? 0,
     [idsPorDia, presencia],
   );
 
-  // Lazy-load past months' presence dots (perf wave 4/5). The server ships only the INITIAL
+  // Lazy-load past months' presence dots. The server ships only the INITIAL
   // window; older months the calendar can browse to are fetched on demand and merged in.
   // Refs, not state — they gate refetching without themselves driving a render (dots
   // re-render off `presencia` when a fetch merges). `loadedMonths` is seeded with the window
@@ -83,7 +80,7 @@ export function AsistenciaScreen({
   if (loadedMonths.current === null) {
     const s = new Set<string>();
     let cur = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-    const first = addDays(hoy, -DAYS_BACK);
+    const first = addDays(hoy, -DIAS_TIRA_INICIAL);
     const floor = new Date(first.getFullYear(), first.getMonth(), 1);
     while (cur >= floor) {
       s.add(monthKey(cur));
@@ -147,23 +144,12 @@ export function AsistenciaScreen({
     c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
   );
 
-  // Windowed initial paint (mirrors clientes.tsx's ROSTER_WINDOW). The server (and the
-  // matching first hydration render) emit only the first ROSTER_WINDOW rows — enough to
-  // overfill the tallest plausible viewport at this ~68px row height — then a mount effect
-  // reveals the full list. This halves the initial HTML/SSR cost of a 500-row roster with no
-  // data change (every row is already in `clientes` props) and no visible shift: the window
-  // already exceeds one screen, so the remaining rows grow in below the fold. Search still runs
+  // Windowed initial paint (useRevealedWindow): the server + first hydration paint only the
+  // opening window, then a mount effect reveals the full list below the fold. Search still runs
   // over the FULL dataset from the first keystroke (that is `filtered` above); only how many of
   // `filtered` we paint is gated, and `filtered.length` (used for the empty-state check and the
   // header counts) stays exact.
-  const [revealAll, setRevealAll] = React.useState(false);
-  React.useEffect(() => {
-    // Reveal on the frame after the first paint, so the initial paint stays the window. rAF
-    // (not a bare setState in the effect body) also keeps this off the synchronous commit path.
-    const id = requestAnimationFrame(() => setRevealAll(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
-  const visible = revealAll ? filtered : filtered.slice(0, ROSTER_WINDOW);
+  const { visible } = useRevealedWindow(filtered);
 
   // Ids whose toggle is mid-flight, keyed by `${iso}:${id}`. A second tap on the
   // same row before the server answers is ignored, so the already-applied
@@ -365,9 +351,9 @@ function DayStrip({
   const endDrag = () => (drag.current.on = false);
 
   const items: React.ReactNode[] = [];
-  for (let off = -DAYS_BACK; off <= 0; off++) {
+  for (let off = -DIAS_TIRA_INICIAL; off <= 0; off++) {
     const d = addDays(hoy, off);
-    if (off === -DAYS_BACK || d.getDate() === 1) {
+    if (off === -DIAS_TIRA_INICIAL || d.getDate() === 1) {
       items.push(
         <div key={`m${off}`} className="flex shrink-0 flex-col items-center justify-center" style={{ width: 30 }}>
           <span style={{ fontSize: 9, fontWeight: 800, letterSpacing: 1, color: "var(--muted-soft)" }}>{MON[d.getMonth()]}</span>
@@ -506,7 +492,7 @@ function PaseCalendar({
   countFor: (iso: string) => number;
   selDate: Date;
   /** Notified with the first-of-month whenever the viewed month changes, so the parent
-   *  can lazy-load a past month's marks and its dots fill in (perf wave 4). */
+   *  can lazy-load a past month's marks and its dots fill in. */
   onViewMonth: (d: Date) => void;
   onPick: (d: Date) => void;
 }) {

@@ -26,6 +26,7 @@
     "./forge/toaster": "./src/forge/toaster.tsx",
     "./forge/ui": "./src/forge/ui.tsx",
     "./forge/use-flip": "./src/forge/use-flip.ts",
+    "./forge/use-revealed-window": "./src/forge/use-revealed-window.ts",
     "./forge/whatsapp-bubble": "./src/forge/whatsapp-bubble.tsx",
     "./motion": "./src/motion.ts",
     "./motion.css": "./src/motion.css",
