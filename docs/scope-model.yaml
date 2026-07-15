@@ -1,5 +1,6 @@
 # RED 2.0 scope model — schema: docs/superpowers/wayfinder/2026-07-14-T2-scope-model-schema.md
 # Assembled 2026-07-14 from the T1 (Foundation) / T3 (product-ahead) / T4 (business) wayfinder assets; map #105, spec #119.
+# Audited 2026-07-15 (business + eng-process personas); 18 gap quests added.
 # How to add work: add a new quest block carrying a `quest:*` label, or tag an existing issue with an existing quest label.
 # Frozen (shipped) quests enumerate their closed issues as ranges; active/future quests carry a per-quest label so new issues auto-join.
 # Foundation phase ranges own #1–#104 as the single bar source; earned-ahead quests in worlds 2–7 cite those issues as `evidence` (related, not a bar source).
@@ -133,6 +134,11 @@ worlds:
             evidence:
               - { type: issue, ref: 100, note: "repro harness in #100's closing comment" }
 
+          - id: privacy-lfpdppp
+            title: "LFPDPPP data-privacy posture — aviso de privacidad + ARCO"
+            what: "Mexico's data-protection law already applies to the live member PII (health-adjacent): privacy notice, consent, and ARCO rights — a present obligation, not a LatAm-future one; per-country privacy later rides country-sequencing"
+            status: needs-decision
+
       - name: "Meta / tooling efforts"
         quests:
           - id: scope-tracker
@@ -192,7 +198,7 @@ worlds:
             what: "Public site presenting RED to prospective gyms (features + pricing) that funnels them into signup"
             status: todo
             github: { label: quest:commercial-site }
-            depends_on: [gym-onboarding-model, positioning-messaging]
+            depends_on: [gym-onboarding-model, positioning-messaging, first-cohort-sales]
             caveats:
               - "No RED-the-platform public site exists today — verified in-repo: only apps/admin + apps/client. The client app's comercial/nosotros/precios/contacto pages are PER-GYM (branded per tenant), not RED-the-company's own site. This is greenfield."
 
@@ -208,7 +214,18 @@ worlds:
             what: "Gym-owner signup wizard: create the gym, brand it, seed program/paquetes, go live without an engineer"
             status: todo
             github: { label: quest:gym-onboarding }
-            depends_on: [gym-provisioning-automation, gym-onboarding-model]
+            depends_on: [gym-provisioning-automation, gym-onboarding-model, member-roster-import, first-cohort-sales]
+
+          - id: member-roster-import
+            title: "Member-roster import (spreadsheet / rival-system)"
+            what: "Bulk import of an existing gym's members from CSV/Excel/competitor exports into clientes + memberships — the activation precondition; no gym hand-keys 400 members"
+            status: todo
+            github: { label: quest:roster-import }
+
+          - id: gym-offboarding
+            title: "Decide the churned-gym offboarding policy (export + deletion)"
+            what: "What a departing gym gets (its data export) and what RED must delete (member-PII retention obligations) — the de-provisioning counterpart to the provisioning quests; ties to the privacy posture"
+            status: needs-decision
 
   # ============================================================
   # WORLD 3 — Monetization
@@ -248,7 +265,27 @@ worlds:
             title: "Counsel + pilot go/no-go for live payments"
             what: "Owner sign-off — legal counsel review and a pilot gym — before any real money moves through Stripe"
             status: needs-decision
-            depends_on: [payment-strategy]
+            depends_on: [payment-strategy, backup-dr-restore, security-hardening, privacy-lfpdppp]
+
+      - name: "Mexico commercial layer"
+        quests:
+          - id: mx-commercial-legal
+            title: "Decide RED's MX commercial/legal setup — entity, ToS, gym contract"
+            what: "The business entity, the SaaS terms of service, and the gym subscription contract, with counsel — the legal ability to sell, distinct from the member-payments go-gate"
+            status: needs-decision
+
+          - id: cfdi-invoicing
+            title: "CFDI 4.0 e-invoicing — lawfully bill Mexican gyms"
+            what: "Compliant factura issuance for the platform fee — mandatory to invoice a Mexican business, regardless of the Stripe mechanics"
+            status: todo
+            github: { label: quest:cfdi }
+            depends_on: [mx-commercial-legal]
+
+          - id: unit-economics
+            title: "Unit-economics instrumentation — MRR, CAC, LTV, payback"
+            what: "The business's own economics dashboard (cohorts, churn revenue, payback), distinct from marketing-surface analytics — feeds the ad-spend decision"
+            status: todo
+            github: { label: quest:unit-economics }
 
       - name: "Gyms pay RED (platform subscriptions)"
         quests:
@@ -257,7 +294,7 @@ worlds:
             what: "Recurring subscription per gym via Stripe Billing; subscription-lifecycle webhooks drive the gym's active/entitlement state"
             status: todo
             github: { label: quest:stripe-subs }
-            depends_on: [red-subscription-pricing, stripe-go-gate]
+            depends_on: [red-subscription-pricing, stripe-go-gate, cfdi-invoicing]
 
           - id: billing-dunning
             title: "Dunning & revenue recovery"
@@ -344,6 +381,44 @@ worlds:
             status: needs-decision
             caveats:
               - "perf-50ms worktree in-flight — harness + live baseline done, loop not yet run"
+
+      - name: "Production readiness (not built)"
+        quests:
+          - id: supabase-resilience-decision
+            title: "Decide the Supabase tier/resilience posture — backups, RTO/RPO, region, capacity"
+            what: "One decision owning the paid-tier line: PITR/backup guarantees, restore objectives, region/latency + connection strategy for LatAm; the shipped scale-proof covered the Vercel/domain axis, not the single shared Postgres"
+            status: needs-decision
+
+          - id: backup-dr-restore
+            title: "Backup/DR with a tested restore"
+            what: "Scripted DB backups plus a periodically rehearsed restore drill — the month-export workbook is business reporting, not recovery, and a bad live migration is currently unrecoverable"
+            status: todo
+            github: { label: quest:backup-dr }
+            depends_on: [supabase-resilience-decision]
+
+          - id: security-hardening
+            title: "Pre-charge security hardening — rate limits, rotation, supply chain, review"
+            what: "Rate-limiting the anon RPC surface beyond Turnstile, a secrets-rotation + dependency-update cadence, and a security review before money moves"
+            status: todo
+            github: { label: quest:security-hardening }
+
+          - id: incident-response
+            title: "Incident response — runbook, status page, outage comms"
+            what: "What happens when a paying gym's 6am check-in is down — a detection→response runbook plus the channel that tells gyms the outage is known"
+            status: todo
+            github: { label: quest:incident-response }
+            depends_on: [observability]
+
+          - id: ci-enforcement
+            title: "CI that runs the suites — machine-enforce test:denial"
+            what: "A CI service running lint/typecheck/vitest plus the scratch-project denial gate, replacing the skippable manual convention — the #78 class of bug ships when a human skips the run"
+            status: todo
+            github: { label: quest:ci-gate }
+
+          - id: release-policy
+            title: "Decide the release/breaking-change policy for the admin app"
+            what: "Versioning/changelog/rollback discipline once gym front desks depend on stability — today is push-to-main straight into their working day"
+            status: needs-decision
 
       - name: "Discoverability"
         quests:
@@ -437,6 +512,25 @@ worlds:
               - note: "per-brand demo twins are the current dev/sandbox model"
                 ref: { type: memory, ref: demo-gym-testing-model }
 
+      - name: "Proof & first revenue"
+        quests:
+          - id: forge-case-study
+            title: "Forge flagship case study — metrics, testimonial, reference"
+            what: "Turn the live paying gym into proof for closing gyms 2–10 — real numbers, the owner's voice, referenceability; the raw material exists but is weaponized nowhere"
+            status: todo
+            github: { label: quest:case-study }
+
+          - id: first-cohort-sales
+            title: "Hand-sell the first gym cohort (+ lightweight pipeline)"
+            what: "The founder personally closing the first ~10 Chihuahua gyms with a simple prospect pipeline — the do-things-that-don't-scale motion that produces first revenue and precedes every scale funnel"
+            status: todo
+            github: { label: quest:first-cohort }
+
+          - id: offer-structure
+            title: "Decide the offer — guarantee, risk-reversal, trial, referral loop"
+            what: "The conversion lever for a skeptical small gym (e.g. free-until-first-member-pays), plus the referral mechanics for a market where gym owners know each other — pricing is captured separately, the OFFER is not"
+            status: needs-decision
+
   # ============================================================
   # WORLD 6 — Customer & Support
   # ============================================================
@@ -481,6 +575,20 @@ worlds:
             what: "Response targets, escalation path, and who staffs support (solo dev today). Owner call on the operating model."
             status: needs-decision
 
+      - name: "Retention & churn (owner's LTV lever)"
+        quests:
+          - id: churn-health-instrumentation
+            title: "Gym health/churn signal — usage instrumentation + at-risk alerts"
+            what: "Per-gym engagement signals (sales logged, attendance, logins) and an 'about to leave' alert — the map only covers involuntary churn (dunning) today; voluntary churn has zero coverage"
+            status: todo
+            github: { label: quest:churn-signal }
+
+          - id: retention-playbook
+            title: "Decide the retention/customer-success playbook"
+            what: "The proactive save-motion — who intervenes, when, and with what — as distinct from reactive helpdesk support"
+            status: needs-decision
+            depends_on: [churn-health-instrumentation]
+
       - name: "Meta-agent — WhatsApp/IG client management"
         quests:
           - id: meta-agent-decision
@@ -512,12 +620,18 @@ worlds:
             what: "The launch order across LatAm markets. Root owner strategy call; almost every localization quest structurally blocks on it."
             status: needs-decision
 
+          - id: mexico-proven
+            title: "Mexico proven — retention + unit economics repeatable"
+            what: "The evidence gate the expansion actually rides on: churn contained, LTV/CAC known, acquisition repeatable in the home market — expansion exports a bucket only after it's shown to hold water"
+            status: todo
+            depends_on: [churn-health-instrumentation, retention-playbook, unit-economics, first-cohort-sales]
+
           - id: first-market-entry
             title: "First non-Mexico market go-live"
             what: "The beachhead: RED actually sold and live in its first market outside Mexico — the visible expansion frontier toward the destination."
             status: todo
             github: { label: quest:latam-launch }
-            depends_on: [country-sequencing, country-localization-program, local-payment-methods, i18n-language-strategy]
+            depends_on: [country-sequencing, country-localization-program, local-payment-methods, i18n-language-strategy, mexico-proven, supabase-resilience-decision]
 
       - name: "Per-country localization"
         quests:
