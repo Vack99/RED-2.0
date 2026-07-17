@@ -461,6 +461,7 @@ describe("derivarMembresia", () => {
     // vence in the past → forfeit to 0, exactly as derivarCliente/shapeFicha.
     const mem = derivarMembresia(mFacts({ clasesRestantes: 5, vence: "2026-05-20", attendedSincePurchase: 8 }), HOY);
     expect(mem.clasesRestLabel).toBe("0");
+    expect(mem.vencido).toBe(true);
     expect(mem.gauge!.fill).toBe(0);
     expect(mem.gauge!.usadas).toBe(8);
   });
@@ -471,9 +472,25 @@ describe("derivarMembresia", () => {
       HOY,
     );
     expect(mem.ilimitado).toBe(true);
+    expect(mem.vencido).toBe(false);
     expect(mem.clasesRestLabel).toBe("∞");
     expect(mem.gauge).toBeNull();
     expect(mem.cadenciaLabel).toBe("al mes");
+  });
+
+  it("expired ILIMITADO reads as vencido (#118 E3) — ∞ still lapses by date, unlike forfeit", () => {
+    const mem = derivarMembresia(
+      mFacts({ clasesRestantes: null, vence: "2026-05-20", anchorVigenciaTipo: "mes", anchorVigenciaDias: null }),
+      HOY, // HOY = 27 May 2026, so vence 20 May is past
+    );
+    expect(mem.ilimitado).toBe(true); // forfeit leaves ∞ untouched…
+    expect(mem.clasesRestLabel).toBe("∞");
+    expect(mem.vencido).toBe(true); // …but the date signal fires independently (the bug)
+  });
+
+  it("vence-day itself is NOT vencido (dias === 0 is a valid training day, ruling C9)", () => {
+    const mem = derivarMembresia(mFacts({ vence: HOY_ISO }), HOY); // vence === HOY
+    expect(mem.vencido).toBe(false);
   });
 
   it("no anchor sale → no bar, no price, no cadence (still shows plan + renovación)", () => {

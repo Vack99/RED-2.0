@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { derivarEstadosDia, disponibles, ratioOcupacion } from "@gym/domain/rules";
+import { derivarEstadosDia, diasRestantes, disponibles, ratioOcupacion } from "@gym/domain/rules";
 import type { EstadoSesion } from "@gym/domain/types";
 import {
   addDays,
@@ -96,6 +96,10 @@ export interface SaldoMiembroDTO {
   ilimitado: boolean;
   /** Classes left on a finite plan; null for ilimitado. Drives "usa 1 de tus N clases". */
   clasesRestantes: number | null;
+  /** Plan's vigencia has lapsed (`vence` before today, gym tz). Mirrors the reservar_clase
+   *  server gate, which raises "Paquete vencido" for finite AND ilimitado alike — so the CTA
+   *  must pre-empt the doomed button instead of dead-ending in the RPC (#118 E4). */
+  vencido: boolean;
 }
 
 interface SesionMiembroRaw {
@@ -257,6 +261,7 @@ async function fetchSesionesMiembro(
 
 interface ClienteRow {
   clases_restantes: number | null;
+  vence: string | null;
   created_at: string | null;
   notificaciones_activadas: boolean | null;
   favorite_class_type_id: string | null;
@@ -281,7 +286,7 @@ const fetchClienteRow = cache(async function fetchClienteRow(
 ): Promise<{ data: ClienteRow | null; error: { message: string } | null }> {
   const { data, error } = await supabase
     .from("clientes")
-    .select("clases_restantes, created_at, notificaciones_activadas, favorite_class_type_id")
+    .select("clases_restantes, vence, created_at, notificaciones_activadas, favorite_class_type_id")
     .eq("gym_id", gymId)
     .limit(1)
     .maybeSingle();
@@ -382,14 +387,18 @@ export const getSaldoMiembro = cache(
   ): Promise<SaldoMiembroDTO> => {
     const supabase = client ?? (await createClient());
     const miembro = await resolverMiembroGym(supabase, hostGymSlug);
-    if (!miembro) return { ilimitado: false, clasesRestantes: 0 };
+    if (!miembro) return { ilimitado: false, clasesRestantes: 0, vencido: false };
     // The balance is load-bearing, so this read PROPAGATES a transient error (a swallowed 0
     // would silently understate the member's classes) — unlike the best-effort perfil/favorita
     // reads that share the same `fetchClienteRow` row.
     const { data: cli, error } = await fetchClienteRow(supabase, miembro.id);
     if (error) throw error;
-    if (!cli) return { ilimitado: false, clasesRestantes: 0 };
-    return { ilimitado: cli.clases_restantes === null, clasesRestantes: cli.clases_restantes };
+    if (!cli) return { ilimitado: false, clasesRestantes: 0, vencido: false };
+    // Expiry mirrors the reservar_clase gate EXACTLY (`vence < hoy` → "Paquete vencido"): a lapsed
+    // vigencia blocks booking for finite AND ilimitado, so the CTA pre-empts the doomed button (#118
+    // E4). vence-day itself is a valid training day (dias === 0, ruling C9), so expiry is `dias < 0`.
+    const vencido = cli.vence ? diasRestantes(parseDay(cli.vence), hoyEnZona(miembro.tz)) < 0 : false;
+    return { ilimitado: cli.clases_restantes === null, clasesRestantes: cli.clases_restantes, vencido };
   },
 );
 

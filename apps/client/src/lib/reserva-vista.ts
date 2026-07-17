@@ -33,12 +33,20 @@ export function presentarEstadoReserva(
   estado: EstadoSesion,
   disponibles: number,
   miReserva = false,
+  vencido = false,
 ): EstadoReservaVista {
   if (estado === "termino") {
     return { tono: "finished", numero: "—", unidad: "terminada", cta: "Terminó", reservable: false, reservada: false, atenuada: true };
   }
   if (miReserva) {
     return { tono: "open", numero: String(disponibles), unidad: "reservada", cta: "Reservada", reservable: false, reservada: true, atenuada: false };
+  }
+  if (vencido) {
+    // Lapsed membership (#118 E4): the whole week reads locked, not a green "Reservar" the sheet
+    // only retracts one tap later. Reuses the dimmed "finished" tone — this session is not bookable
+    // by you; tapping still opens the sheet's "Tu paquete venció → Ver planes" renew path. After
+    // miReserva, so a class booked before lapsing keeps its "Reservada" chip.
+    return { tono: "finished", numero: "—", unidad: "vencido", cta: "Vencido", reservable: false, reservada: false, atenuada: true };
   }
   if (estado === "lleno") {
     return { tono: "full", numero: String(disponibles), unidad: "lleno", cta: "Lleno", reservable: false, reservada: false, atenuada: false };

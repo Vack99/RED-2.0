@@ -424,6 +424,10 @@ export interface MembresiaGauge {
 export interface MembresiaDerivada {
   planNombre: string; // "8 clases" / "Ilimitado" / "Sin plan"
   ilimitado: boolean; // no finite count (∞) — the card hides the gauge
+  /** Vigencia lapsed (`vence` before `hoy`). Derived INDEPENDENT of `forfeit`, so an expired
+   *  ILIMITADO reads as vencido too (#118 E3) — the plan card renders its expired state instead
+   *  of a full ∞ bar + "activo". vence-day itself is valid (dias === 0, ruling C9). */
+  vencido: boolean;
   clasesRestLabel: string; // "∞" / "5" / "0"
   precioDisplay: string | null; // "$800" — the anchor sale's monto; null when no anchor
   cadenciaLabel: string | null; // "al mes" / "30 días"; null when no anchor
@@ -445,6 +449,8 @@ export function derivarMembresia(m: MembresiaFacts, hoy: Date): MembresiaDerivad
   const clasesBase: Clases = m.clasesRestantes === null ? "ilimitado" : m.clasesRestantes;
   const clasesRest: Clases = tienePaquete ? forfeit(clasesBase, diasRest) : 0;
   const ilimitado = clasesRest === "ilimitado";
+  // Lapsed by DATE, independent of forfeit (which leaves ilimitado untouched) — so ∞ shows expired too (E3).
+  const vencido = tienePaquete && diasRest < 0;
   const hasAnchor = m.anchorMonto !== null;
 
   // Clases depletion gauge — the SAME guard + math as shapeFicha.clasesGauge: hidden (null) for ilimitado
@@ -462,6 +468,7 @@ export function derivarMembresia(m: MembresiaFacts, hoy: Date): MembresiaDerivad
   return {
     planNombre: m.paqueteNombre ?? "Sin plan",
     ilimitado,
+    vencido,
     clasesRestLabel: ilimitado ? "∞" : String(clasesRest),
     precioDisplay: hasAnchor ? pesos(m.anchorMonto) : null,
     cadenciaLabel: hasAnchor

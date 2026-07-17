@@ -241,7 +241,8 @@ function ConfirmSheet({
  *  gauge (∞ + a full bar for ilimitado; hidden when there is no anchor sale), and the renovación date.
  *  Read-only — every number is server-derived; the only action opens the change-plan mode. */
 function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void }) {
-  const barWidth = m.ilimitado ? "100%" : `${Math.round((m.gauge?.fill ?? 0) * 100)}%`;
+  // Expired plans read empty — a lapsed ilimitado must not show a full glowing bar (#118 E3).
+  const barWidth = m.vencido ? "0%" : m.ilimitado ? "100%" : `${Math.round((m.gauge?.fill ?? 0) * 100)}%`;
   return (
     <section className="mt-7">
       <div className="rounded-2xl border border-line bg-surface p-5">
@@ -256,7 +257,11 @@ function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void 
 
         <div className="mt-5">
           <div className="flex items-baseline justify-between">
-            {m.ilimitado ? (
+            {m.vencido ? (
+              <span className="text-[13px] text-fg">
+                <b className="font-bold text-warning">Plan vencido</b> · renueva para reservar
+              </span>
+            ) : m.ilimitado ? (
               <span className="text-[13px] text-fg">
                 <b className="font-bold text-accent">Ilimitado</b> · sin límite este mes
               </span>
@@ -269,7 +274,9 @@ function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void 
                 <b className="font-bold text-accent">{m.clasesRestLabel}</b> clases restantes
               </span>
             )}
-            {m.ilimitado ? (
+            {m.vencido ? (
+              <span className="text-[10px] uppercase tracking-wide text-warning">Vencido</span>
+            ) : m.ilimitado ? (
               <span className="text-[10px] uppercase tracking-wide text-muted">activo</span>
             ) : (
               m.gauge && (
@@ -289,7 +296,11 @@ function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void 
 
         {m.renovacionDisplay && (
           <div className="mt-3 text-[11px] text-muted">
-            Renueva el <b className="font-semibold text-accent">{m.renovacionDisplay}</b>
+            {m.vencido ? (
+              <>Venció el <b className="font-semibold text-warning">{m.renovacionDisplay}</b></>
+            ) : (
+              <>Renueva el <b className="font-semibold text-accent">{m.renovacionDisplay}</b></>
+            )}
           </div>
         )}
 

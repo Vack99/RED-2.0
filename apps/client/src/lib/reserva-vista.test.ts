@@ -70,6 +70,20 @@ describe("presentarEstadoReserva", () => {
     expect(presentarEstadoReserva("normal", 1).unidad).toBe("libre");
   });
 
+  it("vencido → a dimmed, un-bookable 'Vencido' card (#118 E4) — no green 'Reservar' for a lapsed member", () => {
+    const v = presentarEstadoReserva("normal", 12, false, true);
+    expect(v.cta).toBe("Vencido");
+    expect(v.reservable).toBe(false);
+    expect(v.atenuada).toBe(true);
+    expect(v.tono).toBe("finished");
+  });
+
+  it("a booked class outranks vencido — a member who reserved before lapsing keeps 'Reservada'", () => {
+    const v = presentarEstadoReserva("normal", 6, true, true);
+    expect(v.cta).toBe("Reservada");
+    expect(v.reservada).toBe(true);
+  });
+
   it("a_continuacion is bookable and shows spots (the day's next class)", () => {
     const v = presentarEstadoReserva("a_continuacion", 5);
     expect(v.tono).toBe("open");

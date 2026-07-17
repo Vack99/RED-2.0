@@ -351,17 +351,27 @@ describe("getEsMiembro", () => {
 describe("getSaldoMiembro", () => {
   it("reads a finite balance from the member's own cliente row", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: 7 }] }));
-    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7 });
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7, vencido: false });
   });
 
   it("reports ilimitado when clases_restantes is null", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: null }] }));
-    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null });
+    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null, vencido: false });
   });
 
   it("defaults safely to a zero finite balance when no cliente row exists", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [] }));
-    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0 });
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0, vencido: false });
+  });
+
+  it("flags vencido when vence is in the past — mirrors the reservar_clase gate (#118 E4)", async () => {
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: 7, vence: "2020-01-01" }] }));
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7, vencido: true });
+  });
+
+  it("flags vencido for an expired ILIMITADO too (the server blocks ∞ on a lapsed vigencia)", async () => {
+    const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: null, vence: "2020-01-01" }] }));
+    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null, vencido: true });
   });
 
   it("PROPAGATES a transient clientes read error (the balance is load-bearing, never a silent 0)", async () => {
@@ -550,19 +560,19 @@ describe("getSaldoMiembro — host-tenant reconciliation (#74)", () => {
   });
 
   it("host match → the balance of the host gym's clientes row (red → 8)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "red")).toEqual({ ilimitado: false, clasesRestantes: 8 });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "red")).toEqual({ ilimitado: false, clasesRestantes: 8, vencido: false });
   });
 
   it("host match → the other gym's row when that gym is the host (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "forge")).toEqual({ ilimitado: false, clasesRestantes: 3 });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "forge")).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
   });
 
   it("no host tenant → deterministic fallback to the OLDEST membership's row (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), null)).toEqual({ ilimitado: false, clasesRestantes: 3 });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), null)).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
   });
 
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "otro-gym")).toEqual({ ilimitado: false, clasesRestantes: 3 });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "otro-gym")).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
   });
 });
 

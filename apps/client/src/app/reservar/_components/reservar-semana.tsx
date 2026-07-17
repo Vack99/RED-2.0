@@ -73,8 +73,8 @@ function OccupancyBar({ pct, tono, idx }: { pct: number; tono: TonoReserva; idx:
   );
 }
 
-function ClassCard({ sesion, idx, onOpen }: { sesion: SesionMiembroDTO; idx: number; onOpen: () => void }) {
-  const vista = presentarEstadoReserva(sesion.estado, sesion.disponibles, sesion.miReserva);
+function ClassCard({ sesion, idx, vencido, onOpen }: { sesion: SesionMiembroDTO; idx: number; vencido: boolean; onOpen: () => void }) {
+  const vista = presentarEstadoReserva(sesion.estado, sesion.disponibles, sesion.miReserva, vencido);
 
   return (
     <button
@@ -232,6 +232,23 @@ function SummarySheet({
         <button type="button" disabled className="w-full cursor-default rounded-xl bg-sunk py-4 text-xs font-bold uppercase tracking-wider text-muted">
           Sesión terminada
         </button>
+      </>
+    );
+  } else if (saldo.vencido) {
+    // Membership lapsed (#118 E4): reservar_clase would reject "Paquete vencido" (finite AND
+    // ilimitado). No online payment (paga en tu gym) — route to precios, not a dead-end button.
+    cta = (
+      <>
+        <p className="mb-2.5 text-center text-[11px] text-muted">
+          Tu paquete venció. Renueva en tu gimnasio para reservar.
+        </p>
+        <Link
+          href="/precios"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
+        >
+          Ver planes
+          {arrow}
+        </Link>
       </>
     );
   } else if (sesion.estado === "lleno") {
@@ -537,7 +554,7 @@ export function ReservarSemana({
       <section className="mt-4 flex flex-col gap-3 px-1">
         {dia.sesiones.length > 0 ? (
           dia.sesiones.map((s, i) => (
-            <ClassCard key={s.id} sesion={s} idx={i} onOpen={() => openSheet(s)} />
+            <ClassCard key={s.id} sesion={s} idx={i} vencido={saldo.vencido} onOpen={() => openSheet(s)} />
           ))
         ) : (
           <div className="px-6 py-12 text-center">
