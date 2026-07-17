@@ -13,11 +13,14 @@ import { FORGE_TICKET, TICKET_WIDTH, TicketTwin, type TicketPalette } from "./_c
  * throws into the send path (which itself never throws into the sale path).
  *
  * Fonts: the four Outfit weights the twin uses (400/600/700/800) are colocated under `_assets/fonts/`
- * and loaded by their on-disk path via `new URL(..., import.meta.url)` (NOT `process.cwd()`): that URL
- * is what `@vercel/nft` traces to copy the `.ttf` files into the Vercel bundle, and it also resolves
- * to the real files when this module runs unbundled (the vitest smoke test), where `process.cwd()`
- * would point at the monorepo root instead. The Next docs' `readFile(join(process.cwd(), …))` sample
- * assumes a single-app root; the `new URL` form is the monorepo-safe equivalent.
+ * and loaded via a STATIC `new URL("./_assets/fonts/<literal>.ttf", import.meta.url)` per weight (NOT
+ * `process.cwd()`). Static is load-bearing: Turbopack/`@vercel/nft` only emit+trace an asset whose URL
+ * is a string literal they can resolve at build time. A dynamic `new URL(\`…/${file}\`, import.meta.url)`
+ * defeats that — Turbopack collapses the directory to one context asset (it emitted `OFL.txt` for every
+ * weight → `@vercel/og` threw "Unsupported OpenType signature", #104), and unbundled node happens to
+ * mask it. The literal form also resolves to the real files unbundled (the vitest smoke), where
+ * `process.cwd()` would point at the monorepo root. The Next docs' `readFile(join(process.cwd(), …))`
+ * sample assumes a single-app root; static `new URL` is the monorepo-safe, bundler-traceable equivalent.
  */
 
 /** Canvas: the twin's true width × 520px tall. 520 clears the tallest realistic ticket —
@@ -25,18 +28,16 @@ import { FORGE_TICKET, TICKET_WIDTH, TicketTwin, type TicketPalette } from "./_c
  *  extra height is filled by the paper-colored root so the slack reads as receipt paper, not a band. */
 const PNG_HEIGHT = 520;
 
-const fontUrl = (file: string) => new URL(`./_assets/fonts/${file}`, import.meta.url);
-
 export async function generarReciboPng(
   venta: VentaResult,
   palette: TicketPalette = FORGE_TICKET,
 ): Promise<string | null> {
   try {
     const [regular, semibold, bold, extrabold] = await Promise.all([
-      readFile(fontUrl("Outfit-Regular.ttf")),
-      readFile(fontUrl("Outfit-SemiBold.ttf")),
-      readFile(fontUrl("Outfit-Bold.ttf")),
-      readFile(fontUrl("Outfit-ExtraBold.ttf")),
+      readFile(new URL("./_assets/fonts/Outfit-Regular.ttf", import.meta.url)),
+      readFile(new URL("./_assets/fonts/Outfit-SemiBold.ttf", import.meta.url)),
+      readFile(new URL("./_assets/fonts/Outfit-Bold.ttf", import.meta.url)),
+      readFile(new URL("./_assets/fonts/Outfit-ExtraBold.ttf", import.meta.url)),
     ]);
 
     const image = new ImageResponse(

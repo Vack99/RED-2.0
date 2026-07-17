@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+
 import type { VentaResult } from "@gym/data/server/ventas";
 import { describe, expect, it } from "vitest";
 
@@ -39,4 +41,28 @@ describe("generarReciboPng — the receipt PNG twin (#100)", () => {
     expect(bytes.length).toBeGreaterThan(0);
     expect(Array.from(bytes.subarray(0, 4))).toEqual([0x89, 0x50, 0x4e, 0x47]);
   }, 20000);
+});
+
+/**
+ * #104 regression guard. The smoke above runs UNBUNDLED (plain vitest node), where `import.meta.url`
+ * is the real source path so BOTH a static and a dynamic `new URL(...)` resolve the real `.ttf` — it
+ * cannot catch #104. That bug was a dynamic `new URL(\`./_assets/fonts/${weight}\`, import.meta.url)`
+ * helper: Turbopack/`@vercel/nft` only emit+trace an asset whose URL is a build-time string literal,
+ * so the dynamic form shipped ONE context asset (OFL.txt) for every weight and `@vercel/og` threw
+ * "Unsupported OpenType signature" on Vercel. Folding the four reads back into a helper or a loop would
+ * pass every test here and silently re-null the attachment in prod. This asserts the load-bearing shape
+ * the bundler requires: each font read is a STATIC literal, and no interpolated `new URL` survives.
+ */
+describe("#104 guard — font URLs must be static literals (bundler-traceable)", () => {
+  const src = readFileSync(new URL("./recibo-png.tsx", import.meta.url), "utf8");
+
+  it("reads each of the four Outfit weights via a static string-literal new URL", () => {
+    const literals = src.match(/new URL\(\s*["']\.\/_assets\/fonts\/Outfit-[A-Za-z]+\.ttf["']/g) ?? [];
+    expect(literals).toHaveLength(4);
+  });
+
+  it("never references a font via a dynamic (interpolated) new URL", () => {
+    // A template-literal argument to `new URL(` is the exact form Turbopack can't trace (#104).
+    expect(src).not.toMatch(/new URL\(\s*`/);
+  });
 });
