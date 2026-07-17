@@ -3,7 +3,7 @@
 // inicial at read. No I/O, no Supabase — unit-tested in derive.test.ts. The DAL
 // fetches rows and the attendance counts, then maps each through here.
 
-import { derivarEstado, diasRestantes, forfeit } from "@gym/domain/rules";
+import { derivarEstado, diasRestantes, estaVencido, forfeit } from "@gym/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@gym/domain/types";
 import { DOW, fechaEnZona, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
 
@@ -450,7 +450,7 @@ export function derivarMembresia(m: MembresiaFacts, hoy: Date): MembresiaDerivad
   const clasesRest: Clases = tienePaquete ? forfeit(clasesBase, diasRest) : 0;
   const ilimitado = clasesRest === "ilimitado";
   // Lapsed by DATE, independent of forfeit (which leaves ilimitado untouched) — so ∞ shows expired too (E3).
-  const vencido = tienePaquete && diasRest < 0;
+  const vencido = tienePaquete && estaVencido(diasRest);
   const hasAnchor = m.anchorMonto !== null;
 
   // Clases depletion gauge — the SAME guard + math as shapeFicha.clasesGauge: hidden (null) for ilimitado

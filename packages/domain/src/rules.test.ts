@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
+import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete — purchase wins, days carry (ruling C4)", () => {
@@ -66,6 +66,18 @@ describe("diasRestantes", () => {
   });
   it("is negative once expired", () => {
     expect(diasRestantes(new Date(2026, 4, 25), new Date(2026, 4, 27))).toBe(-2);
+  });
+});
+
+describe("estaVencido — the single 'expired by date' boundary (ruling C9)", () => {
+  it("is expired once the vence day is in the past (dias < 0)", () => {
+    expect(estaVencido(-1)).toBe(true);
+  });
+  it("is NOT expired on the vence day itself (dias === 0 is a valid training day)", () => {
+    expect(estaVencido(0)).toBe(false);
+  });
+  it("is NOT expired while days remain", () => {
+    expect(estaVencido(3)).toBe(false);
   });
 });
 

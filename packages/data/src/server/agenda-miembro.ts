@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { derivarEstadosDia, diasRestantes, disponibles, ratioOcupacion } from "@gym/domain/rules";
+import { derivarEstadosDia, diasRestantes, disponibles, estaVencido, ratioOcupacion } from "@gym/domain/rules";
 import type { EstadoSesion } from "@gym/domain/types";
 import {
   addDays,
@@ -397,7 +397,7 @@ export const getSaldoMiembro = cache(
     // Expiry mirrors the reservar_clase gate EXACTLY (`vence < hoy` → "Paquete vencido"): a lapsed
     // vigencia blocks booking for finite AND ilimitado, so the CTA pre-empts the doomed button (#118
     // E4). vence-day itself is a valid training day (dias === 0, ruling C9), so expiry is `dias < 0`.
-    const vencido = cli.vence ? diasRestantes(parseDay(cli.vence), hoyEnZona(miembro.tz)) < 0 : false;
+    const vencido = cli.vence ? estaVencido(diasRestantes(parseDay(cli.vence), hoyEnZona(miembro.tz))) : false;
     return { ilimitado: cli.clases_restantes === null, clasesRestantes: cli.clases_restantes, vencido };
   },
 );

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import type { ClaseDetalleDTO, CoachDetalleDTO } from "@gym/data/server/clase-miembro";
 import type { SaldoMiembroDTO } from "@gym/data/server/agenda-miembro";
 
+import { CtaVerPlanes } from "../../../_components/cta-ver-planes";
 import {
   cancelarDesdeClaseAction,
   reservarDesdeClaseAction,
@@ -331,18 +332,7 @@ export function ClaseDetalle({
           // Membership lapsed (#118 E4): reservar_clase rejects "Paquete vencido" (finite AND
           // ilimitado). paga-en-tu-gym → route to precios, not a dead-end button. After miReserva,
           // so a member who booked before lapsing can still cancel their held spot.
-          <>
-            <p className="mb-2.5 text-center text-[11px] text-muted">
-              Tu paquete venció. Renueva en tu gimnasio para reservar.
-            </p>
-            <Link
-              href="/precios"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
-            >
-              Ver planes
-              {fwdArrow}
-            </Link>
-          </>
+          <CtaVerPlanes>Tu paquete venció. Renueva en tu gimnasio para reservar.</CtaVerPlanes>
         ) : detalle.estado === "lleno" ? (
           <>
             <p className="mb-2.5 text-center text-[11px] text-muted">Clase llena. No hay lugares disponibles.</p>
@@ -353,18 +343,7 @@ export function ClaseDetalle({
         ) : !saldo.ilimitado && (saldo.clasesRestantes ?? 0) <= 0 ? (
           // Finite plan depleted (audit #9): no free/trial class, no online payment
           // (paga en tu gym) — route to precios instead of a dead-end "Sin clases disponibles".
-          <>
-            <p className="mb-2.5 text-center text-[11px] text-muted">
-              No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.
-            </p>
-            <Link
-              href="/precios"
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
-            >
-              Ver planes
-              {fwdArrow}
-            </Link>
-          </>
+          <CtaVerPlanes>No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.</CtaVerPlanes>
         ) : (
           <>
             {casiLleno ? (

@@ -81,6 +81,19 @@ export function diasRestantes(vence: Date, hoy: Date): number {
 }
 
 /**
+ * Whether a package's vigencia has LAPSED: its vence day is strictly in the past
+ * (`dias < 0`, where `dias = diasRestantes(vence, hoy)`). The vence day itself
+ * (dias === 0) is a valid training day (ruling C9), so expiry starts the day AFTER.
+ * The single home for the "expired by date" boundary — forfeit, baseParaStack,
+ * derivarEstado, and every read-side "vencido" signal route through here instead of
+ * re-coining `dias < 0` and risking C9 drift. Mirrors the reservar_clase RPC's
+ * `vence < hoy` gate exactly at day granularity.
+ */
+export function estaVencido(dias: number): boolean {
+  return dias < 0;
+}
+
+/**
  * Derive a client's lifecycle state from what's left (ADR-0002 — never
  * stored). Replaces the stored `estado` field and the three conflicting
  * threshold checks scattered across the mock screens.
@@ -91,7 +104,7 @@ export function diasRestantes(vence: Date, hoy: Date): number {
  * in por_vencer, not sin_clases.
  */
 export function derivarEstado(saldo: Saldo): EstadoCliente {
-  const expirado = saldo.dias < 0;
+  const expirado = estaVencido(saldo.dias);
   const sinClases = saldo.clases !== "ilimitado" && saldo.clases <= 0;
   if (expirado || sinClases) return "sin_clases";
 
@@ -171,7 +184,7 @@ export function consumirClase(clases: Clases): Clases {
  */
 export function forfeit(clases: Clases, dias: number): Clases {
   if (clases === "ilimitado") return "ilimitado";
-  return dias < 0 ? 0 : clases;
+  return estaVencido(dias) ? 0 : clases;
 }
 
 /**
@@ -186,7 +199,7 @@ export function forfeit(clases: Clases, dias: number): Clases {
  * inline.
  */
 export function baseParaStack(saldo: Saldo): Saldo {
-  return saldo.dias >= 0 ? saldo : { clases: 0, dias: 0 };
+  return estaVencido(saldo.dias) ? { clases: 0, dias: 0 } : saldo;
 }
 
 // ── Date helpers for the resumen (local-field comparisons only; the caller

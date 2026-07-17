@@ -1,7 +1,6 @@
 "use client";
 
 import { type CSSProperties, type ReactNode, useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import type {
@@ -11,6 +10,7 @@ import type {
   SesionMiembroDTO,
 } from "@gym/data/server/agenda-miembro";
 
+import { CtaVerPlanes } from "../../_components/cta-ver-planes";
 import { descargarIcs } from "../../../lib/ics";
 import { presentarEstadoReserva, type TonoReserva } from "../../../lib/reserva-vista";
 import { reservarClaseAction } from "../actions";
@@ -237,20 +237,7 @@ function SummarySheet({
   } else if (saldo.vencido) {
     // Membership lapsed (#118 E4): reservar_clase would reject "Paquete vencido" (finite AND
     // ilimitado). No online payment (paga en tu gym) — route to precios, not a dead-end button.
-    cta = (
-      <>
-        <p className="mb-2.5 text-center text-[11px] text-muted">
-          Tu paquete venció. Renueva en tu gimnasio para reservar.
-        </p>
-        <Link
-          href="/precios"
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
-        >
-          Ver planes
-          {arrow}
-        </Link>
-      </>
-    );
+    cta = <CtaVerPlanes>Tu paquete venció. Renueva en tu gimnasio para reservar.</CtaVerPlanes>;
   } else if (sesion.estado === "lleno") {
     cta = (
       <>
@@ -264,20 +251,7 @@ function SummarySheet({
     // Finite plan depleted (audit #9): no free/trial class, no online payment (paga
     // en tu gym) — route to precios instead of an enabled button that would only
     // dead-end in the RPC's "Sin clases disponibles".
-    cta = (
-      <>
-        <p className="mb-2.5 text-center text-[11px] text-muted">
-          No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.
-        </p>
-        <Link
-          href="/precios"
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent py-4 text-xs font-extrabold uppercase tracking-wider text-accent-fg"
-        >
-          Ver planes
-          {arrow}
-        </Link>
-      </>
-    );
+    cta = <CtaVerPlanes>No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.</CtaVerPlanes>;
   } else {
     const nota =
       sesion.estado === "casi_lleno" ? (
