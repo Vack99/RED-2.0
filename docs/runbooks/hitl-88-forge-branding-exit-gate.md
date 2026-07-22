@@ -72,4 +72,28 @@ pattern follows `docs/runbooks/hitl-63-phase6-exit-gate.md`.
 
 ## Verdict
 
-_(record date + PASS/FAIL + notes here)_
+**2026-07-22 — PASS. #88 and #83 both closed.**
+
+Re-verified live at sign-off (11 days after the merge): AC1 was already done — `forge-demo.ibookit.lat`
+is attached and resolving in Forge paint (cert SAN is that exact host, no wildcard). Both forge hosts
+serve `data-brand="forge"` + dark on every public route with the tagline; `/precios` leads with CLASE
+INDIVIDUAL; `/contacto` carries only phone + Instagram; `/nosotros` renders the full seeded content;
+RED serves `data-brand="red"` with no Forge bleed. AC2's "zero red bleed" is settled at the stylesheet
+level rather than by eye: the 21 RED glow selectors in `apps/client/src/app/globals.css` are gated on
+`.dark[data-brand="red"]` across all three surfaces the checklist names (`.rcard-pips`, `.mb-prog`,
+`.cd-roster .pips`), and no unscoped `.dark` rule carries a red literal. Owner walked forge-demo signed
+in: booking works, class detail lands in the profile, no red bleed.
+
+Two lines retired as written rather than met, both by owner ruling:
+
+- **AC2 "retired sandbox classes absent from future weeks" — void.** forge-demo is the owner's sandbox
+  and is used as one. Sandbox classes there are intended, not drift. Real-gym behavior is verified
+  against real credentials, never against the twin.
+- **AC3 "no coaches on real forge" — superseded.** Andrea Arreola and David Trevizo are real staff the
+  owner published from admin on 2026-07-12. Real prod, in use, left untouched.
+
+Note: `/membresia` is not a route — the membresía plan bar lives in the profile overlay
+(`apps/client/src/app/reservar/_components/perfil-overlay.tsx`). The checklist above names screens,
+not URLs.
+
+Real forge's empty landing schedule widget is #136 (platform-wide lazy materialization), not this PRD.
