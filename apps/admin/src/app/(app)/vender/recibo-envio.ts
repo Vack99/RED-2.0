@@ -6,7 +6,6 @@ import {
 import type { ReciboEmailState, VentaResult } from "@gym/data/server/ventas";
 
 import { construirReciboEmail, FORGE_TICKET, type TicketPalette } from "./_components/ticket-twin";
-import { generarReciboPng } from "./recibo-png";
 
 /**
  * The one home for "send this sale's receipt" (#99/#101): the auto-send after the sale and the
@@ -30,9 +29,6 @@ export async function enviarReciboDeVenta(
   try {
     const palette = opts.palette ?? FORGE_TICKET;
     const { subject, html, text } = construirReciboEmail(venta, palette);
-    // The PNG twin is best-effort: a null render (font/Satori failure) just sends the mail without
-    // the attachment — an attachment miss must never cost the receipt, nor the receipt the sale (#100).
-    const png = await generarReciboPng(venta, palette);
     const transport = opts.transport ?? resendTransport();
     const res = await transport.send({
       to: email,
@@ -40,7 +36,6 @@ export async function enviarReciboDeVenta(
       html,
       text,
       from: remitenteConNombre(venta.negocio, process.env.RESEND_FROM),
-      ...(png ? { attachments: [{ filename: `recibo-F${venta.folio}.png`, content: png }] } : {}),
     });
     return res.ok ? { estado: "enviado", email } : { estado: "fallo", email };
   } catch {
