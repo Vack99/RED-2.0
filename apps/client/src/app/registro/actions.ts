@@ -47,8 +47,14 @@ export async function registrarAction(
   // (or the confirmation-off path in `registrarSocio`) binds the login to the code's
   // exact paid row; junk/no code degrades to a plain signup (ADR-0015). The `firma`
   // rides alongside the code — minted server-side here (after the Turnstile gate) so the
-  // firma-gated claim RPC accepts it at `/auth/confirm` (audit §3); an attacker who swaps
-  // in a different codigo has no matching firma and the claim refuses.
+  // firma-gated claim RPC accepts it at `/auth/confirm` (audit §3). The firma binds the
+  // CODE, not the caller: it closes the direct-PostgREST (H1) and recovery-append (H2v1)
+  // vectors and stops a third party swapping in a different codigo in transit (no matching
+  // firma → refuse). It does NOT stop a holder of a leaked code from registering their OWN
+  // inbox and claiming it here — that is the accepted ADR-0015 bearer residual (same class
+  // as the /activar `vincular` short-circuit the owner opted into). Fully closing it means
+  // removing this legacy claim arm (the invite email now targets /activar) or recipient-
+  // binding the code — owner decision, tracked in the 2026-07-22 activation audit §3.
   const codigo = parseCodigoInvitacion(formData.get("codigo"));
   const confirmUrl = codigo
     ? `${origin}/auth/confirm?codigo=${codigo}&firma=${firmaCodigo(codigo)}`
