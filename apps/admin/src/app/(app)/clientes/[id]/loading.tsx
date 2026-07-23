@@ -2,14 +2,11 @@ import { Skeleton } from "@gym/ui/forge/skeleton";
 import { AppBar, Card, Eyebrow } from "@gym/ui/forge/ui";
 
 /**
- * Route loading fallback for the client ficha. Renders inside template.tsx, so
- * the `forge-enter` slide plays on THIS skeleton the instant the roster row is
- * tapped — the transition is now coupled to the gesture instead of waiting on
- * getClienteFicha's ~7-call fan-out.
- *
- * Mirrors cliente-detalle.tsx layout (same AppBar shell, identity header,
- * PAQUETE ACTIVO gauge card, action row, history rows) at matching paddings so
- * the swap to real content is not a layout jump.
+ * Route loading fallback for the client ficha — shown instantly on soft
+ * navigation while getClienteFicha's ~7-call fan-out resolves. Mirrors
+ * cliente-detalle.tsx layout (same AppBar shell, identity header, PAQUETE
+ * ACTIVO gauge card, action row, history rows) at matching paddings so the
+ * swap to real content is not a layout jump.
  */
 export default function Loading() {
   return (
@@ -19,7 +16,7 @@ export default function Loading() {
       {/* Identity — Avatar 68 + name + meta (mirrors the real header) */}
       <div style={{ padding: "20px 22px 10px" }}>
         <div className="flex items-center" style={{ gap: 16 }}>
-          <Skeleton circle width={68} />
+          <Skeleton width={68} height={68} />
           <div className="min-w-0 flex-1">
             <Skeleton width="62%" height={24} />
             <div className="flex items-center" style={{ gap: 8, marginTop: 10 }}>

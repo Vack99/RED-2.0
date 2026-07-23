@@ -9,7 +9,7 @@ import {
   getPlanesPublicos,
 } from "@gym/data/server/marketing";
 
-import { PricingTeaser } from "./_components/pricing-teaser";
+import { PricingTeaser } from "../_components/pricing-teaser";
 
 export const metadata: Metadata = {
   title: "Inicio",
