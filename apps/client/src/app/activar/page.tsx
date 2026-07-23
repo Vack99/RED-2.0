@@ -10,6 +10,7 @@ import { createClient } from "@gym/data/server/supabase";
 import { resolveBrand } from "../../lib/brand";
 import { AuthShell } from "../_components/auth-shell";
 import { ActivarForm } from "./_components/activar-form";
+import { VincularForm } from "./_components/vincular-form";
 
 /**
  * Single-email activation door (PRD #130). The invitation email lands here: the member
@@ -64,9 +65,23 @@ export default async function ActivarPage({
 
   const invitacion = info ? { gym: info.gym_nombre, nombre: info.cliente_nombre } : null;
 
+  // §4 Step 1 (audit 2026-07-22): if the member is ALREADY signed in on this device, skip
+  // the email door — bind the invite in one click. getClaims (never getSession — ADR-0001)
+  // gates the short-circuit; only for a valid code with a resolved invite identity.
+  let sesionActiva = false;
+  if (codigo && invitacion) {
+    const { data: claims } = await (await createClient()).auth.getClaims();
+    sesionActiva = Boolean(claims?.claims?.sub);
+  }
+
   const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
-  const form = <ActivarForm codigo={invitacion ? codigo : null} invitacion={invitacion} correo={correo} />;
+  const form =
+    sesionActiva && codigo && invitacion ? (
+      <VincularForm codigo={codigo} gym={invitacion.gym} />
+    ) : (
+      <ActivarForm codigo={invitacion ? codigo : null} invitacion={invitacion} correo={correo} />
+    );
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>{form}</LoginHero>

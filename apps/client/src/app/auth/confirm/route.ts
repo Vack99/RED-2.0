@@ -34,15 +34,18 @@ async function finalizarAuth(
   request: NextRequest,
   supabase: SupabaseServer,
   codigo: string | null,
+  firma: string | null,
   next: string | null,
 ): Promise<NextResponse> {
   try {
     if (codigo) {
-      // Invite-token claim: bind the login to the code's exact paid row + gym. Runs even
-      // when `next` is set — the existing-account activation rail sends a recovery link
-      // carrying BOTH `codigo` and `next=/restablecer`, and the membership must link on
-      // this verified session before the member is handed to set-password.
-      await reclamarPorCodigo(codigo, supabase);
+      // Invite-token claim: bind the login to the code's exact paid row + gym. The firma
+      // is READ FROM THE URL and forwarded UNVERIFIED — the RPC verifies it (audit §3 H2):
+      // an attacker-appended `&codigo=` on a recovery link carries no matching firma, so
+      // the RPC refuses and writes nothing. Legit links (the magic-link existing-account
+      // rail with `next=/reservar`, and the `/registro` signup confirmation) carry a valid
+      // `firma` minted server-side after the app-tier gates. Runs even when `next` is set.
+      await reclamarPorCodigo(codigo, firma ?? "", supabase);
     } else if (!next) {
       // Fallback: claim (or create) the cliente by verified email in the host gym. Never
       // on a bare `next` recovery (a plain password reset must not claim a membership).
@@ -63,6 +66,9 @@ export async function GET(request: NextRequest) {
   const tokenHash = request.nextUrl.searchParams.get("token_hash");
   const type = request.nextUrl.searchParams.get("type");
   const codigo = parseCodigoInvitacion(request.nextUrl.searchParams.get("codigo"));
+  // Forwarded to the claim RPC unverified — the RPC verifies it. An attacker-appended
+  // `&codigo=` on a recovery link has no matching firma, so the RPC refuses (audit §3 H2).
+  const firma = request.nextUrl.searchParams.get("firma");
   const nextParam = request.nextUrl.searchParams.get("next");
   // Local path only: "//host" is protocol-relative and "/\" is treated as "//"
   // by browsers/URL — both would turn `next` into an open redirect.
@@ -75,7 +81,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const exchanged = await confirmarCodigo(code, supabase);
     if (exchanged.ok) {
-      return finalizarAuth(request, supabase, codigo, next);
+      return finalizarAuth(request, supabase, codigo, firma, next);
     }
   } else if (tokenHash && (type === "email" || type === "recovery" || type === "email_change")) {
     // Send Email Hook link (#75): anything but the accepted OTP types falls through
@@ -83,7 +89,7 @@ export async function GET(request: NextRequest) {
     const supabase = await createClient();
     const confirmed = await confirmarTokenHash(type, tokenHash, supabase);
     if (confirmed.ok) {
-      return finalizarAuth(request, supabase, codigo, next);
+      return finalizarAuth(request, supabase, codigo, firma, next);
     }
   }
 

@@ -1503,7 +1503,7 @@ export type Database = {
         }[]
       }
       reclamar_por_codigo: {
-        Args: { p_codigo: string }
+        Args: { p_codigo: string; p_firma: string }
         Returns: {
           gym_slug: string
         }[]

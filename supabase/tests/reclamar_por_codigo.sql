@@ -2,7 +2,11 @@
 -- locked contract:
 --   • reclamar_por_codigo — claim happy path (balance intact, email overwritten with the verified login
 --     email, code cleared, gym_membership(member) written, gym slug returned); dead/unknown code rejected;
---     caller-already-owns-a-row-in-gym rejected (never a second row); unverified caller rejected.
+--     caller-already-owns-a-row-in-gym rejected (never a second row); unverified caller rejected; and
+--     (V8, audit 2026-07-22 §3) a bare/wrong FIRMA rejected — the RPC now takes `p_firma` (HMAC-SHA256
+--     over `activar:v1:${codigo}` with the Vault `tenant_assertion_key`), verified BEFORE any read/write,
+--     so a direct PostgREST caller (H1) or an attacker-appended `&codigo=` with no matching firma (H2)
+--     fails CLOSED and writes nothing. Every claim vector below signs its call via pg_temp.firma_codigo().
 --   • registrar_venta — the NEW-cliente path mints an 8-char A-Z/2-9 claim_code inline.
 --   • invitacion_info — the pre-signup {gym, nombre} projection; and DENIAL rows proving neither anon nor a
 --     member can ever read clientes.claim_code (it is a bearer credential for a paid balance).
@@ -27,21 +31,34 @@ declare
   u_dead   uuid := gen_random_uuid();    -- verified, claims a nonexistent code
   u_owns   uuid := gen_random_uuid();    -- verified, ALREADY owns a row in gym_inv
   u_unver  uuid := gen_random_uuid();    -- UNVERIFIED, must be rejected
+  u_firma  uuid := gen_random_uuid();    -- verified, probes the firma gate (V8)
   c_invite uuid;                          -- unclaimed paid row carrying the claim code
   c_owned  uuid;                          -- row already owned by u_owns
   c_other  uuid;                          -- a second unclaimed coded row (u_owns tries to claim it)
   c_denial uuid;                          -- an unclaimed coded row used by the denial vectors
+  c_firma  uuid;                          -- an unclaimed coded row the firma-denial vector must leave untouched
   paq_inv  uuid;                          -- gym_inv paquete: the sole package input to the V5 sale (C13)
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (gym_inv, 'reclamar-codigo-suite-gym', 'Reclamar Código Suite', 'America/Mexico_City', 'red');
+
+  -- Firma gate (audit §3): transaction-local HMAC key (update-or-create; rolls back with the suite),
+  -- exactly like registro_claim.sql seeds it for the tenant firma. Every claim vector signs with it.
+  if exists (select 1 from vault.secrets where name = 'tenant_assertion_key') then
+    perform vault.update_secret(
+      (select id from vault.secrets where name = 'tenant_assertion_key'), 'denial-suite-secret');
+  else
+    perform vault.create_secret('denial-suite-secret', 'tenant_assertion_key');
+  end if;
+  perform set_config('t.hmac_key', 'denial-suite-secret', true);
 
   insert into auth.users (instance_id, id, aud, role, email, email_confirmed_at, raw_user_meta_data) values
     ('00000000-0000-0000-0000-000000000000', op_user, 'authenticated','authenticated','op@suite.local',   now(), '{}'),
     ('00000000-0000-0000-0000-000000000000', u_claim, 'authenticated','authenticated','real@new.mx',       now(), '{"full_name":"Clara Claim","phone_e164":"+526141112233"}'),
     ('00000000-0000-0000-0000-000000000000', u_dead,  'authenticated','authenticated','dead@x.mx',         now(), '{"full_name":"Dan Dead","phone_e164":"+526142223344"}'),
     ('00000000-0000-0000-0000-000000000000', u_owns,  'authenticated','authenticated','owns@x.mx',         now(), '{"full_name":" Owns","phone_e164":"+526143334455"}'),
-    ('00000000-0000-0000-0000-000000000000', u_unver, 'authenticated','authenticated','unver@x.mx',        null,  '{"full_name":"Ulla Unver","phone_e164":"+526144445566"}');
+    ('00000000-0000-0000-0000-000000000000', u_unver, 'authenticated','authenticated','unver@x.mx',        null,  '{"full_name":"Ulla Unver","phone_e164":"+526144445566"}'),
+    ('00000000-0000-0000-0000-000000000000', u_firma, 'authenticated','authenticated','firma@x.mx',        now(), '{"full_name":"Fina Firma","phone_e164":"+526145556677"}');
 
   -- op_user is an OWNER of gym_inv so staff_gym()/is_staff_of() resolve for the code-gen sale.
   insert into public.gym_membership (user_id, gym_id, role) values (op_user, gym_inv, 'owner');
@@ -62,6 +79,11 @@ begin
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, claim_code, auth_user_id)
     values (gym_inv, 'Denegación', '6148880000', 2, 'deny@old.mx', 'DENY2345', null)
     returning id into c_denial;
+  -- An unclaimed coded row the firma-denial vector (V8) attacks with a bad/absent firma; it must
+  -- stay wholly untouched (auth_user_id null, email intact, code intact).
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, claim_code, auth_user_id)
+    values (gym_inv, 'Firma Guard', '6145550000', 4, 'firma-typed@old.mx', 'FIRM2345', null)
+    returning id into c_firma;
   -- gym_inv paquete for the V5 staff sale (C13: the sale re-derives from this row).
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
     values (gym_inv, '8 clases', 8, 'dias', 30, 800) returning id into paq_inv;
@@ -73,10 +95,21 @@ begin
   perform set_config('t.u_dead',   u_dead::text,   true);
   perform set_config('t.u_owns',   u_owns::text,   true);
   perform set_config('t.u_unver',  u_unver::text,  true);
+  perform set_config('t.u_firma',  u_firma::text,  true);
   perform set_config('t.c_invite', c_invite::text, true);
   perform set_config('t.c_other',  c_other::text,  true);
   perform set_config('t.c_denial', c_denial::text, true);
+  perform set_config('t.c_firma',  c_firma::text,  true);
 end $$;
+
+-- The signing helper every claim vector uses (temp schema — vanishes with the session; callable by the
+-- role-switched blocks because EXECUTE on functions defaults to PUBLIC). Mirrors registro_claim.sql's
+-- pg_temp.firma(), over the reclamar_por_codigo message scheme: `activar:v1:${codigo}`.
+create function pg_temp.firma_codigo(codigo text) returns text language sql as $$
+  select encode(
+    extensions.hmac('activar:v1:' || codigo, current_setting('t.hmac_key', true), 'sha256'),
+    'hex');
+$$;
 
 -- ══ V1 — claim happy path: balance intact, email overwritten, code cleared, membership + slug ════════
 select set_config('request.jwt.claims',
@@ -89,7 +122,7 @@ declare
   uc  uuid := current_setting('t.u_claim', true)::uuid;
   v_slug text; rec record; n int;
 begin
-  select gym_slug into v_slug from public.reclamar_por_codigo('ABCD2345');
+  select gym_slug into v_slug from public.reclamar_por_codigo('ABCD2345', pg_temp.firma_codigo('ABCD2345'));
   if v_slug is distinct from 'reclamar-codigo-suite-gym' then
     raise exception 'V1 FAIL: expected the gym slug returned, got %', v_slug;
   end if;
@@ -119,7 +152,8 @@ do $$
 declare got_error boolean := false; v text;
 begin
   begin
-    select gym_slug into v from public.reclamar_por_codigo('ZZZZZZZZ');
+    -- A VALID firma for this code isolates the rejection to the dead-code path (not the firma gate).
+    select gym_slug into v from public.reclamar_por_codigo('ZZZZZZZZ', pg_temp.firma_codigo('ZZZZZZZZ'));
   exception when others then got_error := true;
   end;
   if not got_error then raise exception 'V2 FAIL: a dead code must be rejected'; end if;
@@ -134,7 +168,7 @@ do $$
 declare got_error boolean := false; v text;
 begin
   begin
-    select gym_slug into v from public.reclamar_por_codigo('WXYZ6789');
+    select gym_slug into v from public.reclamar_por_codigo('WXYZ6789', pg_temp.firma_codigo('WXYZ6789'));
   exception when others then got_error := true;
   end;
   if not got_error then raise exception 'V3 FAIL: a caller already owning a row must be rejected'; end if;
@@ -156,7 +190,7 @@ do $$
 declare got_error boolean := false; v text;
 begin
   begin
-    select gym_slug into v from public.reclamar_por_codigo('DENY2345');
+    select gym_slug into v from public.reclamar_por_codigo('DENY2345', pg_temp.firma_codigo('DENY2345'));
   exception when others then got_error := true;
   end;
   if not got_error then raise exception 'V4 FAIL: an unverified caller must be rejected'; end if;
@@ -226,6 +260,54 @@ begin
   if n <> 0 then raise exception 'V7 FAIL: a member read % rows carrying a claim_code', n; end if;
 end $$;
 reset role;
+
+-- ══ V8 — DENIAL: a bare/wrong firma is rejected and writes NOTHING (audit 2026-07-22 §3, H1/H2) ══════
+-- The firma gate runs BEFORE any read or write. A garbage firma and an empty firma both raise; the
+-- targeted coded row stays wholly untouched (auth_user_id null, email intact, code intact) and the
+-- attacker gains no membership — proving the code alone is no longer a redeemable bearer token.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.u_firma', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare got_error boolean := false; v text;
+begin
+  -- (a) garbage firma
+  begin
+    select gym_slug into v from public.reclamar_por_codigo('FIRM2345', 'deadbeef');
+  exception when others then got_error := true;
+  end;
+  if not got_error then raise exception 'V8 FAIL: a garbage firma was accepted'; end if;
+  -- (b) empty firma (the confirm route forwards "" when no firma rides the URL — H2)
+  got_error := false;
+  begin
+    select gym_slug into v from public.reclamar_por_codigo('FIRM2345', '');
+  exception when others then got_error := true;
+  end;
+  if not got_error then raise exception 'V8 FAIL: an empty firma was accepted'; end if;
+  -- (c) a VALID firma for a DIFFERENT code replayed against FIRM2345 (the code is inside the signed
+  --     message, so the digest cannot cross-verify)
+  got_error := false;
+  begin
+    select gym_slug into v from public.reclamar_por_codigo('FIRM2345', pg_temp.firma_codigo('ABCD2345'));
+  exception when others then got_error := true;
+  end;
+  if not got_error then raise exception 'V8 FAIL: another code''s firma claimed FIRM2345'; end if;
+end $$;
+reset role;
+do $$
+declare
+  cf uuid := current_setting('t.c_firma', true)::uuid;
+  uf uuid := current_setting('t.u_firma', true)::uuid;
+  rec record; n int;
+begin
+  -- The row is wholly untouched (read as the connecting role, RLS bypassed).
+  select auth_user_id, email, claim_code into rec from public.clientes where id = cf;
+  if rec.auth_user_id is not null then raise exception 'V8 FAIL: a rejected firma still bound the row (auth_user_id=%)', rec.auth_user_id; end if;
+  if rec.email is distinct from 'firma-typed@old.mx' then raise exception 'V8 FAIL: a rejected firma overwrote the email (%)', rec.email; end if;
+  if rec.claim_code is distinct from 'FIRM2345' then raise exception 'V8 FAIL: a rejected firma cleared/changed the code (%)', rec.claim_code; end if;
+  select count(*) into n from public.gym_membership where user_id = uf;
+  if n <> 0 then raise exception 'V8 FAIL: a rejected firma wrote % membership rows', n; end if;
+end $$;
 
 select 'reclamar_por_codigo suite: OK' as result;
 rollback;

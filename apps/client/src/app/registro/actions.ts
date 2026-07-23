@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 
-import { parseCodigoInvitacion, registrarSocio } from "@gym/data/server/registro";
+import { firmaCodigo, parseCodigoInvitacion, registrarSocio } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 
 import { verificarTurnstile } from "../../lib/turnstile";
@@ -45,10 +45,13 @@ export async function registrarAction(
   const origin = `${h.get("x-forwarded-proto") ?? "http"}://${host}`;
   // A valid invite code carries through the confirmation round trip so `/auth/confirm`
   // (or the confirmation-off path in `registrarSocio`) binds the login to the code's
-  // exact paid row; junk/no code degrades to a plain signup (ADR-0015).
+  // exact paid row; junk/no code degrades to a plain signup (ADR-0015). The `firma`
+  // rides alongside the code — minted server-side here (after the Turnstile gate) so the
+  // firma-gated claim RPC accepts it at `/auth/confirm` (audit §3); an attacker who swaps
+  // in a different codigo has no matching firma and the claim refuses.
   const codigo = parseCodigoInvitacion(formData.get("codigo"));
   const confirmUrl = codigo
-    ? `${origin}/auth/confirm?codigo=${codigo}`
+    ? `${origin}/auth/confirm?codigo=${codigo}&firma=${firmaCodigo(codigo)}`
     : `${origin}/auth/confirm`;
   const result = await registrarSocio(
     {

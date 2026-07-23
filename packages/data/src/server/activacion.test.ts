@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   completarActivacion,
@@ -163,6 +163,11 @@ describe("iniciarActivacion", () => {
 });
 
 describe("completarActivacion", () => {
+  // The claim mints firmaCodigo (needs the tenant key); without it firmaCodigo throws and
+  // the claim step is skipped — so stub the key so the password→claim ordering is exercised.
+  beforeEach(() => vi.stubEnv("TENANT_ASSERTION_KEY", "test-key"));
+  afterEach(() => vi.unstubAllEnvs());
+
   /** A client capturing the order of updateUser vs the claim rpc. */
   function fakeSession(opts: {
     sub: string | null;

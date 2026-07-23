@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  firmaCodigo,
   invitacionInfo,
   parseCodigoInvitacion,
   reclamarCliente,
@@ -97,20 +98,43 @@ function fakeRpc(
   } as unknown as SupabaseServer;
 }
 
+describe("firmaCodigo — activation firma (audit 2026-07-22 §3)", () => {
+  // The RPC's firma gate: only the server holds TENANT_ASSERTION_KEY, so only the server
+  // can produce a valid firma over `activar:v1:${codigo}` — a direct PostgREST caller (H1)
+  // or an attacker-appended `&codigo=` (H2) cannot. PINNED literal (HMAC-SHA256 of
+  // "activar:v1:ABCD2345" with "test-key", derived outside this code).
+  const FIRMA_PINNED = "087c644a7673332be892ce1f01bd35beb5fb6e52f8cccf0c7e890a827862dbc5";
+
+  it("signs the domain-tagged code with the tenant key (pinned)", () => {
+    vi.stubEnv("TENANT_ASSERTION_KEY", "test-key");
+    expect(firmaCodigo("ABCD2345")).toBe(FIRMA_PINNED);
+    vi.unstubAllEnvs();
+  });
+
+  it("throws when TENANT_ASSERTION_KEY is not configured", () => {
+    vi.stubEnv("TENANT_ASSERTION_KEY", "");
+    expect(() => firmaCodigo("ABCD2345")).toThrow("TENANT_ASSERTION_KEY");
+    vi.unstubAllEnvs();
+  });
+});
+
 describe("reclamarPorCodigo", () => {
-  it("forwards the code as p_codigo and returns the gym slug row", async () => {
+  it("forwards the code + firma as p_codigo/p_firma and returns the gym slug row", async () => {
     let seen: { name: string; args: unknown } | null = null;
     const client = fakeRpc({ data: { gym_slug: "forge" }, error: null }, (name, args) => {
       seen = { name, args };
     });
-    const result = await reclamarPorCodigo("ABCD2345", client);
+    const result = await reclamarPorCodigo("ABCD2345", "firma-x", client);
     expect(result.gym_slug).toBe("forge");
-    expect(seen).toEqual({ name: "reclamar_por_codigo", args: { p_codigo: "ABCD2345" } });
+    expect(seen).toEqual({
+      name: "reclamar_por_codigo",
+      args: { p_codigo: "ABCD2345", p_firma: "firma-x" },
+    });
   });
 
-  it("throws the RPC error message (dead code / already-owned row)", async () => {
+  it("throws the RPC error message (bad firma / dead code / already-owned row)", async () => {
     const client = fakeRpc({ data: null, error: { message: "Código de invitación inválido o ya utilizado" } });
-    await expect(reclamarPorCodigo("ZZZZZZZZ", client)).rejects.toThrow(
+    await expect(reclamarPorCodigo("ZZZZZZZZ", "firma-x", client)).rejects.toThrow(
       "Código de invitación inválido o ya utilizado",
     );
   });
@@ -201,12 +225,18 @@ describe("registrarSocio invite threading", () => {
     } as unknown as SupabaseServer;
   }
 
-  it("runs the invite claim when signUp returns a session (confirmation off)", async () => {
+  it("runs the invite claim (code + minted firma) when signUp returns a session (confirmation off)", async () => {
+    // The inline claim mints firmaCodigo — the pinned digest of "activar:v1:ABCD2345" / "test-key".
+    vi.stubEnv("TENANT_ASSERTION_KEY", "test-key");
     const rpc = vi.fn();
     const client = fakeSignup({ access_token: "x" }, rpc);
     const result = await registrarSocio(intake, { emailRedirectTo: "x", codigo: "ABCD2345" }, client);
     expect(result).toEqual({ ok: true, requiereConfirmacion: false });
-    expect(rpc).toHaveBeenCalledWith("reclamar_por_codigo", { p_codigo: "ABCD2345" });
+    expect(rpc).toHaveBeenCalledWith("reclamar_por_codigo", {
+      p_codigo: "ABCD2345",
+      p_firma: "087c644a7673332be892ce1f01bd35beb5fb6e52f8cccf0c7e890a827862dbc5",
+    });
+    vi.unstubAllEnvs();
   });
 
   it("does NOT claim when confirmation is required (no session yet)", async () => {

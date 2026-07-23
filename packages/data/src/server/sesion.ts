@@ -47,6 +47,28 @@ export async function solicitarReset(
 }
 
 /**
+ * Send a passwordless sign-in (magic link) to an EXISTING account only
+ * (`shouldCreateUser:false` — never provisions here). The activation door's
+ * `cuenta_existente` rail (audit §4): a pre-existing account gets inbox proof via a
+ * magic link instead of a password-reset mail, so the member signs straight in with no
+ * gratuitous password change. `emailRedirectTo` is the `/auth/confirm` landing that
+ * binds this gym's membership (codigo+firma) on the verified session. Always resolves
+ * ok (never leak whether an address is registered).
+ */
+export async function enviarMagicLink(
+  email: string,
+  emailRedirectTo: string,
+  client?: SupabaseServer,
+): Promise<SesionResultado> {
+  const supabase = client ?? (await createClient());
+  await supabase.auth.signInWithOtp({
+    email: email.trim(),
+    options: { shouldCreateUser: false, emailRedirectTo },
+  });
+  return { ok: true };
+}
+
+/**
  * Exchange a PKCE `code` (from the confirmation / recovery email link) for a
  * session, establishing it on `client`. `@supabase/ssr` uses the PKCE flow with
  * the DEFAULT Supabase sender (ADR-0014 — no custom SMTP/template in dev/test),

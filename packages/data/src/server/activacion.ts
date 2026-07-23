@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
-import { reclamarPorCodigo } from "./registro";
+import { firmaCodigo, reclamarPorCodigo } from "./registro";
 import { actualizarPassword, confirmarTokenHash } from "./sesion";
 import { createClient, type SupabaseServer } from "./supabase";
 
@@ -156,7 +156,7 @@ export async function completarActivacion(
   if (!set.ok) return { ok: false, error: set.error };
 
   try {
-    await reclamarPorCodigo(input.codigo, supabase);
+    await reclamarPorCodigo(input.codigo, firmaCodigo(input.codigo), supabase);
   } catch {
     // Swallowed — the member is logged in; a dead/already-claimed code must not strand
     // them (mirrors finalizarAuth). Redirect in regardless.

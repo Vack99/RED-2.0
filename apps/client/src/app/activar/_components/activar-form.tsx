@@ -95,8 +95,8 @@ export function ActivarForm({
       <div className="flex w-full flex-col text-center" style={{ maxWidth: 340, gap: 16 }}>
         <h1 className="text-[22px] font-light uppercase tracking-[5px] text-fg">Revisa tu correo</h1>
         <p role="status" className="text-[13px] text-muted">
-          Ya tienes una cuenta con este correo. Te enviamos un enlace para confirmar y vincular tu
-          membresía — revisa tu correo.
+          Ya tienes una cuenta con este correo. Te enviamos un enlace para iniciar sesión y vincular tu
+          membresía. Ábrelo desde este dispositivo para entrar directo a tu app.
         </p>
         <Link href="/entrar" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
           Iniciar sesión

@@ -99,7 +99,7 @@ export async function registrarSocio(
   // Best-effort: a failed claim never fails signup (idempotent claim rerun heals it).
   if (!requiereConfirmacion && opts.codigo) {
     try {
-      await reclamarPorCodigo(opts.codigo, supabase);
+      await reclamarPorCodigo(opts.codigo, firmaCodigo(opts.codigo), supabase);
     } catch {
       // swallowed — verified account stands; the code stays live for a retry.
     }
@@ -151,20 +151,40 @@ export type ReclamoPorCodigo =
   Database["public"]["Functions"]["reclamar_por_codigo"]["Returns"][number];
 
 /**
+ * The activation firma (audit 2026-07-22 §3): HMAC-SHA256 over the domain-tagged
+ * `activar:v1:${codigo}` with the tenant-assertion key only the server and the DB
+ * (Vault) hold. The RPC verifies it, so `reclamar_por_codigo` can no longer be invoked
+ * with just a code — a direct PostgREST caller (H1) or an attacker-appended `&codigo=`
+ * with no matching firma (H2) fails closed. The `activar:v1:` prefix domain-separates
+ * this from `reclamar_o_crear_cliente`'s `uid:gym_id` firma and the edge fn's
+ * `codigo:email`. The caller passes the SAME (parsed/uppercased) code to both this and
+ * `p_codigo`; the digest is over the literal code, no normalization here.
+ */
+export function firmaCodigo(codigo: string): string {
+  const key = process.env.TENANT_ASSERTION_KEY;
+  if (!key) throw new Error("TENANT_ASSERTION_KEY no configurada");
+  return createHmac("sha256", key).update(`activar:v1:${codigo}`).digest("hex");
+}
+
+/**
  * Invite-token claim (ADR-0015 primary rail). Binds the caller's verified login to
  * the EXACT paid `clientes` row the code names — the code resolves the row, the row
  * resolves the gym, so no `gymId` (or host) is passed: gym is not an authz input.
- * The definer RPC re-checks the verified email, overwrites the row email, clears the
- * code, and upserts membership; it THROWS on a dead code / already-owned row, so the
- * caller (confirm route) swallows to keep a verified account from stranding.
+ * `firma` is the server-minted `firmaCodigo` (audit §3): server-gated callers mint it
+ * inline; the `/auth/confirm` route forwards the URL's firma so a firma-less codigo
+ * refuses at the RPC. The definer RPC re-checks the verified email, overwrites the row
+ * email, clears the code, and upserts membership; it THROWS on a bad firma / dead code /
+ * already-owned row, so the caller (confirm route) swallows to keep a verified account
+ * from stranding.
  */
 export async function reclamarPorCodigo(
   codigo: string,
+  firma: string,
   client?: SupabaseServer,
 ): Promise<ReclamoPorCodigo> {
   const supabase = client ?? (await createClient());
   const { data, error } = await supabase
-    .rpc("reclamar_por_codigo", { p_codigo: codigo })
+    .rpc("reclamar_por_codigo", { p_codigo: codigo, p_firma: firma })
     .single();
   if (error || !data) {
     throw new Error(error?.message ?? "No se pudo reclamar la invitación");
