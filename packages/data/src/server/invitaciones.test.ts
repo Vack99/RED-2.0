@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   construirUrlInvitacion,
@@ -385,29 +385,4 @@ describe("resendTransport — missing env is a clean failure (never a live call)
     expect(res).toEqual({ ok: false, error: "no-configurado" });
   });
 
-  it("includes `attachments` in the REST body only when present (#100)", async () => {
-    process.env.RESEND_API_KEY = "re_test";
-    process.env.RESEND_FROM = "RED <no-reply@ibookit.lat>";
-    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
-      void init;
-      return Promise.resolve(new Response(null, { status: 200 }));
-    });
-    vi.stubGlobal("fetch", fetchMock);
-    try {
-      const base = { to: "x@y.mx", subject: "s", html: "<p>h</p>", text: "t" } as const;
-
-      await resendTransport().send({
-        ...base,
-        attachments: [{ filename: "recibo-F1001.png", content: "aGVsbG8=" }],
-      });
-      const conAdjunto = JSON.parse(fetchMock.mock.calls[0][1]!.body as string);
-      expect(conAdjunto.attachments).toEqual([{ filename: "recibo-F1001.png", content: "aGVsbG8=" }]);
-
-      await resendTransport().send(base);
-      const sinAdjunto = JSON.parse(fetchMock.mock.calls[1][1]!.body as string);
-      expect("attachments" in sinAdjunto).toBe(false);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
 });

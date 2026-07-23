@@ -109,8 +109,8 @@ export interface VentaResult {
    *  stored email, else null. Distinct from `emailIngresado`, which the invite rail keeps (NEW only). */
   emailCliente: string | null;
   /** The backdated period start as "DD MMM" (es-MX), when the sale was registered with a PAST sold
-   *  date (spec D6/E1); null for a normal today-sale. The recibo / ticket-twin PNG / WhatsApp text /
-   *  email render FECHA = today (`fechaDisplay`, the transaction date) PLUS an "Inicia: {fechaInicio}"
+   *  date (spec D6/E1); null for a normal today-sale. The recibo / ticket-twin email / WhatsApp text
+   *  render FECHA = today (`fechaDisplay`, the transaction date) PLUS an "Inicia: {fechaInicio}"
    *  annotation only when this is set. VIGENCIA always renders from the RPC-returned `vence`. */
   fechaInicio: string | null;
 }

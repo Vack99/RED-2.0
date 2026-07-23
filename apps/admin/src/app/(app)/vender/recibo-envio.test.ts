@@ -75,7 +75,7 @@ describe("enviarReciboDeVenta — the receipt (re)send seam (#101)", () => {
     expect(sent[0].to).toBe("socia@correo.mx");
   });
 
-  it("composes the full envelope: subject, HTML+text twins, and the PNG attachment (#100)", async () => {
+  it("composes the full envelope: subject plus the HTML and text twins", async () => {
     const { sent, transport } = recordingTransport({ ok: true });
 
     await enviarReciboDeVenta(VENTA, { transport });
@@ -83,9 +83,6 @@ describe("enviarReciboDeVenta — the receipt (re)send seam (#101)", () => {
     expect(sent[0].subject).toBe("Tu recibo de RED · F-1001");
     expect(sent[0].html).toContain("F-1001");
     expect(sent[0].text).toContain("F-1001");
-    expect(sent[0].attachments).toHaveLength(1);
-    expect(sent[0].attachments![0].filename).toBe("recibo-F1001.png");
-    expect(sent[0].attachments![0].content.length).toBeGreaterThan(0);
   });
 
   it("a THROWING transport is caught — mail can never break a recorded sale", async () => {

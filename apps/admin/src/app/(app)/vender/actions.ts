@@ -49,7 +49,7 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
   const [invite, reciboEmail] = await Promise.all([
     resolverInvitacion(result),
     // The auto receipt email (#99) — EVERY sale with an email on hand, new and renewal alike.
-    // The twin's palette follows the request's brand (#103): card, email body, and PNG agree.
+    // The twin's palette follows the request's brand (#103): card and email body agree.
     enviarReciboDeVenta(result, { palette: ticketPalette((await resolveBrand()).id) }),
   ]);
   return { ok: true, recibo: { ...result, invite, reciboEmail } };
