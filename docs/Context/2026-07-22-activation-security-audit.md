@@ -162,3 +162,15 @@ model.
   recipient-bind the code (deeper; conflicts with the deliberate staff-typo email-agnostic tolerance).
 - **Not chosen autonomously:** removing a live ADR rail and adding the forbidden `caller.email ==
   row.email` gate were both left for this decision.
+
+**RULED 2026-07-24 — option (b), shipped.** Owner chose (b) after a pre-implementation audit confirmed
+it: both email-based `/activar` rails are hard-bound to the roster email (the edge fn refuses a typed
+email that doesn't match; the magic link only ever goes to the roster address), so deleting `/registro`'s
+codigo arm closes the *unauthenticated* caller-chooses-inbox rebind. Shipped in `16a18b7`
+(+22/−171): codigo arm + cross-tenant shield out of `registro/page.tsx`/`actions.ts`/form, `ruta`
+narrowed to `"/activar"`, dead `codigo` opt removed from `registrarSocio`, shield loop-freedom tests
+re-pointed to `/activar` (which keeps its identical shield). Only 3 stale `/registro` invite links
+existed (2026-07-11..14), each re-sendable in one click — `reenviarInvitacionAction` already emails
+`/activar` links. The `vincular` rebind class survives by the owner's prior explicit acceptance — (b)
+does not claim to close it. Cutover live-verified 2026-07-24: two-arg RPC on live, magic-link
+activation walked end to end (claim stamped roster email, single-use code died, membership bound).
