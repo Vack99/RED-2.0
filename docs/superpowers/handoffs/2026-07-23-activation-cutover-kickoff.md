@@ -120,10 +120,15 @@ deeper, and conflicts with the deliberate staff-typo email-agnostic tolerance (A
 
 ## LAUNCH GATE — owner config, blocks nothing in git
 
-`TURNSTILE_SECRET_KEY` and `NEXT_PUBLIC_TURNSTILE_SITE_KEY` both fall back to Cloudflare's
-**always-pass test keys** when unset, and there is no `middleware.ts` and no rate limit anywhere on the
-claim paths. If the client Vercel project ships without them, the only anti-automation gate on both new
-claim paths is a no-op — and `vincular` is now one click. **Confirm these are set before the deploy.**
+`TURNSTILE_SECRET_KEY` (server, `turnstile.ts`) and `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (widget,
+`activar-form.tsx`) both fall back to Cloudflare's **always-pass test keys** when unset, and there is no
+`middleware.ts` and no rate limit anywhere on the claim paths. If the client Vercel project ships
+without them, the only anti-automation gate on both new claim paths is a no-op — and `vincular` is now
+one click.
+
+The #129 cutover runbook (2026-07-15) records `TURNSTILE_SECRET_KEY` as set in the client Vercel
+project; it says nothing about `NEXT_PUBLIC_TURNSTILE_SITE_KEY`. **So the likely gap is the site key —
+check both in the Vercel dashboard, don't assume.**
 
 ## Deferred, audit §5 — file or park, don't silently drop
 
