@@ -43,17 +43,7 @@ const HELP = "mt-1.5 text-[10.5px] text-muted";
  * valid submit `new FormData(form)` carries the token to the action's server-side verifier. No prefilled
  * credentials, no dead controls (the terms/privacy names are emphasized text, not stub links).
  */
-export function RegistroForm({
-  brandName,
-  codigo,
-  invitacion,
-}: {
-  readonly brandName: string;
-  /** A valid invite code to thread through signup (ADR-0015); null = plain signup. */
-  readonly codigo?: string | null;
-  /** The resolved invite identity for the pre-signup banner; null = no invite. */
-  readonly invitacion?: { readonly gym: string; readonly nombre: string } | null;
-}) {
+export function RegistroForm({ brandName }: { readonly brandName: string }) {
   const [state, dispatch, pending] = useActionState(registrarAction, INICIAL);
 
   const [nombre, setNombre] = useState("");
@@ -111,18 +101,6 @@ export function RegistroForm({
     <>
       <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
       <form onSubmit={onSubmit} className="flex w-full flex-col" style={{ maxWidth: 340, gap: 22 }}>
-        {codigo && <input type="hidden" name="codigo" value={codigo} />}
-
-        {invitacion && (
-          <div className="border px-4 py-3 text-center" style={{ borderColor: "var(--accent)" }}>
-            <p className="text-[10px] font-bold uppercase tracking-[2px] text-accent">Invitación</p>
-            <p className="mt-1.5 text-[13px] text-fg">
-              Invitación de <span className="font-semibold">{invitacion.gym}</span> para{" "}
-              <span className="font-semibold">{invitacion.nombre}</span>
-            </p>
-          </div>
-        )}
-
         <div className="text-center">
           <h1 className="text-[30px] font-light uppercase tracking-[5px] text-fg" style={{ textIndent: 5, lineHeight: 1 }}>
             Crear cuenta

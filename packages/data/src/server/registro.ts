@@ -73,7 +73,7 @@ export type RegistroResultado =
  */
 export async function registrarSocio(
   raw: unknown,
-  opts: { emailRedirectTo: string; codigo?: string | null },
+  opts: { emailRedirectTo: string },
   client?: SupabaseServer,
 ): Promise<RegistroResultado> {
   const parsed = registroSchema.safeParse(raw);
@@ -93,17 +93,6 @@ export async function registrarSocio(
   });
   if (error) return { ok: false, error: error.message };
   const requiereConfirmacion = data.session === null;
-
-  // Confirmation-OFF: signUp already established a session (auto-confirmed), so no
-  // `/auth/confirm` round trip runs — bind the invite here on that same client.
-  // Best-effort: a failed claim never fails signup (idempotent claim rerun heals it).
-  if (!requiereConfirmacion && opts.codigo) {
-    try {
-      await reclamarPorCodigo(opts.codigo, firmaCodigo(opts.codigo), supabase);
-    } catch {
-      // swallowed — verified account stands; the code stays live for a retry.
-    }
-  }
   return { ok: true, requiereConfirmacion };
 }
 
@@ -197,7 +186,7 @@ export type InvitacionInfo =
   Database["public"]["Functions"]["invitacion_info"]["Returns"][number];
 
 /**
- * Pre-signup lookup for `/registro?codigo=` — returns the {gym, member first name}
+ * Pre-signup lookup for `/activar?codigo=` — returns the {gym, member first name}
  * identity banner for a valid unclaimed code, or `null` for an unknown/dead code
  * (the page then degrades to a plain signup). Bearer-token disclosure by design
  * (ADR-0015): holding the code reveals a first name + gym, nothing more.

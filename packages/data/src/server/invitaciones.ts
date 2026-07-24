@@ -76,15 +76,15 @@ export function resendTransport(): MailTransport {
 
 /**
  * The gym→client invite URL rule (the single home for the gym→client-host mapping). `ruta` is the door the
- * link lands on — `/activar` for the invitation email (PRD #130) and both cross-tenant shields' canonical
- * redirect, `/registro` for the self-registration shield. Primary: the gym's OWN client host from the domain
+ * link lands on — `/activar` for the invitation email (PRD #130) and the cross-tenant shield's canonical
+ * redirect (the sole invite door since H2v2 option b). Primary: the gym's OWN client host from the domain
  * map — `https://{gym_domain app='client'}{ruta}?codigo=X`. Unmapped gym (no client row): the platform
  * default host + `?gym={slug}` so every gym's funnel works from day one — `https://{PLATFORM_CLIENT_
  * FALLBACK_HOST}{ruta}?gym={slug}&codigo=X`. No host and no fallback env → `null` (the caller reports a
  * clean failure; nothing is sent). `client` is injectable for tests (ADR-0001).
  */
 export async function construirUrlInvitacion(
-  { gymId, gymSlug, codigo, ruta }: { gymId: string; gymSlug: string; codigo: string; ruta: "/activar" | "/registro" },
+  { gymId, gymSlug, codigo, ruta }: { gymId: string; gymSlug: string; codigo: string; ruta: "/activar" },
   client: SupabaseServer,
 ): Promise<string | null> {
   // A gym may map several client hosts (dev mirror + live); order by created_at so the choice is

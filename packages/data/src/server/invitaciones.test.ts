@@ -234,15 +234,6 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     expect(url).toBe("https://app.plataforma.mx/activar?gym=red-demo&codigo=ZZZ23456");
   });
 
-  it("ruta chooses the door: /registro for the self-registration shield", async () => {
-    const fake = makeFake({ domainHost: "red.example.mx" });
-    const url = await construirUrlInvitacion(
-      { gymId: "gym-1", gymSlug: "red", codigo: "ZZZ23456", ruta: "/registro" },
-      fake.client,
-    );
-    expect(url).toBe("https://red.example.mx/registro?codigo=ZZZ23456");
-  });
-
   it("dev `.localhost` rows are never invite targets, even when older than the public host (live regression 2026-07-09)", async () => {
     // red-demo's dev row predates its public host; without the not-like filter, oldest-wins
     // built every demo invite on an unreachable localhost link.
@@ -279,7 +270,7 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
 });
 
 /**
- * Wrong-host redirect (spec §5.2 / audit #17) — the loop-freedom proof for the /registro shield.
+ * Wrong-host redirect (spec §5.2 / audit #17) — the loop-freedom proof for the /activar shield.
  * The page redirects a valid invite opened on the wrong host to the code's canonical client URL,
  * built by `construirUrlInvitacion`. The danger is a redirect cycle. We prove termination at the
  * two DAL seams the page composes: the canonical URL that construirUrlInvitacion emits, when its
@@ -334,10 +325,10 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     // The page turns invitacion_info's gym_slug into the gym id, then builds the canonical URL.
     const destino = await resolveTenant(null, "red", db());
     const url = await construirUrlInvitacion(
-      { gymId: destino!.id, gymSlug: "red", codigo: "CODE2345", ruta: "/registro" },
+      { gymId: destino!.id, gymSlug: "red", codigo: "CODE2345", ruta: "/activar" },
       db(),
     );
-    expect(url).toBe("https://red.mx/registro?codigo=CODE2345");
+    expect(url).toBe("https://red.mx/activar?codigo=CODE2345");
 
     // Reload: the proxy re-resolves x-gym for the target host+override.
     const parsed = new URL(url!);
@@ -351,10 +342,10 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     const db = () => fakeDb([{ id: "g-demo", slug: "red-demo", brand_module_id: "red" }], []);
     const destino = await resolveTenant(null, "red-demo", db());
     const url = await construirUrlInvitacion(
-      { gymId: destino!.id, gymSlug: "red-demo", codigo: "CODE2345", ruta: "/registro" },
+      { gymId: destino!.id, gymSlug: "red-demo", codigo: "CODE2345", ruta: "/activar" },
       db(),
     );
-    expect(url).toBe("https://app.plataforma.mx/registro?gym=red-demo&codigo=CODE2345");
+    expect(url).toBe("https://app.plataforma.mx/activar?gym=red-demo&codigo=CODE2345");
 
     const parsed = new URL(url!);
     const reloaded = await resolveTenant(parsed.hostname, parsed.searchParams.get("gym"), db());

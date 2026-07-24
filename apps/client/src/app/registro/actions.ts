@@ -2,7 +2,7 @@
 
 import { headers } from "next/headers";
 
-import { firmaCodigo, parseCodigoInvitacion, registrarSocio } from "@gym/data/server/registro";
+import { registrarSocio } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 
 import { verificarTurnstile } from "../../lib/turnstile";
@@ -43,22 +43,10 @@ export async function registrarAction(
   }
 
   const origin = `${h.get("x-forwarded-proto") ?? "http"}://${host}`;
-  // A valid invite code carries through the confirmation round trip so `/auth/confirm`
-  // (or the confirmation-off path in `registrarSocio`) binds the login to the code's
-  // exact paid row; junk/no code degrades to a plain signup (ADR-0015). The `firma`
-  // rides alongside the code — minted server-side here (after the Turnstile gate) so the
-  // firma-gated claim RPC accepts it at `/auth/confirm` (audit §3). The firma binds the
-  // CODE, not the caller: it closes the direct-PostgREST (H1) and recovery-append (H2v1)
-  // vectors and stops a third party swapping in a different codigo in transit (no matching
-  // firma → refuse). It does NOT stop a holder of a leaked code from registering their OWN
-  // inbox and claiming it here — that is the accepted ADR-0015 bearer residual (same class
-  // as the /activar `vincular` short-circuit the owner opted into). Fully closing it means
-  // removing this legacy claim arm (the invite email now targets /activar) or recipient-
-  // binding the code — owner decision, tracked in the 2026-07-22 activation audit §3.
-  const codigo = parseCodigoInvitacion(formData.get("codigo"));
-  const confirmUrl = codigo
-    ? `${origin}/auth/confirm?codigo=${codigo}&firma=${firmaCodigo(codigo)}`
-    : `${origin}/auth/confirm`;
+  // Plain host-scoped self-registration: the confirmation lands on `/auth/confirm`, which
+  // claims by verified email (ADR-0009 fallback rail). The invite-code claim arm was removed
+  // here (H2v2 option b) — the invite email now targets `/activar`, the sole invite door.
+  const confirmUrl = `${origin}/auth/confirm`;
   const result = await registrarSocio(
     {
       nombre: formData.get("nombre"),
@@ -67,7 +55,7 @@ export async function registrarAction(
       telefono: formData.get("telefono"),
       acepta: formData.get("acepta") === "on",
     },
-    { emailRedirectTo: confirmUrl, codigo },
+    { emailRedirectTo: confirmUrl },
   );
 
   return result.ok ? { status: "success" } : { status: "error", error: result.error };

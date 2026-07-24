@@ -6,7 +6,6 @@ import {
   parseCodigoInvitacion,
   reclamarCliente,
   reclamarPorCodigo,
-  registrarSocio,
   registroSchema,
   telefonoAE164,
 } from "./registro";
@@ -201,49 +200,5 @@ describe("invitacionInfo", () => {
   it("throws on a real RPC error", async () => {
     const client = fakeRpc({ data: null, error: { message: "boom" } });
     await expect(invitacionInfo("ABCD2345", client)).rejects.toThrow("boom");
-  });
-});
-
-describe("registrarSocio invite threading", () => {
-  const intake = {
-    nombre: "Ana López",
-    email: "ana@correo.mx",
-    password: "unbuenpass",
-    telefono: "614 111 2233",
-    acepta: true,
-  };
-
-  /** Fake exposing `.auth.signUp()` (session drives the confirmation-off branch)
-   *  plus the `.rpc().single()` chain the inline claim uses. */
-  function fakeSignup(session: unknown, rpc: (name: string, args: unknown) => void): SupabaseServer {
-    return {
-      auth: { signUp: async () => ({ data: { session }, error: null }) },
-      rpc: (name: string, args: unknown) => {
-        rpc(name, args);
-        return { single: async () => ({ data: { gym_slug: "forge" }, error: null }) };
-      },
-    } as unknown as SupabaseServer;
-  }
-
-  it("runs the invite claim (code + minted firma) when signUp returns a session (confirmation off)", async () => {
-    // The inline claim mints firmaCodigo — the pinned digest of "activar:v1:ABCD2345" / "test-key".
-    vi.stubEnv("TENANT_ASSERTION_KEY", "test-key");
-    const rpc = vi.fn();
-    const client = fakeSignup({ access_token: "x" }, rpc);
-    const result = await registrarSocio(intake, { emailRedirectTo: "x", codigo: "ABCD2345" }, client);
-    expect(result).toEqual({ ok: true, requiereConfirmacion: false });
-    expect(rpc).toHaveBeenCalledWith("reclamar_por_codigo", {
-      p_codigo: "ABCD2345",
-      p_firma: "087c644a7673332be892ce1f01bd35beb5fb6e52f8cccf0c7e890a827862dbc5",
-    });
-    vi.unstubAllEnvs();
-  });
-
-  it("does NOT claim when confirmation is required (no session yet)", async () => {
-    const rpc = vi.fn();
-    const client = fakeSignup(null, rpc);
-    const result = await registrarSocio(intake, { emailRedirectTo: "x", codigo: "ABCD2345" }, client);
-    expect(result).toEqual({ ok: true, requiereConfirmacion: true });
-    expect(rpc).not.toHaveBeenCalled();
   });
 });
