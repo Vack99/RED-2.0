@@ -239,6 +239,80 @@ anti-patterns make skills far more reliable than abstract warnings.
 
 ## 13. Open items
 
-- Author the five files in §10 (implementation; next step is `writing-plans`)
-- Amend the `CLAUDE.md` model-table line flagged in §7
-- Decide whether to mirror into `Repos/autoskills-library` for cherry-picking into other projects
+- ~~Author the five files in §10~~ — **done**, all five live at `~/.claude/skills/cross-examine/`
+- ~~Amend the `CLAUDE.md` model-table line flagged in §7~~ — **done** at `7d888b9`
+- ~~Decide whether to mirror into `Repos/autoskills-library`~~ — **done**; the library was
+  `git init`-ed (baseline `f9c3565`) and the skill committed at `97ffdd8`
+
+## 14. Outcome — built and measured 2026-07-28
+
+Built RED-GREEN-REFACTOR per `superpowers:writing-skills`. Three pressure scenarios were run against
+agents **five times**: once with no skill, then after each of three fix rounds. Same scenarios, same
+model, same rubric, scored by an agent held to identical standards each round.
+
+| Round | Score | What moved |
+|---|---|---|
+| Baseline (no skill) | **3/18** | Exit triggers and blind spots 0/3. Ranked lists 0/3. |
+| GREEN (skill v1) | **15/18** | Full reversal. |
+| Refactor 1 | 15/18 | F3 closed; a ranking-floor regression appeared. No net gain. |
+| Refactor 2 | 16/18 | Floor fixed. F1 survived a third prose attempt. |
+| Refactor 3 | **18/18** | F1 and F2 closed. |
+
+### The central lesson
+
+**Prose failed three times; making the check a deliverable worked immediately.**
+
+The stubborn failure (F1) was an agent granting the incumbent credit for resembling a known pattern.
+Rule 4 was stated against that exact move in four separate places. An agent read all four and
+committed it anyway, then — asked how the skill should have been written — answered *"the skill was
+clear, I did not follow it"* and rejected better wording as the fix. A second failing agent
+independently said the same.
+
+Two structural fixes came out of that, and both worked where prose had not:
+
+1. **Mechanical gates.** *"An exit trigger is invalid if the sentence contains no numeral"* closed F3
+   on first attempt. As the agent that failed it put it: hedge words do not feel vague when you write
+   them — *"materially faster than linearly"* reads as quantitative because it references a
+   mathematical concept. Self-recognition is the wrong enforcement mechanism because it is the
+   faculty already under pressure.
+2. **Visible deliverables.** Rule 7's self-audit was ignored while it was an invisible internal pass
+   (1 of 3 declared it, **0 of 3** showed it changing anything). Made a required closing `Draft audit`
+   section, it went to **3 of 3 emitted, 3 of 3 visibly changing a sentence.** Every mechanism that
+   reliably works in this skill works because it emits something a contract can demand.
+
+Also learned: **Rule 2's and Rule 3's honest escapes must differ in shape.** Rule 2's gap is a fact
+not yet collected, so it routes to an experiment (`unmeasured — <experiment>`). Rule 3's is usually a
+decision not yet made — a risk line only an owner can set — so it routes to a person
+(`undecided — <the question, and who must answer it>`).
+
+### The property that never slipped
+
+**The padding check was clean in all five rounds** — no fabricated or scenario-unsupported weakness at
+any stage, including the round that stated the minimum-of-five floor most forcefully. In the final
+round one answer held at five items and explicitly declined to pad to six, naming the candidate and
+why it could not be stated without guessing. This was the outcome most in doubt at design time: a
+skill built to defeat a false all-clear producing false alarms instead would have failed differently,
+not succeeded.
+
+### Known-unverified — needs a fresh session, not another agent
+
+**Autonomous invocation did not fire in 2 of 2 subagent tests.** Asked *"is it good enough to handle
+10x that volume?"* — phrasing the description's trigger list covers — the skill was listed as
+available and was not invoked. **This is not evidence the description is too weak**, because a
+subagent test cannot distinguish that from subagents not auto-invoking skills at all. Changing the
+description on this evidence would be acting on an unmeasured premise.
+
+**The experiment that settles it:** in a fresh main session, ask an evaluation-shaped question
+without naming the skill. If it fires, the description is fine. If it does not, add the plain-language
+symptom wording verbatim (`"is X good enough to handle…"`, `"will this hold up at…"`) — the current
+description carries the formal *"judging whether something will scale"* but not the colloquial forms
+people actually type.
+
+### Deferred, not worth another round
+
+The draft audit's both-ways property — that an unsupportable *criticism* is cut exactly as an
+unsupported reassurance is — is asserted in the rule and demonstrated in `contract.md`'s worked
+example, but **0 of 3 runs executed a cut of a criticism** (one near-cut was reversed and kept). Watch
+for false severity in real use; revisit only if it appears.
+
+§9's `jury` exit trigger did not fire during the build: replication was never wanted standalone.
