@@ -532,8 +532,14 @@ so Postgres scans until it finds a visible row — and a **newly activated** mem
 insert. The query is structurally worst-case for first-time claimers, immediately after `/activar`, on the exact request
 that decides whether activation felt like it worked. That is a conversion risk, not just latency.
 
-**Cost now vs later.** 4 one-line edits + one policy merge + one guard test shaped like `denial-suite-drift.test.ts`:
-1–2 days. **The policy merge is unproven** — see E1 in §8.3; run it on scratch first.
+**Cost now vs later.** 4 one-line edits + one guard test shaped like `denial-suite-drift.test.ts`: 1–2 days.
+
+> **AMENDED 2026-07-28 — E1 was run. The policy merge is REFUTED, not merely unproven.** Measured on 611,000
+> `gym_membership` rows: merging the two permissive policies produces **no improvement** and never yields an Index
+> Scan. Two other candidates are actively harmful — a RESTRICTIVE split silently deletes staff roster visibility
+> (5,202 rows → 1), and a raw `EXISTS` fails with `ERROR 42P17: infinite recursion detected in policy`.
+> **`.eq("user_id", uid)` at the call sites is the entire fix**, measured at 12,364–38,000× and independently
+> re-measured at 667× (1,056 ms → 1.58 ms; SubPlan executions 61,000 → 1). Zero DDL. See §12.
 
 ---
 
@@ -729,7 +735,7 @@ All costs monthly, USD, at M = 225. Migration hours are **asserted** in every ro
 | `alta_gimnasio` RPC + wire `token_overrides` to the DB | 4–6 | 11 |
 | Email: split key, per-tenant subdomains, suppression table | 1.5 | 7 |
 | Observability minimum (error tracker, uptime, cache-hit read, archiver alert) | 1–2 | 8 |
-| 4 × `.eq("user_id")` + policy merge + gym-scope guard test | 1–2 | 9 |
+| 4 × `.eq("user_id")` + gym-scope guard test (policy merge dropped — measured ineffective, §12) | 1–2 | 9 |
 | Region pin + `vercel.json` + proxy lookup collapse | 0.5 | 12 |
 | `test:denial` in CI against the existing scratch project | 1–2 | 14 |
 | Front-desk retry/optimistic-write pass + required email on NUEVO | 3–5 | 16 |
@@ -942,7 +948,7 @@ column is the finding**: 14 of 22 rows have nothing behind them.
 | **The regime-2 scan rate (~1,000 MB/s)** | Modelled; the softest load-bearing number in the report | Moves ceiling #7 between **~30 and ~170 gyms** | Seed the scratch project to 500 gyms and re-run the three probes (E2) |
 | **PostgREST `db-pool` size** | Not published per tier | Every connection-ceiling number in four files | Dashboard → Settings → API, 30 s |
 | **Vercel function region / Fluid / plan** | No dashboard access | $10–150/mo swing on how `proxy.ts` bills, and whether the cross-continent hop is real | Vercel → project → Functions, 2 min |
-| **Does the policy merge actually restore the index?** | `verify-math` proved the OR *breaks* it and explicitly did **not** prove the fix works, warning `is_staff_of` may need rewriting as an inlinable predicate first | This is a **named top recommendation and it is unproven** | E1 on scratch, 30 min |
+| ~~**Does the policy merge actually restore the index?**~~ **SETTLED 2026-07-28 — NO.** | `verify-math` proved the OR *breaks* it; E1 measured that merging does **not** fix it, and that two alternative rewrites are harmful | Recommendation withdrawn; `.eq("user_id")` alone carries the win | **Done — see §12** |
 | **Does prod's schema match the repo, object by object?** | Ledgers diverge 65/87; grants are *known* to differ | You cannot safely ship DDL to a schema you have not diffed | E3 on scratch, 2–3 h |
 
 ---
@@ -987,7 +993,7 @@ the scratch project, and I could not."** That one provisioning decision is why e
 
 | # | Question it closes | Experiment | Cost | Gates a recommendation? |
 |---|---|---|---|---|
-| **E1** | Does merging the two permissive SELECT policies actually restore the index? | Apply the merged policy on scratch, `EXPLAIN` the same query, confirm `Index Scan` | **30 min** | **YES — this is a named top recommendation and it is unproven** |
+| ~~**E1**~~ **RUN 2026-07-28** | Does merging the two permissive SELECT policies actually restore the index? | Applied on scratch at 611k rows, `EXPLAIN (ANALYZE, BUFFERS)` on all four candidate fixes | done | **ANSWERED: no. See §12.** |
 | **E3** | Does prod's schema match the repo, object by object? | Replay all migrations onto scratch, `pg_dump --schema-only`, diff against a prod schema dump | **2–3 h** | **YES — you cannot safely ship §Do-This-First's DDL to a schema you have not diffed** |
 | **E2** | Every gym-count threshold in this report | Seed scratch to 500 gyms × 200 members, re-run the `arch-authz` Q1/Q2/Q3 probe set and the three regime probes | **6–10 h** | No — but nothing quantitative here is decision-grade until it runs |
 | **E4** | RTO/RPO | Timed restore drill into scratch | **2–4 h** | No, but it is the only number that matters in a disaster, and it settles the PITR question at the same time |
@@ -1143,5 +1149,88 @@ flagged as a possible one-way door and is not — `clientes_auth_user_id_fkey ON
 
 ---
 
-*36 agents · live prod read-only · every vendor price fetched 2026-07-27/28 · every load-bearing constant re-verified
-against production at write time.*
+# 12. MEASURED ADDENDUM — scratch-project results (2026-07-28)
+
+Everything above §12 is **modelled**, extrapolated from a 4-gym / 15 MB production database. Its own coverage critic
+found the flaw: 36 agents were given read-only production and nobody was given the writable scratch project, so seven
+of them independently wrote *"the honest way to settle this is to seed the scratch project and I could not."*
+
+This section is the measurement. Scratch (`gyyujeguycxxoaqgdnjp`) was seeded to **3,002 gyms, 611,000
+`gym_membership` rows, 600,003 `ventas` rows, 438 MB** — with `shared_buffers = 224 MB` and the same two permissive
+SELECT policies as production, so `ventas` (330 MB) sits **above** the RAM boundary, in the regime the models argued
+about. No production write was made at any point.
+
+## 12.1 The two ceilings, measured
+
+**`mi_membresia` anchor — `where cliente_id = $1 order by created_at desc limit 1` on 330 MB of `ventas`:**
+
+| State | Execution | Buffers | Plan |
+|---|---|---|---|
+| No index, cold | **2,925 ms** | 23,571 (11,164 read from disk) | Parallel Seq Scan, 599,994 rows discarded |
+| No index, warm | **524 ms** | 23,571 (11,100 read from disk) | Parallel Seq Scan — *never* caches; table exceeds RAM |
+| **`ventas (cliente_id, created_at desc)`** | **4.0 ms** | **4** | Index Scan, `Index Cond` formed |
+
+**131× warm · 727× cold · 5,900× less I/O.** Index build: **2.9 s** on 600k rows; index size 46 MB.
+This is a **lower bound** — 600k rows is ~4 weeks of 3,000-gym operation, not a year (≈8.1 M rows, ≈4.5 GB).
+
+**`gym_membership` read under RLS, as `authenticated`, at 61,000 scanned rows:**
+
+| Shape | Execution | SubPlan executions | Buffers |
+|---|---|---|---|
+| Unfiltered (`resolverMiembroGym`, `agenda-miembro.ts:147-150`) | **1,056 ms** | **61,000** | 183,775 |
+| **With `.eq("user_id", uid)`** | **1.58 ms** | **1** | 86 |
+
+The `Filter: ((SubPlan 1) OR (user_id = (InitPlan 2).col1))` is visible in both plans; supplying `user_id` converts
+Seq Scan → `Index Only Scan using gym_membership_pkey`, `Heap Fetches: 0`. **667×, one line of TypeScript, zero DDL.**
+
+## 12.2 A recommendation this measurement withdrew
+
+§3 and §4.1 recommended **merging the two permissive `gym_membership` SELECT policies**. E1 tested all four candidate
+fixes on 611k rows:
+
+| Fix | Measured effect | Ship? |
+|---|---|---|
+| **`.eq("user_id", uid)` at 3–4 call sites** | **12,364–38,000×**; genuine Index Scan; zero DDL | **Yes — this is the entire fix** |
+| Merge the two policies, cheap arm first | **No improvement** (inside the baseline noise band); never produces an Index Scan | No — cosmetic only |
+| Non-definer "inlinable" `is_staff_of` | Does not inline; no speedup; removes the static recursion guard | No |
+| RESTRICTIVE split | Runs, and **silently deletes staff roster visibility: 5,202 rows → 1** | **No — correctness regression** |
+| Raw `EXISTS` instead of the function | `ERROR 42P17: infinite recursion detected in policy` | No — does not run |
+
+The report said this fix was *unproven*. It is **refuted**. Two of the alternatives are worse than doing nothing.
+
+## 12.3 Is production reproducible from the repo? (E3)
+
+**The data model is byte-identical.** Tables, columns, types, defaults, indexes, FK actions and RLS policies all
+match a full replay of the repo's migrations. The 87-vs-83 migration-stamp gap is `apply_migration` restamping, not
+missing DDL — matching by *name* closes it.
+
+**The drift is privilege-only, and it is real:** production's function-grant state contains at least one revoke that
+exists nowhere in git history. So the §3 DDL batch is **safe to ship**, and grants are the thing no migration
+reproduces — which is also why the 5 anon-EXECUTE write RPCs and the 29-table `TRUNCATE` grant went unnoticed.
+
+## 12.4 What changed, and what did not
+
+| Claim | Was (modelled) | Now (measured) |
+|---|---|---|
+| `ventas` scan rate / regime | 282 vs 1,000 vs 3,250 MB/s across three models | Table above RAM **never warms**: 524 ms floor, 2,925 ms cold |
+| `ventas` index effect | asserted from plan shape | **131× / 727×**, 23,571 → 4 buffers, 2.9 s build |
+| `gym_membership` first ceiling | five answers, 10 → 6,917 gyms | one curve; **1,056 ms at 61k rows**, 667× fix |
+| Policy merge | "unproven, run E1" | **refuted** |
+| Prod vs repo schema | "22 of 87 stamps match — ledgers diverge" | **data model identical**; privilege drift only |
+
+**Unchanged and still modelled:** the cost curve, Vercel's ±5× band, MAU, compute rung sizing, and every
+organisational and compliance finding. Those were never scale-extrapolation problems.
+
+**Still not measured:** the write path (`registrar_venta` and the 24 other writers) — three separate agents each
+disclaimed it assuming another had it, and the one sample available shows a write RPC costing *more* than the read
+that anchors the entire compute model. If that holds, every ceiling above arrives earlier than stated. That is the
+single highest-value remaining experiment, and the seeded scratch database is still sitting there.
+
+**Scratch state left behind:** 3,000 synthetic gyms (`slug like 'synth-gym-%'`), `gym_membership_user_id_fkey`
+dropped (synthetic users are not in `auth.users`), policies restored byte-identical to production, test functions
+dropped. Disposable — delete or re-seed freely.
+
+---
+
+*36 agents modelling · 4 agents + direct measurement · live prod read-only throughout · every vendor price fetched
+2026-07-27/28 · scale results measured on a 3,002-gym seeded database, 2026-07-28.*
