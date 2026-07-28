@@ -15,11 +15,17 @@ Rankings, higher = better. Cost is a goodness score, higher = cheaper to run —
 | fable-5  | 2    | 9            | 9     |
 
 How to apply:
-- These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. Escalating costs less than shipping mediocre work.
+- These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. Escalating costs less than shipping mediocre work. **This permission stops at opus — reaching for fable-5 is governed by the Fable rule below.**
 - Cost is a tie-breaker only; when axes conflict for anything that ships, intelligence > taste > cost.
 - Bulk/mechanical work (clear-spec implementation, data analysis, migrations): sonnet-5 — the cheapest capable model; escalate per the override rule if output misses the bar.
 - Anything user-facing (UI, copy, API design) needs taste ≥ 7.
-- Reviews of plans/implementations: fable-5 or opus-4.8.
+- Reviews of plans/implementations: **opus** — not fable-5. See the Fable rule below.
+- **Fable is escalation-only, never staffed.** Fable's quota is scarce and any fan-out multiplies it, so no workflow, roster, or subagent may be *assigned* fable-5 up front. It can only be escalated to, in this order:
+  1. **Output missed the bar → suspect the prompt first.** Re-run the same seat at the same tier with a sharper mandate. Most "the model wasn't smart enough" outputs are underspecified prompts, and this is the cheapest fix available.
+  2. **Still short → escalate that seat to opus.**
+  3. **Still short *and* the decision is expensive to reverse → one fable-5 seat**, and name which seat and why in the output.
+
+  Never escalate bulk, extraction, or verification roles — volume is exactly what a scarce quota cannot absorb. This rule governs **subagents**; fable in the main session is unrestricted.
 - Never use Haiku.
 - Claude models (sonnet-5, opus-4.8, fable-5) run via the Agent/Workflow model parameter.
 
