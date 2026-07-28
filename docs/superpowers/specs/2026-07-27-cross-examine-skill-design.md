@@ -306,7 +306,9 @@ description on this evidence would be acting on an unmeasured premise.
 without naming the skill. If it fires, the description is fine. If it does not, add the plain-language
 symptom wording verbatim (`"is X good enough to handle…"`, `"will this hold up at…"`) — the current
 description carries the formal *"judging whether something will scale"* but not the colloquial forms
-people actually type.
+people actually type. **Run it two or three times before rewriting anything:** invocation is
+probabilistic, so a single non-fire is weak evidence — acting on one would repeat exactly the
+unmeasured-premise error this section exists to avoid.
 
 ### Deferred, not worth another round
 
