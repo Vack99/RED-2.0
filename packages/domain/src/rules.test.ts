@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente, ventanaArribo } from "./rules";
+import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete — purchase wins, days carry (ruling C4)", () => {
@@ -553,10 +554,12 @@ describe("ventanaArribo / esNoAsistio — the arrival window (2026-07-29)", () =
     expect(ventanaArribo(INICIO, 90).hasta.toISOString()).toBe("2026-07-29T19:45:00.000Z");
   });
 
-  it("is still open exactly AT the open edge, and closed one ms before it", () => {
-    const { desde } = ventanaArribo(INICIO, 60);
-    expect(esNoAsistio("reservada", INICIO, 60, desde)).toBe(false);
-    expect(esNoAsistio("reservada", INICIO, 60, new Date(desde.getTime() - 1))).toBe(false);
+  it("derives BOTH edges from the exported constants — the numbers the SQL twin and the desk pill also carry", () => {
+    // esNoAsistio never reads the lower bound (a closed window is an upper-bound fact), so
+    // the 90 only has a test at all if it is asserted on `desde` directly.
+    const { desde, hasta } = ventanaArribo(INICIO, 60);
+    expect(INICIO.getTime() - desde.getTime()).toBe(VENTANA_ARRIBO_PREVIA_MIN * 60_000);
+    expect(hasta.getTime() - INICIO.getTime()).toBe((60 + VENTANA_ARRIBO_GRACIA_MIN) * 60_000);
   });
 
   it("closes AT the upper edge (half-open: `hasta <= ahora`), not one ms later", () => {

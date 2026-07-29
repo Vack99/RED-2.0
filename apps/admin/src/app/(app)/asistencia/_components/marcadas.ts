@@ -16,6 +16,8 @@
  * in-flight action's optimistic and reconciled states consistent.
  */
 
+import { VENTANA_ARRIBO_PREVIA_MIN } from "@gym/domain/rules";
+
 /** The screen's context key for the class-less visit kind (ACCESO LIBRE). Never a
  *  session id — session ids are uuids, so the two can't collide. */
 export const LIBRE = "libre";
@@ -68,11 +70,12 @@ export function personasEn(visitas: Visita[]): number {
   return new Set(visitas.map((v) => v.clienteId)).size;
 }
 
-/** How far from now a class may start and still be the screen's opening context. The
- *  server's attribution window opens on the SAME 90 minutes (@gym/domain's
- *  `VENTANA_ARRIBO_PREVIA_MIN`, and its SQL twin `ventana_arribo`) so the class the screen
- *  opens on and the class a LIBRE tap attributes to cannot disagree. */
-const VENTANA_CERCANA_MIN = 90;
+/** How far from now a class may start and still be the screen's opening context. This is
+ *  the arrival window's own lower bound, IMPORTED rather than re-coined: the class the
+ *  screen opens on and the class a LIBRE tap gets attributed to are then the same 90
+ *  minutes by construction, not by two numbers agreeing. Aliased so the kiosk rule below
+ *  still reads in its own vocabulary. */
+const VENTANA_CERCANA_MIN = VENTANA_ARRIBO_PREVIA_MIN;
 
 /**
  * The class whose start is nearest `ahora`, within `VENTANA_CERCANA_MIN` — Zen Planner's
@@ -97,4 +100,34 @@ export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora:
     }
   }
   return dist <= VENTANA_CERCANA_MIN * 60_000 ? mejor : LIBRE;
+}
+
+/**
+ * clienteId → the session a LIBRE tap on that member would be ATTRIBUTED to today: their
+ * nearest booking that is still `reservada` and not a walk-in. That pair of conditions is
+ * the RPC's own candidate filter, and `|startsAt − ahora|` is its own tie-break, so the
+ * RESERVA chip cannot name a class the tap would not land on. Members with only marked or
+ * walk-in bookings get no entry — a tap on them refuses or charges, and a chip there would
+ * promise attribution the server will not give.
+ *
+ * Resolved SERVER-side (page.tsx, beside `sesionCercana`) for the same reason: the metric
+ * is measured against an absolute instant, which must not differ between the SSR and
+ * hydration renders. The reservation shape is kept structural, not imported — the DAL is
+ * `server-only` and this is a "use client" module (same as `Visita` above).
+ */
+export function reservaAtribuible(
+  sesiones: { id: string; startsAt: Date }[],
+  reservas: Record<string, { clienteId: string; status: string; isWalkIn: boolean }[]>,
+  ahora: Date,
+): Record<string, string> {
+  const mejor: Record<string, { sessionId: string; dist: number }> = {};
+  for (const s of sesiones) {
+    const dist = Math.abs(s.startsAt.getTime() - ahora.getTime());
+    for (const r of reservas[s.id] ?? []) {
+      if (r.status !== "reservada" || r.isWalkIn) continue;
+      const actual = mejor[r.clienteId];
+      if (!actual || dist < actual.dist) mejor[r.clienteId] = { sessionId: s.id, dist };
+    }
+  }
+  return Object.fromEntries(Object.entries(mejor).map(([id, m]) => [id, m.sessionId]));
 }

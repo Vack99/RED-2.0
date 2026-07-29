@@ -1,12 +1,12 @@
 import { getAgendaDia, type SesionAgendaDTO } from "@gym/data/server/agenda";
-import { getMarcadas, getReservasDelDia } from "@gym/data/server/asistencia";
+import { getMarcadas, getReservasDelDia, type ReservaDelDia } from "@gym/data/server/asistencia";
 import { getClientesParaPase } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
 import { hoyIsoEnZona, horaEnZona } from "@gym/format";
 import { topTag } from "@gym/ui/forge/agenda/session-card";
 
 import { AsistenciaScreen, type SesionDelDia } from "./_components/asistencia";
-import { LIBRE, sesionCercana } from "./_components/marcadas";
+import { LIBRE, reservaAtribuible, sesionCercana } from "./_components/marcadas";
 
 /**
  * The desk names a class exactly as the Agenda does: an evento especial reads by its own
@@ -34,7 +34,8 @@ export default async function Page() {
   // first (ADR-0010) — an idempotent write, and the intended one: the desk reads the same
   // schedule the Agenda maintains, never a second projection of it.
   let sesiones: SesionDelDia[] = [];
-  let reservas: Record<string, string[]> = {};
+  let reservas: Record<string, ReservaDelDia[]> = {};
+  let reservaAtribuiblePorCliente: Record<string, string> = {};
   let ctxInicial: string = LIBRE;
   try {
     const agenda = await getAgendaDia(hoyIso);
@@ -46,9 +47,13 @@ export default async function Page() {
     }));
     // Bookings drive the CON RESERVA group; skipped entirely for a gym with no schedule.
     reservas = await getReservasDelDia(agenda.sesiones.map((s) => s.id));
-    // Resolved here, not in a state initializer: "the class nearest NOW" must be the
-    // same value in the SSR and hydration renders or React reports a mismatch.
-    ctxInicial = sesionCercana(agenda.sesiones, new Date());
+    // Both of these are resolved here, not in a state initializer: each measures a
+    // distance from an absolute NOW, which must be the same value in the SSR and hydration
+    // renders or React reports a mismatch. That is also why the session instants stay on
+    // the server — the screen receives only ids and gym-local hora labels.
+    const ahora = new Date();
+    ctxInicial = sesionCercana(agenda.sesiones, ahora);
+    reservaAtribuiblePorCliente = reservaAtribuible(agenda.sesiones, reservas, ahora);
   } catch (err) {
     console.error("[asistencia] schedule read failed — falling back to ACCESO LIBRE", err);
   }
@@ -60,6 +65,7 @@ export default async function Page() {
       hoyIso={hoyIso}
       sesiones={sesiones}
       reservas={reservas}
+      reservaAtribuible={reservaAtribuiblePorCliente}
       ctxInicial={ctxInicial}
     />
   );

@@ -45,11 +45,23 @@
 --                                             — the pardon sits above the C9 gate exactly where C15 sat, so
 --                                             a member whose package lapsed while holding today's booking is
 --                                             still admitted (24 of 52 live clientes are expired-with-balance).
---   * (v5) cooldown pardon stamps perdonada  — #169: the ONLY writer of perdonada=true on this seam. A member
---                                             marked in a class and tapped at the desk minutes later is ONE
---                                             arrival recorded twice; the second row is stamped so a VISIT
---                                             count can skip it. asistencias_mes_por_cliente then returns 1
---                                             for that member, not 2, off two active rows.
+--   * (v5) cooldown pardon stamps perdonada  — #169: a member marked in a class and tapped at the desk minutes
+--                                             later is ONE arrival recorded twice; the second row is stamped
+--                                             so a VISIT count can skip it. asistencias_mes_por_cliente then
+--                                             returns 1 for that member, not 2, off two active rows.
+--   * (v6) A ROW THAT PAID NOTHING PARDONS   — the pardon-chaining hole: the closed-window arm's FREE libre row
+--          NOTHING                             is still an active libre row, so a bare cooldown would let one
+--                                             missed booking buy a free door visit AND a free class. The
+--                                             class must CHARGE (4->3) and its row must not be stamped.
+--   * (v7) free and duplicate are INDEPENDENT — the dual-surface arrival (class roster + door check-in) on a day
+--                                             the member also missed a booking: the row is free (closed-window
+--                                             pardon) AND stamped (cooldown), and the month count says 1, not 2.
+--   * (v8) the attribution filters, pinned    — three states where deleting exactly one predicate changes the
+--                                             written rows: (a) a BACKDATED desk entry must not attribute to
+--                                             today's in-window class, (b) a CANCELLED class attributes nothing
+--                                             (and, being in-window, cannot be confused with the pardon arm,
+--                                             which deliberately has no cancelled filter), (c) a WALK-IN row is
+--                                             not a booking, so it cannot buy the closed-window pardon.
 --
 --   * delegation to pasar_lista_sesion       — #89: the 3-arg call (p_session_id set) is the desk marking a
 --                                             member IN A CLASS, which is the same act as the Agenda roster.
@@ -107,7 +119,12 @@ declare
   c_cerr   uuid;                        -- (v4) misses the class, arrives after the window closed — Luis
   c_expcerr uuid;                       -- (v4) the same, on an EXPIRED package — the pardon-above-C9 arm
   c_pard   uuid;                        -- (v5) class mark + desk tap inside the cooldown — perdonada
-  v_ct     uuid; s_id uuid; s_pre uuid; s_cls uuid;
+  c_chain  uuid;                        -- (v6) missed booking → free door tap → class mark: the chain-breaker
+  c_dual   uuid;                        -- (v7) class mark → free door tap: free AND duplicate
+  c_back   uuid;                        -- (v8a) in-window booking, tap BACKDATED to another fecha
+  c_can    uuid;                        -- (v8b) booking on a CANCELLED in-window class
+  c_wcls   uuid;                        -- (v8c) a WALK-IN row on the closed session (synthetic, see below)
+  v_ct     uuid; s_id uuid; s_pre uuid; s_cls uuid; s_cls2 uuid; s_can uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (v_gym, 'toggle-pase-rules-suite-gym', 'Toggle Pase Rules Suite', v_tz, 'base');
@@ -146,17 +163,35 @@ begin
     values ('TP vencido ventana cerrada', '5550000010', 4, v_today + 20, '8 clases', v_gym) returning id into c_expcerr;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('TP perdonada', '5550000011', 5, v_today + 20, '8 clases', v_gym) returning id into c_pard;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP cadena perdon', '5550000012', 4, v_today + 20, '8 clases', v_gym) returning id into c_chain;
+  -- c_dual starts at 5: its class mark charges one (5->4) before the door tap that must come free.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP doble superficie', '5550000013', 5, v_today + 20, '8 clases', v_gym) returning id into c_dual;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP entrada retro', '5550000014', 4, v_today + 20, '8 clases', v_gym) returning id into c_back;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP clase cancelada', '5550000015', 4, v_today + 20, '8 clases', v_gym) returning id into c_can;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP walk-in cerrada', '5550000016', 4, v_today + 20, '8 clases', v_gym) returning id into c_wcls;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'TP Metcon') returning id into v_ct;
-  -- s_id  → moved INTO the arrival window (v1/v2 + the delegation vectors)
-  -- s_pre → moved to >90 min ahead of now() (v3, pre-window)
-  -- s_cls → moved to before the window's close (v4, closed-window)
+  -- s_id   → moved INTO the arrival window (v1/v2 + the delegation vectors + v8a)
+  -- s_pre  → moved to >90 min ahead of now() (v3, pre-window)
+  -- s_cls  → moved to before the window's close (v4, v6, v7, v8c)
+  -- s_cls2 → moved to the SAME instant as s_cls, so it shares its gym-local date by construction: v6/v7
+  --          need a class on that date the member does NOT hold a booking for (the walk-in branch).
+  -- s_can  → moved into the window AND cancelled (v8b)
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_id;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_pre;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_cls;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_cls2;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_can;
 
   -- These four bookings are seeded DIRECTLY rather than through reservar_clase, which refuses an expired
   -- booker outright ('Paquete vencido', 20260706170000:173-175) and, since #165, a started class as well.
@@ -165,11 +200,23 @@ begin
   -- walk-in gate must not swallow. The three window-arm members are seeded the same way for the same
   -- reason: c_expcerr is expired, and the closed session has by definition already started. Their balances
   -- are seeded at 4, i.e. the class already consumed at booking.
+  --
+  -- c_wcls' row is the one SYNTHETIC state in this suite: reservada AND is_walk_in. No code path
+  -- produces it today (pasar_lista_sesion's undo sends a walk-in row to cancelada, never back to
+  -- reservada), and that is exactly why it is seeded by hand — the `is_walk_in = false` filter on the
+  -- closed-window pardon is defense-in-depth, and without a fixture in this state nothing would fail
+  -- if a future edit dropped it. A walk-in row is an operator's record of a door visit, never a booking
+  -- that paid: the door must not read it as one.
   insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in) values
     (v_gym, s_id,  c_expres,  'reservada', false),
     (v_gym, s_pre, c_prev,    'reservada', false),
     (v_gym, s_cls, c_cerr,    'reservada', false),
-    (v_gym, s_cls, c_expcerr, 'reservada', false);
+    (v_gym, s_cls, c_expcerr, 'reservada', false),
+    (v_gym, s_id,  c_back,    'reservada', false),
+    (v_gym, s_can, c_can,     'reservada', false),
+    (v_gym, s_cls, c_chain,   'reservada', false),
+    (v_gym, s_cls, c_dual,    'reservada', false),
+    (v_gym, s_cls, c_wcls,    'reservada', true);
 
   perform set_config('t.gym',       v_gym::text,      true);
   perform set_config('t.today',     v_today::text,    true);
@@ -186,9 +233,16 @@ begin
   perform set_config('t.c_cerr',    c_cerr::text,     true);
   perform set_config('t.c_expcerr', c_expcerr::text,  true);
   perform set_config('t.c_pard',    c_pard::text,     true);
+  perform set_config('t.c_chain',   c_chain::text,    true);
+  perform set_config('t.c_dual',    c_dual::text,     true);
+  perform set_config('t.c_back',    c_back::text,     true);
+  perform set_config('t.c_can',     c_can::text,      true);
+  perform set_config('t.c_wcls',    c_wcls::text,     true);
   perform set_config('t.s_id',      s_id::text,       true);
   perform set_config('t.s_pre',     s_pre::text,      true);
   perform set_config('t.s_cls',     s_cls::text,      true);
+  perform set_config('t.s_cls2',    s_cls2::text,     true);
+  perform set_config('t.s_can',     s_can::text,      true);
 end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -211,19 +265,23 @@ reset role;
 -- POSITION THE SESSIONS ON THE WINDOW (privileged — no RPC can move a class's start, and the member
 -- role holds no class_session write). now() is frozen for the whole transaction, so these three
 -- instants are stable window positions, not a race:
---   s_id  = now() + 30 min  → the window [start-90, start+75) CONTAINS now()   (v1, v2, delegation)
---   s_pre = now() + 3 h     → now() is 90 min BEFORE the window opens          (v3, the Ana arm)
---   s_cls = now() - 3 h     → the window closed 105 min ago                    (v4, the Luis arm)
+--   s_id   = now() + 30 min → the window [start-90, start+75) CONTAINS now()   (v1, v2, delegation, v8a)
+--   s_pre  = now() + 3 h    → now() is 90 min BEFORE the window opens          (v3, the Ana arm)
+--   s_cls  = now() - 3 h    → the window closed 105 min ago                    (v4, v6, v7, v8c)
+--   s_cls2 = now() - 3 h    → the SAME instant, so it shares s_cls' gym-local date whatever the hour
+--   s_can  = now() + 30 min, CANCELLED → in-window but cancelled                (v8b)
 -- Each session's own gym-local date is published as t.f_* and used as p_fecha from here on: a window
 -- edge three hours either side of now() can legitimately fall on the neighbouring day, and every gate
 -- in play (attribution, the pardon, the cooldown) keys on `session date = p_fecha`.
 -- ════════════════════════════════════════════════════════════════════════════════
 do $$
 declare
-  v_tz  text;
-  s_id  uuid := current_setting('t.s_id',  true)::uuid;
-  s_pre uuid := current_setting('t.s_pre', true)::uuid;
-  s_cls uuid := current_setting('t.s_cls', true)::uuid;
+  v_tz   text;
+  s_id   uuid := current_setting('t.s_id',   true)::uuid;
+  s_pre  uuid := current_setting('t.s_pre',  true)::uuid;
+  s_cls  uuid := current_setting('t.s_cls',  true)::uuid;
+  s_cls2 uuid := current_setting('t.s_cls2', true)::uuid;
+  s_can  uuid := current_setting('t.s_can',  true)::uuid;
   t_win timestamptz := now() + interval '30 minutes';
   t_pre timestamptz := now() + interval '3 hours';
   t_cls timestamptz := now() - interval '3 hours';
@@ -233,6 +291,11 @@ begin
   update public.class_session set starts_at = t_win where id = s_id;
   update public.class_session set starts_at = t_pre where id = s_pre;
   update public.class_session set starts_at = t_cls where id = s_cls;
+  update public.class_session set starts_at = t_cls where id = s_cls2;
+  -- The gym cancels the class the member is booked into, and it is still inside its arrival window —
+  -- the ONE fixture where the attribution's `cancelled_at is null` filter and the closed-window pardon
+  -- (which deliberately has NO cancelled filter) give different answers, so v8b can tell them apart.
+  update public.class_session set starts_at = t_win, cancelled_at = now() where id = s_can;
 
   perform set_config('t.f_win', ((t_win at time zone v_tz)::date)::text, true);
   perform set_config('t.f_pre', ((t_pre at time zone v_tz)::date)::text, true);
@@ -725,6 +788,180 @@ begin
   if v_n <> 2 then raise exception 'RULE FAIL(v5): expected 2 active rows (the arrival recorded twice), got %', v_n; end if;
   select n into v_n from public.asistencias_mes_por_cliente(v_gym, f_win) where cliente_id = c_pard;
   if v_n is distinct from 1 then raise exception 'RULE FAIL(v5 aggregate): asistencias_mes_por_cliente returned % for a member with two rows and one pardon (expected 1 VISIT)', v_n; end if;
+end $$;
+
+-- ── (v6) THE CHAIN-BREAKER: a row that paid nothing pardons nothing ──────────────────────────────
+-- The pardon-chaining hole, closed. Two free-visit rules that are each correct alone compose into a
+-- double-dip: the closed-window arm writes a FREE libre row for a member who missed today's booking,
+-- and that row is an active libre row on this fecha — so a bare 15-minute cooldown would then hand the
+-- same member a FREE CLASS if the operator marked them minutes later. One missed booking, two free
+-- visits, against Terms that cap the no-show at exactly one class.
+--
+-- pasar_lista_sesion's walk-in cooldown therefore refuses to be pardoned by a row that was itself free
+-- from that arm, detected with the same predicate that granted it. The class CHARGES, and its row is
+-- not a pardoned duplicate — the member really did do two things.
+do $$
+declare
+  c_chain uuid := current_setting('t.c_chain', true)::uuid;
+  s_cls   uuid := current_setting('t.s_cls', true)::uuid;
+  s_cls2  uuid := current_setting('t.s_cls2', true)::uuid;
+  f_cls   date := current_setting('t.f_cls', true)::date;
+  v_present boolean; v_clases int; v_consumio boolean; v_perdonada boolean; v_origen text;
+  v_status text; v_n int;
+begin
+  -- Step 1 — the missed booking's door tap: free (closed-window pardon), and NOT a duplicate arrival.
+  select present into v_present from public.toggle_pase(c_chain, f_cls);
+  if v_present is not true then raise exception 'SEED FAIL(v6): the closed-window door tap was refused'; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_chain and fecha = f_cls and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from false then raise exception 'SEED FAIL(v6): libre row consumio % (expected false — pardoned)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'SEED FAIL(v6): libre row perdonada % (expected false — no class row exists yet)', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_chain;
+  if v_clases <> 4 then raise exception 'SEED FAIL(v6): balance % (expected an untouched 4)', v_clases; end if;
+
+  -- Step 2 — minutes later (the same frozen instant), a class on the SAME date the member never booked.
+  -- The walk-in branch's cooldown SEES the recent libre row and must still charge: 4 -> 3.
+  select present into v_present from public.pasar_lista_sesion(s_cls2, c_chain);
+  if v_present is not true then raise exception 'RULE FAIL(v6): the class mark was refused'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_chain;
+  if v_clases <> 3 then raise exception 'RULE FAIL(v6): FREE SECOND VISIT — balance % (expected 3: a pardoned row pardoned a class in turn, so one missed booking bought two free visits)', v_clases; end if;
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_chain and class_session_id = s_cls2 and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v6): class row consumio % (expected true — the chain is broken)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(v6): class row origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v6): a CHARGED class row was stamped perdonada %', v_perdonada; end if;
+
+  -- The pardoned libre row is untouched by any of it, and the booking is still the desk's non-business.
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_chain and fecha = f_cls and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from false or v_perdonada is distinct from false then
+    raise exception 'RULE FAIL(v6): the earlier libre row changed (consumio %, perdonada %)', v_consumio, v_perdonada;
+  end if;
+  select status into v_status from public.reservation where member_id = c_chain and class_session_id = s_cls;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v6): the missed booking moved to % (expected reservada)', v_status; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_chain and deleted_at is null;
+  if v_n <> 2 then raise exception 'RULE FAIL(v6): active rows % (expected 2 — two real visits)', v_n; end if;
+end $$;
+
+-- ── (v7) FREE and DUPLICATE are independent facts, and one row carries both ──────────────────────
+-- The dual-surface arrival, which is the NORMAL shape at a gym that runs a door check-in AND class
+-- rosters: the member is marked into a class, then tapped at the desk minutes later — while also
+-- holding a booking they missed earlier that day. The closed-window pardon decides the MONEY (free),
+-- and the cooldown decides the COUNT (this is the second record of one arrival). If the pardon branch
+-- skipped the cooldown question, both rows would read perdonada=false and one arrival would count as
+-- two visits — an overcount that is systematic at exactly the gyms this is being sold to.
+do $$
+declare
+  c_dual uuid := current_setting('t.c_dual', true)::uuid;
+  s_cls  uuid := current_setting('t.s_cls', true)::uuid;
+  s_cls2 uuid := current_setting('t.s_cls2', true)::uuid;
+  f_cls  date := current_setting('t.f_cls', true)::date;
+  v_gym  uuid := current_setting('t.gym', true)::uuid;
+  v_present boolean; v_clases int; v_consumio boolean; v_perdonada boolean; v_origen text;
+  v_ret_sess uuid; v_status text; v_n int;
+begin
+  -- Step 1 — the class mark (walk-in branch: the member's booking is on the OTHER session): 5 -> 4.
+  select present into v_present from public.pasar_lista_sesion(s_cls2, c_dual);
+  if v_present is not true then raise exception 'SEED FAIL(v7): the class mark was refused'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_dual;
+  if v_clases <> 4 then raise exception 'SEED FAIL(v7): expected a charge to 4, got %', v_clases; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_dual and class_session_id = s_cls2 and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'SEED FAIL(v7): class row consumio % (expected true)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'SEED FAIL(v7): the FIRST record of the arrival was stamped perdonada %', v_perdonada; end if;
+
+  -- Step 2 — the door tap on the same fecha: pardoned by the CLOSED-WINDOW arm (the missed booking),
+  -- and stamped by the COOLDOWN (a class row minutes old). Free AND duplicate, in one row.
+  select present, session_id into v_present, v_ret_sess from public.toggle_pase(c_dual, f_cls);
+  if v_present is not true then raise exception 'RULE FAIL(v7): the door tap was refused'; end if;
+  if v_ret_sess is not null then raise exception 'RULE FAIL(v7): the tap attributed to session % (expected none — every candidate class is over)', v_ret_sess; end if;
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_dual and fecha = f_cls and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v7): libre row consumio % (expected false — the missed booking already paid)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v7): libre row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(v7): the free row was NOT stamped perdonada (%) — one arrival will count as two visits', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_dual;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v7): the door tap charged — balance % (expected 4)', v_clases; end if;
+  select status into v_status from public.reservation where member_id = c_dual and class_session_id = s_cls;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v7): the missed booking moved to % (expected reservada)', v_status; end if;
+
+  -- The count: two active rows, one arrival, ONE visit.
+  select count(*) into v_n from public.asistencias where cliente_id = c_dual and deleted_at is null;
+  if v_n <> 2 then raise exception 'RULE FAIL(v7): expected 2 active rows, got %', v_n; end if;
+  select n into v_n from public.asistencias_mes_por_cliente(v_gym, f_cls) where cliente_id = c_dual;
+  if v_n is distinct from 1 then raise exception 'RULE FAIL(v7 aggregate): returned % for one dual-surface arrival (expected 1 VISIT)', v_n; end if;
+end $$;
+
+-- ── (v8) THE ATTRIBUTION FILTERS, each pinned by a fixture that only it refuses ──────────────────
+-- Three predicates that a reader could mistake for belt-and-braces. Each arm below is a state where
+-- deleting exactly one of them changes the written rows, so none of them can be "simplified" silently.
+do $$
+declare
+  c_back uuid := current_setting('t.c_back', true)::uuid;
+  c_can  uuid := current_setting('t.c_can', true)::uuid;
+  c_wcls uuid := current_setting('t.c_wcls', true)::uuid;
+  s_id   uuid := current_setting('t.s_id', true)::uuid;
+  s_can  uuid := current_setting('t.s_can', true)::uuid;
+  f_win  date := current_setting('t.f_win', true)::date;
+  f_cls  date := current_setting('t.f_cls', true)::date;
+  v_back date := current_setting('t.f_win', true)::date - 3;
+  v_present boolean; v_clases int; v_consumio boolean; v_perdonada boolean; v_origen text;
+  v_status text; v_ret_sess uuid; v_checked timestamptz; v_n int;
+begin
+  -- ── (a) `(cs.starts_at at time zone tz)::date = p_fecha` — the BACKDATE guard ──
+  -- The operator is entering last week's door check while the member happens to be booked into a class
+  -- starting in 30 minutes. now() sits inside that booking's window, so without the date equality the
+  -- tap would attribute a THREE-DAY-OLD visit to today's class — marking a class the member has not
+  -- attended yet and swallowing the charge. The row must land on the fecha the operator typed, charged.
+  select present, session_id into v_present, v_ret_sess from public.toggle_pase(c_back, v_back);
+  if v_present is not true then raise exception 'RULE FAIL(v8a): the back-entry was refused'; end if;
+  if v_ret_sess is not null then raise exception 'RULE FAIL(v8a): a BACKDATED tap attributed to session % — the p_fecha equality is gone', v_ret_sess; end if;
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_back and fecha = v_back and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v8a): back-entry row consumio % (expected true)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v8a): back-entry row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v8a): back-entry row perdonada % (expected false)', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_back;
+  if v_clases <> 3 then raise exception 'RULE FAIL(v8a): expected a charge to 3, got %', v_clases; end if;
+  select status, checked_at into v_status, v_checked from public.reservation where member_id = c_back and class_session_id = s_id;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v8a): the back-entry marked TODAY''S booking as % ', v_status; end if;
+  if v_checked is not null then raise exception 'RULE FAIL(v8a): the back-entry stamped checked_at on a class that has not started'; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_back and class_session_id is not null and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(v8a): the back-entry wrote % session-linked rows (expected 0)', v_n; end if;
+
+  -- ── (b) `cs.cancelled_at is null` — a cancelled class attributes nothing ──
+  -- The gym cancelled the class; the member comes in anyway, inside what WOULD have been its window.
+  -- There is no class to be present at, so the tap is an ordinary door visit and it charges. (The
+  -- closed-window pardon deliberately carries NO cancelled filter — that arm is the compensation a
+  -- gym-cancelled booking has until #172 — which is why this fixture is IN-window, where only the
+  -- attribution filter can decide.)
+  select present, session_id into v_present, v_ret_sess from public.toggle_pase(c_can, f_win);
+  if v_present is not true then raise exception 'RULE FAIL(v8b): the tap was refused'; end if;
+  if v_ret_sess is not null then raise exception 'RULE FAIL(v8b): the tap attributed to a CANCELLED class (%) — the cancelled_at filter is gone', v_ret_sess; end if;
+  select consumio, origen into v_consumio, v_origen
+    from public.asistencias where cliente_id = c_can and fecha = f_win and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v8b): libre row consumio % (expected true — there is no class to be present at)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v8b): libre row origen % (expected libre)', v_origen; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_can;
+  if v_clases <> 3 then raise exception 'RULE FAIL(v8b): expected a charge to 3, got %', v_clases; end if;
+  select status into v_status from public.reservation where member_id = c_can and class_session_id = s_can;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v8b): the cancelled class''s booking was flipped to %', v_status; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_can and class_session_id is not null and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(v8b): % session-linked rows written for a cancelled class (expected 0)', v_n; end if;
+
+  -- ── (c) `r.is_walk_in = false` on the CLOSED-WINDOW PARDON — a walk-in row is not a booking ──
+  -- The synthetic fixture (see the seed): a reservada row flagged is_walk_in on the closed session. No
+  -- path produces it today; the filter is defense-in-depth, and this is what makes it testable. A
+  -- walk-in row records that the operator let someone in — it never paid for a class — so it cannot
+  -- buy a free door visit. Without the filter this tap comes back free and the balance stays 4.
+  select present into v_present from public.toggle_pase(c_wcls, f_cls);
+  if v_present is not true then raise exception 'RULE FAIL(v8c): the tap was refused'; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_wcls and fecha = f_cls and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v8c): libre row consumio % (expected true — a WALK-IN row paid for nothing and pardons nothing)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v8c): libre row perdonada % (expected false)', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_wcls;
+  if v_clases <> 3 then raise exception 'RULE FAIL(v8c): expected a charge to 3, got % — the pardon fired off a walk-in row', v_clases; end if;
 end $$;
 
 reset role;

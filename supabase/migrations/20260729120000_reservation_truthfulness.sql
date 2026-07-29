@@ -29,7 +29,14 @@
 --     A booking already asistida inside its window raises 'Ya marcada en la clase de HH:MM' and writes
 --     NOTHING (the desk shows the message and rolls its optimistic flip back — that IS the no-op).
 --     The tie-break is `abs(starts_at − now())`, the desk pill's own metric (marcadas.ts `sesionCercana`),
---     so the screen and the server never disagree about which class "now" belongs to.
+--     so on a double-booked member the screen and the server rank the candidates the same way. They do
+--     NOT span the same interval: the pill is ±90 minutes ABSOLUTE around starts_at, this window is
+--     [−90, +duration+15). The OPEN edge is shared by construction; at the CLOSE they diverge — for a
+--     30-minute class the server stops attributing 45 minutes before the pill stops preselecting, and
+--     for a 90-minute one it keeps attributing 15 minutes after. Inside that gap the desk can show a
+--     class the server will not attribute to (the tap charges as a walk-in), or attribute to one the
+--     pill has already dropped. Both are the SAFE direction — a wrong class is never marked — but the
+--     two edges are not one number, and a future change to either must be made deliberately.
 --   * THE PARDON SPLITS AT THE WINDOW instead of dying. PRE-window (>90 min early) → the ordinary
 --     walk-in path, which CHARGES: that is a second, separate visit and the booking sheet already
 --     carries its consent copy. CLOSED-window (the member missed the class, or the gym cancelled it)
@@ -82,9 +89,17 @@ comment on column public.asistencias.perdonada is
 -- "Around class time" as ONE range: [starts_at − 90 min, starts_at + duration + 15 min).
 --
 -- 90 MIRRORS the desk pill's VENTANA_CERCANA_MIN (apps/admin .../asistencia/_components/marcadas.ts:72,
--- the Zen-Planner kiosk rule) — the screen preselects the class nearest now() within 90 minutes, so the
--- server must attribute over the same span or the desk would show one class and the write would land in
--- another. Change one, change both.
+-- the Zen-Planner kiosk rule): the screen preselects the class nearest now() within 90 minutes, so this
+-- lower bound is the one the desk already uses — the OPEN edge of the two is the same number by
+-- construction, and changing one without the other would let the screen preselect a class the server
+-- refuses to attribute to. Change one, change both.
+--
+-- The CLOSE is deliberately NOT the pill's: the pill is ±90 ABSOLUTE around starts_at, while this window
+-- runs to starts_at + duration + 15, because a mark belongs to a class for as long as the class is
+-- happening. So the two edges diverge after the start — earlier than the pill for a 30-minute class,
+-- later for a 90-minute one. The divergence is bounded and its failure mode is a walk-in charge, never a
+-- wrong attribution; it is not a bug to "fix" by equalising the numbers, which would make a 90-minute
+-- class un-attributable in its last quarter.
 --
 -- 15 is the ARRIVAL GRACE at the far edge — the late-arrival tail during which a mark still belongs to
 -- the class that just ended. It is a SIBLING of, never shared with, the cooldown's 15 minutes
@@ -135,6 +150,9 @@ grant execute on function public.ventana_arribo(timestamptz, int) to authenticat
 --         is free because the booking already paid, which is a different fact and still one visit.
 --   (iii) The clientes read is alias-qualified (c.) — the new `clases_restantes` OUT parameter shares
 --         the column's name, and an unqualified reference would now be ambiguous at runtime (42702).
+--   (iv)  NEW: the cooldown is GUARDED against pardon chaining — a libre row that was itself free from
+--         toggle_pase's closed-window arm cannot pardon a class. See the branch comment; without it one
+--         missed booking buys a free door visit AND a free class.
 --   NOT widened: the booked branch still keys on `v_status in ('reservada','asistida')`. `no_show` is
 --   never written by anything (it is derived at read), so there is no third state to admit here.
 drop function if exists public.pasar_lista_sesion(uuid, uuid);
@@ -259,7 +277,31 @@ begin
     -- the market and the reason the deleted mirror was wrong.
     -- (ii) …and THAT is what `perdonada` records: this row is the second record of one arrival, so a
     -- visit count must skip it. Only here — never on the booked branch, never on a closed-window pardon.
-    if public.visita_reciente(p_cliente_id, v_fecha, false) then
+    --
+    -- (iv) THE CHAIN-BREAKER, and the reason this is not a bare visita_reciente call: A ROW THAT PAID
+    -- NOTHING PARDONS NOTHING. toggle_pase's closed-window arm writes a FREE libre row for a member who
+    -- missed today's booking — and that row is an active libre row on this fecha, so a bare cooldown
+    -- would then hand them a free CLASS as well if the operator marked them within 15 minutes: one
+    -- missed booking, two free visits, which is exactly the double-dip the Terms cap at one class.
+    -- The guard is the same predicate that granted the pardon (a reservada, non-walk-in booking on this
+    -- fecha whose window has CLOSED): if the member is standing in that state, the recent libre row was
+    -- necessarily free, so it cannot pardon this class.
+    --
+    -- "Necessarily" is exact, not approximate, inside the 15-minute horizon: a libre row on a fecha where
+    -- such a booking exists could only have been CHARGED if it was written before that window closed —
+    -- i.e. pre-window, which is at least 90 + duration + 15 minutes earlier — and the cooldown cannot see
+    -- that far back. Within 15 minutes, "such a booking exists" and "the recent libre row was free" are
+    -- the same fact.
+    if public.visita_reciente(p_cliente_id, v_fecha, false)
+       and not exists (
+         select 1 from public.reservation r
+           join public.class_session cs on cs.id = r.class_session_id
+          where r.member_id = p_cliente_id
+            and r.status = 'reservada'
+            and r.is_walk_in = false
+            and (cs.starts_at at time zone v_tz)::date = v_fecha
+            and upper(public.ventana_arribo(cs.starts_at, cs.duration_min)) <= now()
+       ) then
       v_consumio := false;
       v_perdonada := true;
     end if;
@@ -307,7 +349,8 @@ grant execute on function public.pasar_lista_sesion(uuid, uuid) to authenticated
 --   (ii)  NEW, top of the ON path: ATTRIBUTION. See the branch comment.
 --   (iii) NEW: the already-marked NO-OP raise (attribution's second half — it never undoes).
 --   (iv)  REPLACED: the C15 day-keyed pardon becomes the CLOSED-WINDOW pardon, in the same position
---         (still above the C9 vence gate, deliberately — see the branch comment).
+--         (still above the C9 vence gate, deliberately — see the branch comment). It decides the MONEY;
+--         it still asks the cooldown whether the row is also a duplicate ARRIVAL, and stamps that.
 --   (v)   The cooldown pardon also stamps `perdonada = true`; the INSERT carries it.
 --   (vi)  Every clientes reference is alias/table-qualified — the new `clases_restantes` OUT parameter
 --         shares the column's name and an unqualified read or update expression would now raise 42702.
@@ -424,7 +467,9 @@ begin
   --                           falls through to the walk-in path, which CHARGES: that is a separate
   --                           visit. CLOSED-window falls through to the pardon in (iv).
   -- The tie-break is the desk pill's own metric (abs distance to starts_at, marcadas.ts sesionCercana),
-  -- so on a double-booked member the screen's preselected class and the server's choice agree.
+  -- so on a double-booked member the screen and the server RANK the candidates identically. The two
+  -- intervals are not identical, though — see the header: they share the open edge and diverge at the
+  -- close, always in the direction of "no attribution" rather than "the wrong one".
   select cs.id into v_booked
     from public.reservation r
     join public.class_session cs on cs.id = r.class_session_id
@@ -469,8 +514,9 @@ begin
   -- cancelled it) and are now at the door. The published Terms cap that at ONE class ("la clase se
   -- descuenta", singular), and the booking already took it, so this visit is recorded free.
   -- consumio=false ⇒ toggle-OFF refunds nothing; the reservation is untouched (that flip is
-  -- pasar_lista_sesion's seam, not the front desk's). `perdonada` stays FALSE — this is a real second
-  -- visit that happens to be free, not the second record of one arrival, and it must still COUNT.
+  -- pasar_lista_sesion's seam, not the front desk's). `perdonada` is normally FALSE here — a missed-class
+  -- door visit is a real second visit that happens to be free, and it must still COUNT — but free and
+  -- duplicate are independent facts and one row can carry both; see the stamp inside the branch.
   --
   -- Cancelled sessions are deliberately NOT excluded here (unlike the attribution above): a
   -- gym-cancelled booking strands its consumed credit with no refund path today, and this pardon is the
@@ -489,6 +535,13 @@ begin
        and upper(public.ventana_arribo(cs.starts_at, cs.duration_min)) <= now()
   ) then
     v_consumio := false;
+    -- FREE and DUPLICATE are two different facts, and this row can carry both. The pardon above decides
+    -- the money; the cooldown still decides whether this row is the SECOND RECORD of one arrival — which
+    -- it is, at a dual-surface gym, whenever the member was already marked into a class minutes ago
+    -- (door check-in AND class rosters is the normal LatAm shape, the whole reason perdonada ships).
+    -- Without this line both rows read perdonada=false and one arrival counts as two visits. The row
+    -- stays free either way: this only stamps the fact, it never changes v_consumio.
+    v_perdonada := public.visita_reciente(p_cliente_id, p_fecha, true);
   else
     -- WALK-IN path: no booking paid for this visit. This is also where a PRE-window booked member lands
     -- (>90 minutes early) — by design: they came for something other than the class they booked, and

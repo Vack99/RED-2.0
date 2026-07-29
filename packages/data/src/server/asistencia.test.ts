@@ -110,15 +110,23 @@ describe("getReservasDelDia — the CON RESERVA grouping's source (injected fake
   it("groups today's active bookings by session, gym-scoped, both statuses", async () => {
     const { client, eqCalls, inCalls } = makeFake({
       reservation: [
-        { class_session_id: "s1", member_id: "c1" },
-        { class_session_id: "s1", member_id: "c2" },
-        { class_session_id: "s2", member_id: "c3" },
+        { class_session_id: "s1", member_id: "c1", status: "reservada", is_walk_in: false },
+        { class_session_id: "s1", member_id: "c2", status: "asistida", is_walk_in: true },
+        { class_session_id: "s2", member_id: "c3", status: "reservada", is_walk_in: false },
       ],
     });
 
     const porSesion = await getReservasDelDia(["s1", "s2"], client);
 
-    expect(porSesion).toEqual({ s1: ["c1", "c2"], s2: ["c3"] });
+    // `status`/`isWalkIn` ride along so the caller can tell the CON RESERVA grouping
+    // (every row here) from the attribution candidate set (reservada, not walk-in).
+    expect(porSesion).toEqual({
+      s1: [
+        { clienteId: "c1", status: "reservada", isWalkIn: false },
+        { clienteId: "c2", status: "asistida", isWalkIn: true },
+      ],
+      s2: [{ clienteId: "c3", status: "reservada", isWalkIn: false }],
+    });
     expect(eqCalls.reservation).toEqual([["gym_id", "test-gym"]]);
     // `asistida` counts too: the group keys on the BOOKING, not the check, so a marked
     // member must not fall out of CON RESERVA and move their row under the thumb.

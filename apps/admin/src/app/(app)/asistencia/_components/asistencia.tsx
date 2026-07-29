@@ -10,7 +10,7 @@ import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
 import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
-import type { MarcadasInicial, Presencia } from "@gym/data/server/asistencia";
+import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
 import { marcadasDeMesAction, togglePaseAction, visitasDelDiaAction } from "../actions";
 import { ctxDe, LIBRE, personasEn, setVisita, visitaDe, type Visita } from "./marcadas";
@@ -66,6 +66,7 @@ export function AsistenciaScreen({
   hoyIso,
   sesiones,
   reservas,
+  reservaAtribuible,
   ctxInicial,
 }: {
   clientes: PaseClienteDTO[];
@@ -74,7 +75,10 @@ export function AsistenciaScreen({
   /** Today's classes (empty for a gym with no schedule ⇒ no pill row). */
   sesiones: SesionDelDia[];
   /** sessionId → the clientes holding a `reservada`/`asistida` booking for it. */
-  reservas: Record<string, string[]>;
+  reservas: Record<string, ReservaDelDia[]>;
+  /** clienteId → the session a LIBRE tap would be attributed to (the RESERVA chip's
+   *  source). Resolved server-side so SSR and hydration agree on "nearest to now". */
+  reservaAtribuible: Record<string, string>;
   /** The opening context, resolved server-side so SSR and hydration agree. */
   ctxInicial: string;
 }) {
@@ -206,27 +210,44 @@ export function AsistenciaScreen({
   // order and a row NEVER moves when marked — group membership is the booking, not the
   // check. Empty on a past day and in ACCESO LIBRE, where the list is simply flat.
   const reservados = React.useMemo(
-    () => new Set(esHoy && sesionActual ? (reservas[ctx] ?? []) : []),
+    () => new Set((esHoy && sesionActual ? (reservas[ctx] ?? []) : []).map((r) => r.clienteId)),
     [esHoy, sesionActual, reservas, ctx],
   );
   const conReserva = reservados.size ? filtered.filter((c) => reservados.has(c.id)) : [];
   const sinReserva = reservados.size ? filtered.filter((c) => !reservados.has(c.id)) : filtered;
 
-  // clienteId → the hora of the class they booked TODAY (their earliest, since `sesiones`
-  // arrives chronologically). Built from the two props already in memory, so the RESERVA
-  // chip costs no read: it is the desk's disclosure that a tap here will land on a class,
-  // not on the door — the server consults exactly this data to decide. A past day has no
-  // `reservas` (they are today-only), hence no chip.
+  // clienteId → the HORA of the class a LIBRE tap on them would be attributed to. Which
+  // booking that is was decided server-side (`reservaAtribuible`: unmarked, non-walk-in,
+  // nearest to now — the RPC's own candidate filter and tie-break); all that is left here
+  // is naming it, so the chip cannot promise a class the tap would not land on. The
+  // reverse — a chip on an already-marked or walk-in booking — would advertise
+  // attribution on exactly the rows the tap refuses or charges.
   const reservaPorCliente = React.useMemo(() => {
+    const horaDe = new Map(sesiones.map((s) => [s.id, s.hora]));
     const m = new Map<string, string>();
-    for (const s of sesiones) for (const id of reservas[s.id] ?? []) if (!m.has(id)) m.set(id, s.hora);
+    for (const [clienteId, sessionId] of Object.entries(reservaAtribuible)) {
+      const hora = horaDe.get(sessionId);
+      if (hora) m.set(clienteId, hora);
+    }
     return m;
-  }, [sesiones, reservas]);
+  }, [sesiones, reservaAtribuible]);
 
   // Balances repainted from a toggle's authoritative post-write count, by clienteId. The
   // route never refetches, so without this every row shows the count it had at page load
   // for the whole rush.
   const [clasesLabels, setClasesLabels] = React.useState<Record<string, string>>({});
+  // A new `clientes` prop is server truth and therefore fresher than anything we patched
+  // in, so drop every patch when one arrives. Without this the map outlives its rows: a
+  // row tapped once would keep its stale patched label forever, and no later refresh of
+  // the route (a sale, an edit) could ever repaint it. Reset DURING render off the prop's
+  // identity — React's own adjust-state-on-prop-change idiom, the same one the Agenda uses
+  // for its tipos — because an effect would be a second commit AND is rejected outright by
+  // react-hooks/set-state-in-effect.
+  const [prevClientes, setPrevClientes] = React.useState(clientes);
+  if (prevClientes !== clientes) {
+    setPrevClientes(clientes);
+    setClasesLabels({});
+  }
 
   // Windowed initial paint (useRevealedWindow): the server + first hydration paint only the
   // opening window, then a mount effect reveals the rest below the fold. Search still runs

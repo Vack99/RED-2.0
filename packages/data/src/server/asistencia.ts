@@ -154,6 +154,22 @@ export const getMarcadas = cache(
 );
 
 /**
+ * One of today's bookings, as the desk needs it. The two extra facts are what separate the
+ * desk's two readings of the same rows: the CON RESERVA group takes EVERY active booking
+ * (see below), while the RESERVA chip may only show for a booking a LIBRE tap could
+ * actually be attributed to — `reservada` and not a walk-in, the RPC's own candidate
+ * filter. Showing the chip on the others would promise attribution on rows the tap will
+ * charge (an `asistida` booking refuses; a walk-in row is money-guarded out).
+ */
+export interface ReservaDelDia {
+  clienteId: string;
+  /** 'reservada' (booked, unmarked) | 'asistida' (booked and marked). */
+  status: string;
+  /** An operator-created door reservation — never an attribution candidate. */
+  isWalkIn: boolean;
+}
+
+/**
  * Who has BOOKED each of today's sessions — both `reservada` (booked, not yet marked) and
  * `asistida` (booked and already marked), because the desk's CON RESERVA group keys on the
  * BOOKING, not the check: a marked member must stay in the group so their row never moves
@@ -162,26 +178,31 @@ export const getMarcadas = cache(
  * One read, explicitly gym-scoped on top of RLS (the isolation predicate is a correlated
  * per-row subplan, so the redundant `.eq` is what keeps it index-driven).
  *
- * @returns { sessionId: clienteId[] } — no key for a session nobody booked ·
+ * @returns { sessionId: ReservaDelDia[] } — no key for a session nobody booked ·
  *   best-effort: {} on error.
  */
 export async function getReservasDelDia(
   sessionIds: string[],
   client?: SupabaseServer,
-): Promise<Record<string, string[]>> {
+): Promise<Record<string, ReservaDelDia[]>> {
   if (sessionIds.length === 0) return {};
   const supabase = client ?? (await createClient());
   const gym = await getOperatorGym(supabase); // re-auth + gym scope (spec §1.1)
 
   const { data } = await supabase
     .from("reservation")
-    .select("class_session_id, member_id")
+    .select("class_session_id, member_id, status, is_walk_in")
     .eq("gym_id", gym.id)
     .in("class_session_id", sessionIds)
     .in("status", ["reservada", "asistida"]);
 
-  const porSesion: Record<string, string[]> = {};
-  for (const r of data ?? []) (porSesion[r.class_session_id] ??= []).push(r.member_id);
+  const porSesion: Record<string, ReservaDelDia[]> = {};
+  for (const r of data ?? [])
+    (porSesion[r.class_session_id] ??= []).push({
+      clienteId: r.member_id,
+      status: r.status,
+      isWalkIn: r.is_walk_in,
+    });
   return porSesion;
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { ctxDe, LIBRE, personasEn, sesionCercana, setVisita, visitaDe, type Visita } from "./marcadas";
+import { ctxDe, LIBRE, personasEn, reservaAtribuible, sesionCercana, setVisita, visitaDe, type Visita } from "./marcadas";
 
 const visita = (clienteId: string, sessionId: string | null, hora: string | null): Visita => ({
   clienteId,
@@ -98,5 +98,51 @@ describe("sesionCercana — the opening context", () => {
   it("compares absolute instants, so a class exactly 90 minutes out still opens", () => {
     expect(sesionCercana([sesion("edge", 90)], ahora)).toBe("edge");
     expect(sesionCercana([sesion("beyond", 91)], ahora)).toBe(LIBRE);
+  });
+});
+
+describe("reservaAtribuible — what the RESERVA chip is allowed to promise", () => {
+  const ahora = new Date("2026-07-29T18:00:00.000Z");
+  const sesion = (id: string, offsetMin: number) => ({
+    id,
+    startsAt: new Date(ahora.getTime() + offsetMin * 60_000),
+  });
+  const reserva = (clienteId: string, status = "reservada", isWalkIn = false) => ({
+    clienteId,
+    status,
+    isWalkIn,
+  });
+
+  it("names the booking a LIBRE tap would be attributed to", () => {
+    const mapa = reservaAtribuible([sesion("s1", 20)], { s1: [reserva("c1")] }, ahora);
+    expect(mapa).toEqual({ c1: "s1" });
+  });
+
+  it("skips an ALREADY-MARKED booking — that tap refuses ('Ya marcada'), it does not attribute", () => {
+    const mapa = reservaAtribuible([sesion("s1", 20)], { s1: [reserva("c1", "asistida")] }, ahora);
+    expect(mapa).toEqual({});
+  });
+
+  it("skips a walk-in booking — the RPC's money guard keeps those off the delegation path", () => {
+    const mapa = reservaAtribuible(
+      [sesion("s1", 20)],
+      { s1: [reserva("c1", "reservada", true)] },
+      ahora,
+    );
+    expect(mapa).toEqual({});
+  });
+
+  it("breaks a double-booking by absolute distance from now, not by schedule order — the RPC's own tie-break", () => {
+    const mapa = reservaAtribuible(
+      [sesion("early", -70), sesion("soon", 20)],
+      { early: [reserva("c1")], soon: [reserva("c1")] },
+      ahora,
+    );
+    expect(mapa).toEqual({ c1: "soon" });
+  });
+
+  it("is empty for a gym with no schedule, and for a session nobody booked", () => {
+    expect(reservaAtribuible([], {}, ahora)).toEqual({});
+    expect(reservaAtribuible([sesion("s1", 20)], {}, ahora)).toEqual({});
   });
 });
