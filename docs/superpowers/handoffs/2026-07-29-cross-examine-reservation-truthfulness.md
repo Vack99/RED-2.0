@@ -208,6 +208,30 @@ race or repair. Zero taps added over today; strictly more truth shown.
 - The examination consumed one framing of #169 ("visits"); "both, labelled" was costed but not
   walked through the UI.
 
+## Final rulings (owner, 2026-07-29, post-examination)
+
+- **D2 — DERIVED no_show confirmed** as recommended. Nothing is ever written; NO ASISTIÓ is
+  computed at read from `reservada` + window closed.
+- **D3 — split confirmed**: pre-window taps charge (Ana); closed-window pardon stays (Luis's total
+  penalty = the 1 booked class, per the Terms). The owner raised seat-blocking in full classes;
+  analyzed same day: the split stands (charging the door doesn't free the 6pm seat; the gym was
+  paid), the slice ships the two real levers (visible flakes + corrected cancel copy), and the
+  consequences policy is **#171** (hitl; note ilimitado members flake at zero cost), triggered by
+  classes actually filling.
+- **D4 — the report's recommendation OVERRULED by the owner with new weighting**: shipping to LatAm
+  means dual-surface gyms (door check-in + class rosters), where `count(*)`'s overcount is
+  systematic, not exotic — and the marginal cost of the column collapsed because this slice already
+  rewrites both RPCs. **`perdonada` ships now** as a rider on that rewrite, plus the count change.
+  The month-close trigger query becomes a verification, not a gate. The orphaned-pardon undercount
+  edge is accepted and documented.
+- **D1 — all amendments accepted**: arm-only attribution, no-op + "Ya está marcada en CLASE HH:MM"
+  toast, `p_fecha` equality gate, pill-matching absolute-distance tie-break, disclosure bundle
+  (RESERVA chip, toast names the landing context, return carries session id + fresh
+  `clases_restantes`).
+- **Filed**: #171 no-show consequences (hitl), #172 `cancel_class_session` strands consumed credits
+  (hitl), #173 member plan card counts only `consumio=true` (ready-for-agent, blocked on this
+  slice's `perdonada`).
+
 ## Draft audit
 
 - Cut "the #164 backlog is real at meaningful scale" (first live query) after the per-gym split
