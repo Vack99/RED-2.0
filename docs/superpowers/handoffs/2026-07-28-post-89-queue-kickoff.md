@@ -40,8 +40,10 @@ findings PREEMPT the bundle.
 
 ## 2. Housekeeping (first, mechanical)
 
-- Remove the fully-merged worktree `.claude/worktrees/issue-89-attendance-ledger` and its branch
-  `worktree-issue-89-attendance-ledger` (verify merged into main first).
+- KEEP the worktree `.claude/worktrees/issue-89-attendance-ledger` — the owner wants this session
+  to WORK IN IT (it already has `apps/admin/.env.local` copied). Its branch
+  `worktree-issue-89-attendance-ledger` is merged into main but behind it: from inside the
+  worktree, `git merge --ff-only main` first so the slice starts from the current tip.
 - Labels (`docs/agents/triage-labels.md`: `hitl` / `ready-for-agent`): #169 → `hitl`;
   #162, #164, #165 → `ready-for-agent`.
 - Comment on #166: it rides #167 as an acceptance criterion (a correct "charge as of the
@@ -134,8 +136,10 @@ bookings are instant fake flakes for 4b's sweep.
 - Ship order that worked for #89: migrations to live FIRST (via `apply_migration`; keep the query
   to executable statements — the auto-permission classifier balked at a 400-line commented blob),
   THEN push main (Vercel deploys on push). Expand-only DDL keeps old code safe in the gap.
-- Worktree needs `apps/admin/.env.local` copied from the primary checkout; run the dev server FROM
-  the worktree.
+- Run the dev server FROM the worktree (its `apps/admin/.env.local` is already in place).
+- **Pushing requires explicit owner consent — see the CLAUDE.md rule (2026-07-28).** Commit and
+  fast-forward locally as much as needed; `git push` only when the owner says push, because every
+  push deploys both Vercel apps.
 
 ---
 

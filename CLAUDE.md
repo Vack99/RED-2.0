@@ -40,6 +40,14 @@ How to apply:
 - Never use Haiku.
 - Claude models (sonnet-5, opus-5, fable-5) run via the Agent/Workflow model parameter (`sonnet` / `opus` / `fable`).
 
+## Pushing requires explicit owner consent (owner, 2026-07-28)
+
+**Never `git push` unless the owner explicitly asked for THAT push in the current conversation.**
+Every push to `main` triggers Vercel production deploys of both apps, so an unnecessary push is an
+unnecessary deploy. Committing locally (and fast-forwarding local `main`) is always fine — pushing
+is a separate, owner-gated act. Batch docs/housekeeping commits locally; they ride along on the
+next consented push. A prior "go for it" covers only the push it was said for, never later ones.
+
 ## Agent skills
 
 ### Issue tracker
