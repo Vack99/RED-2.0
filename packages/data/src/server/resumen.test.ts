@@ -25,9 +25,9 @@ const VENTAS = [
   { fecha: "2026-06-20T18:00:00.000Z", monto: 900 }, // 20 jun — beyond day 13, excluded from prev
 ];
 const ASISTENCIAS = [
-  { fecha: "2026-07-13", deleted_at: null },
-  { fecha: "2026-07-12", deleted_at: null },
-  { fecha: "2026-06-05", deleted_at: null },
+  { fecha: "2026-07-13", cliente_id: "c1" },
+  { fecha: "2026-07-12", cliente_id: "c1" },
+  { fecha: "2026-06-05", cliente_id: "c2" },
 ];
 
 beforeEach(() => {
@@ -86,5 +86,25 @@ describe("getResumenMes — behaviour neutrality (the §1.8 'changes no number' 
     const { client, isCalls } = makeFake({ ventas: VENTAS, asistencias: ASISTENCIAS });
     await getResumenMes(client);
     expect(isCalls["asistencias"]).toEqual([["deleted_at", null]]);
+  });
+
+  it("counts DISTINCT (cliente, día), not rows — a member's class + walk-in on one day is ONE asistencia (#89)", async () => {
+    const { client } = makeFake({
+      ventas: [],
+      asistencias: [
+        // c1 twice on 13 jul: the class visit and the ACCESO LIBRE visit. Both are legal
+        // rows since #89; the dashboard counts people-days, so this is 1, not 2.
+        { fecha: "2026-07-13", cliente_id: "c1" },
+        { fecha: "2026-07-13", cliente_id: "c1" },
+        { fecha: "2026-07-13", cliente_id: "c2" },
+        // Same member, a DIFFERENT day — never collapsed.
+        { fecha: "2026-07-12", cliente_id: "c1" },
+      ],
+    });
+
+    const r = await getResumenMes(client);
+
+    expect(r.asistMes).toBe(3);
+    expect(r.asistenciasHoy).toBe(2);
   });
 });

@@ -46,6 +46,7 @@ const asistencia = (over: Partial<RespaldoAsistencia> = {}): RespaldoAsistencia 
   fecha: "2026-05-26",
   hora: "08:45:00",
   cliente_id: "c1",
+  origen: "libre",
   ...over,
 });
 
@@ -103,7 +104,7 @@ describe("buildRespaldoRows — headers", () => {
       "Vigencia",
       "Registrado",
     ]);
-    expect(r.asistencias.headers).toEqual(["Fecha", "Hora", "Cliente"]);
+    expect(r.asistencias.headers).toEqual(["Fecha", "Hora", "Cliente", "Origen"]);
     expect(r.paquetes.headers).toEqual(["Paquete", "Clases", "Precio", "Vigencia"]);
   });
 });
@@ -260,6 +261,24 @@ describe("buildRespaldoRows — date formatting (ISO ledger vs day-month near-fu
     );
     expect(r.asistencias.rows[0][0]).toBe("2026-05-26");
     expect(r.asistencias.rows[0][1]).toBe("08:45");
+  });
+
+  it("Asistencias carry their provenance in ONE Origen column — no raw session uuid (#89)", () => {
+    const r = buildRespaldoRows(
+      data({
+        asistencias: [
+          asistencia({ origen: "clase" }),
+          asistencia({ origen: "libre" }),
+          // Pre-#89 row: `origen` was never stamped, and a class-less desk row may well
+          // have been an unrecorded class — the export says "unknown", not "Acceso libre".
+          asistencia({ origen: null }),
+        ],
+      }),
+    );
+    expect(r.asistencias.rows.map((row) => row[3])).toEqual(["Clase", "Acceso libre", "—"]);
+    // Four columns exactly: a 36-char session uuid is noise in a sheet the operator opens,
+    // and the two rows of a cooldown pair are already told apart by Origen.
+    expect(r.asistencias.rows[0]).toHaveLength(4);
   });
 
   it('Asistencias Hora falls back to "—" when null (back-entered)', () => {
@@ -429,7 +448,7 @@ describe("buildRespaldoRows — empty state (PRD US#17)", () => {
     // headers still present
     expect(r.clientes.headers.length).toBe(10);
     expect(r.ventas.headers.length).toBe(8);
-    expect(r.asistencias.headers.length).toBe(3);
+    expect(r.asistencias.headers.length).toBe(4);
     expect(r.paquetes.headers.length).toBe(4);
   });
 });

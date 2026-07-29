@@ -183,18 +183,66 @@ describe("shapeFicha", () => {
 
   it("excludes today from historial and reports presentHoy/horaHoy", () => {
     const asist: FichaAsistRow[] = [
-      { fecha: "2026-05-27", hora: "07:30:00", consumio: true }, // today
-      { fecha: "2026-05-25", hora: "08:15:00", consumio: true },
-      { fecha: "2026-05-20", hora: null, consumio: true }, // back-entry, no time
+      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, class_session_id: null }, // today
+      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, class_session_id: null },
+      { fecha: "2026-05-20", hora: null, consumio: true, class_session_id: null }, // back-entry, no time
     ];
     const f = shapeFicha(clienteRow, asist, [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.presentHoy).toBe(true);
     expect(f.horaHoy).toBe("07:30");
+    expect(f.clasesHoy).toEqual([]);
     expect(f.historial).toHaveLength(2); // today excluded
     expect(f.historial.every((h) => !h.today)).toBe(true);
     expect(f.historial[0].dDisplay).toContain("25");
     expect(f.historial[0].hora).toBe("08:15");
     expect(f.historial[1].hora).toBeNull();
+  });
+
+  it("a CLASS visit today is NOT presentHoy — it surfaces as an informational stamp (#89)", () => {
+    // The ficha's toggle writes/undoes the ACCESO LIBRE row alone. Reading a class visit as
+    // "marked" would make the next tap insert a second, consuming libre row (H1).
+    const f = shapeFicha(
+      clienteRow,
+      [{ fecha: HOY_ISO, hora: "18:05:00", consumio: true, class_session_id: "s9" }],
+      [],
+      HOY,
+      HOY_ISO,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      0,
+    );
+    expect(f.presentHoy).toBe(false);
+    expect(f.horaHoy).toBeNull();
+    expect(f.clasesHoy).toEqual([{ hora: "18:05" }]);
+    expect(f.historial).toHaveLength(0); // today is never in historial, either context
+    // The leaf renders ONE HOY row per entry here and counts
+    // `historial + (presentHoy ? 1 : 0) + clasesHoy` — so a class-only day must yield
+    // exactly one renderable entry, else the header would claim a visit the list omits
+    // (and the "sin asistencias" empty state would fire under a non-zero count).
+    expect(f.historial.length + (f.presentHoy ? 1 : 0) + f.clasesHoy.length).toBe(1);
+  });
+
+  it("both of today's contexts coexist: the libre row checks the toggle, the class row stamps", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [
+        { fecha: HOY_ISO, hora: "07:30:00", consumio: true, class_session_id: null },
+        { fecha: HOY_ISO, hora: null, consumio: false, class_session_id: "s9" },
+      ],
+      [],
+      HOY,
+      HOY_ISO,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      0,
+    );
+    expect(f.presentHoy).toBe(true);
+    expect(f.horaHoy).toBe("07:30");
+    expect(f.clasesHoy).toEqual([{ hora: null }]); // untimed row keeps a null hora
+    // Two visits today ⇒ two HOY rows in the leaf, and a count of two.
+    expect(f.historial.length + (f.presentHoy ? 1 : 0) + f.clasesHoy.length).toBe(2);
   });
 
   it("maps pagos with pesos + metodo label and reads the active package", () => {

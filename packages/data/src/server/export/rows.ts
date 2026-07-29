@@ -46,6 +46,7 @@ export interface RespaldoAsistencia {
   fecha: string; // 'YYYY-MM-DD'
   hora: string | null; // 'HH:MM:SS' | null (back-entered)
   cliente_id: string;
+  origen: string | null; // 'libre' | 'clase' | null (row predates #89 — provenance unknown)
 }
 
 /** A package catalog row. */
@@ -110,6 +111,14 @@ const METODO_LABEL: Record<string, string> = {
   efectivo: "Efectivo",
   transferencia: "Transferencia",
   tarjeta: "Tarjeta",
+};
+
+/** An asistencia's stated kind (#89). Only stamped from #89 forward — a pre-#89 row has
+ *  no `origen` and reads "—", never "Acceso libre": a historical class-less desk row may
+ *  well have been an unrecorded class, and the export must not claim otherwise. */
+const ORIGEN_LABEL: Record<string, string> = {
+  libre: "Acceso libre",
+  clase: "Clase",
 };
 
 // ── Small shared formatters ──
@@ -246,7 +255,13 @@ function shapeAsistencias(
   data: RespaldoData,
   nombreDe: (id: string) => string,
 ): RespaldoSheet {
-  const headers = ["Fecha", "Hora", "Cliente"];
+  // Origen carries a visit's PROVENANCE (#89): one member can now hold two rows on one day
+  // (a class and a walk-in), and this column is what makes that read as two distinct visits
+  // rather than a duplicated line. The session id is deliberately NOT a column — a 36-char
+  // uuid is noise in a sheet an operator opens, and Hora already separates two classes on
+  // the same day. (Accepted limit: two BACKDATED class rows on one past day both render
+  // Hora "—" + Origen "Clase" and are indistinguishable here.)
+  const headers = ["Fecha", "Hora", "Cliente", "Origen"];
   const enMes = data.mes
     ? data.asistencias.filter((a) => mismoMesLocal(parseDay(a.fecha.slice(0, 10)), data.mes!))
     : data.asistencias;
@@ -254,6 +269,7 @@ function shapeAsistencias(
     isoDay(parseDay(a.fecha.slice(0, 10))),
     a.hora ? a.hora.slice(0, 5) : EM_DASH,
     nombreDe(a.cliente_id),
+    a.origen ? (ORIGEN_LABEL[a.origen] ?? EM_DASH) : EM_DASH,
   ]);
   return { name: "Asistencias", headers, rows };
 }

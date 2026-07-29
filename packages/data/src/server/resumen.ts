@@ -41,7 +41,7 @@ export const getResumenMes = cache(
       supabase.from("ventas").select("fecha, monto").eq("gym_id", gym.id).gte("fecha", desdeInstante),
       supabase
         .from("asistencias")
-        .select("fecha, deleted_at")
+        .select("fecha, cliente_id")
         .eq("gym_id", gym.id)
         .gte("fecha", desdeIso)
         .is("deleted_at", null),
@@ -56,9 +56,20 @@ export const getResumenMes = cache(
     }));
 
     // asistencias.fecha is an absolute `date` → parse as a local-midnight day.
-    const asistencias: AsistenciaResumen[] = (asisRes.data ?? []).map((a) => ({
-      fecha: parseDay(a.fecha.slice(0, 10)),
-    }));
+    //
+    // DEDUPED on (cliente_id, fecha): since #89 a member can legitimately hold TWO rows on
+    // one day (a class visit + an ACCESO LIBRE visit), and this dashboard counts PEOPLE
+    // present per day — the same `count(distinct cliente_id)` the day-strip dots use — not
+    // ledger rows. Without this, one member who took a class and walked in would move the
+    // "asistencias del mes" number by 2.
+    const vistos = new Set<string>();
+    const asistencias: AsistenciaResumen[] = [];
+    for (const a of asisRes.data ?? []) {
+      const dia = a.fecha.slice(0, 10);
+      if (vistos.has(`${a.cliente_id}:${dia}`)) continue;
+      vistos.add(`${a.cliente_id}:${dia}`);
+      asistencias.push({ fecha: parseDay(dia) });
+    }
 
     return calcularResumenMes(ventas, asistencias, hoy);
   },

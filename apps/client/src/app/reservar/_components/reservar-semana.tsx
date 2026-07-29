@@ -197,6 +197,8 @@ function descargarIcsSesion(sesion: SesionMiembroDTO) {
 function SummarySheet({
   sesion,
   saldo,
+  otroEseDia,
+  esHoy,
   pending,
   error,
   onBook,
@@ -204,6 +206,12 @@ function SummarySheet({
 }: {
   sesion: SesionMiembroDTO;
   saldo: SaldoMiembroDTO;
+  /** True when the member already has another session marked `miReserva` on the SELECTED
+   *  day (#89 W3): surfaces the charge-consent nota below before the urgency copy —
+   *  outranks `casi_lleno`. */
+  otroEseDia: boolean;
+  /** Whether that selected day IS today — the nota says "hoy" only then. */
+  esHoy: boolean;
   pending: boolean;
   error: string | null;
   onBook: () => void;
@@ -254,7 +262,12 @@ function SummarySheet({
     cta = <CtaVerPlanes>No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.</CtaVerPlanes>;
   } else {
     const nota =
-      sesion.estado === "casi_lleno" ? (
+      otroEseDia && !saldo.ilimitado ? (
+        <p className="mb-2.5 text-center text-[11px] text-muted">
+          Ya tienes una clase {esHoy ? "hoy" : "ese día"} — esta usará otra de tus{" "}
+          {saldo.clasesRestantes} clases.
+        </p>
+      ) : sesion.estado === "casi_lleno" ? (
         <p className="mb-2.5 text-center text-[11px] font-semibold text-warning">
           Solo {sesion.disponibles} libre{sesion.disponibles === 1 ? "" : "s"} · asegura tu lugar
         </p>
@@ -569,6 +582,8 @@ export function ReservarSemana({
               <SummarySheet
                 sesion={sheet.sesion}
                 saldo={saldo}
+                otroEseDia={dia.sesiones.some((s) => s.miReserva && s.id !== sheet.sesion.id)}
+                esHoy={dia.esHoy}
                 pending={pending}
                 error={error}
                 onBook={book}

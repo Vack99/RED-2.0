@@ -92,7 +92,10 @@ async function readAllAsistencias(
   for (let from = 0; ; from += PAGE) {
     let q = supabase
       .from("asistencias")
-      .select("fecha, hora, cliente_id")
+      // `origen` is the visit's PROVENANCE (#89): two rows for one member on one day are
+      // legal now, and without it the export would read as a duplicate instead of "a class
+      // and a walk-in". The session id itself is NOT read — no sheet renders a uuid.
+      .select("fecha, hora, cliente_id, origen")
       .eq("gym_id", gymId)
       .gte("fecha", ventana.gte); // DAY-STRING bound — asistencias.fecha is a `date` (§1.8)
     if (ventana.lt !== null) q = q.lt("fecha", ventana.lt);
@@ -108,6 +111,7 @@ async function readAllAsistencias(
         fecha: a.fecha,
         hora: a.hora,
         cliente_id: a.cliente_id,
+        origen: a.origen,
       })),
     );
     if (page.length < PAGE) break;

@@ -30,6 +30,6 @@
     "sembrar_plantillas_default": { "suites": ["plantillas_rules.sql"] },
     "set_plan_features": { "suites": ["paquete_marketing_rules.sql"] },
     "toggle_favorito_tipo": { "suites": ["favorito_rules.sql"] },
-    "toggle_pase": { "suites": ["pasar_lista_sesion_rules.sql", "gym2_probe.sql", "rls_cross_tenant_denial.sql"] }
+    "toggle_pase": { "suites": ["toggle_pase_rules.sql", "toggle_pase_gym2_timezone.sql", "pasar_lista_sesion_rules.sql", "gym2_probe.sql", "rls_cross_tenant_denial.sql"] }
   }
 }

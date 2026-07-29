@@ -1,6 +1,6 @@
 # ADR-0006 — Respaldo: an operational export, not a disaster-recovery backup
 
-**Status:** Accepted · **Date:** 2026-06-01 · **Amended:** 2026-07-02 (mail-provider clause — see [ADR-0014](0014-custom-smtp-platform-sender.md)); 2026-07-13 (month-scoped mode — see below) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (RLS, no ORM), [ADR-0002](0002-derived-not-stored.md) (derived-at-read)
+**Status:** Accepted · **Date:** 2026-06-01 · **Amended:** 2026-07-02 (mail-provider clause — see [ADR-0014](0014-custom-smtp-platform-sender.md)); 2026-07-13 (month-scoped mode — see below); 2026-07-28 (Asistencias gains `origen` — see below) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (RLS, no ORM), [ADR-0002](0002-derived-not-stored.md) (derived-at-read)
 
 ## Context
 
@@ -29,6 +29,13 @@ flagged-tension note in `CONTEXT.md`.) Concretely:
   `monto` figures have context. The Clientes sheet carries the re-registration-to-standing
   fields, so it doubles as the operator's re-contact list — the continuity need is met without a
   separate sheet.
+
+  > **Amended 2026-07-28 (#89 — attendance provenance).** The Asistencias sheet is now
+  > **(fecha, hora, cliente, origen)**: a member may legally hold two rows on one day (a class
+  > visit and an ACCESO LIBRE visit), so `origen` — "Clase" / "Acceso libre" — is what makes the
+  > pair read as two visits instead of a duplicated line. Rows written before #89 have no
+  > `origen` and render "—" (provenance unknown, never assumed libre). The session id is
+  > deliberately not a column: a uuid is noise in a sheet the operator opens.
 - **Hard exclusions:** `cobro` (holds the CLABE / bank account — a secret, and this file gets
   emailed), `perfil` (brand config), `plantillas` (message templates). These are *settings*, not
   *what happened at the gym*, and keeping secrets out is what makes the file safe to auto-email

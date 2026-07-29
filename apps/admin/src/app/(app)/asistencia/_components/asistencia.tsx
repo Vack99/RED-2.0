@@ -5,15 +5,15 @@ import Link from "next/link";
 import { Icon } from "@gym/ui/forge/icon";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
-import { Avatar, Card, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
+import { Avatar, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
 import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
-import { marcadasDelDiaAction, marcadasDeMesAction, togglePaseAction } from "../actions";
-import { setMarcada, type Marcadas } from "./marcadas";
+import { marcadasDeMesAction, togglePaseAction, visitasDelDiaAction } from "../actions";
+import { ctxDe, LIBRE, personasEn, setVisita, visitaDe, type Visita } from "./marcadas";
 
 // The day strip reaches this many days back from today, each rendering a has-marks dot.
 // getMarcadas' INITIAL window (in @gym/data's asistencia.ts) is sized to cover exactly this
@@ -23,52 +23,93 @@ import { setMarcada, type Marcadas } from "./marcadas";
 // is guarded by asistencia-lockstep.test.ts, which fails if either side changes alone.
 export const DIAS_TIRA_INICIAL = 104;
 
+/** One of today's classes, as the pill row needs it. Built server-side (page.tsx) from
+ *  getAgendaDia — `hora` is the gym-local label, `tipo` the Agenda's display name for
+ *  the session. The nearest-class default is resolved server-side (sesionCercana reads
+ *  the DTO's own `startsAt`), so no absolute instant is serialized to the client. */
+export interface SesionDelDia {
+  id: string;
+  hora: string;
+  tipo: string;
+  capacidad: number;
+}
+
 /** "YYYY-MM" key for a Date's calendar month — the lazy-load bookkeeping unit. */
 function monthKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/**
+ * The front desk ("Puerta", #89). TODAY is class-aware: the class is SCREEN STATE, picked
+ * from a one-line pill row that opens on the class nearest now and falls back to ACCESO
+ * LIBRE — which is the whole screen for a gym with no maintained schedule (no schedule ⇒ no
+ * pill row, by design, not by degradation). The full member list IS the screen: always
+ * present, stationary, tap-to-mark; search only filters it. In a class context the members
+ * who BOOKED it lead as a CON RESERVA group — membership keyed on the booking, never on the
+ * check, so marking someone changes their row in place and the list never jumps under a
+ * moving thumb. One number: presentes in the selected context. A visit in another context
+ * today shows as a gold stamp on the row, never a ×2 badge; undo is tap-again.
+ *
+ * A PAST day (strip or calendar pick) runs the SAME per-visit model with the context
+ * locked to ACCESO LIBRE — the only one its 2-arg toggle can write. Its class visits
+ * therefore render as the same read-only gold stamps instead of as a check the tap
+ * cannot undo; a past day just has no pill row to pick a class with.
+ */
 export function AsistenciaScreen({
   clientes,
   marcadas: inicial,
   hoyIso,
+  sesiones,
+  reservas,
+  ctxInicial,
 }: {
   clientes: PaseClienteDTO[];
   marcadas: MarcadasInicial;
   hoyIso: string;
+  /** Today's classes (empty for a gym with no schedule ⇒ no pill row). */
+  sesiones: SesionDelDia[];
+  /** sessionId → the clientes holding a `reservada`/`asistida` booking for it. */
+  reservas: Record<string, string[]>;
+  /** The opening context, resolved server-side so SSR and hydration agree. */
+  ctxInicial: string;
 }) {
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
 
-  // Two maps, split by purpose:
+  // Two states, split by purpose:
   //  • `presencia` — per-day COUNTS across the window, driving the strip/calendar dots.
   //    Grows as the calendar browses past months (getMarcadasDeMes).
-  //  • `idsPorDia` — the ids of clientes marked, per LOADED day, driving the selected-day
-  //    roster checks and the toggle. Seeded with TODAY (shipped in the initial payload);
-  //    a picked past day's ids are fetched on demand and merged.
+  //  • `visitasPorDia` — the visit rows of every LOADED day (one per member per context),
+  //    seeded with today's from the initial payload so the first tap needs no fetch; a
+  //    picked past day is fetched on demand (visitasDelDiaAction). ONE state model for
+  //    every day — an absent key means "not loaded yet", never "nobody came".
   const [presencia, setPresencia] = React.useState<Presencia>(inicial.presencia);
-  const [idsPorDia, setIdsPorDia] = React.useState<Marcadas>(inicial.marcadasDelDia);
-  // Mirror of `idsPorDia` for the toggle callback to read current presence at call time
-  // WITHOUT closing over `idsPorDia` — that would change the callback identity on every
-  // flip and defeat PaseRow's React.memo (re-rendering the whole roster per tap). Kept in
-  // sync on every commit.
-  const idsRef = React.useRef(idsPorDia);
+  const [visitasPorDia, setVisitasPorDia] = React.useState<Record<string, Visita[]>>({
+    [hoyIso]: inicial.visitasHoy,
+  });
+  // Mirror for the toggle callback to read current state at call time WITHOUT closing
+  // over it — that would change the callback identity on every flip and defeat PaseRow's
+  // React.memo (re-rendering the whole roster per tap). Kept in sync on every commit.
+  const visitasRef = React.useRef(visitasPorDia);
   React.useEffect(() => {
-    idsRef.current = idsPorDia;
-  }, [idsPorDia]);
+    visitasRef.current = visitasPorDia;
+  }, [visitasPorDia]);
+
+  const [ctx, setCtx] = React.useState<string>(ctxInicial);
   const [selDate, setSelDate] = React.useState<Date>(() => parseDay(hoyIso));
   const [query, setQuery] = React.useState("");
   const [calOpen, setCalOpen] = React.useState(false);
 
-  // A day's dot/count reads its LOADED ids' length when known (so an optimistic toggle
-  // moves the dot instantly), and falls back to the presence count otherwise. This is the
-  // count↔ids reconciliation: for a loaded day the ids are authoritative; for an unloaded
-  // day the RPC's presence count stands in. Memoized on [idsPorDia, presencia]: its identity
-  // changes only when those maps do (a toggle, or a month/day merge), so unrelated commits hand
-  // DayStrip the same callback. DayStrip is NOT memoized, so it re-renders with the parent
-  // regardless — the useCallback just avoids a gratuitously fresh function on those commits.
+  // A day's dot/count: a LOADED day counts its visits' distinct members (matching
+  // marcadas_presencia' `count(distinct cliente_id)`), any other day falls back to the
+  // server's presence count. For a loaded day an optimistic flip moves the dot instantly —
+  // that IS the count↔identity reconciliation. Memoized so unrelated commits hand DayStrip
+  // the same callback.
   const countFor = React.useCallback(
-    (iso: string): number => idsPorDia[iso]?.length ?? presencia[iso] ?? 0,
-    [idsPorDia, presencia],
+    (iso: string): number => {
+      const vs = visitasPorDia[iso];
+      return vs ? personasEn(vs) : (presencia[iso] ?? 0);
+    },
+    [visitasPorDia, presencia],
   );
 
   // Lazy-load past months' presence dots. The server ships only the INITIAL
@@ -90,8 +131,9 @@ export function AsistenciaScreen({
   }
   const fetchingMonths = React.useRef<Set<string>>(new Set());
 
-  // Days whose ids are loaded (seeded with today) / in flight — gates the identity fetch.
-  const loadedDays = React.useRef<Set<string>>(new Set(Object.keys(inicial.marcadasDelDia)));
+  // Past days whose visits are loaded / in flight — gates the identity fetch. Today is
+  // never in here: it is seeded from the initial payload and the effect below never asks.
+  const loadedDays = React.useRef<Set<string>>(new Set());
   const fetchingDays = React.useRef<Set<string>>(new Set());
 
   // Fetch a month's presence once and merge it in, never clobbering existing counts on key
@@ -109,81 +151,114 @@ export function AsistenciaScreen({
       .finally(() => fetchingMonths.current.delete(mk));
   }, []);
 
-  // Fetch a day's ids once and merge them in (existing wins, so it never clobbers a toggle).
-  // Best-effort: a failed fetch stays unloaded so re-selecting retries. Today is pre-seeded,
-  // so this never fires for it — selecting today is instant.
-  const ensureDiaIds = React.useCallback((iso: string) => {
+  // Fetch a past day's visits once and merge them in (existing wins, so it never clobbers
+  // a toggle). Best-effort: a failed fetch stays unloaded so re-selecting retries.
+  const ensureDiaVisitas = React.useCallback((iso: string) => {
     if (loadedDays.current.has(iso) || fetchingDays.current.has(iso)) return;
     fetchingDays.current.add(iso);
-    void marcadasDelDiaAction(iso)
-      .then((ids) => {
+    void visitasDelDiaAction(iso)
+      .then((vs) => {
         loadedDays.current.add(iso);
-        setIdsPorDia((m) => (m[iso] !== undefined ? m : { ...m, [iso]: ids }));
+        setVisitasPorDia((m) => (m[iso] !== undefined ? m : { ...m, [iso]: vs }));
       })
       .catch(() => {})
       .finally(() => fetchingDays.current.delete(iso));
   }, []);
 
-  // Selecting a day loads its month's dots (a calendar pick of an old month) AND that day's
-  // roster ids (any non-today pick). Strip picks stay inside the initial window, so the month
-  // fetch is a no-op for them; today's ids are already seeded, so its fetch is a no-op too.
+  // Selecting a day loads its month's dots (a calendar pick of an old month) AND, for a
+  // PAST day, that day's visits. Strip picks stay inside the initial window, so the
+  // month fetch is a no-op for them; today's visits are already seeded.
   const selIso = isoDay(selDate);
+  const esHoy = selIso === hoyIso;
   React.useEffect(() => {
     ensureMonth(selDate);
-    ensureDiaIds(selIso);
-  }, [selDate, selIso, ensureMonth, ensureDiaIds]);
+    if (!esHoy) ensureDiaVisitas(selIso);
+  }, [selDate, selIso, esHoy, ensureMonth, ensureDiaVisitas]);
 
-  const presentes = idsPorDia[selIso]; // undefined while a picked past day's ids load
-  const diaCargando = presentes === undefined;
-  const total = clientes.length;
-  const count = countFor(selIso);
-  const pct = total ? Math.round((count / total) * 100) : 0;
-  const esHoy = sameDay(selDate, hoy);
+  const visitasDia = visitasPorDia[selIso]; // undefined while a picked past day loads
+  const diaCargando = visitasDia === undefined;
+  const visitas = visitasDia ?? [];
+
+  // The context the tap writes: the picked class on today, ACCESO LIBRE on a past day —
+  // the only context a back-dated 2-arg toggle can own.
+  const ctxSel = esHoy ? ctx : LIBRE;
+  // The selected class (today only). `undefined` ⇒ ACCESO LIBRE.
+  const sesionActual = esHoy ? sesiones.find((s) => s.id === ctx) : undefined;
+  const presentesEnCtx = visitas.filter((v) => ctxDe(v) === ctxSel).length;
+
+  // Short label for a context, used by the gold other-context stamps. A past day's class
+  // ids are not in `sesiones` (which is TODAY's schedule), so they fall back to "CLASE" —
+  // the stamp still says a class was attended, just not which one.
+  const etiqueta = React.useCallback(
+    (k: string) => (k === LIBRE ? "LIBRE" : (sesiones.find((s) => s.id === k)?.tipo ?? "CLASE")),
+    [sesiones],
+  );
 
   const filtered = clientes.filter((c) =>
     c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
   );
+  // Booked members lead in a class context. Both halves keep the roster's alphabetical
+  // order and a row NEVER moves when marked — group membership is the booking, not the
+  // check. Empty on a past day and in ACCESO LIBRE, where the list is simply flat.
+  const reservados = React.useMemo(
+    () => new Set(esHoy && sesionActual ? (reservas[ctx] ?? []) : []),
+    [esHoy, sesionActual, reservas, ctx],
+  );
+  const conReserva = reservados.size ? filtered.filter((c) => reservados.has(c.id)) : [];
+  const sinReserva = reservados.size ? filtered.filter((c) => !reservados.has(c.id)) : filtered;
 
   // Windowed initial paint (useRevealedWindow): the server + first hydration paint only the
-  // opening window, then a mount effect reveals the full list below the fold. Search still runs
-  // over the FULL dataset from the first keystroke (that is `filtered` above); only how many of
-  // `filtered` we paint is gated, and `filtered.length` (used for the empty-state check and the
-  // header counts) stays exact.
-  const { visible } = useRevealedWindow(filtered);
+  // opening window, then a mount effect reveals the rest below the fold. Search still runs
+  // over the FULL dataset from the first keystroke (that is `filtered` above); only how many
+  // of it we paint is gated, and `filtered.length` (the empty-state check) stays exact. The
+  // CON RESERVA group is never windowed — it is the operator's working set.
+  const { visible: sinReservaVisible } = useRevealedWindow(sinReserva);
 
-  // Ids whose toggle is mid-flight, keyed by `${iso}:${id}`. A second tap on the
-  // same row before the server answers is ignored, so the already-applied
-  // optimistic flip stands instead of racing a competing action.
+  // Marks mid-flight, keyed by `${dia}:${contexto}:${id}`. A second tap on the same row
+  // before the server answers is ignored, so the already-applied optimistic flip stands
+  // instead of racing a competing action.
   const inFlight = React.useRef<Set<string>>(new Set());
 
-  const toggle = React.useCallback(
+  // The tap: mark the member in the selected day's selected context, or — the same gesture
+  // — undo that visit (Wodify's "click again to undo a sign-in"). At most one visit per
+  // (member, context), so the undo is exactly per-visit. A past day rides the identical
+  // path with ctxSel pinned to LIBRE and no sessionId, i.e. the 2-arg back-entry toggle.
+  const onTap = React.useCallback(
     async (c: PaseClienteDTO) => {
-      // Toggling is only reachable on a LOADED day (the roster is hidden while a day's ids
-      // load), so idsRef.current[selIso] is defined here. The dot/count for selIso follows
-      // idsPorDia's length via countFor, so the optimistic flip moves it with no separate
-      // presence write — that IS the reconciliation.
-      const key = `${selIso}:${c.id}`;
+      const key = `${selIso}:${ctxSel}:${c.id}`;
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
 
-      // Flip optimistically on this tick so the bounce, tint, avatar fill and counts fire
-      // instantly; the server result reconciles below. Read current presence from the ref
-      // (not a closed-over `idsPorDia`) so this callback stays referentially stable.
-      const willBePresent = !(idsRef.current[selIso] ?? []).includes(c.id);
-      setIdsPorDia((m) => setMarcada(m, selIso, c.id, willBePresent));
+      // Flip optimistically on this tick so the bounce, tint, avatar fill and the one
+      // number move instantly; the server result reconciles below. Read current state from
+      // the ref (not closed-over state) so this callback stays referentially stable.
+      const previa = visitaDe(visitasRef.current[selIso] ?? [], ctxSel, c.id);
+      const willBePresent = previa === undefined;
+      const aplicar = (present: boolean, hora: string | null) =>
+        setVisitasPorDia((m) => ({
+          ...m,
+          [selIso]: setVisita(m[selIso] ?? [], ctxSel, c.id, present, hora),
+        }));
+      aplicar(willBePresent, null);
 
       try {
-        const res = await togglePaseAction({ clienteId: c.id, fecha: selIso });
+        const res = await togglePaseAction({
+          clienteId: c.id,
+          fecha: selIso,
+          ...(ctxSel !== LIBRE && { sessionId: ctxSel }),
+        });
         if (!res.ok) {
-          // The RPC refused with a reason ('Paquete vencido', the C15 already-marked-on-a-session
-          // guard, …) — a typed result, because prod Next.js masks thrown action messages. Roll the
-          // optimistic flip back and tell the operator WHY, not a blind "try again".
-          setIdsPorDia((m) => setMarcada(m, selIso, c.id, !willBePresent));
+          // The RPC refused with a reason ('Paquete vencido', the C9 vence gate, …) — a
+          // typed result, because prod Next.js masks thrown action messages. Roll the
+          // optimistic flip back (restoring the undone visit's hora) and say WHY.
+          aplicar(!willBePresent, previa?.hora ?? null);
           forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
           return;
         }
-        // Reconcile against the authoritative result (usually a no-op).
-        setIdsPorDia((m) => setMarcada(m, selIso, c.id, res.present));
+        // Reconcile against the authoritative result — this is where the server's arrival
+        // hora lands on the row the optimistic flip appended without one (a back-dated
+        // mark has none, and keeps the untimed placeholder).
+        aplicar(res.present, res.hora);
         if (res.present) {
           forgeToast({
             tone: "success",
@@ -193,27 +268,41 @@ export function AsistenciaScreen({
         }
       } catch {
         // Unexpected failure (network, invalid input) — roll the optimistic flip back.
-        setIdsPorDia((m) => setMarcada(m, selIso, c.id, !willBePresent));
+        aplicar(!willBePresent, previa?.hora ?? null);
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
       } finally {
         inFlight.current.delete(key);
       }
     },
-    [selIso],
+    [selIso, ctxSel],
   );
+
+  // One row. `otras` is pre-joined to a STRING so every prop is primitive and PaseRow's
+  // memo actually holds: only the tapped row re-renders.
+  const fila = (c: PaseClienteDTO) => {
+    const mia = visitaDe(visitas, ctxSel, c.id);
+    const otras = visitas
+      .filter((v) => v.clienteId === c.id && ctxDe(v) !== ctxSel)
+      .map((v) => (v.hora ? `${v.hora} ${etiqueta(ctxDe(v))}` : etiqueta(ctxDe(v))))
+      .join(" · ");
+    return (
+      <PaseRow
+        key={c.id}
+        cliente={c}
+        present={mia !== undefined}
+        hora={mia?.hora ?? null}
+        otras={otras}
+        onToggle={onTap}
+      />
+    );
+  };
 
   return (
     <div>
-      {/* Header: title + live stat + calendar */}
+      {/* Header: the title and the calendar. Every count that used to stack here moved
+          into the one number below (no hero card, no % meter — design §3). */}
       <div className="flex items-start justify-between" style={{ padding: "14px 22px 4px", gap: 8 }}>
-        <div>
-          <H1 size={38}>ASISTENCIA</H1>
-          <div style={{ marginTop: 6, fontSize: 12, color: "var(--muted)" }}>
-            <Tnum style={{ color: "var(--gold)", fontWeight: 700 }}>{count}</Tnum>{" "}
-            {esHoy ? "hoy" : "registradas"} ·{" "}
-            <Tnum>{total - count}</Tnum> pendientes
-          </div>
-        </div>
+        <H1 size={38}>ASISTENCIA</H1>
         <button
           onClick={() => setCalOpen(true)}
           aria-label="Abrir calendario"
@@ -233,24 +322,85 @@ export function AsistenciaScreen({
       {/* Day strip */}
       <DayStrip hoy={hoy} countFor={countFor} selDate={selDate} onSelect={setSelDate} />
 
-      {/* Progress hero */}
-      <Card style={{ margin: "8px 16px 0" }}>
-        <div className="flex items-center justify-between">
-          <Eyebrow>REGISTRADOS</Eyebrow>
-          <Tnum style={{ fontSize: 12, color: "var(--gold)", fontWeight: 800, letterSpacing: 0.5 }}>{pct}%</Tnum>
-        </div>
-        <div className="flex items-baseline" style={{ gap: 6, marginTop: 6 }}>
-          <Tnum className="font-extrabold" style={{ fontSize: 44, lineHeight: 0.9, color: "var(--yellow)" }}>{count}</Tnum>
-          <Tnum className="font-extrabold" style={{ fontSize: 26, color: "var(--muted)" }}>/ {total}</Tnum>
-        </div>
-        <div style={{ marginTop: 14, height: 3, background: "var(--line)", overflow: "hidden" }}>
-          <div style={{ height: "100%", width: "100%", background: "var(--yellow)", transform: `scaleX(${pct / 100})`, transformOrigin: "left", transition: "transform 380ms cubic-bezier(.32,.72,0,1)" }} />
-        </div>
-      </Card>
+      {/* Context block: the thin pill selector + the one number. */}
+      <div
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 10,
+          background: "var(--canvas)",
+          borderBottom: "1px solid var(--line)",
+        }}
+      >
+        {/* One-line pills. A context with marks gets a dot (the day strip's has-marks
+            idiom), never a count. With no schedule — or on a past day — the row does not
+            render at all: the screen is ACCESO LIBRE + list, intentional. */}
+        {esHoy && sesiones.length > 0 && (
+          <div
+            className="forge-scroll flex overflow-x-auto"
+            style={{ gap: 6, padding: "4px 16px 8px", scrollSnapType: "x proximity" }}
+          >
+            {[{ id: LIBRE, hora: "", tipo: "ACCESO LIBRE" }, ...sesiones].map((s) => {
+              const on = s.id === ctx;
+              const marcado = visitas.some((v) => ctxDe(v) === s.id);
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setCtx(s.id)}
+                  className="flex shrink-0 items-center uppercase"
+                  style={{
+                    gap: 6,
+                    padding: "8px 12px",
+                    scrollSnapAlign: "start",
+                    background: on ? "var(--yellow)" : "transparent",
+                    border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`,
+                    color: on ? "var(--ink)" : "var(--fg)",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    transition:
+                      "background-color 150ms cubic-bezier(.32,.72,0,1), border-color 150ms cubic-bezier(.32,.72,0,1)",
+                  }}
+                >
+                  {s.hora && (
+                    <Tnum style={{ fontSize: 10, fontWeight: 800, opacity: on ? 0.7 : 1, color: on ? "var(--ink)" : "var(--muted)" }}>
+                      {s.hora}
+                    </Tnum>
+                  )}
+                  <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.6 }}>{s.tipo}</span>
+                  {marcado && (
+                    <span style={{ width: 4, height: 4, borderRadius: 999, background: on ? "var(--ink)" : "var(--gold)" }} />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        )}
 
-      {/* Search + add */}
-      <div className="flex items-stretch" style={{ padding: "16px 16px 4px", gap: 8 }}>
-        <Input icon="search" placeholder="Buscar cliente…" value={query} onChange={setQuery} style={{ flex: 1 }} />
+        {/* The ONE number: presentes in this context (against cupo for a class); on a past
+            day, that day's registradas. */}
+        <div className="flex items-baseline justify-between" style={{ gap: 8, padding: "8px 22px 10px" }}>
+          <div className="flex items-baseline" style={{ gap: 7 }}>
+            {esHoy && sesionActual && (
+              <Tnum style={{ fontSize: 12, fontWeight: 800, color: "var(--gold)" }}>{sesionActual.hora}</Tnum>
+            )}
+            <span className="uppercase" style={{ fontSize: 12, fontWeight: 800, letterSpacing: 0.8 }}>
+              {!esHoy ? fmtFull(selDate) : sesionActual ? sesionActual.tipo : "ACCESO LIBRE"}
+            </span>
+          </div>
+          <div className="flex items-baseline" style={{ gap: 3 }}>
+            <Tnum style={{ fontSize: 17, fontWeight: 800, lineHeight: 1, color: "var(--gold)" }}>
+              {esHoy ? presentesEnCtx : countFor(selIso)}
+            </Tnum>
+            {esHoy && sesionActual && (
+              <Tnum style={{ fontSize: 11.5, fontWeight: 700, color: "var(--muted)" }}>/ {sesionActual.capacidad}</Tnum>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Search is a FILTER over the list, never the path to it. */}
+      <div className="flex items-stretch" style={{ padding: "12px 16px 4px", gap: 8 }}>
+        <Input icon="search" placeholder="Filtrar…" value={query} onChange={setQuery} style={{ flex: 1 }} />
         <Link
           href="/vender"
           prefetch
@@ -262,25 +412,30 @@ export function AsistenciaScreen({
         </Link>
       </div>
 
-      {/* Client list — while a picked past day's ids load, show the same "Cargando…"
-          affordance the agenda roster uses (identity is fetched on demand; today is
-          seeded so this never shows for it). */}
-      <div style={{ paddingTop: 8 }}>
+      {/* The list. In a class context the members who BOOKED it lead — the operator's
+          working set when the class starts. Marking someone changes their row in place
+          (tint + check + hora), never its position. While a picked past day's visits load,
+          the same "Cargando…" affordance the agenda roster uses. */}
+      <div style={{ paddingTop: 4 }}>
         {diaCargando ? (
           <div style={{ padding: "40px 22px", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
             Cargando asistencias…
           </div>
         ) : (
           <>
-            {visible.map((c, i) => (
-              <PaseRow
-                key={c.id}
-                cliente={c}
-                present={presentes.includes(c.id)}
-                first={i === 0}
-                onToggle={toggle}
-              />
-            ))}
+            {conReserva.length > 0 && (
+              <>
+                <div className="flex items-baseline" style={{ gap: 7, padding: "12px 22px 8px" }}>
+                  <Eyebrow>CON RESERVA</Eyebrow>
+                  <Tnum style={{ fontSize: 11, fontWeight: 800, color: "var(--gold)" }}>{conReserva.length}</Tnum>
+                </div>
+                <div style={{ borderTop: "1px solid var(--line)" }}>{conReserva.map(fila)}</div>
+                <div style={{ padding: "16px 22px 8px" }}>
+                  <Eyebrow>SIN RESERVA</Eyebrow>
+                </div>
+              </>
+            )}
+            <div style={{ borderTop: "1px solid var(--line)" }}>{sinReservaVisible.map(fila)}</div>
             {filtered.length === 0 && (
               <div style={{ padding: "40px 22px", textAlign: "center", fontSize: 13, color: "var(--muted)" }}>
                 Sin clientes que coincidan.
@@ -403,15 +558,23 @@ function DayStrip({
   );
 }
 
+/** One member row. Sub-line = membership + today's visits in OTHER contexts (gold, one
+ *  stamp per visit — never a ×2). The right cluster = THIS context: the arrival hora when
+ *  marked + the check. Every prop is primitive so the memo holds and a tap re-renders
+ *  exactly one row. */
 const PaseRow = React.memo(function PaseRow({
   cliente,
   present,
-  first,
+  hora,
+  otras,
   onToggle,
 }: {
   cliente: PaseClienteDTO;
   present: boolean;
-  first: boolean;
+  /** Arrival "HH:MM" in the current context, or null when unmarked (or untimed). */
+  hora: string | null;
+  /** Pre-joined labels of this member's visits in the OTHER contexts today ("" = none). */
+  otras: string;
   onToggle: (c: PaseClienteDTO) => void;
 }) {
   const c = cliente;
@@ -422,7 +585,6 @@ const PaseRow = React.memo(function PaseRow({
       style={{
         gap: 14,
         padding: "12px 22px",
-        borderTop: first ? "1px solid var(--line)" : "none",
         borderBottom: "1px solid var(--line)",
         cursor: "pointer",
         background: present ? "var(--yellow-soft)" : "transparent",
@@ -446,35 +608,43 @@ const PaseRow = React.memo(function PaseRow({
       >
         <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{c.nombre}</div>
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
-          {c.paquete} · {c.clasesLabel}
+          {c.clasesLabel}
           {c.porVencer && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
+          {otras && (
+            <span className="uppercase" style={{ color: "var(--gold)", fontWeight: 700 }}> · {otras}</span>
+          )}
         </div>
       </Link>
-      <div
-        className="flex shrink-0 items-center justify-center"
-        style={{
-          width: 28,
-          height: 28,
-          background: present ? "var(--yellow)" : "transparent",
-          border: `1.5px solid ${present ? "var(--yellow)" : "var(--muted-soft)"}`,
-          transition: "background-color 180ms cubic-bezier(.32,.72,0,1), border-color 180ms cubic-bezier(.32,.72,0,1)",
-        }}
-      >
-        {/* Check mark scales/fades both ways so uncheck mirrors check (forge-pop
-            on entry; a symmetric scale-down + fade on exit). */}
-        <span
-          aria-hidden
+      <div className="flex shrink-0 items-center" style={{ gap: 8 }}>
+        {present && hora && (
+          <Tnum style={{ fontSize: 11, fontWeight: 700, color: "var(--gold)" }}>{hora}</Tnum>
+        )}
+        <div
           className="flex items-center justify-center"
           style={{
-            transformOrigin: "center",
-            transform: present ? "scale(1)" : "scale(0.4)",
-            opacity: present ? 1 : 0,
-            animation: present ? "forge-pop 280ms cubic-bezier(.32,.72,0,1)" : "none",
-            transition: "transform 160ms cubic-bezier(.32,.72,0,1), opacity 160ms cubic-bezier(.32,.72,0,1)",
+            width: 28,
+            height: 28,
+            background: present ? "var(--yellow)" : "transparent",
+            border: `1.5px solid ${present ? "var(--yellow)" : "var(--muted-soft)"}`,
+            transition: "background-color 180ms cubic-bezier(.32,.72,0,1), border-color 180ms cubic-bezier(.32,.72,0,1)",
           }}
         >
-          <Icon name="check" size={16} color="var(--ink)" />
-        </span>
+          {/* Check mark scales/fades both ways so uncheck mirrors check (forge-pop
+              on entry; a symmetric scale-down + fade on exit). */}
+          <span
+            aria-hidden
+            className="flex items-center justify-center"
+            style={{
+              transformOrigin: "center",
+              transform: present ? "scale(1)" : "scale(0.4)",
+              opacity: present ? 1 : 0,
+              animation: present ? "forge-pop 280ms cubic-bezier(.32,.72,0,1)" : "none",
+              transition: "transform 160ms cubic-bezier(.32,.72,0,1), opacity 160ms cubic-bezier(.32,.72,0,1)",
+            }}
+          >
+            <Icon name="check" size={16} color="var(--ink)" />
+          </span>
+        </div>
       </div>
     </div>
   );

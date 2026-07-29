@@ -60,6 +60,7 @@ export type Database = {
           gym_id: string
           hora: string | null
           id: string
+          origen: string | null
           reservation_id: string | null
         }
         Insert: {
@@ -72,6 +73,7 @@ export type Database = {
           gym_id: string
           hora?: string | null
           id?: string
+          origen?: string | null
           reservation_id?: string | null
         }
         Update: {
@@ -84,6 +86,7 @@ export type Database = {
           gym_id?: string
           hora?: string | null
           id?: string
+          origen?: string | null
           reservation_id?: string | null
         }
         Relationships: [
@@ -1560,7 +1563,7 @@ export type Database = {
         }[]
       }
       toggle_pase: {
-        Args: { p_cliente_id: string; p_fecha: string }
+        Args: { p_cliente_id: string; p_fecha: string; p_session_id?: string }
         Returns: {
           hora: string
           present: boolean
@@ -1572,6 +1575,10 @@ export type Database = {
           cliente_id: string
           n: number
         }[]
+      }
+      visita_reciente: {
+        Args: { p_clase: boolean; p_cliente_id: string; p_fecha: string }
+        Returns: boolean
       }
     }
     Enums: {

@@ -230,6 +230,8 @@ export interface FichaAsistRow {
   fecha: string;
   hora: string | null;
   consumio: boolean;
+  /** The visit's CONTEXT (#89): a class, or null for ACCESO LIBRE. */
+  class_session_id: string | null;
 }
 /** A venta row reduced to what the ficha's pagos list + saldo gauges need. */
 export interface FichaVentaRow {
@@ -266,8 +268,15 @@ export interface FichaDerivada {
   diasGauge: DiasGauge | null;
   compradoDisplay: string;
   altaDisplay: string;
+  /** Whether the member holds today's ACCESO LIBRE visit — the ONE row the ficha's
+   *  2-arg toggle writes and undoes. A class visit never sets this (#89). */
   presentHoy: boolean;
   horaHoy: string | null;
+  /** Today's CLASS visits, one entry per visit (`hora` = "HH:MM", or null for an untimed
+   *  row). INFORMATION ONLY: the ficha can neither mark nor undo a class visit — the
+   *  Agenda roster owns those — but it must both STAMP them above the toggle and COUNT
+   *  them in the historial, so the leaf gets the hora rather than a pre-joined label. */
+  clasesHoy: { hora: string | null }[];
   historial: FichaAsistencia[];
   pagos: FichaPago[];
   ventasCount: number;
@@ -320,8 +329,19 @@ export function shapeFicha(
         today: false,
       };
     });
-  const presentHoy = asistencias.some((a) => a.fecha === hoyIso);
-  const horaHoy = asistencias.find((a) => a.fecha === hoyIso)?.hora?.slice(0, 5) ?? null;
+  // The ficha's toggle is the 2-arg (ACCESO LIBRE) one, so its checked state keys on the
+  // LIBRE row ALONE (#89): a member who attended a class today is not "marked" by anything
+  // this screen can undo, and rendering them checked would make the next tap insert a
+  // second, consuming libre row instead of undoing. Their class visits still have to be
+  // VISIBLE — as read-only gold stamps, the same idiom the desk row uses for a visit in
+  // another context.
+  const hoyRows = asistencias.filter((a) => a.fecha === hoyIso);
+  const libreHoy = hoyRows.find((a) => a.class_session_id === null);
+  const presentHoy = libreHoy !== undefined;
+  const horaHoy = libreHoy?.hora?.slice(0, 5) ?? null;
+  const clasesHoy = hoyRows
+    .filter((a) => a.class_session_id !== null)
+    .map((a) => ({ hora: a.hora ? a.hora.slice(0, 5) : null }));
 
   const pagos: FichaPago[] = ventas.map((v) => ({
     fechaDisplay: fmtShort(fechaEnZona(v.fecha, tz)),
@@ -384,6 +404,7 @@ export function shapeFicha(
     altaDisplay,
     presentHoy,
     horaHoy,
+    clasesHoy,
     historial,
     pagos,
     ventasCount: ventas.length,

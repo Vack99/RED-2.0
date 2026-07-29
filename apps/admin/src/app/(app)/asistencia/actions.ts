@@ -1,11 +1,12 @@
 "use server";
 
 import {
-  getMarcadasDelDia,
   getMarcadasDeMes,
+  getVisitasDelDia,
   togglePase,
   type Presencia,
   type TogglePaseOutcome,
+  type Visita,
 } from "@gym/data/server/asistencia";
 
 /**
@@ -15,9 +16,12 @@ import {
  * so the write is seen on the next read.
  *
  * An RPC refusal arrives as `{ ok: false, message }` (typed result, NOT a
- * throw): production Next.js masks thrown Server Action messages, so the C15/C9
- * reasons ('Paquete vencido', 'Asistencia de clase ya registrada…') must travel
- * as a return value for the pase screen to toast them.
+ * throw): production Next.js masks thrown Server Action messages, so the reason
+ * ('Paquete vencido', the C9 vence gate) must travel as a return value for the
+ * pase screen to toast it.
+ *
+ * Pass-through, `sessionId` included: the desk sends the class it marked in (#89),
+ * the ficha sends none (an ACCESO LIBRE visit). The DAL validates either shape.
  */
 export async function togglePaseAction(raw: unknown): Promise<TogglePaseOutcome> {
   return togglePase(raw);
@@ -34,11 +38,11 @@ export async function marcadasDeMesAction(mes: string): Promise<Presencia> {
 }
 
 /**
- * Lazy-load ONE picked day's roster ids ("YYYY-MM-DD") when the operator selects a past day
- * outside the initial payload (which carries only today's ids). Thin read seam
- * over the DAL, which zod-validates the day, re-auths, and gym-scopes the RPC. The client
- * caches the day's ids in state so its checks render and re-selection is instant.
+ * Lazy-load ONE picked day's VISITS ("YYYY-MM-DD") when the operator selects a past day
+ * outside the initial payload (which carries only today's). Thin read seam over the DAL,
+ * which zod-validates the day, re-auths, and gym-scopes the read. The client caches the
+ * day's visits in state so its checks render and re-selection is instant.
  */
-export async function marcadasDelDiaAction(fecha: string): Promise<string[]> {
-  return getMarcadasDelDia(fecha);
+export async function visitasDelDiaAction(fecha: string): Promise<Visita[]> {
+  return getVisitasDelDia(fecha);
 }

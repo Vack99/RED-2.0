@@ -1,59 +1,66 @@
-import { getMarcadas } from "@gym/data/server/asistencia";
+import { getAgendaDia, type SesionAgendaDTO } from "@gym/data/server/agenda";
+import { getMarcadas, getReservasDelDia } from "@gym/data/server/asistencia";
 import { getClientesParaPase } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
-import { hoyIsoEnZona } from "@gym/format";
+import { hoyIsoEnZona, horaEnZona } from "@gym/format";
+import { topTag } from "@gym/ui/forge/agenda/session-card";
 
-import { AsistenciaScreen } from "./_components/asistencia";
-import { PrototypeSwitcher } from "./_components/prototype/switcher";
-import { VariantAChips } from "./_components/prototype/variant-a-chips";
-import { VariantBFeed } from "./_components/prototype/variant-b-feed";
-import { VariantCClases } from "./_components/prototype/variant-c-clases";
-import { VariantDPuerta } from "./_components/prototype/variant-d-puerta";
-import { getReservasDelDiaProto, getSesionesDelDiaProto } from "./prototype-sesiones";
+import { AsistenciaScreen, type SesionDelDia } from "./_components/asistencia";
+import { LIBRE, sesionCercana } from "./_components/marcadas";
 
-/* PROTOTYPE (#89): `?variant=A|B|C|D` swaps the rendering only. With no param this
-   route is byte-identical to production. Variant D won (see
-   _components/prototype/NOTES.md); delete _components/prototype/ and
-   prototype-sesiones.ts when D is folded into the real screen.
+/**
+ * The desk names a class exactly as the Agenda does: an evento especial reads by its own
+ * name (an unnamed one reads "Especial"), everything else by its class type. Reuses the
+ * Agenda card's own `topTag` — `isNext: false` because the pill has no "A continuación"
+ * slot for the especial name to lose to, which is the only thing `muestraEspecial` decides.
+ */
+function etiquetaSesion(s: SesionAgendaDTO): string {
+  return topTag({ isNext: false, isSpecial: s.esEspecial, specialName: s.nombreEspecial }) ?? s.tipo;
+}
 
-   The client files live under _components/ because the client→server seam guard
-   (tools/guards/client-seam.test.ts) requires it; the server reader stays out of
-   _components/ because the ESLint rule covering that folder forbids the value
-   import of @gym/data/server that it needs. */
-const VARIANTES = [
-  { k: "A", name: "Chips de clase" },
-  { k: "B", name: "Recepción (caras + feed)" },
-  { k: "C", name: "Clases del día" },
-  { k: "D", name: "Puerta (lista + selector fino)" },
-];
-
-export default async function Page({
-  searchParams,
-}: {
-  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
-}) {
+export default async function Page() {
   const { timezone: tz } = await getOperatorGym();
   const hoyIso = hoyIsoEnZona(tz);
+
   const [clientes, marcadas] = await Promise.all([getClientesParaPase(), getMarcadas()]);
 
-  const vParam = (await searchParams).variant;
-  const variant = typeof vParam === "string" ? vParam.toUpperCase() : null;
-  if (!variant || !VARIANTES.some((v) => v.k === variant)) {
-    return <AsistenciaScreen clientes={clientes} marcadas={marcadas} hoyIso={hoyIso} />;
+  // The schedule is an ENHANCEMENT of the desk, never its precondition: a gym with no
+  // maintained schedule renders ACCESO LIBRE + the full roster by design, so a failing
+  // agenda read degrades to exactly THAT instead of 500-ing the door screen — the one
+  // screen that must open when someone is standing at it. (There is no error.tsx in this
+  // app; the degradation is here, in the read.) The assignments are ordered so a partial
+  // failure keeps whatever already succeeded: lose the bookings and the pills still work,
+  // only the CON RESERVA grouping goes. getAgendaDia ensures the week is materialized
+  // first (ADR-0010) — an idempotent write, and the intended one: the desk reads the same
+  // schedule the Agenda maintains, never a second projection of it.
+  let sesiones: SesionDelDia[] = [];
+  let reservas: Record<string, string[]> = {};
+  let ctxInicial: string = LIBRE;
+  try {
+    const agenda = await getAgendaDia(hoyIso);
+    sesiones = agenda.sesiones.map((s) => ({
+      id: s.id,
+      hora: horaEnZona(s.startsAt, tz),
+      tipo: etiquetaSesion(s),
+      capacidad: s.capacidad,
+    }));
+    // Bookings drive the CON RESERVA group; skipped entirely for a gym with no schedule.
+    reservas = await getReservasDelDia(agenda.sesiones.map((s) => s.id));
+    // Resolved here, not in a state initializer: "the class nearest NOW" must be the
+    // same value in the SSR and hydration renders or React reports a mismatch.
+    ctxInicial = sesionCercana(agenda.sesiones, new Date());
+  } catch (err) {
+    console.error("[asistencia] schedule read failed — falling back to ACCESO LIBRE", err);
   }
 
-  const sesiones = await getSesionesDelDiaProto(hoyIso);
-  const reservas = await getReservasDelDiaProto(sesiones.map((s) => s.id));
-  const marcadasHoy = marcadas.marcadasDelDia[hoyIso] ?? [];
-  const props = { clientes, sesiones, marcadasHoy };
-
   return (
-    <>
-      {variant === "A" && <VariantAChips {...props} />}
-      {variant === "B" && <VariantBFeed {...props} />}
-      {variant === "C" && <VariantCClases {...props} />}
-      {variant === "D" && <VariantDPuerta {...props} reservas={reservas} />}
-      <PrototypeSwitcher variants={VARIANTES} current={variant} />
-    </>
+    <AsistenciaScreen
+      clientes={clientes}
+      marcadas={marcadas}
+      hoyIso={hoyIso}
+      sesiones={sesiones}
+      reservas={reservas}
+      ctxInicial={ctxInicial}
+    />
   );
 }

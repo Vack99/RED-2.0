@@ -25,6 +25,7 @@ export interface FakeRows {
   clientes?: unknown[];
   ventas?: unknown[];
   asistencias?: unknown[];
+  reservation?: unknown[];
   paquetes?: unknown[];
   /** Overrides the default `gym.timezone` (America/Chihuahua) getOperatorGym resolves to. */
   gymTimezone?: string;
@@ -52,7 +53,7 @@ export interface FakeClient {
   /** Per-table record of `.order(col)` calls — the pagination-tiebreaker assertion target. */
   orderCalls: Record<string, string[]>;
   /** Every `.rpc(fn, args)` call, in order — the RPC-mechanic assertion target
-   *  (e.g. getMarcadas' `marcadas_por_gym` call, gym-scoped by args). */
+   *  (e.g. getMarcadas' `marcadas_presencia` call, gym-scoped by args). */
   rpcCalls: [string, unknown][];
 }
 
@@ -61,7 +62,7 @@ export function makeFake(
   opts: {
     error?: { table: string; err: unknown };
     /** What `client.rpc(...)` resolves — both directly awaited (e.g. getMarcadas'
-     *  `marcadas_por_gym`, a scalar-returning function) and via `.single()` (e.g.
+     *  `marcadas_presencia`, a scalar-returning function) and via `.single()` (e.g.
      *  togglePase's typed ok/refusal mapping). Defaults to a null row. */
     rpc?: { data?: unknown; error?: { message: string } | null };
   } = {},
@@ -159,7 +160,7 @@ export function makeFake(
         ]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },
-    // A scalar-returning function (e.g. marcadas_por_gym) is awaited directly —
+    // A scalar-returning function (e.g. marcadas_presencia) is awaited directly —
     // `then` resolves it. A set-returning function (e.g. toggle_pase) chains
     // `.single()` to pick its one row. Both read the same seeded opts.rpc.
     rpc: (fn: string, args?: unknown) => {

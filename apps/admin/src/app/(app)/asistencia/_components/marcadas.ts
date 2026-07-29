@@ -1,24 +1,97 @@
 /**
- * Pure state for the attendance screen's per-day presence map: an ISO day →
- * the ids of clients marked present that day.
+ * Pure state for the attendance screen. ONE shape for every day (#89): a LIST of visit
+ * events (`Visita[]`), each carrying the context it happened in. Two classes in one day
+ * are two entries; a class visit and an ACCESO LIBRE visit are two entries. Today and a
+ * picked past day differ only in which context the screen has SELECTED — a past day locks
+ * it to LIBRE (the only context its 2-arg toggle can write), never in how state is keyed.
  *
- * `setMarcada` is the single transition used BOTH for the optimistic flip on
- * tap and for the reconcile against the server result. It is immutable (never
- * touches the input) and idempotent (adding a present id or removing an absent
- * one is a no-op), so the optimistic flip and the later server reconcile of the
- * same outcome converge to the identical set. Note this is NOT what makes a
- * double-tap safe: a second tap in the in-flight window would compute the
- * opposite direction and fire a competing toggle — the `inFlight` guard in
- * asistencia.tsx (not idempotency) is what blocks that. The two are
- * complementary: the guard prevents the competing action, idempotency keeps the
- * single in-flight action's optimistic and reconciled states consistent.
+ * `setVisita` is the single transition used BOTH for the optimistic flip on tap and for
+ * the reconcile against the server result. It is immutable (never touches the input) and
+ * idempotent (marking a present member, or unmarking an absent one, is a no-op), so the
+ * optimistic flip and the later server reconcile of the same outcome converge to the
+ * identical state. Note this is NOT what makes a double-tap safe: a second tap in the
+ * in-flight window would compute the opposite direction and fire a competing toggle — the
+ * `inFlight` guard in asistencia.tsx (not idempotency) is what blocks that. The two are
+ * complementary: the guard prevents the competing action, idempotency keeps the single
+ * in-flight action's optimistic and reconciled states consistent.
  */
-export type Marcadas = Record<string, string[]>;
 
-/** Return a new map with `id` present (or absent) for `iso`, leaving the input untouched. */
-export function setMarcada(marcadas: Marcadas, iso: string, id: string, present: boolean): Marcadas {
-  const cur = new Set(marcadas[iso] ?? []);
-  if (present) cur.add(id);
-  else cur.delete(id);
-  return { ...marcadas, [iso]: [...cur] };
+/** The screen's context key for the class-less visit kind (ACCESO LIBRE). Never a
+ *  session id — session ids are uuids, so the two can't collide. */
+export const LIBRE = "libre";
+
+/** One attendance row: a visit event in ONE context. Mirrors @gym/data's `Visita`
+ *  (kept structural, not imported: this is a "use client" module and the DAL is
+ *  `server-only`). */
+export interface Visita {
+  clienteId: string;
+  /** The class this visit belongs to, or null for ACCESO LIBRE. */
+  sessionId: string | null;
+  /** "HH:MM" arrival, or null for a row with no time (a back-entered day, or the
+   *  instant between an optimistic mark and the server's answer). */
+  hora: string | null;
+}
+
+/** A visit's context key — its session id, or LIBRE. */
+export function ctxDe(v: Visita): string {
+  return v.sessionId ?? LIBRE;
+}
+
+/** A member's visit in ONE context, if they have one. Slice 1's toggle discipline
+ *  (and the DB's partial unique indexes) allow at most one, so this is the visit. */
+export function visitaDe(visitas: Visita[], ctx: string, clienteId: string): Visita | undefined {
+  return visitas.find((v) => v.clienteId === clienteId && ctxDe(v) === ctx);
+}
+
+/**
+ * Return a new list with `clienteId` present (or absent) in `ctx`, leaving the input
+ * untouched. Marking someone already marked REPLACES their row's hora — that is how the
+ * server's authoritative arrival time lands on the optimistic row (which was appended
+ * with `hora: null`) without appending a second one.
+ */
+export function setVisita(
+  visitas: Visita[],
+  ctx: string,
+  clienteId: string,
+  present: boolean,
+  hora: string | null,
+): Visita[] {
+  const previa = visitaDe(visitas, ctx, clienteId);
+  const resto = previa ? visitas.filter((v) => v !== previa) : visitas.slice();
+  if (!present) return resto;
+  return [...resto, { clienteId, sessionId: ctx === LIBRE ? null : ctx, hora }];
+}
+
+/** Distinct members with at least one visit — what a day's strip/calendar dot counts
+ *  (`marcadas_presencia` counts distinct `cliente_id`, not rows). */
+export function personasEn(visitas: Visita[]): number {
+  return new Set(visitas.map((v) => v.clienteId)).size;
+}
+
+/** How far from now a class may start and still be the screen's opening context. */
+const VENTANA_CERCANA_MIN = 90;
+
+/**
+ * The class whose start is nearest `ahora`, within `VENTANA_CERCANA_MIN` — Zen Planner's
+ * kiosk rule ("your current class of the day will automatically be highlighted and
+ * selected"). Falls back to `LIBRE`, the honest default for a gym with no maintained
+ * schedule (and the ONLY context when there are no classes at all).
+ *
+ * Compares ABSOLUTE instants, never wall-clock strings, so the pick is right even when
+ * the operator's device sits in a different zone than the gym. Resolved on the server so
+ * the opening context is identical in the SSR and hydration renders — which is why it
+ * takes the DAL's `startsAt` Date directly, and the screen's own SesionDelDia never
+ * carries it.
+ */
+export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora: Date): string {
+  let mejor = LIBRE;
+  let dist = Infinity;
+  for (const s of sesiones) {
+    const delta = Math.abs(s.startsAt.getTime() - ahora.getTime());
+    if (delta < dist) {
+      dist = delta;
+      mejor = s.id;
+    }
+  }
+  return dist <= VENTANA_CERCANA_MIN * 60_000 ? mejor : LIBRE;
 }

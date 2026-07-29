@@ -45,7 +45,8 @@ automatically each week, opt-in — see *Out of Scope*.)
 5. As an operator, I want each client's current **paquete**, **clases restantes** and **vence** in that same sheet, so that I could re-register them at their correct standing, not just contact them.
 6. As an operator, I want each client's derived **estado** and **urgencia** shown as readable columns, so that I can see who is active, expiring, or out of classes at a glance in the sheet.
 7. As an operator, I want a **Ventas** sheet with the full sales ledger (**folio**, fecha, **cliente**, **paquete**, **monto**, **metodo**, **vigencia**), so that I have a complete income record for accounting.
-8. As an operator, I want an **Asistencias** sheet with the full attendance log (fecha, hora, **cliente**), so that I have a complete record of who came and when.
+8. As an operator, I want an **Asistencias** sheet with the full attendance log (fecha, hora, **cliente**, **origen**), so that I have a complete record of who came and when.
+   > **Amended 2026-07-28 (#89).** `origen` ("Clase" / "Acceso libre") added: a member may legally hold two rows on one day, and the column is what makes that pair read as two visits rather than a duplicate. Rows written before #89 have no `origen` and show "—".
 9. As an operator, I want unmarked (soft-deleted) attendances left out of the file, so that the log reflects what actually happened, not corrections.
 10. As an operator, I want a **Paquetes** reference sheet (name, price, classes, vigencia), so that the **monto** figures in Ventas have context.
 11. As an operator, I want money shown as pesos and dates in my local (Chihuahua) time, so that the file reads naturally without conversion.

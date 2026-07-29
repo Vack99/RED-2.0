@@ -5,8 +5,9 @@ import { addDays, hoyEnZona, toIsoDay } from "@gym/format";
 import {
   DIAS_TIRA_INICIAL,
   getMarcadas,
-  getMarcadasDelDia,
   getMarcadasDeMes,
+  getReservasDelDia,
+  getVisitasDelDia,
   togglePase,
 } from "./asistencia";
 import { makeFake } from "./supabase-fake.test-helper";
@@ -21,20 +22,23 @@ const firstOfMonthIso = (d: Date) => toIsoDay(new Date(d.getFullYear(), d.getMon
  * Supabase, no DB.
  *
  * The COUNTING/GROUPING/DEDUPE logic (per-fecha `count(distinct cliente_id)` for presence,
- * `array_agg(distinct cliente_id)` for ids, the soft-delete filter, the half-open window) lives
- * DB-side in the SQL functions — invisible to vitest's RPC mock boundary by design (AGENTS.md:
- * the real contract for aggregation RPCs is proven by the SQL suites in `supabase/tests/`). What
- * stays testable here is the MECHANIC: the right RPC(s), the right args, the result shaped.
+ * the soft-delete filter, the half-open window) lives DB-side in the SQL functions —
+ * invisible to vitest's RPC mock boundary by design (AGENTS.md: the real contract for
+ * aggregation RPCs is proven by the SQL suites in `supabase/tests/`). What stays testable
+ * here is the MECHANIC: the right RPC(s), the right args, the result shaped.
  *
- * Perf wave 5 split: getMarcadas ships per-day PRESENCE counts (dots) for the window PLUS the
- * ids for TODAY only; identity for any other day is lazy (getMarcadasDelDia). The fake returns
- * ONE seeded `opts.rpc.data` for every RPC in a call, so each test asserts the PROJECTION of
- * that seed it cares about (presence passthrough vs today's ids vs the window args).
+ * Perf wave 5 split, re-shaped by #89: getMarcadas ships per-day PRESENCE counts (dots) for
+ * the window via RPC, PLUS today's per-VISIT rows via a direct `asistencias` select (the desk
+ * is class-aware, so a set of cliente ids no longer carries enough). A picked past day is the
+ * SAME read, fecha-parameterized (getVisitasDelDia) — one state model, no id-set variant. The
+ * fake returns ONE seeded `opts.rpc.data` for every RPC in a call and one seeded row list per
+ * table, so each test asserts the PROJECTION it cares about (presence passthrough vs the
+ * visit rows vs the args).
  */
 
-describe("getMarcadas — presence for the window + ids for today (injected fake)", () => {
-  it("calls marcadas_presencia windowed AND marcadas_por_gym for today's 1-day window", async () => {
-    const { client, rpcCalls } = makeFake({});
+describe("getMarcadas — presence for the window + today's visits (injected fake)", () => {
+  it("calls marcadas_presencia windowed AND selects today's asistencias rows directly", async () => {
+    const { client, rpcCalls, eqCalls, isCalls, orderCalls } = makeFake({});
 
     await getMarcadas(client);
 
@@ -43,16 +47,20 @@ describe("getMarcadas — presence for the window + ids for today (injected fake
     const hoy = hoyEnZona("America/Chihuahua");
     const desde = firstOfMonthIso(addDays(hoy, -DIAS_TIRA_INICIAL));
     const hasta = toIsoDay(new Date(hoy.getFullYear(), hoy.getMonth() + 1, 1));
-    const hoyIso = toIsoDay(hoy);
-    const manana = toIsoDay(addDays(hoy, 1));
 
+    // ONE RPC now — today's leg is a plain table read, not marcadas_por_gym.
     expect(rpcCalls).toEqual([
       ["marcadas_presencia", { p_gym_id: "test-gym", p_desde: desde, p_hasta: hasta }],
-      ["marcadas_por_gym", { p_gym_id: "test-gym", p_desde: hoyIso, p_hasta: manana }],
     ]);
-    // Half-open and forward: the presence window covers the strip's far end; today is a 1-day slice.
+    // Half-open and forward: the presence window covers the strip's far end.
     expect(desde < hasta).toBe(true);
-    expect(hoyIso < manana).toBe(true);
+    // Today's visits: gym-scoped, today only, soft-delete filtered, stably ordered.
+    expect(eqCalls.asistencias).toEqual([
+      ["gym_id", "test-gym"],
+      ["fecha", toIsoDay(hoy)],
+    ]);
+    expect(isCalls.asistencias).toEqual([["deleted_at", null]]);
+    expect(orderCalls.asistencias).toEqual(["hora", "id"]);
   });
 
   it("returns the presence map verbatim as { presencia }", async () => {
@@ -64,24 +72,67 @@ describe("getMarcadas — presence for the window + ids for today (injected fake
     expect(got).toEqual(presencia);
   });
 
-  it("seeds TODAY's ids into marcadasDelDia (so the pase flow toggles without a fetch)", async () => {
-    const hoyIso = toIsoDay(hoyEnZona("America/Chihuahua"));
-    // The fake returns this for the today RPC too; getMarcadas projects out today's array.
-    const { client } = makeFake({}, { rpc: { data: { [hoyIso]: ["a", "b"] } } });
+  it("ships TODAY's rows as per-visit records carrying their class context and hora", async () => {
+    const { client } = makeFake({
+      asistencias: [
+        { cliente_id: "c1", class_session_id: null, hora: "07:10:00" },
+        { cliente_id: "c1", class_session_id: "s9", hora: "18:05:00" },
+        { cliente_id: "c2", class_session_id: "s9", hora: null },
+      ],
+    });
 
-    const { marcadasDelDia } = await getMarcadas(client);
+    const { visitasHoy } = await getMarcadas(client);
 
-    expect(marcadasDelDia).toEqual({ [hoyIso]: ["a", "b"] });
+    // Two rows for ONE member (two contexts) — the per-day boolean is gone (#89); `hora`
+    // is trimmed to "HH:MM", and an untimed back-entered row stays null. No row `id`
+    // crosses the boundary: a visit is keyed by (clienteId, context).
+    expect(visitasHoy).toEqual([
+      { clienteId: "c1", sessionId: null, hora: "07:10" },
+      { clienteId: "c1", sessionId: "s9", hora: "18:05" },
+      { clienteId: "c2", sessionId: "s9", hora: null },
+    ]);
   });
 
-  it("is best-effort — empty presence and empty today on RPC error", async () => {
-    const hoyIso = toIsoDay(hoyEnZona("America/Chihuahua"));
-    const { client } = makeFake({}, { rpc: { data: null, error: { message: "boom" } } });
+  it("is best-effort — empty presence and no visits on error", async () => {
+    const { client } = makeFake(
+      { asistencias: [{ cliente_id: "c1", class_session_id: null, hora: "07:10:00" }] },
+      { error: { table: "asistencias", err: { message: "boom" } }, rpc: { data: null, error: { message: "boom" } } },
+    );
 
-    const { presencia, marcadasDelDia } = await getMarcadas(client);
+    const { presencia, visitasHoy } = await getMarcadas(client);
 
     expect(presencia).toEqual({});
-    expect(marcadasDelDia).toEqual({ [hoyIso]: [] });
+    expect(visitasHoy).toEqual([]);
+  });
+});
+
+describe("getReservasDelDia — the CON RESERVA grouping's source (injected fake)", () => {
+  it("groups today's active bookings by session, gym-scoped, both statuses", async () => {
+    const { client, eqCalls, inCalls } = makeFake({
+      reservation: [
+        { class_session_id: "s1", member_id: "c1" },
+        { class_session_id: "s1", member_id: "c2" },
+        { class_session_id: "s2", member_id: "c3" },
+      ],
+    });
+
+    const porSesion = await getReservasDelDia(["s1", "s2"], client);
+
+    expect(porSesion).toEqual({ s1: ["c1", "c2"], s2: ["c3"] });
+    expect(eqCalls.reservation).toEqual([["gym_id", "test-gym"]]);
+    // `asistida` counts too: the group keys on the BOOKING, not the check, so a marked
+    // member must not fall out of CON RESERVA and move their row under the thumb.
+    expect(inCalls.reservation).toEqual([
+      ["class_session_id", ["s1", "s2"]],
+      ["status", ["reservada", "asistida"]],
+    ]);
+  });
+
+  it("short-circuits with no sessions — a gym with no schedule never queries", async () => {
+    const { client, eqCalls } = makeFake({});
+
+    expect(await getReservasDelDia([], client)).toEqual({});
+    expect(eqCalls.reservation).toBeUndefined();
   });
 });
 
@@ -121,46 +172,58 @@ describe("getMarcadasDeMes — one-month presence lazy load (injected fake)", ()
   });
 });
 
-describe("getMarcadasDelDia — one-day roster lazy load (injected fake)", () => {
-  it("calls marcadas_por_gym over the day's 1-day window and returns just that day's ids", async () => {
-    const { client, rpcCalls } = makeFake({}, { rpc: { data: { "2026-05-18": ["a", "b"] } } });
+describe("getVisitasDelDia — one-day VISIT lazy load (injected fake)", () => {
+  it("runs the same gym-scoped, soft-delete-filtered select the today-path uses, on that day", async () => {
+    const { client, eqCalls, isCalls, orderCalls, rpcCalls } = makeFake({});
 
-    const ids = await getMarcadasDelDia("2026-05-18", client);
+    await getVisitasDelDia("2026-05-18", client);
 
-    expect(rpcCalls).toEqual([
-      ["marcadas_por_gym", { p_gym_id: "test-gym", p_desde: "2026-05-18", p_hasta: "2026-05-19" }],
+    // No RPC at all: a past day is the SAME direct table read as today (#89), never the
+    // day-keyed `marcadas_por_gym` id map — one state model on both surfaces.
+    expect(rpcCalls).toEqual([]);
+    expect(eqCalls.asistencias).toEqual([
+      ["gym_id", "test-gym"],
+      ["fecha", "2026-05-18"],
     ]);
-    expect(ids).toEqual(["a", "b"]);
+    expect(isCalls.asistencias).toEqual([["deleted_at", null]]);
+    expect(orderCalls.asistencias).toEqual(["hora", "id"]);
   });
 
-  it("rolls the upper bound across a month boundary", async () => {
-    const { client, rpcCalls } = makeFake({});
+  it("shapes a past day's rows as visits — class context included, so class marks can't read as libre", async () => {
+    const { client } = makeFake({
+      asistencias: [
+        { cliente_id: "c1", class_session_id: null, hora: null },
+        { cliente_id: "c2", class_session_id: "s3", hora: "18:05:00" },
+      ],
+    });
 
-    await getMarcadasDelDia("2026-05-31", client);
-
-    expect(rpcCalls).toEqual([
-      ["marcadas_por_gym", { p_gym_id: "test-gym", p_desde: "2026-05-31", p_hasta: "2026-06-01" }],
+    expect(await getVisitasDelDia("2026-05-18", client)).toEqual([
+      { clienteId: "c1", sessionId: null, hora: null },
+      { clienteId: "c2", sessionId: "s3", hora: "18:05" },
     ]);
   });
 
-  it("returns [] when the day has no marks", async () => {
-    const { client } = makeFake({}, { rpc: { data: { "2026-05-18": ["a"] } } });
+  it("is best-effort — [] on read error", async () => {
+    const { client } = makeFake(
+      { asistencias: [{ cliente_id: "c1", class_session_id: null, hora: null }] },
+      { error: { table: "asistencias", err: { message: "boom" } } },
+    );
 
-    expect(await getMarcadasDelDia("2026-05-19", client)).toEqual([]);
+    expect(await getVisitasDelDia("2026-05-18", client)).toEqual([]);
   });
 
   it("rejects a malformed day before touching the DB", async () => {
-    const { client, rpcCalls } = makeFake({});
+    const { client, eqCalls } = makeFake({});
 
-    await expect(getMarcadasDelDia("2026-5-1", client)).rejects.toThrow();
-    expect(rpcCalls).toEqual([]);
+    await expect(getVisitasDelDia("2026-5-1", client)).rejects.toThrow();
+    expect(eqCalls.asistencias).toBeUndefined();
   });
 });
 
 describe("togglePase — typed outcome (injected fake)", () => {
   // Prod Next.js masks thrown Server Action messages (reconstructed client-side as a
-  // generic English blob), so the RPC's operator-facing raises ('Paquete vencido', the
-  // C15 session-managed guard) must travel as a RETURN VALUE for the toast to show them.
+  // generic English blob), so the RPC's operator-facing raises ('Paquete vencido', the C9
+  // vence gate) must travel as a RETURN VALUE for the toast to show them.
   const input = { clienteId: "cli-1", fecha: "2026-07-10" };
 
   it("maps an RPC refusal to { ok: false, message } carrying the RPC's own raise", async () => {
@@ -185,5 +248,35 @@ describe("togglePase — typed outcome (injected fake)", () => {
     const res = await togglePase(input, client);
 
     expect(res).toEqual({ ok: true, present: true, hora: "07:30" });
+  });
+
+  it("omits p_session_id entirely for an ACCESO LIBRE mark", async () => {
+    // Not `p_session_id: undefined` — an ABSENT argument is what selects the function's
+    // own NULL default, i.e. the class-less visit kind (#89).
+    const { client, rpcCalls } = makeFake({}, { rpc: { data: { present: true, hora: "07:30" } } });
+
+    await togglePase(input, client);
+
+    expect(rpcCalls).toEqual([
+      ["toggle_pase", { p_cliente_id: "cli-1", p_fecha: "2026-07-10" }],
+    ]);
+  });
+
+  it("passes sessionId through as p_session_id — the desk marking inside a class", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: { data: { present: true, hora: "07:30" } } });
+    const sessionId = "3f9d1c2e-5a4b-4c8d-9e1f-2a3b4c5d6e7f";
+
+    await togglePase({ ...input, sessionId }, client);
+
+    expect(rpcCalls).toEqual([
+      ["toggle_pase", { p_cliente_id: "cli-1", p_fecha: "2026-07-10", p_session_id: sessionId }],
+    ]);
+  });
+
+  it("rejects a non-uuid sessionId before touching the DB", async () => {
+    const { client, rpcCalls } = makeFake({});
+
+    await expect(togglePase({ ...input, sessionId: "not-a-uuid" }, client)).rejects.toThrow();
+    expect(rpcCalls).toEqual([]);
   });
 });

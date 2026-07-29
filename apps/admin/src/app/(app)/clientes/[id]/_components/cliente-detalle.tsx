@@ -36,7 +36,9 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const [dx, setDx] = React.useState(0);
   const swipe = React.useRef<SwipeState>(idleSwipe());
 
-  const asistCount = ficha.historial.length + (present ? 1 : 0);
+  // historial excludes today entirely (both contexts), so today's rows are added back
+  // here: the libre visit the toggle owns + every class visit (#89).
+  const asistCount = ficha.historial.length + (present ? 1 : 0) + ficha.clasesHoy.length;
   const cuentaActiva = ficha.invitacion.estado === "cuenta_activa";
   const compraLabel = ficha.primeraCompra ? "COBRAR PRIMERA COMPRA" : "RENOVAR";
   const irAVender = () => router.push(`/vender?cliente=${c.id}`);
@@ -80,8 +82,8 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
     try {
       const res = await togglePaseAction({ clienteId: c.id, fecha: ficha.hoyIso });
       if (!res.ok) {
-        // The RPC refused with a reason ('Paquete vencido', the C15 already-marked-on-a-session
-        // guard, …) — a typed result, because prod Next.js masks thrown action messages.
+        // The RPC refused with a reason ('Paquete vencido', the C9 vence gate, …) — a typed
+        // result, because prod Next.js masks thrown action messages.
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
         return;
       }
@@ -148,8 +150,14 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
     setDx(0);
   };
 
-  const histRows: { dDisplay: string; hora: string | null; today: boolean }[] = [
+  // Today's rows, then the server's 30-day history (which excludes today in BOTH contexts
+  // — the leaf owns today, see shapeFicha). One entry per VISIT (#89): the ACCESO LIBRE
+  // row the toggle owns, plus one per class visit. The class rows are server truth the
+  // ficha cannot toggle, but they must still appear, or `asistCount` would count visits
+  // the list never shows. `etiqueta` defaults to "Asistencia" for everything else.
+  const histRows: { dDisplay: string; hora: string | null; today: boolean; etiqueta?: string }[] = [
     ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true }] : []),
+    ...ficha.clasesHoy.map((c) => ({ dDisplay: "HOY", hora: c.hora, today: true, etiqueta: "Clase" })),
     ...ficha.historial,
   ];
 
@@ -322,8 +330,19 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
           </Card>
         )}
 
-        {/* Attendance control = today indicator */}
+        {/* Attendance control = today indicator. The control owns the ACCESO LIBRE visit
+            only; today's CLASS visits ride above it as read-only gold stamps (the desk
+            row's idiom for a visit in another context) — visible, never tappable, because
+            undoing a class mark belongs to the Agenda roster (#89). */}
         <div style={{ padding: "14px 16px 0" }}>
+          {ficha.clasesHoy.length > 0 && (
+            <div className="flex items-center uppercase" style={{ gap: 6, paddingBottom: 8, fontSize: 10, fontWeight: 800, letterSpacing: 0.9, color: "var(--gold)" }}>
+              <Icon name="check" size={11} color="var(--gold)" />
+              <Tnum style={{ fontWeight: 800 }}>
+                {ficha.clasesHoy.map((c) => (c.hora ? `CLASE ${c.hora}` : "CLASE")).join(" · ")}
+              </Tnum>
+            </div>
+          )}
           {present ? (
             <>
               <div className="flex items-center" style={{ gap: 12, padding: "11px 12px 11px 14px", background: "var(--green-soft)", border: "1px solid var(--green)" }}>
@@ -398,7 +417,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
           >
             <span style={{ width: 6, height: 6, borderRadius: 999, background: row.today ? "var(--green)" : "var(--yellow)" }} />
             <Tnum className="uppercase" style={{ fontWeight: row.today ? 800 : 600, fontSize: 13, color: row.today ? "var(--green)" : "var(--fg)", letterSpacing: 0.4 }}>{row.dDisplay}</Tnum>
-            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>Asistencia</span>
+            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>{row.etiqueta ?? "Asistencia"}</span>
             <Tnum style={{ fontSize: 12, color: row.today ? "var(--green)" : "var(--muted)" }}>{row.hora ?? "—"}</Tnum>
           </div>
         ))}

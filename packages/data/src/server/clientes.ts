@@ -312,7 +312,10 @@ export const getClienteFicha = cache(
       await Promise.all([
         supabase
           .from("asistencias")
-          .select("fecha, hora, consumio")
+          // `class_session_id` is the visit's CONTEXT (#89): the ficha's toggle owns the
+          // ACCESO LIBRE row alone, so the read has to say which rows are class visits or
+          // the checked state would describe a row the toggle cannot undo.
+          .select("fecha, hora, consumio, class_session_id")
           .eq("cliente_id", id)
           .is("deleted_at", null)
           .gte("fecha", ventanaIso)

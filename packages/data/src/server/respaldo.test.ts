@@ -54,6 +54,7 @@ const asistencia = (over: Record<string, unknown> = {}) => ({
   fecha: "2026-05-20",
   hora: "09:15:00",
   cliente_id: "cli-1",
+  origen: "libre",
   ...over,
 });
 
