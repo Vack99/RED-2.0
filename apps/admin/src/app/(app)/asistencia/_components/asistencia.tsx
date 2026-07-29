@@ -50,6 +50,11 @@ function monthKey(d: Date): string {
  * moving thumb. One number: presentes in the selected context. A visit in another context
  * today shows as a gold stamp on the row, never a ×2 badge; undo is tap-again.
  *
+ * An ACCESO LIBRE tap on a member holding a booking is ATTRIBUTED by the server to that
+ * class when its arrival window contains now (ruling 2026-07-29), so the desk discloses it
+ * on both sides: a RESERVA HH:MM chip before, and after, the mark lands in the class it
+ * really went to — gold stamp, lit pill dot, and a toast that names the class.
+ *
  * A PAST day (strip or calendar pick) runs the SAME per-visit model with the context
  * locked to ACCESO LIBRE — the only one its 2-arg toggle can write. Its class visits
  * therefore render as the same read-only gold stamps instead of as a check the tap
@@ -207,6 +212,22 @@ export function AsistenciaScreen({
   const conReserva = reservados.size ? filtered.filter((c) => reservados.has(c.id)) : [];
   const sinReserva = reservados.size ? filtered.filter((c) => !reservados.has(c.id)) : filtered;
 
+  // clienteId → the hora of the class they booked TODAY (their earliest, since `sesiones`
+  // arrives chronologically). Built from the two props already in memory, so the RESERVA
+  // chip costs no read: it is the desk's disclosure that a tap here will land on a class,
+  // not on the door — the server consults exactly this data to decide. A past day has no
+  // `reservas` (they are today-only), hence no chip.
+  const reservaPorCliente = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const s of sesiones) for (const id of reservas[s.id] ?? []) if (!m.has(id)) m.set(id, s.hora);
+    return m;
+  }, [sesiones, reservas]);
+
+  // Balances repainted from a toggle's authoritative post-write count, by clienteId. The
+  // route never refetches, so without this every row shows the count it had at page load
+  // for the whole rush.
+  const [clasesLabels, setClasesLabels] = React.useState<Record<string, string>>({});
+
   // Windowed initial paint (useRevealedWindow): the server + first hydration paint only the
   // opening window, then a mount effect reveals the rest below the fold. Search still runs
   // over the FULL dataset from the first keystroke (that is `filtered` above); only how many
@@ -214,9 +235,11 @@ export function AsistenciaScreen({
   // CON RESERVA group is never windowed — it is the operator's working set.
   const { visible: sinReservaVisible } = useRevealedWindow(sinReserva);
 
-  // Marks mid-flight, keyed by `${dia}:${contexto}:${id}`. A second tap on the same row
-  // before the server answers is ignored, so the already-applied optimistic flip stands
-  // instead of racing a competing action.
+  // Marks mid-flight, keyed by `${dia}:${id}` — the CONTEXT is deliberately not in the
+  // key: since the server may attribute a LIBRE tap to the member's class, two taps on the
+  // same member in two contexts are two competing writes on one member, not two
+  // independent ones. A second tap before the server answers is ignored, so the
+  // already-applied optimistic flip stands instead of racing.
   const inFlight = React.useRef<Set<string>>(new Set());
 
   // The tap: mark the member in the selected day's selected context, or — the same gesture
@@ -225,7 +248,7 @@ export function AsistenciaScreen({
   // path with ctxSel pinned to LIBRE and no sessionId, i.e. the 2-arg back-entry toggle.
   const onTap = React.useCallback(
     async (c: PaseClienteDTO) => {
-      const key = `${selIso}:${ctxSel}:${c.id}`;
+      const key = `${selIso}:${c.id}`;
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
 
@@ -234,12 +257,12 @@ export function AsistenciaScreen({
       // the ref (not closed-over state) so this callback stays referentially stable.
       const previa = visitaDe(visitasRef.current[selIso] ?? [], ctxSel, c.id);
       const willBePresent = previa === undefined;
-      const aplicar = (present: boolean, hora: string | null) =>
+      const aplicar = (ctx: string, present: boolean, hora: string | null) =>
         setVisitasPorDia((m) => ({
           ...m,
-          [selIso]: setVisita(m[selIso] ?? [], ctxSel, c.id, present, hora),
+          [selIso]: setVisita(m[selIso] ?? [], ctx, c.id, present, hora),
         }));
-      aplicar(willBePresent, null);
+      aplicar(ctxSel, willBePresent, null);
 
       try {
         const res = await togglePaseAction({
@@ -248,33 +271,54 @@ export function AsistenciaScreen({
           ...(ctxSel !== LIBRE && { sessionId: ctxSel }),
         });
         if (!res.ok) {
-          // The RPC refused with a reason ('Paquete vencido', the C9 vence gate, …) — a
-          // typed result, because prod Next.js masks thrown action messages. Roll the
-          // optimistic flip back (restoring the undone visit's hora) and say WHY.
-          aplicar(!willBePresent, previa?.hora ?? null);
+          // The RPC refused with a reason ('Paquete vencido' at the C9 vence gate, or
+          // 'Ya marcada en la clase de 18:00' when the member's booking is already
+          // marked) — a typed result, because prod Next.js masks thrown action messages.
+          // Roll the optimistic flip back (restoring the undone visit's hora) and say WHY.
+          aplicar(ctxSel, !willBePresent, previa?.hora ?? null);
           forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
           return;
         }
-        // Reconcile against the authoritative result — this is where the server's arrival
-        // hora lands on the row the optimistic flip appended without one (a back-dated
-        // mark has none, and keeps the untimed placeholder).
-        aplicar(res.present, res.hora);
+        // Reconcile against the authoritative result. The context the visit LANDED in is
+        // the server's, not ours: a LIBRE tap on a member inside their booking's arrival
+        // window is attributed to that class (ruling 2026-07-29). When it differs, undo
+        // the optimistic LIBRE flip and apply the visit into the class instead — the row
+        // then renders as marked-elsewhere (its gold stamp) and that class's pill dot
+        // lights, so the screen shows where the mark actually went.
+        const ctxLanded = res.sessionId ?? LIBRE;
+        if (ctxLanded !== ctxSel) aplicar(ctxSel, !willBePresent, previa?.hora ?? null);
+        // This is also where the server's arrival hora lands on the row the optimistic
+        // flip appended without one (a back-dated mark has none, and keeps the untimed
+        // placeholder).
+        aplicar(ctxLanded, res.present, res.hora);
+        // Repaint the row's balance from the post-write count. Ilimitado (null) never
+        // moves, and a member with no package has no count to show — both keep their
+        // label. Mirrors derivarPaseCliente's rule (@gym/data's derive.ts), which is
+        // `server-only` and unreachable from this "use client" module — the same
+        // deliberate duplication as DIAS_TIRA_INICIAL above.
+        const n = res.clasesRestantes;
+        if (n !== null && c.paquete !== "Sin paquete") {
+          setClasesLabels((l) => ({ ...l, [c.id]: `${n} clase${n === 1 ? "" : "s"}` }));
+        }
         if (res.present) {
+          const horaClase = ctxLanded !== ctxSel ? sesiones.find((s) => s.id === ctxLanded)?.hora : undefined;
           forgeToast({
             tone: "success",
             title: "Asistencia registrada",
-            body: `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
+            body: horaClase
+              ? `${firstName(c.nombre)} · CLASE ${horaClase}`
+              : `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,
           });
         }
       } catch {
         // Unexpected failure (network, invalid input) — roll the optimistic flip back.
-        aplicar(!willBePresent, previa?.hora ?? null);
+        aplicar(ctxSel, !willBePresent, previa?.hora ?? null);
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
       } finally {
         inFlight.current.delete(key);
       }
     },
-    [selIso, ctxSel],
+    [selIso, ctxSel, sesiones],
   );
 
   // One row. `otras` is pre-joined to a STRING so every prop is primitive and PaseRow's
@@ -292,6 +336,10 @@ export function AsistenciaScreen({
         present={mia !== undefined}
         hora={mia?.hora ?? null}
         otras={otras}
+        clasesLabel={clasesLabels[c.id] ?? c.clasesLabel}
+        // Only on TODAY's LIBRE tab: inside a class the CON RESERVA group already says
+        // it, and `reservas` is today-only so a past day would show today's bookings.
+        reservaHora={esHoy && ctxSel === LIBRE ? (reservaPorCliente.get(c.id) ?? null) : null}
         onToggle={onTap}
       />
     );
@@ -567,6 +615,8 @@ const PaseRow = React.memo(function PaseRow({
   present,
   hora,
   otras,
+  clasesLabel,
+  reservaHora,
   onToggle,
 }: {
   cliente: PaseClienteDTO;
@@ -575,6 +625,13 @@ const PaseRow = React.memo(function PaseRow({
   hora: string | null;
   /** Pre-joined labels of this member's visits in the OTHER contexts today ("" = none). */
   otras: string;
+  /** The member's remaining-classes label — the DTO's, or the fresher one a toggle
+   *  returned. Passed in (not read off `cliente`) so the repaint is a primitive change
+   *  the memo sees. */
+  clasesLabel: string;
+  /** "HH:MM" of the class this member booked today, or null. Only ever set on the
+   *  LIBRE tab, where it warns that a tap will be attributed to that class. */
+  reservaHora: string | null;
   onToggle: (c: PaseClienteDTO) => void;
 }) {
   const c = cliente;
@@ -606,9 +663,19 @@ const PaseRow = React.memo(function PaseRow({
         className="min-w-0 flex-1 text-left"
         style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--fg)" }}
       >
-        <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{c.nombre}</div>
+        <div className="flex items-center" style={{ gap: 7 }}>
+          <span className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{c.nombre}</span>
+          {reservaHora && (
+            <span
+              className="shrink-0 uppercase"
+              style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.8, color: "var(--gold)", border: "1px solid var(--yellow-edge)", padding: "1px 4px", whiteSpace: "nowrap" }}
+            >
+              Reserva {reservaHora}
+            </span>
+          )}
+        </div>
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
-          {c.clasesLabel}
+          {clasesLabel}
           {c.porVencer && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
           {otras && (
             <span className="uppercase" style={{ color: "var(--gold)", fontWeight: 700 }}> · {otras}</span>

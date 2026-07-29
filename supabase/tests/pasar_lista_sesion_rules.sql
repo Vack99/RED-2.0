@@ -34,11 +34,33 @@
 --                                                   origen='clase' consumio=true.
 --   * the ORPHANED PARDON (#89, accepted edge)    — pinning behaviour we chose, not behaviour we want back: when the
 --                                                   PARDONING class mark is undone, the pardoned libre row stays
---                                                   active and unpaid (consumio=false). The cooldown is deliberately
---                                                   one-directional — pairing heuristics were withdrawn by the owner —
---                                                   so this vector exists to make a future "fix" a conscious change
---                                                   rather than an accident, and to prove the operator's recovery
---                                                   path (untoggle + retoggle the libre row re-charges it).
+--                                                   active and unpaid (consumio=false, perdonada=true). The cooldown
+--                                                   is deliberately one-directional — pairing heuristics were withdrawn
+--                                                   by the owner — so this vector exists to make a future "fix" a
+--                                                   conscious change rather than an accident, and to prove the
+--                                                   operator's recovery path (untoggle + retoggle re-charges it, and
+--                                                   the re-charged row is NOT stamped perdonada).
+--   * perdonada is the COOLDOWN's stamp (#169)    — 2026-07-29: every pardoned row — and ONLY a pardoned row — carries
+--                                                   perdonada=true, so a count of VISITS can skip the second record of
+--                                                   one arrival without skipping a real second visit. Asserted on both
+--                                                   directions of the cooldown (vectors 4 and 5), on its absence for
+--                                                   the paying rows (3, 6, 7), for the booked branch (1) — free
+--                                                   because the booking paid, which is a different fact — and on the
+--                                                   re-charged recovery row (8).
+--   * the return carries session_id + saldo (#162) — 2026-07-29: the RPC's shape grew from (present, hora) to
+--                                                   (present, hora, session_id, clases_restantes) so the front desk can
+--                                                   say WHERE a mark landed and repaint the member's balance instead of
+--                                                   showing one frozen at page load. session_id is always this seam's
+--                                                   own p_session_id; clases_restantes is read back from the cliente
+--                                                   AFTER the write, and is asserted against the stored row — the
+--                                                   return value is never the contract, it just has to agree with it.
+--
+-- FROZEN CLOCK, and why the sessions are BOOKED BEFORE THEY ARE MOVED: the suite runs in ONE transaction, so
+-- now() and every created_at default are the same instant — that is what puts the cooldown pairs inside the
+-- 15-minute window by construction, and backdating (vector 6) is the only way to observe the far side. The
+-- sessions are therefore created TWO DAYS OUT, booked, and only then moved onto today's 18:00/19:00: since
+-- #165 reservar_clase refuses a class that has already started, seeding them at today 18:00 would have made
+-- every run after 18:00 gym-local fail at the seed.
 --
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row. BEGIN/ROLLBACK, so
 -- it touches no row permanently. Zero hardcoded prod UUIDs (gym members/operator/clientes seeded tx-local).
@@ -71,9 +93,11 @@ begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
   v_today := (now() at time zone v_tz)::date;
-  -- Session today at 18:00 gym-local (so hora stamps; reservar_clase has no start-time gate).
+  -- Where the two sessions END UP: today at 18:00 and 19:00 gym-local, so hora stamps and vector (7)'s
+  -- R1 proof has two distinct class instances on one day. They are INSERTED two days out and moved
+  -- there by the privileged block below, after the bookings — reservar_clase now refuses a class that
+  -- has already started (#165), and today 18:00 is in the past for every run after 18:00.
   v_starts := (v_today::timestamp + interval '18 hours') at time zone v_tz;
-  -- A SECOND class the same day — vector (7)'s R1 proof needs two distinct class instances.
   v_starts2 := (v_today::timestamp + interval '19 hours') at time zone v_tz;
 
   -- auth users: one operator + the four acting members that book or are looked up as members
@@ -108,10 +132,12 @@ begin
 
   insert into public.class_type (gym_id, name) values (v_gym, 'PL Metcon') returning id into v_ct;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_id;
+    values (v_gym, v_ct, now() + interval '2 days', 60, 20) returning id into s_id;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts2, 60, 20) returning id into s2_id;
+    values (v_gym, v_ct, now() + interval '2 days' + interval '1 hour', 60, 20) returning id into s2_id;
 
+  perform set_config('t.starts',   v_starts::text,  true);
+  perform set_config('t.starts2',  v_starts2::text, true);
   perform set_config('t.gym',      v_gym::text,     true);
   perform set_config('t.today',    v_today::text,   true);
   perform set_config('t.op',       op::text,        true);
@@ -154,6 +180,17 @@ end $$;
 reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════════
+-- MOVE THE SESSIONS ONTO TODAY (privileged — no RPC can change a class's start, and a member holds no
+-- class_session write). Both bookings are already in, which is the mandatory order since #165: a class
+-- that has started cannot be booked, and today's 18:00 has already started on any afternoon run. The
+-- instants are exactly the ones this suite has always used, so every vector below reads as it always did.
+-- ════════════════════════════════════════════════════════════════════════════════
+update public.class_session set starts_at = current_setting('t.starts', true)::timestamptz
+ where id = current_setting('t.s_id', true)::uuid;
+update public.class_session set starts_at = current_setting('t.starts2', true)::timestamptz
+ where id = current_setting('t.s2_id', true)::uuid;
+
+-- ════════════════════════════════════════════════════════════════════════════════
 -- Everything below runs AS THE OPERATOR (staff) — the Pasar lista caller.
 -- ════════════════════════════════════════════════════════════════════════════════
 select set_config('request.jwt.claims',
@@ -166,24 +203,33 @@ declare
   s_id    uuid := current_setting('t.s_id', true)::uuid;
   c_bkfin uuid := current_setting('t.c_bkfin', true)::uuid;
   v_present boolean; v_hora text; v_clases int; v_status text; v_walk boolean;
-  v_consumio boolean; v_res_id uuid; v_sess uuid;
+  v_consumio boolean; v_res_id uuid; v_sess uuid; v_perdonada boolean; v_ret_sess uuid; v_saldo int;
   v_checked timestamptz; v_gym_id uuid; v_fecha date; v_stored_hora time;
 begin
   -- pasar lista ON: booked member marked present, NO second consume (balance stays 4)
-  select present, hora into v_present, v_hora from public.pasar_lista_sesion(s_id, c_bkfin);
+  select present, hora, session_id, clases_restantes into v_present, v_hora, v_ret_sess, v_saldo
+    from public.pasar_lista_sesion(s_id, c_bkfin);
   if v_present is not true then raise exception 'RULE FAIL(bkfin ON): not present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_bkfin;
   if v_clases <> 4 then raise exception 'RULE FAIL(bkfin ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
+  -- #162: the return names the class it wrote into and carries the balance AFTER the write — asserted
+  -- against the STORED cliente row, because a return value that disagrees with the ledger is the bug.
+  if v_ret_sess is distinct from s_id then raise exception 'RULE FAIL(bkfin ON): returned session_id % (expected %)', v_ret_sess, s_id; end if;
+  if v_saldo is distinct from v_clases then raise exception 'RULE FAIL(bkfin ON): returned clases_restantes % but the row holds %', v_saldo, v_clases; end if;
   select status, checked_at into v_status, v_checked from public.reservation where member_id = c_bkfin and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(bkfin ON): reservation status % (expected asistida)', v_status; end if;
   -- checked_at is stamped on every asistida flip and cleared on every revert — a genuine state-transition
   -- column the suite proved only via `status` before #80 AC4.
   if v_checked is null then raise exception 'RULE FAIL(bkfin ON): reservation.checked_at not stamped'; end if;
   -- the attendance row: consumio=false (already consumed at booking) + linked to session + reservation
-  select consumio, reservation_id, class_session_id, gym_id, fecha, hora into v_consumio, v_res_id, v_sess, v_gym_id, v_fecha, v_stored_hora
+  select consumio, reservation_id, class_session_id, gym_id, fecha, hora, perdonada
+    into v_consumio, v_res_id, v_sess, v_gym_id, v_fecha, v_stored_hora, v_perdonada
     from public.asistencias where cliente_id = c_bkfin and class_session_id = s_id and deleted_at is null
     order by created_at desc limit 1;
   if v_consumio is distinct from false then raise exception 'RULE FAIL(bkfin ON): asistencia.consumio % (expected false)', v_consumio; end if;
+  -- FREE is not the same as DUPLICATED (#169): the booked branch charges nothing because the booking
+  -- already paid, which is one visit and must count. Only the cooldown stamps perdonada.
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(bkfin ON): asistencia.perdonada % (expected false — a booked mark is one visit, not a pardoned duplicate)', v_perdonada; end if;
   if v_res_id is null then raise exception 'RULE FAIL(bkfin ON): asistencia.reservation_id null (expected linked)'; end if;
   if v_sess is distinct from s_id then raise exception 'RULE FAIL(bkfin ON): asistencia.class_session_id mismatch'; end if;
   if v_hora is null then raise exception 'RULE FAIL(bkfin ON): hora null on a session dated today'; end if;
@@ -227,29 +273,35 @@ declare
   s_id   uuid := current_setting('t.s_id', true)::uuid;
   c_walk uuid := current_setting('t.c_walk', true)::uuid;
   v_present boolean; v_hora text; v_clases int; v_status text; v_walk boolean; v_consumio boolean;
+  v_perdonada boolean; v_saldo int;
 begin
   -- precondition: this member has NO reservation
   select count(*) into v_clases from public.reservation where member_id = c_walk and class_session_id = s_id;
   if v_clases <> 0 then raise exception 'SEED FAIL(walk): pre-existing reservation'; end if;
 
   -- ON: creates the walk-in reservation AND consumes exactly one (byte-for-byte toggle_pase)
-  select present, hora into v_present, v_hora from public.pasar_lista_sesion(s_id, c_walk);
+  select present, hora, clases_restantes into v_present, v_hora, v_saldo from public.pasar_lista_sesion(s_id, c_walk);
   if v_present is not true then raise exception 'RULE FAIL(walk ON): not present'; end if;
   if v_hora is null then raise exception 'RULE FAIL(walk ON): hora null on a session dated today'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_walk;
   if v_clases <> 4 then raise exception 'RULE FAIL(walk ON): expected consume to 4, got %', v_clases; end if;
+  -- the returned balance is the one the decrement left behind, not the one read before it (#162).
+  if v_saldo is distinct from v_clases then raise exception 'RULE FAIL(walk ON): returned clases_restantes % but the row holds %', v_saldo, v_clases; end if;
   select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_walk and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(walk ON): reservation status % (expected asistida)', v_status; end if;
   if v_walk is not true then raise exception 'RULE FAIL(walk ON): is_walk_in not true'; end if;
-  select consumio into v_consumio from public.asistencias
+  select consumio, perdonada into v_consumio, v_perdonada from public.asistencias
     where cliente_id = c_walk and class_session_id = s_id and deleted_at is null order by created_at desc limit 1;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(walk ON): asistencia.consumio % (expected true)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(walk ON): a PAYING walk-in row was stamped perdonada %', v_perdonada; end if;
 
   -- OFF (untoggle): reservation -> cancelada, refund exactly one (finite) — symmetric to the door consume
-  select present into v_present from public.pasar_lista_sesion(s_id, c_walk);
+  select present, clases_restantes into v_present, v_saldo from public.pasar_lista_sesion(s_id, c_walk);
   if v_present is not false then raise exception 'RULE FAIL(walk OFF): still present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_walk;
   if v_clases <> 5 then raise exception 'RULE FAIL(walk OFF): expected refund to 5, got %', v_clases; end if;
+  -- the untoggle returns the REFUNDED balance, not the pre-refund one (#162).
+  if v_saldo is distinct from v_clases then raise exception 'RULE FAIL(walk OFF): returned clases_restantes % but the row holds %', v_saldo, v_clases; end if;
   select status into v_status from public.reservation where member_id = c_walk and class_session_id = s_id;
   if v_status <> 'cancelada' then raise exception 'RULE FAIL(walk OFF): reservation status % (expected cancelada)', v_status; end if;
   select count(*) into v_clases from public.asistencias where cliente_id = c_walk and class_session_id = s_id and deleted_at is null;
@@ -270,7 +322,7 @@ declare
   s_id   uuid := current_setting('t.s_id', true)::uuid;
   c_walk uuid := current_setting('t.c_walk', true)::uuid;
   v_fecha date := current_setting('t.today', true)::date;   -- the session's date (seeded today 18:00)
-  v_present boolean; v_clases int; v_status text; v_n int;
+  v_present boolean; v_clases int; v_status text; v_n int; v_perdonada boolean;
   v_consumio boolean; v_origen text; v_sess uuid; v_gym_id uuid;
 begin
   -- Arrange: mark the walk-in via the SESSION seam (5 -> 4; asistida/is_walk_in, session-linked row).
@@ -284,21 +336,24 @@ begin
   if v_present is not true then raise exception 'RULE FAIL(cool clase→libre): front-desk toggle did not mark present'; end if;
 
   -- Written rows: a SECOND row exists and it is a stated ACCESO LIBRE visit, consumio=false, gym-stamped.
-  select consumio, origen, class_session_id, gym_id into v_consumio, v_origen, v_sess, v_gym_id
+  select consumio, origen, class_session_id, gym_id, perdonada into v_consumio, v_origen, v_sess, v_gym_id, v_perdonada
     from public.asistencias
    where cliente_id = c_walk and fecha = v_fecha and deleted_at is null and class_session_id is null
    order by created_at desc limit 1;
   if v_consumio is distinct from false then raise exception 'RULE FAIL(cool clase→libre): libre row consumio % (expected false — inside the cooldown)', v_consumio; end if;
   if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(cool clase→libre): libre row origen % (expected libre)', v_origen; end if;
+  -- #169: this row is the SECOND record of ONE arrival, so it carries the stamp a visit count skips.
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(cool clase→libre): the pardoned libre row was NOT stamped perdonada (%) — the arrival would count twice', v_perdonada; end if;
   if v_sess is not null then raise exception 'RULE FAIL(cool clase→libre): the desk row carries a class_session_id (%)', v_sess; end if;
   if v_gym_id is distinct from current_setting('t.gym', true)::uuid then raise exception 'RULE FAIL(cool clase→libre): libre row gym_id % not the session gym', v_gym_id; end if;
   -- …the balance did NOT move, and the session row + reservation are untouched (the desk owns only its own row).
   select clases_restantes into v_clases from public.clientes where id = c_walk;
   if v_clases <> 4 then raise exception 'RULE FAIL(cool clase→libre): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_walk and class_session_id = s_id and deleted_at is null order by created_at desc limit 1;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(cool clase→libre): session row consumio % (expected true, it paid)', v_consumio; end if;
   if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(cool clase→libre): session row origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(cool clase→libre): the PAYING row was stamped perdonada % — the stamp belongs on the pardoned row alone', v_perdonada; end if;
   select status into v_status from public.reservation where member_id = c_walk and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(cool clase→libre): reservation drifted to % (expected asistida)', v_status; end if;
 
@@ -328,17 +383,21 @@ declare
   c_fd   uuid := current_setting('t.c_fd', true)::uuid;
   v_fecha date := current_setting('t.today', true)::date;
   v_present boolean; v_clases int; v_status text; v_walk boolean; v_consumio boolean; v_origen text; v_n int;
+  v_perdonada boolean;
 begin
   -- Arrange: a real consuming FRONT-DESK check-in today (5 -> 4; class-less row, origen='libre').
+  -- The member holds no booking at all, so the desk tap takes the plain walk-in path: no attribution to
+  -- delegate to, nothing to pardon, and the charge lands.
   select present into v_present from public.toggle_pase(c_fd, v_fecha);
   if v_present is not true then raise exception 'SEED FAIL(cool libre→clase): front-desk toggle ON failed'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_fd;
   if v_clases <> 4 then raise exception 'SEED FAIL(cool libre→clase): expected 4 after front-desk consume, got %', v_clases; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_fd and fecha = v_fecha and deleted_at is null and class_session_id is null
    order by created_at desc limit 1;
   if v_consumio is distinct from true then raise exception 'SEED FAIL(cool libre→clase): desk row consumio % (expected true)', v_consumio; end if;
   if v_origen is distinct from 'libre' then raise exception 'SEED FAIL(cool libre→clase): desk row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'SEED FAIL(cool libre→clase): the PAYING desk row was stamped perdonada %', v_perdonada; end if;
 
   -- Act: mark present in the Agenda class (walk-in branch — no prior reservation). Present, NO re-consume.
   select present into v_present from public.pasar_lista_sesion(s_id, c_fd);
@@ -346,11 +405,13 @@ begin
   -- Written-rows rule: balance UNCHANGED at 4 (no second decrement — the desk arrival already paid).
   select clases_restantes into v_clases from public.clientes where id = c_fd;
   if v_clases <> 4 then raise exception 'RULE FAIL(cool libre→clase ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
-  -- …and the session-linked attendance row was still written, origen='clase', with consumio=false.
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  -- …and the session-linked attendance row was still written, origen='clase', with consumio=false —
+  -- and stamped perdonada, because THIS is the second record of the arrival in this direction (#169).
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
     where cliente_id = c_fd and class_session_id = s_id and deleted_at is null order by created_at desc limit 1;
   if v_consumio is distinct from false then raise exception 'RULE FAIL(cool libre→clase ON): asistencia.consumio % (expected false)', v_consumio; end if;
   if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(cool libre→clase ON): asistencia.origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(cool libre→clase ON): the pardoned class row was NOT stamped perdonada (%) — the cooldown must stamp in BOTH directions', v_perdonada; end if;
   -- …and the walk-in reservation exists as asistida/is_walk_in (the mark is still recorded, just not charged).
   select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_fd and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(cool libre→clase ON): reservation status % (expected asistida)', v_status; end if;
@@ -403,16 +464,19 @@ declare
   c_beyond uuid := current_setting('t.c_beyond', true)::uuid;
   v_fecha  date := current_setting('t.today', true)::date;
   v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_status text; v_walk boolean;
+  v_perdonada boolean;
 begin
   -- Act: the Agenda mark now sees NO recent libre row → the walk-in branch consumes (4 -> 3).
   select present into v_present from public.pasar_lista_sesion(s_id, c_beyond);
   if v_present is not true then raise exception 'RULE FAIL(beyond ON): not present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_beyond;
   if v_clases <> 3 then raise exception 'RULE FAIL(beyond ON): expected a real consume to 3, got % — the cooldown pardoned a visit 20 minutes old', v_clases; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
     where cliente_id = c_beyond and class_session_id = s_id and deleted_at is null order by created_at desc limit 1;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(beyond ON): asistencia.consumio % (expected true)', v_consumio; end if;
   if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(beyond ON): asistencia.origen % (expected clase)', v_origen; end if;
+  -- No pardon happened, so no stamp: two separate visits count as two (#169).
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(beyond ON): a row 20 minutes past the window was stamped perdonada %', v_perdonada; end if;
   select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_beyond and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(beyond ON): reservation status % (expected asistida)', v_status; end if;
   if v_walk is not true then raise exception 'RULE FAIL(beyond ON): is_walk_in not true'; end if;
@@ -436,6 +500,7 @@ declare
   s2_id  uuid := current_setting('t.s2_id', true)::uuid;
   c_dos  uuid := current_setting('t.c_dos', true)::uuid;
   v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_status text; v_walk boolean; v_n int;
+  v_perdonada boolean;
 begin
   -- First class: walk-in consume 5 -> 4.
   select present into v_present from public.pasar_lista_sesion(s_id, c_dos);
@@ -457,10 +522,13 @@ begin
    where cliente_id = c_dos and class_session_id = s_id and deleted_at is null;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(dos clases): class-1 row consumio % (expected true)', v_consumio; end if;
   if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(dos clases): class-1 row origen % (expected clase)', v_origen; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_dos and class_session_id = s2_id and deleted_at is null;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(dos clases): class-2 row consumio % (expected true)', v_consumio; end if;
   if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(dos clases): class-2 row origen % (expected clase)', v_origen; end if;
+  -- …and it is NOT a pardoned duplicate: a cooldown keyed on the DAY instead of the KIND would both
+  -- free this class and stamp it, hiding the second visit from the count as well as from the ledger.
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(dos clases): the second CLASS was stamped perdonada % — two classes are two visits', v_perdonada; end if;
   select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_dos and class_session_id = s2_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(dos clases): class-2 reservation status % (expected asistida)', v_status; end if;
   if v_walk is not true then raise exception 'RULE FAIL(dos clases): class-2 is_walk_in not true'; end if;
@@ -484,6 +552,7 @@ declare
   c_orph  uuid := current_setting('t.c_orph', true)::uuid;
   v_fecha date := current_setting('t.today', true)::date;
   v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_status text; v_n int;
+  v_perdonada boolean;
 begin
   -- Step 1 — the AGENDA mark: walk-in consume 5 -> 4, class row charged.
   select present into v_present from public.pasar_lista_sesion(s_id, c_orph);
@@ -495,13 +564,14 @@ begin
   if v_consumio is distinct from true then raise exception 'SEED FAIL(huerfano 1): class row consumio % (expected true)', v_consumio; end if;
   if v_origen is distinct from 'clase' then raise exception 'SEED FAIL(huerfano 1): class row origen % (expected clase)', v_origen; end if;
 
-  -- Step 2 — the DESK tap inside the window: recorded, pardoned, balance still 4.
+  -- Step 2 — the DESK tap inside the window: recorded, pardoned, stamped, balance still 4.
   select present into v_present from public.toggle_pase(c_orph, v_fecha);
   if v_present is not true then raise exception 'SEED FAIL(huerfano 2): front-desk toggle ON failed'; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_orph and fecha = v_fecha and deleted_at is null and class_session_id is null;
   if v_consumio is distinct from false then raise exception 'SEED FAIL(huerfano 2): libre row consumio % (expected false — pardoned)', v_consumio; end if;
   if v_origen is distinct from 'libre' then raise exception 'SEED FAIL(huerfano 2): libre row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'SEED FAIL(huerfano 2): pardoned libre row not stamped perdonada (%)', v_perdonada; end if;
   select clases_restantes into v_clases from public.clientes where id = c_orph;
   if v_clases <> 4 then raise exception 'SEED FAIL(huerfano 2): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
 
@@ -520,10 +590,14 @@ begin
   select count(*) into v_n from public.asistencias
    where cliente_id = c_orph and fecha = v_fecha and deleted_at is null and class_session_id is null;
   if v_n <> 1 then raise exception 'RULE FAIL(huerfano 3): the recorded libre visit vanished (% active rows, expected 1)', v_n; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_orph and fecha = v_fecha and deleted_at is null and class_session_id is null;
   if v_consumio is distinct from false then raise exception 'RULE FAIL(huerfano 3): orphaned libre row consumio % (expected false — the pardon is NOT revisited)', v_consumio; end if;
   if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(huerfano 3): orphaned libre row origen % (expected libre)', v_origen; end if;
+  -- The stamp is not revisited either, which is the ACCEPTED undercount edge of #169: this real visit
+  -- reads perdonada=true with no sibling left to have duplicated, so a VISIT count skips it. Named in
+  -- the migration header, verified at month-close by the trigger query, and recovered by step 4 below.
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(huerfano 3): the orphaned row lost its perdonada stamp (%) — the pardon must not be revisited', v_perdonada; end if;
 
   -- Step 4 — the RECOVERY the accepted edge relies on: untoggle refunds nothing (it never charged)…
   select present into v_present from public.toggle_pase(c_orph, v_fecha);
@@ -537,10 +611,13 @@ begin
   if v_present is not true then raise exception 'RULE FAIL(huerfano 4): front-desk re-toggle ON failed'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_orph;
   if v_clases <> 4 then raise exception 'RULE FAIL(huerfano 4): the re-mark did not charge — balance % (expected 4)', v_clases; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_orph and fecha = v_fecha and deleted_at is null and class_session_id is null;
   if v_consumio is distinct from true then raise exception 'RULE FAIL(huerfano 4): re-marked libre row consumio % (expected true)', v_consumio; end if;
   if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(huerfano 4): re-marked libre row origen % (expected libre)', v_origen; end if;
+  -- …and the recovery row is a CLEAN visit: it charged, so it is not a pardoned duplicate and the count
+  -- gets its visit back — the same two taps recover both the money and the number.
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(huerfano 4): the re-charged row kept a perdonada stamp (%)', v_perdonada; end if;
 end $$;
 
 reset role;

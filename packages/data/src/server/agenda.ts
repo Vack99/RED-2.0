@@ -8,6 +8,7 @@ import {
   derivarEstadosDia,
   disponibles,
   duracionValida,
+  esNoAsistio,
   horaValida,
   muestraEspecial,
   ratioOcupacion,
@@ -273,6 +274,10 @@ export interface RosterMemberDTO {
   paquete: string;
   present: boolean;
   isWalkIn: boolean;
+  /** Booked and never marked, with the arrival window already closed — "no asistió".
+   *  DERIVED at read (ruling 2026-07-29), never a stored state: marking the row
+   *  supersedes it on the next read, so there is nothing to un-stamp. */
+  noAsistio: boolean;
 }
 
 /** A session's roster plus the walk-in picker candidates. `roster` is the active
@@ -285,25 +290,35 @@ export interface SesionRosterDTO {
 }
 
 /** The booked roster for one session (staff RLS-scoped), joined to clientes, plus the
- *  walk-in candidate pool — three plain reads assembled in JS (no embedded PostgREST
- *  select), matching the rest of the DAL. Roster ordered by name. */
+ *  walk-in candidate pool — four plain reads assembled in JS (no embedded PostgREST
+ *  select), matching the rest of the DAL. Roster ordered by name.
+ *
+ *  The session's own row rides along so each roster line can DERIVE `noAsistio` from the
+ *  arrival window (ruling 2026-07-29). Best-effort: its error is not destructured, so a
+ *  failed session read costs the NO ASISTIÓ caption, never the roster. */
 export const getSesionRoster = cache(
   async (sessionId: string, client?: SupabaseServer): Promise<SesionRosterDTO> => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
 
-    const [{ data: reservas, error }, candidatosTodos] = await Promise.all([
+    const [{ data: reservas, error }, { data: sesion }, candidatosTodos] = await Promise.all([
       supabase
         .from("reservation")
         .select("member_id, status, is_walk_in")
         .eq("class_session_id", sessionId)
         .in("status", ["reservada", "asistida"]),
+      supabase
+        .from("class_session")
+        .select("starts_at, duration_min")
+        .eq("id", sessionId)
+        .maybeSingle(),
       getClientesParaPase(supabase),
     ]);
     if (error) throw error;
 
     const activas = reservas ?? [];
     const byId = new Map(candidatosTodos.map((c) => [c.id, c]));
+    const ahora = new Date();
 
     const roster: RosterMemberDTO[] = activas
       .map((r) => {
@@ -315,6 +330,9 @@ export const getSesionRoster = cache(
           paquete: c?.paquete ?? "Sin paquete",
           present: r.status === "asistida",
           isWalkIn: r.is_walk_in,
+          noAsistio: sesion
+            ? esNoAsistio(r.status, new Date(sesion.starts_at), sesion.duration_min, ahora)
+            : false,
         };
       })
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
@@ -505,11 +523,23 @@ export type PasarListaSesionInput = z.infer<typeof pasarListaSesionSchema>;
  *  member flips reservada→asistida WITHOUT re-consuming (already consumed at booking);
  *  a walk-in gets an is_walk_in reservation + consumes exactly as the front desk does;
  *  untoggle reverses each symmetrically. The RPC owns all balance math (ADR-0005 seam);
- *  this seam just validates, re-auths, and returns the new present state. */
+ *  this seam just validates, re-auths, and returns the new present state.
+ *
+ *  `sessionId` / `clasesRestantes` are the shape `toggle_pase` and `pasar_lista_sesion`
+ *  now SHARE by construction — the desk's delegation returns one function's rows through
+ *  the other, so their arities cannot diverge. Surfaced here too so the two seams read
+ *  alike; the Agenda screen reloads the roster instead of using them. */
 export async function pasarListaSesion(
   raw: unknown,
   client?: SupabaseServer,
-): Promise<AgendaResultado<{ present: boolean; hora: string | null }>> {
+): Promise<
+  AgendaResultado<{
+    present: boolean;
+    hora: string | null;
+    sessionId: string | null;
+    clasesRestantes: number | null;
+  }>
+> {
   const parsed = pasarListaSesionSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   const input = parsed.data;
@@ -521,6 +551,11 @@ export async function pasarListaSesion(
       .rpc("pasar_lista_sesion", { p_session_id: input.sessionId, p_cliente_id: input.clienteId })
       .single();
     if (error || !data) throw new Error(error?.message || "No se pudo pasar lista");
-    return { present: data.present, hora: data.hora };
+    return {
+      present: data.present,
+      hora: data.hora,
+      sessionId: data.session_id,
+      clasesRestantes: data.clases_restantes,
+    };
   });
 }

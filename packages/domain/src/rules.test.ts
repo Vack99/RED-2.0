@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente } from "./rules";
+import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente, ventanaArribo } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
 describe("stackPaquete — purchase wins, days carry (ruling C4)", () => {
@@ -534,6 +534,43 @@ describe("muestraEspecial", () => {
   it("is false for a non-especial session regardless of estado", () => {
     expect(muestraEspecial("normal", false)).toBe(false);
     expect(muestraEspecial("a_continuacion", false)).toBe(false);
+  });
+});
+
+describe("ventanaArribo / esNoAsistio — the arrival window (2026-07-29)", () => {
+  // 18:00 UTC start, 60-min class → window [16:30, 19:15). The edges are the whole
+  // contract: they decide whether a tap attributes or charges, and whether a roster row
+  // says NO ASISTIÓ.
+  const INICIO = new Date("2026-07-29T18:00:00.000Z");
+
+  it("opens 90 min before the start and closes 15 min after the class ends", () => {
+    const { desde, hasta } = ventanaArribo(INICIO, 60);
+    expect(desde.toISOString()).toBe("2026-07-29T16:30:00.000Z");
+    expect(hasta.toISOString()).toBe("2026-07-29T19:15:00.000Z");
+  });
+
+  it("tracks the session's own duración — a 90-min class closes 30 min later than a 60-min one", () => {
+    expect(ventanaArribo(INICIO, 90).hasta.toISOString()).toBe("2026-07-29T19:45:00.000Z");
+  });
+
+  it("is still open exactly AT the open edge, and closed one ms before it", () => {
+    const { desde } = ventanaArribo(INICIO, 60);
+    expect(esNoAsistio("reservada", INICIO, 60, desde)).toBe(false);
+    expect(esNoAsistio("reservada", INICIO, 60, new Date(desde.getTime() - 1))).toBe(false);
+  });
+
+  it("closes AT the upper edge (half-open: `hasta <= ahora`), not one ms later", () => {
+    const { hasta } = ventanaArribo(INICIO, 60);
+    expect(esNoAsistio("reservada", INICIO, 60, new Date(hasta.getTime() - 1))).toBe(false);
+    expect(esNoAsistio("reservada", INICIO, 60, hasta)).toBe(true);
+    expect(esNoAsistio("reservada", INICIO, 60, new Date(hasta.getTime() + 1))).toBe(true);
+  });
+
+  it("only a still-`reservada` booking reads as no asistió — a mark supersedes it instantly", () => {
+    const tarde = new Date("2026-07-30T09:00:00.000Z");
+    expect(esNoAsistio("reservada", INICIO, 60, tarde)).toBe(true);
+    expect(esNoAsistio("asistida", INICIO, 60, tarde)).toBe(false);
+    expect(esNoAsistio("cancelada", INICIO, 60, tarde)).toBe(false);
   });
 });
 

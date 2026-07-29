@@ -48,7 +48,7 @@ const reminders: { icon: ReactNode; texto: string }[] = [
         <path d="M15 9l-6 6M9 9l6 6" />
       </svg>
     ),
-    texto: "¿No puedes asistir? Cancela hasta 2 h antes desde Mis reservas.",
+    texto: "¿No puedes asistir? Cancela hasta el inicio de la clase desde Mis reservas.",
   },
 ];
 

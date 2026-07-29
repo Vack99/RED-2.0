@@ -12,6 +12,10 @@ import { Avatar, Eyebrow, Input, Tnum } from "../ui";
  * ASISTENCIA screen — Avatar + a yellow present box + a yellow-soft row — so the mark
  * gesture is the one operators already know. Token-only; all state (present flips,
  * walk-in adds) is driven by the parent through callbacks.
+ *
+ * A booked member still unmarked once their arrival window closed reads as a quiet THIRD
+ * state — dimmed, with a "NO ASISTIÓ" caption. It is derived at read, never stored, so
+ * the same single tap that marks anyone else supersedes it (ruling 2026-07-29).
  */
 
 export interface RosterRow {
@@ -21,6 +25,8 @@ export interface RosterRow {
   paquete: string;
   present: boolean;
   isWalkIn: boolean;
+  /** Booked, never marked, arrival window closed — derived at read, never stored. */
+  noAsistio: boolean;
 }
 
 export interface CandidateRow {
@@ -165,7 +171,11 @@ const RosterRowView = React.memo(function RosterRowView({
         borderBottom: "1px solid var(--line)",
         cursor: busy ? "default" : "pointer",
         background: row.present ? "var(--yellow-soft)" : "transparent",
-        transition: "background-color 180ms cubic-bezier(.32,.72,0,1)",
+        // The third state is QUIET: a dimmed row and a caption, never a red badge. The
+        // roster is glanced at during class, and a coach's mark supersedes it with the
+        // same single tap — this is a reading, not an accusation.
+        opacity: row.noAsistio ? 0.55 : 1,
+        transition: "background-color 180ms cubic-bezier(.32,.72,0,1), opacity 180ms cubic-bezier(.32,.72,0,1)",
       }}
     >
       <Avatar initial={row.inicial} size={38} accent={row.present} />
@@ -178,7 +188,12 @@ const RosterRowView = React.memo(function RosterRowView({
             </span>
           )}
         </div>
-        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{row.paquete}</div>
+        <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>
+          {row.paquete}
+          {row.noAsistio && (
+            <span className="uppercase" style={{ fontWeight: 700, letterSpacing: 0.5 }}> · No asistió</span>
+          )}
+        </div>
       </div>
       <div
         className="flex shrink-0 items-center justify-center"

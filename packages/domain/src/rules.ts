@@ -447,6 +447,52 @@ export function muestraEspecial(estado: EstadoSesion, esEspecial: boolean): bool
   return esEspecial && estado !== "a_continuacion";
 }
 
+// ── Arrival window (reservation truthfulness, 2026-07-29) ────────────────
+
+/**
+ * How early a booking's arrival window opens, in minutes before `startsAt`. 90 mirrors
+ * the desk pill's own `VENTANA_CERCANA_MIN` (the admin's marcadas.ts) so the screen and
+ * the server agree on what "around class time" means.
+ */
+export const VENTANA_ARRIBO_PREVIA_MIN = 90;
+
+/**
+ * Arrival grace after a class ends, in minutes — how long a booking stays markable once
+ * the class is over. A SIBLING of the 15-minute cooldown in `visita_reciente`, never the
+ * same number: this one bounds arrival, that one bounds double-charging.
+ */
+export const VENTANA_ARRIBO_GRACIA_MIN = 15;
+
+/**
+ * A booking's ARRIVAL WINDOW: `[startsAt − 90 min, startsAt + duración + 15 min)`.
+ * Twin of the SQL `public.ventana_arribo(p_starts_at, p_duration_min)` — the attribution
+ * gate the desk's 2-arg tap runs through — so the display and the write share one
+ * boundary. Keep the two in lockstep if either changes.
+ */
+export function ventanaArribo(startsAt: Date, duracionMin: number): { desde: Date; hasta: Date } {
+  const inicio = startsAt.getTime();
+  return {
+    desde: new Date(inicio - VENTANA_ARRIBO_PREVIA_MIN * 60_000),
+    hasta: new Date(inicio + (duracionMin + VENTANA_ARRIBO_GRACIA_MIN) * 60_000),
+  };
+}
+
+/**
+ * Whether a booking reads as "no asistió": still `reservada` once its arrival window has
+ * CLOSED. Derived at read, never stored (ruling 2026-07-29) — a mark supersedes it
+ * instantly, and there is no sweep to race or repair. The window is half-open, so it is
+ * closed AT `hasta` (`hasta <= ahora`), exactly the SQL gate's `upper(...) <= now()`.
+ * Marking is never time-gated: this is display only.
+ */
+export function esNoAsistio(
+  status: string,
+  startsAt: Date,
+  duracionMin: number,
+  ahora: Date,
+): boolean {
+  return status === "reservada" && ventanaArribo(startsAt, duracionMin).hasta.getTime() <= ahora.getTime();
+}
+
 // ── Editor bounds (PRD decision e) ───────────────────────────────────────
 
 const DURACIONES_VALIDAS: readonly number[] = [30, 45, 60, 75, 90];

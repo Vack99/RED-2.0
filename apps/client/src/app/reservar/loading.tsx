@@ -63,7 +63,7 @@ export default function Loading() {
 
       {/* Footer — static copy */}
       <footer className="mt-6 px-2 text-center">
-        <p className="text-[11px] text-muted">Cancela sin costo hasta 2 h antes de la clase.</p>
+        <p className="text-[11px] text-muted">Cancela sin costo hasta el inicio de la clase.</p>
       </footer>
     </main>
   );

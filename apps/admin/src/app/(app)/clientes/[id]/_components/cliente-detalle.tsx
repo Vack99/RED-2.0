@@ -87,6 +87,19 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
         return;
       }
+      if (res.sessionId) {
+        // The server attributed the tap to the member's booking (ruling 2026-07-29): the
+        // visit is a CLASS row, not the ACCESO LIBRE one this checkbox owns, so the
+        // checkbox must stay off or it would offer to undo a mark it cannot reach. The
+        // refresh re-derives `clasesHoy`, which renders it as a read-only gold stamp.
+        forgeToast({
+          tone: "success",
+          title: "Asistencia registrada",
+          body: `${c.nombre} · Marcada en su clase de hoy${res.hora ? " · " + res.hora : ""}`,
+        });
+        router.refresh();
+        return;
+      }
       setPresent(res.present);
       setHoraHoy(res.hora);
       forgeToast(

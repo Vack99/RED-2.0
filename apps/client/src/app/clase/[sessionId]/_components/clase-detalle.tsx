@@ -318,7 +318,7 @@ export function ClaseDetalle({
         ) : detalle.miReserva ? (
           <>
             <p className="mb-2.5 text-center text-[11px] text-muted">
-              Ya tienes tu lugar · cancela sin costo hasta 2 h antes
+              Ya tienes tu lugar · cancela sin costo hasta el inicio
             </p>
             <button
               type="button"

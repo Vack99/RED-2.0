@@ -14,6 +14,13 @@
 --                                  is not decremented a second time.
 --   * re-book reuses the row     — booking a session the member previously CANCELLED reactivates the one
 --                                  UNIQUE row (no duplicate) and consumes one.
+--   * started-class block (#165) — a session whose starts_at is already past is rejected with the SAME
+--                                  message cancelar_reserva has always used ('La clase ya comenzó'), and
+--                                  atomically: no reservation row, no decrement. The client hides past
+--                                  classes; the client is not the rule, and a booking made after the
+--                                  class ran is a consumed credit for a seat nobody can occupy. The
+--                                  fixture is seeded one minute in the past — the boundary is
+--                                  `starts_at <= now()`, an absolute instant, never a gym-local date.
 --
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row. BEGIN/ROLLBACK, so
 -- it touches no row permanently. Zero hardcoded prod UUIDs (gyms/users/clientes seeded transaction-local).
@@ -31,13 +38,18 @@ declare
   v_today  date;
   v_ct     uuid;
   v_starts timestamptz := now() + interval '2 days';
+  -- #165: a class that started ONE MINUTE ago. Seeded straight to the past rather than booked-then-moved
+  -- (the pattern the attendance suites need) because no successful booking is required here — the point
+  -- of the vector is the refusal.
+  v_started timestamptz := now() - interval '1 minute';
   m_fin  uuid := gen_random_uuid();
   m_ilim uuid := gen_random_uuid();
   m_zero uuid := gen_random_uuid();
   m_exp  uuid := gen_random_uuid();
   m_full uuid := gen_random_uuid();
-  c_fin  uuid; c_ilim uuid; c_zero uuid; c_exp uuid; c_full uuid;
-  s_open uuid; s_full uuid;
+  m_start uuid := gen_random_uuid();
+  c_fin  uuid; c_ilim uuid; c_zero uuid; c_exp uuid; c_full uuid; c_start uuid;
+  s_open uuid; s_full uuid; s_started uuid;
   d_cli  uuid;
   i int;
 begin
@@ -51,11 +63,12 @@ begin
     ('00000000-0000-0000-0000-000000000000', m_ilim, 'authenticated', 'authenticated', 'rc-ilim@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_zero, 'authenticated', 'authenticated', 'rc-zero@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_exp,  'authenticated', 'authenticated', 'rc-exp@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_full, 'authenticated', 'authenticated', 'rc-full@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_full, 'authenticated', 'authenticated', 'rc-full@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_start,'authenticated', 'authenticated', 'rc-start@test.local');
 
   insert into public.gym_membership (user_id, gym_id, role) values
     (m_fin, v_gym, 'member'), (m_ilim, v_gym, 'member'), (m_zero, v_gym, 'member'),
-    (m_exp, v_gym, 'member'), (m_full, v_gym, 'member');
+    (m_exp, v_gym, 'member'), (m_full, v_gym, 'member'), (m_start, v_gym, 'member');
 
   -- one cliente per acting member (auth_user_id links them; balances/vence per case)
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
@@ -68,6 +81,8 @@ begin
     values ('RC exp', '0000000004', 5, v_today - 1, '8 clases', v_gym, m_exp) returning id into c_exp;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
     values ('RC full', '0000000005', 5, v_today + 20, '8 clases', v_gym, m_full) returning id into c_full;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC started', '0000000006', 5, v_today + 20, '8 clases', v_gym, m_start) returning id into c_start;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'RC Metcon') returning id into v_ct;
 
@@ -75,6 +90,8 @@ begin
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_open;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 4) returning id into s_full;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_started, 60, 20) returning id into s_started;
 
   -- Fill s_full to capacity (4) with four distinct dummy clientes' active reservations.
   for i in 1..4 loop
@@ -95,8 +112,11 @@ begin
   perform set_config('t.c_zero', c_zero::text,  true);
   perform set_config('t.c_exp',  c_exp::text,   true);
   perform set_config('t.c_full', c_full::text,  true);
+  perform set_config('t.m_start',   m_start::text,   true);
+  perform set_config('t.c_start',   c_start::text,   true);
   perform set_config('t.s_open', s_open::text,  true);
   perform set_config('t.s_full', s_full::text,  true);
+  perform set_config('t.s_started', s_started::text, true);
 end $$;
 
 -- Helper to act as a member: set the jwt sub + authenticated role.
@@ -270,6 +290,40 @@ begin
   if v_clases <> 5 then raise exception 'RULE FAIL(full): balance moved to % on full reject', v_clases; end if;
   select count(*) into v_n from public.reservation where member_id = c_full and class_session_id = s_full;
   if v_n <> 0 then raise exception 'RULE FAIL(full): % rows created on full reject', v_n; end if;
+end $$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- started-class block (#165) — a class that has already begun cannot be booked; atomic
+-- ════════════════════════════════════════════════════════════════════════════════
+-- The member is valid in every other respect (5 classes, vigente, the session has 20 free seats), so the
+-- ONLY thing that can refuse them is the start-time gate — and it must refuse with cancelar_reserva's own
+-- sentence, because a member who books late and a member who cancels late are being told the same thing.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_start', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_started uuid := current_setting('t.s_started', true)::uuid;
+  c_start   uuid := current_setting('t.c_start', true)::uuid;
+  v_clases int; v_n int; raised boolean; v_msg text;
+begin
+  raised := false;
+  begin
+    perform public.reservar_clase(s_started);
+  exception when others then
+    raised := true;
+    v_msg := sqlerrm;
+  end;
+  if not raised then raise exception 'RULE FAIL(started): booking a class that already started did not raise'; end if;
+  if v_msg not like 'La clase ya comenz%' then
+    raise exception 'RULE FAIL(started): wrong raise for a started class: % (expected cancelar_reserva''s own message)', v_msg;
+  end if;
+  -- Atomic: the gate sits above every write, so nothing survives the refusal.
+  select clases_restantes into v_clases from public.clientes where id = c_start;
+  if v_clases <> 5 then raise exception 'RULE FAIL(started): balance moved to % on a rejected booking', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = c_start and class_session_id = s_started;
+  if v_n <> 0 then raise exception 'RULE FAIL(started): % reservation rows created on a rejected booking', v_n; end if;
 end $$;
 reset role;
 

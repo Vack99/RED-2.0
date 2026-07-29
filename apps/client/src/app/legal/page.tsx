@@ -49,7 +49,7 @@ export default function LegalPage() {
           intransferible: las clases y el saldo de tu plan solo los usas tú.
         </p>
         <p>
-          Reservar aparta tu lugar en una clase. Puedes cancelar sin costo hasta 2 horas antes del inicio y
+          Reservar aparta tu lugar en una clase. Puedes cancelar sin costo hasta el inicio de la clase y
           tu clase regresa a tu plan. Si no cancelas a tiempo y no te presentas, la clase se descuenta de tu
           plan. En planes ilimitados no hay descuento por clase.
         </p>

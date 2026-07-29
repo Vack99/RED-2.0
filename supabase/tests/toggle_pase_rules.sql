@@ -1,4 +1,5 @@
--- toggle_pase money-path rules (ADR-0005 atomic seam; ADR-0004 saldo; rulings C15 + C9).
+-- toggle_pase money-path rules (ADR-0005 atomic seam; ADR-0004 saldo; rulings C15 + C9; the
+-- 2026-07-29 reservation-truthfulness rulings D1/D3/D4).
 --
 -- toggle_pase is the front-desk (date-keyed) Pasar lista. Its write-rules live ONLY in the RPC — they are
 -- inseparable from the atomic on/off transaction (no orphan TS twin) — so this self-asserting SQL suite is
@@ -14,19 +15,49 @@
 --                                             null for a back-entry.
 --   * C9 vigencia (inclusive)                — a WALK-IN mark on an expired package (vence < p_fecha) raises
 --                                             'Paquete vencido'; the vence day itself (vence = p_fecha) passes.
---   * C15 active-reservation no-consume      — a member holding a reservada booking on today's session is
---                                             marked present with consumio=false and NO decrement (the class
---                                             was paid at booking); toggle-OFF then refunds nothing.
 --   * origen = 'libre' on every desk row     — #89: ACCESO LIBRE is a STATED visit kind, not the absence of a
 --                                             class. Every row this seam writes carries it (and the schema's
 --                                             asistencias_origen_kind_ck forbids pairing it with a session).
+--
+-- THE THREE ARMS OF A BOOKING (2026-07-29, #162): the old C15 branch pardoned a class-less mark whenever the
+-- member held ANY reservada booking on p_fecha — a DAY-keyed answer to a question about an INSTANT. It is
+-- replaced by the ARRIVAL WINDOW, `[starts_at-90, starts_at+duration+15)`, and a desk tap now lands in one of
+-- three arms depending on where now() sits relative to that window. Four of the five vectors below are the
+-- arms; the fifth is the stamp that makes visit counting possible:
+--   * (v1) IN-window, ARM-ONLY ATTRIBUTION   — the tap DELEGATES to pasar_lista_sesion: the booking flips
+--                                             asistida, the attendance row is SESSION-linked (origen='clase',
+--                                             consumio=false, perdonada=false), NO class-less row is written,
+--                                             the balance never moves, and the return carries the attributed
+--                                             session id + the fresh balance (the desk's disclosure bundle).
+--   * (v2) already asistida, in-window       — the second half of arm-only: the tap RAISES 'Ya marcada en la
+--                                             clase de HH:MM' and writes NOTHING. Delegating to a TOGGLE would
+--                                             have made this tap an eraser of a coach's mark; undo lives only
+--                                             in the context that owns the mark (proved by the undo that hands
+--                                             the fixture to the delegation vector below).
+--   * (v3) PRE-window (>90 min early)        — the Ana ruling: no attribution, no pardon. The ordinary walk-in
+--                                             path CHARGES (4->3, consumio=true), and the booking is left
+--                                             strictly alone — reservada, checked_at null.
+--   * (v4) CLOSED-window                     — the Luis ruling: the member missed the class (or the gym
+--                                             cancelled it) and is at the door. The visit is RECORDED FREE
+--                                             (consumio=false, perdonada=false — a real second visit that
+--                                             happens to be free, so it still COUNTS), balance untouched,
+--                                             booking untouched. Two arms: a valid package, and an EXPIRED one
+--                                             — the pardon sits above the C9 gate exactly where C15 sat, so
+--                                             a member whose package lapsed while holding today's booking is
+--                                             still admitted (24 of 52 live clientes are expired-with-balance).
+--   * (v5) cooldown pardon stamps perdonada  — #169: the ONLY writer of perdonada=true on this seam. A member
+--                                             marked in a class and tapped at the desk minutes later is ONE
+--                                             arrival recorded twice; the second row is stamped so a VISIT
+--                                             count can skip it. asistencias_mes_por_cliente then returns 1
+--                                             for that member, not 2, off two active rows.
+--
 --   * delegation to pasar_lista_sesion       — #89: the 3-arg call (p_session_id set) is the desk marking a
 --                                             member IN A CLASS, which is the same act as the Agenda roster.
 --                                             It must produce the Agenda's written rows exactly — the
---                                             reservation flipped to asistida (which the 2-arg path never
---                                             touches), a SESSION-linked asistencia with origen='clase',
---                                             consumio=false, and NO class-less desk row — and the 3-arg undo
---                                             must revert the reservation to reservada.
+--                                             reservation flipped to asistida (which the 2-arg path only ever
+--                                             reaches through v1's attribution), a SESSION-linked asistencia
+--                                             with origen='clase', consumio=false, and NO class-less desk row
+--                                             — and the 3-arg undo must revert the reservation to reservada.
 --   * C9 THROUGH the delegation (#163)       — #89: because the desk's DEFAULT state is a class pill, the 3-arg
 --                                             path is now the desk's ordinary path, so the vence gate had to
 --                                             move to the ROOT (pasar_lista_sesion, 20260728121000) or an
@@ -41,6 +72,13 @@
 --                                             the delegation is a straight `return query select * from
 --                                             pasar_lista_sesion(...)`: proving it through the desk proves the
 --                                             Agenda path too, and it reuses this suite's expired seeds.
+--
+-- FROZEN CLOCK, and why every session is BOOKED BEFORE IT IS MOVED: the whole suite runs in ONE transaction,
+-- so now() is a single frozen instant and no session can drift across a window edge mid-run. The window
+-- positions are therefore created by BACKDATING starts_at with a privileged UPDATE — and that update must
+-- come AFTER the booking, because reservar_clase now refuses a session that has already started (#165).
+-- Every p_fecha below is derived from the session's OWN gym-local date after the move, never assumed to be
+-- "today": a window edge three hours either side of now() legitimately lands on the neighbouring day.
 --
 -- Per-gym & Contract-B clean (was quarantined pre-B for seeding the dropped user_id columns): a synthetic
 -- gym, its operator (gym_membership), and all clientes are minted tx-local with gen_random_uuid(); zero
@@ -58,12 +96,18 @@ declare
   v_gym    uuid := gen_random_uuid();
   v_tz     text := 'America/Mexico_City';
   v_today  date := (now() at time zone 'America/Mexico_City')::date;
-  v_starts timestamptz := (v_today::timestamp + interval '18 hours') at time zone 'America/Mexico_City';
+  -- Every session is born TWO DAYS OUT so reservar_clase's #165 started-class gate cannot refuse the
+  -- booking below; the privileged block after the booking moves each one onto its window position.
+  v_starts timestamptz := now() + interval '2 days';
   op       uuid := gen_random_uuid();   -- the operator (staff) — the toggle_pase caller
   m_res    uuid := gen_random_uuid();   -- member who books a class (reservar_clase runs as them)
   c_finite uuid; c_ilim uuid; c_zero uuid; c_expired uuid; c_venceday uuid; c_res uuid;
   c_expres uuid;                        -- expired AND holding a reservada booking (#163 booked-exempt arm)
-  v_ct     uuid; s_id uuid;
+  c_prev   uuid;                        -- (v3) books, then walks in >90 min early — the Ana arm
+  c_cerr   uuid;                        -- (v4) misses the class, arrives after the window closed — Luis
+  c_expcerr uuid;                       -- (v4) the same, on an EXPIRED package — the pardon-above-C9 arm
+  c_pard   uuid;                        -- (v5) class mark + desk tap inside the cooldown — perdonada
+  v_ct     uuid; s_id uuid; s_pre uuid; s_cls uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (v_gym, 'toggle-pase-rules-suite-gym', 'Toggle Pase Rules Suite', v_tz, 'base');
@@ -92,17 +136,40 @@ begin
   -- Balance 4 = the class already consumed at booking (the state reservar_clase leaves behind).
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('TP expirado con reserva', '5550000007', 4, v_today - 1, '8 clases', v_gym) returning id into c_expres;
+  -- The window-arm members: all seeded at 4 = post-booking, since their bookings are seeded directly (below).
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP pre ventana', '5550000008', 4, v_today + 20, '8 clases', v_gym) returning id into c_prev;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP ventana cerrada', '5550000009', 4, v_today + 20, '8 clases', v_gym) returning id into c_cerr;
+  -- vence is re-stamped in the privileged block below, RELATIVE to the closed session's own gym-local date.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP vencido ventana cerrada', '5550000010', 4, v_today + 20, '8 clases', v_gym) returning id into c_expcerr;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP perdonada', '5550000011', 5, v_today + 20, '8 clases', v_gym) returning id into c_pard;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'TP Metcon') returning id into v_ct;
+  -- s_id  → moved INTO the arrival window (v1/v2 + the delegation vectors)
+  -- s_pre → moved to >90 min ahead of now() (v3, pre-window)
+  -- s_cls → moved to before the window's close (v4, closed-window)
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_id;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_pre;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_cls;
 
-  -- c_expres' booking is seeded DIRECTLY rather than through reservar_clase, which refuses an expired
-  -- booker outright ('Paquete vencido', 20260706170000:173-175). The only way to be booked AND expired
-  -- in real life is a package that lapses BETWEEN the booking and the class — exactly the state the
-  -- booked-branch exemption exists for, and the one the walk-in gate must not swallow.
-  insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in)
-    values (v_gym, s_id, c_expres, 'reservada', false);
+  -- These four bookings are seeded DIRECTLY rather than through reservar_clase, which refuses an expired
+  -- booker outright ('Paquete vencido', 20260706170000:173-175) and, since #165, a started class as well.
+  -- c_expres' state (booked AND expired) can only arise in real life from a package that lapses BETWEEN the
+  -- booking and the class — exactly the state the booked-branch exemption exists for, and the one the
+  -- walk-in gate must not swallow. The three window-arm members are seeded the same way for the same
+  -- reason: c_expcerr is expired, and the closed session has by definition already started. Their balances
+  -- are seeded at 4, i.e. the class already consumed at booking.
+  insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in) values
+    (v_gym, s_id,  c_expres,  'reservada', false),
+    (v_gym, s_pre, c_prev,    'reservada', false),
+    (v_gym, s_cls, c_cerr,    'reservada', false),
+    (v_gym, s_cls, c_expcerr, 'reservada', false);
 
   perform set_config('t.gym',       v_gym::text,      true);
   perform set_config('t.today',     v_today::text,    true);
@@ -115,11 +182,18 @@ begin
   perform set_config('t.c_venceday',c_venceday::text, true);
   perform set_config('t.c_res',     c_res::text,      true);
   perform set_config('t.c_expres',  c_expres::text,   true);
+  perform set_config('t.c_prev',    c_prev::text,     true);
+  perform set_config('t.c_cerr',    c_cerr::text,     true);
+  perform set_config('t.c_expcerr', c_expcerr::text,  true);
+  perform set_config('t.c_pard',    c_pard::text,     true);
   perform set_config('t.s_id',      s_id::text,       true);
+  perform set_config('t.s_pre',     s_pre::text,      true);
+  perform set_config('t.s_cls',     s_cls::text,      true);
 end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- The reserved member books ahead (as themselves) — reservar_clase consumes ONCE (5->4).
+-- The session is still two days out here: booking FIRST is now mandatory (#165 refuses a started class).
 -- ════════════════════════════════════════════════════════════════════════════════
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.m_res', true), 'role', 'authenticated')::text, true);
@@ -132,6 +206,43 @@ begin
   if v_clases <> 4 then raise exception 'SEED FAIL(res book): expected 4 after booking, got %', v_clases; end if;
 end $$;
 reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- POSITION THE SESSIONS ON THE WINDOW (privileged — no RPC can move a class's start, and the member
+-- role holds no class_session write). now() is frozen for the whole transaction, so these three
+-- instants are stable window positions, not a race:
+--   s_id  = now() + 30 min  → the window [start-90, start+75) CONTAINS now()   (v1, v2, delegation)
+--   s_pre = now() + 3 h     → now() is 90 min BEFORE the window opens          (v3, the Ana arm)
+--   s_cls = now() - 3 h     → the window closed 105 min ago                    (v4, the Luis arm)
+-- Each session's own gym-local date is published as t.f_* and used as p_fecha from here on: a window
+-- edge three hours either side of now() can legitimately fall on the neighbouring day, and every gate
+-- in play (attribution, the pardon, the cooldown) keys on `session date = p_fecha`.
+-- ════════════════════════════════════════════════════════════════════════════════
+do $$
+declare
+  v_tz  text;
+  s_id  uuid := current_setting('t.s_id',  true)::uuid;
+  s_pre uuid := current_setting('t.s_pre', true)::uuid;
+  s_cls uuid := current_setting('t.s_cls', true)::uuid;
+  t_win timestamptz := now() + interval '30 minutes';
+  t_pre timestamptz := now() + interval '3 hours';
+  t_cls timestamptz := now() - interval '3 hours';
+begin
+  select timezone into v_tz from public.gym where id = current_setting('t.gym', true)::uuid;
+
+  update public.class_session set starts_at = t_win where id = s_id;
+  update public.class_session set starts_at = t_pre where id = s_pre;
+  update public.class_session set starts_at = t_cls where id = s_cls;
+
+  perform set_config('t.f_win', ((t_win at time zone v_tz)::date)::text, true);
+  perform set_config('t.f_pre', ((t_pre at time zone v_tz)::date)::text, true);
+  perform set_config('t.f_cls', ((t_cls at time zone v_tz)::date)::text, true);
+
+  -- c_expcerr's package must be expired ON THE CLOSED SESSION'S OWN DAY for the (v4) expired arm to mean
+  -- anything — seeded relative to that date, never to "today", for the midnight reason above.
+  update public.clientes set vence = ((t_cls at time zone v_tz)::date) - 1
+   where id = current_setting('t.c_expcerr', true)::uuid;
+end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- Everything below runs AS THE OPERATOR (staff) — the front-desk Pasar lista caller.
@@ -151,28 +262,35 @@ declare
   c_expired  uuid := current_setting('t.c_expired', true)::uuid;
   c_venceday uuid := current_setting('t.c_venceday', true)::uuid;
   v_agym uuid; v_clases int; v_present boolean; v_hora text; v_stored time; v_raised boolean; v_origen text;
+  v_perdonada boolean; v_saldo int;
 begin
-  -- ── refund-iff-consumed-and-not-ilimitado + gym_id stamp + origen ───────────────
-  select present into v_present from public.toggle_pase(c_finite, v_today);
+  -- ── refund-iff-consumed-and-not-ilimitado + gym_id stamp + origen + the returned balance ────────
+  select present, clases_restantes into v_present, v_saldo from public.toggle_pase(c_finite, v_today);
   if v_present is not true then raise exception 'RULE FAIL(b): finite ON not present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_finite;
   if v_clases <> 4 then raise exception 'RULE FAIL(b): finite ON expected 4, got %', v_clases; end if;
-  select gym_id, origen into v_agym, v_origen from public.asistencias
+  -- the RETURNED balance is the post-write one (the desk repaints the row from it, #162 disclosure).
+  if v_saldo is distinct from 4 then raise exception 'RULE FAIL(b): finite ON returned clases_restantes % (expected the fresh 4)', v_saldo; end if;
+  select gym_id, origen, perdonada into v_agym, v_origen, v_perdonada from public.asistencias
    where cliente_id = c_finite and fecha = v_today and deleted_at is null order by created_at desc limit 1;
   if v_agym is distinct from v_gym then raise exception 'RULE FAIL(gym): asistencia.gym_id % expected %', v_agym, v_gym; end if;
   if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(origen): desk row origen % (expected libre — a STATED ACCESO LIBRE visit, #89)', v_origen; end if;
+  -- an ordinary charged walk-in is NOT a pardoned duplicate: perdonada must stay false (#169).
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(perdonada): a plain charged desk row was stamped perdonada %', v_perdonada; end if;
 
-  select present into v_present from public.toggle_pase(c_finite, v_today);
+  select present, clases_restantes into v_present, v_saldo from public.toggle_pase(c_finite, v_today);
   if v_present is not false then raise exception 'RULE FAIL(b): finite OFF not absent'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_finite;
   if v_clases <> 5 then raise exception 'RULE FAIL(b): finite OFF expected refund to 5, got %', v_clases; end if;
+  if v_saldo is distinct from 5 then raise exception 'RULE FAIL(b): finite OFF returned clases_restantes % (expected the refunded 5)', v_saldo; end if;
 
   select present into v_present from public.toggle_pase(c_ilim, v_today);
   if v_present is not true then raise exception 'RULE FAIL(b): ilimitado ON not present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_ilim;
   if v_clases is not null then raise exception 'RULE FAIL(b): ilimitado ON should stay null, got %', v_clases; end if;
-  select present into v_present from public.toggle_pase(c_ilim, v_today);
+  select present, clases_restantes into v_present, v_saldo from public.toggle_pase(c_ilim, v_today);
   if v_present is not false then raise exception 'RULE FAIL(b): ilimitado OFF not absent'; end if;
+  if v_saldo is not null then raise exception 'RULE FAIL(b): ilimitado OFF returned clases_restantes % (expected NULL)', v_saldo; end if;
   select clases_restantes into v_clases from public.clientes where id = c_ilim;
   if v_clases is not null then raise exception 'RULE FAIL(b): ilimitado OFF should stay null (no phantom refund), got %', v_clases; end if;
 
@@ -227,39 +345,98 @@ begin
   if v_clases <> 0 then raise exception 'RULE FAIL(vig): expired ON wrote % attendance rows (expected 0)', v_clases; end if;
 end $$;
 
--- ── C15 active-reservation no-consume: the booked member (reservada on today's session) ──────────
+-- ── (v1) IN-WINDOW ATTRIBUTION + (v2) the already-marked NO-OP (#162, D1) ────────────────────────
+-- This block replaces the old C15 vector. The member holds a reservada booking on a session whose
+-- ARRIVAL WINDOW contains now(), and the operator taps them on the LIBRE tab — the tap the old code
+-- answered with a free class-less row that left the roster reading them absent.
+--
+-- (v1) It now DELEGATES: the write is pasar_lista_sesion's booked branch, reached from the desk. The
+--      proof is entirely in the written rows — reservation asistida + checked_at, a SESSION-linked
+--      asistencia (origen='clase', consumio=false, perdonada=false), NO class-less row anywhere, and a
+--      balance that never moves. The RETURN's session id + fresh balance are asserted as a bonus: they
+--      are what lets the desk say WHERE the mark landed, but the rows are the contract.
+-- (v2) Tapping again does NOT undo it. Arm-only: the RPC raises 'Ya marcada en la clase de HH:MM' and
+--      writes nothing at all — no libre row, no second class row, no status change, no balance move.
+--      Undo lives only in the context that owns the mark, which the 3-arg call at the tail performs.
 do $$
 declare
-  c_res uuid := current_setting('t.c_res', true)::uuid;
-  v_today date := current_setting('t.today', true)::date;
-  s_id uuid := current_setting('t.s_id', true)::uuid;
+  c_res   uuid := current_setting('t.c_res', true)::uuid;
+  s_id    uuid := current_setting('t.s_id', true)::uuid;
+  f_win   date := current_setting('t.f_win', true)::date;
+  v_gym   uuid := current_setting('t.gym', true)::uuid;
   v_present boolean; v_clases int; v_consumio boolean; v_status text; v_origen text;
+  v_sess uuid; v_ret_sess uuid; v_saldo int; v_checked timestamptz; v_walk boolean;
+  v_perdonada boolean; v_gym_id uuid; v_res_id uuid; v_n int; v_raised boolean; v_msg text;
 begin
   -- precondition: reservada booking + balance 4 (consumed at booking), no attendance yet.
   select status into v_status from public.reservation where member_id = c_res and class_session_id = s_id;
-  if v_status <> 'reservada' then raise exception 'SEED FAIL(res): expected reservada, got %', v_status; end if;
+  if v_status <> 'reservada' then raise exception 'SEED FAIL(v1): expected reservada, got %', v_status; end if;
   select clases_restantes into v_clases from public.clientes where id = c_res;
-  if v_clases <> 4 then raise exception 'SEED FAIL(res): expected 4 pre-pase, got %', v_clases; end if;
+  if v_clases <> 4 then raise exception 'SEED FAIL(v1): expected 4 pre-pase, got %', v_clases; end if;
 
-  -- ON: front-desk mark of a booked member consumes NOTHING (paid at booking) — consumio=false, balance 4.
-  select present into v_present from public.toggle_pase(c_res, v_today);
-  if v_present is not true then raise exception 'RULE FAIL(res ON): not present'; end if;
+  -- ── (v1) the 2-arg desk tap, inside the window ────────────────────────────────
+  select present, session_id, clases_restantes into v_present, v_ret_sess, v_saldo
+    from public.toggle_pase(c_res, f_win);
+  if v_present is not true then raise exception 'RULE FAIL(v1): in-window tap did not mark present'; end if;
+
+  -- The RESERVATION flipped — the write the class-less path can never make.
+  select status, checked_at, is_walk_in into v_status, v_checked, v_walk
+    from public.reservation where member_id = c_res and class_session_id = s_id;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(v1): reservation status % (expected asistida — the tap did not attribute)', v_status; end if;
+  if v_checked is null then raise exception 'RULE FAIL(v1): reservation.checked_at not stamped'; end if;
+  if v_walk is not false then raise exception 'RULE FAIL(v1): a real booking was flagged is_walk_in'; end if;
+
+  -- The attendance row is SESSION-linked, stated 'clase', unpaid, NOT a pardoned duplicate, gym-stamped.
+  select consumio, origen, perdonada, class_session_id, gym_id, reservation_id
+    into v_consumio, v_origen, v_perdonada, v_sess, v_gym_id, v_res_id
+    from public.asistencias where cliente_id = c_res and class_session_id = s_id and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v1): asistencia.consumio % (expected false — paid at booking)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(v1): asistencia.origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v1): asistencia.perdonada % (expected false — an attributed mark is one visit, not a duplicate)', v_perdonada; end if;
+  if v_sess is distinct from s_id then raise exception 'RULE FAIL(v1): asistencia.class_session_id mismatch'; end if;
+  if v_gym_id is distinct from v_gym then raise exception 'RULE FAIL(v1): asistencia.gym_id % expected %', v_gym_id, v_gym; end if;
+  if v_res_id is null then raise exception 'RULE FAIL(v1): asistencia.reservation_id null (expected linked)'; end if;
+
+  -- …and NO class-less desk row exists anywhere for this member: one act, one row.
+  select count(*) into v_n from public.asistencias
+   where cliente_id = c_res and deleted_at is null and class_session_id is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(v1): a class-less desk row was written too (%, expected 0)', v_n; end if;
   select clases_restantes into v_clases from public.clientes where id = c_res;
-  if v_clases <> 4 then raise exception 'RULE FAIL(res ON): DOUBLE CONSUME — balance % (expected 4, class paid at booking)', v_clases; end if;
-  select consumio, origen into v_consumio, v_origen from public.asistencias
-   where cliente_id = c_res and fecha = v_today and deleted_at is null and class_session_id is null
-   order by created_at desc limit 1;
-  if v_consumio is distinct from false then raise exception 'RULE FAIL(res ON): front-desk row consumio % (expected false)', v_consumio; end if;
-  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(res ON): front-desk row origen % (expected libre)', v_origen; end if;
-  -- the reservation is the front desk's non-business: it stays reservada (only pasar_lista_sesion flips it).
+  if v_clases <> 4 then raise exception 'RULE FAIL(v1): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
+
+  -- BONUS (the disclosure bundle, not the contract): the return names the session it landed in and
+  -- carries the fresh balance, which is what the desk needs to redirect its optimistic flip.
+  if v_ret_sess is distinct from s_id then raise exception 'RULE FAIL(v1): returned session_id % (expected the attributed session)', v_ret_sess; end if;
+  if v_saldo is distinct from 4 then raise exception 'RULE FAIL(v1): returned clases_restantes % (expected 4)', v_saldo; end if;
+
+  -- ── (v2) tap again: NO-OP + raise, never an undo ──────────────────────────────
+  v_raised := false;
+  begin
+    perform public.toggle_pase(c_res, f_win);
+  exception when others then
+    v_raised := true;
+    v_msg := sqlerrm;
+    if sqlerrm not like 'Ya marcada%' then raise exception 'RULE FAIL(v2): wrong raise on an already-marked member: %', sqlerrm; end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(v2): a second in-window tap did NOT raise — it silently erased or duplicated a mark'; end if;
+  -- the message names the class, because that is the whole no-op UX (the desk shows res.message).
+  if v_msg not like '%:%' then raise exception 'RULE FAIL(v2): the raise does not name the class hora (%)', v_msg; end if;
+  -- NOTHING moved: the reservation, the class row, the balance and the (absent) libre row are all as (v1) left them.
+  select status, checked_at into v_status, v_checked from public.reservation where member_id = c_res and class_session_id = s_id;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(v2): the no-op reverted the reservation to % — the eraser is back', v_status; end if;
+  if v_checked is null then raise exception 'RULE FAIL(v2): the no-op cleared checked_at'; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_res and deleted_at is null;
+  if v_n <> 1 then raise exception 'RULE FAIL(v2): active asistencia rows % (expected exactly the 1 class row)', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_res;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v2): the no-op moved the balance to % (expected 4)', v_clases; end if;
+
+  -- ── the undo lives in the OWNING context — and hands the fixture to the delegation vector ──
+  select present into v_present from public.toggle_pase(c_res, f_win, s_id);
+  if v_present is not false then raise exception 'RULE FAIL(v2 undo): the owning context did not undo the mark'; end if;
   select status into v_status from public.reservation where member_id = c_res and class_session_id = s_id;
-  if v_status <> 'reservada' then raise exception 'RULE FAIL(res ON): front desk touched the reservation (% )', v_status; end if;
-
-  -- OFF: refunds NOTHING (the front-desk row consumed nothing) — balance stays 4.
-  select present into v_present from public.toggle_pase(c_res, v_today);
-  if v_present is not false then raise exception 'RULE FAIL(res OFF): still present'; end if;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v2 undo): reservation status % (expected reservada)', v_status; end if;
   select clases_restantes into v_clases from public.clientes where id = c_res;
-  if v_clases <> 4 then raise exception 'RULE FAIL(res OFF): PHANTOM REFUND — balance % (expected 4)', v_clases; end if;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v2 undo): PHANTOM REFUND — balance % (expected 4)', v_clases; end if;
 end $$;
 
 -- ── DELEGATION (#89): the 3-arg call IS pasar_lista_sesion, not a second implementation ─────────
@@ -267,11 +444,10 @@ end $$;
 -- toggle_pase(cliente, fecha, session) delegates wholesale rather than re-deriving the semantics — which
 -- is precisely how the two surfaces drifted apart in the first place (the 2026-07-10 guards). The proof
 -- is in the WRITTEN ROWS: the outcomes below are byte-for-byte pasar_lista_sesion's booked branch,
--- including the reservation flip the 2-arg desk path deliberately never performs (vector 'res ON' above
--- asserts it stays reservada). p_fecha is ignored on this path — the session's own date governs.
+-- including the reservation flip. p_fecha is ignored on this path — the session's own date governs.
 --
--- Continues from the vector above: c_res still holds its reservada booking at balance 4, and its
--- class-less desk row was toggled back off.
+-- Continues from the vector above: c_res still holds its reservada booking at balance 4, its class row
+-- was undone, and no class-less row was ever written.
 do $$
 declare
   c_res   uuid := current_setting('t.c_res', true)::uuid;
@@ -279,7 +455,7 @@ declare
   v_today date := current_setting('t.today', true)::date;
   v_gym   uuid := current_setting('t.gym', true)::uuid;
   v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_status text;
-  v_res_id uuid; v_checked timestamptz; v_walk boolean; v_gym_id uuid; v_n int;
+  v_res_id uuid; v_checked timestamptz; v_walk boolean; v_gym_id uuid; v_n int; v_ret_sess uuid;
 begin
   -- precondition: the booking is back to reservada and nothing was refunded.
   select status into v_status from public.reservation where member_id = c_res and class_session_id = s_id;
@@ -288,10 +464,12 @@ begin
   if v_clases <> 4 then raise exception 'SEED FAIL(deleg): expected 4 pre-pase, got %', v_clases; end if;
 
   -- ON (3-arg): the booked branch of pasar_lista_sesion, reached through the desk.
-  select present into v_present from public.toggle_pase(c_res, v_today, s_id);
+  select present, session_id into v_present, v_ret_sess from public.toggle_pase(c_res, v_today, s_id);
   if v_present is not true then raise exception 'RULE FAIL(deleg ON): not present'; end if;
+  -- the delegated return passes the session id straight through (the desk's class-pill path).
+  if v_ret_sess is distinct from s_id then raise exception 'RULE FAIL(deleg ON): returned session_id % (expected %)', v_ret_sess, s_id; end if;
 
-  -- The RESERVATION flipped — the written row the 2-arg desk path never touches.
+  -- The RESERVATION flipped — the written row the 2-arg desk path only reaches through attribution.
   select status, checked_at, is_walk_in into v_status, v_checked, v_walk
     from public.reservation where member_id = c_res and class_session_id = s_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(deleg ON): reservation status % (expected asistida)', v_status; end if;
@@ -308,8 +486,8 @@ begin
 
   -- …and NO class-less desk row was written alongside it: one act, one row.
   select count(*) into v_n from public.asistencias
-   where cliente_id = c_res and fecha = v_today and deleted_at is null and class_session_id is null;
-  if v_n <> 0 then raise exception 'RULE FAIL(deleg ON): a class-less desk row was written too (% , expected 0)', v_n; end if;
+   where cliente_id = c_res and deleted_at is null and class_session_id is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(deleg ON): a class-less desk row was written too (%, expected 0)', v_n; end if;
   select clases_restantes into v_clases from public.clientes where id = c_res;
   if v_clases <> 4 then raise exception 'RULE FAIL(deleg ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
 
@@ -389,6 +567,164 @@ begin
   -- …and the balance never moved (4 = the class consumed at booking, nothing since).
   select clases_restantes into v_clases from public.clientes where id = c_expres;
   if v_clases <> 4 then raise exception 'RULE FAIL(vig booked): balance % (expected an untouched 4)', v_clases; end if;
+end $$;
+
+-- ── (v3) PRE-WINDOW: >90 minutes early is a SEPARATE visit, and it CHARGES (the Ana ruling) ──────
+-- The one money change of the 2026-07-29 slice, and the defensible one. A member booked into a class
+-- three hours from now walks in for open gym: nothing about that arrival belongs to the class, so there
+-- is nothing to attribute and nothing to pardon. The old C15 gave this visit away free because the
+-- BOOKING and the VISIT shared a date — the day answering a question about an instant.
+--
+-- The booking itself must come through untouched: still reservada, checked_at still null. A desk tap
+-- that quietly consumed someone's seat (or marked it attended three hours early) would be the eraser
+-- finding wearing a different hat.
+do $$
+declare
+  c_prev uuid := current_setting('t.c_prev', true)::uuid;
+  s_pre  uuid := current_setting('t.s_pre', true)::uuid;
+  f_pre  date := current_setting('t.f_pre', true)::date;
+  v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_status text;
+  v_perdonada boolean; v_sess uuid; v_ret_sess uuid; v_saldo int; v_checked timestamptz; v_n int;
+begin
+  select status into v_status from public.reservation where member_id = c_prev and class_session_id = s_pre;
+  if v_status <> 'reservada' then raise exception 'SEED FAIL(v3): expected reservada, got %', v_status; end if;
+
+  select present, session_id, clases_restantes into v_present, v_ret_sess, v_saldo
+    from public.toggle_pase(c_prev, f_pre);
+  if v_present is not true then raise exception 'RULE FAIL(v3): pre-window tap did not mark present'; end if;
+  -- no attribution happened: the return names no class, because the desk row IS the whole act.
+  if v_ret_sess is not null then raise exception 'RULE FAIL(v3): a pre-window tap attributed to session % (expected none)', v_ret_sess; end if;
+
+  -- The written row: a class-less ACCESO LIBRE visit that PAID. perdonada=false — it is neither a
+  -- cooldown duplicate nor a pardon of any kind.
+  select consumio, origen, perdonada, class_session_id into v_consumio, v_origen, v_perdonada, v_sess
+    from public.asistencias where cliente_id = c_prev and fecha = f_pre and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v3): libre row consumio % (expected true — a pre-window arrival is a separate visit and it charges)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v3): libre row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v3): libre row perdonada % (expected false)', v_perdonada; end if;
+  if v_sess is not null then raise exception 'RULE FAIL(v3): the desk row carries a class_session_id (%)', v_sess; end if;
+  -- The balance moved by exactly one (4 -> 3), and the RETURN says so.
+  select clases_restantes into v_clases from public.clientes where id = c_prev;
+  if v_clases <> 3 then raise exception 'RULE FAIL(v3): expected a real consume to 3, got % — the pre-window arm pardoned a visit', v_clases; end if;
+  if v_saldo is distinct from 3 then raise exception 'RULE FAIL(v3): returned clases_restantes % (expected the fresh 3)', v_saldo; end if;
+
+  -- The BOOKING is untouched: the member still holds their seat in a class that has not started.
+  select status, checked_at into v_status, v_checked from public.reservation where member_id = c_prev and class_session_id = s_pre;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v3): the desk tap moved the booking to % (expected reservada)', v_status; end if;
+  if v_checked is not null then raise exception 'RULE FAIL(v3): the desk tap stamped checked_at on a class that has not started'; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_prev and class_session_id is not null and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(v3): the pre-window tap wrote % session-linked rows (expected 0)', v_n; end if;
+end $$;
+
+-- ── (v4) CLOSED WINDOW: the missed class is pardoned, once, and it still COUNTS (the Luis ruling) ──
+-- The member booked the 18:00, did not come, and walks in at 21:00. The published Terms cap that at ONE
+-- class ("la clase se descuenta", singular) and the booking already took it — so the door records the
+-- visit FREE. Not perdonada: a pardoned row is the second record of ONE arrival (the cooldown), and this
+-- is a real second visit that happens to be free. It counts as a visit; it just did not charge.
+--
+-- Arm (b) is the C9 finding: the pardon sits ABOVE the vence gate exactly where C15 sat, so a member
+-- whose package lapsed while holding today's booking is still admitted rather than refused at the door.
+do $$
+declare
+  c_cerr    uuid := current_setting('t.c_cerr', true)::uuid;
+  c_expcerr uuid := current_setting('t.c_expcerr', true)::uuid;
+  s_cls     uuid := current_setting('t.s_cls', true)::uuid;
+  f_cls     date := current_setting('t.f_cls', true)::date;
+  v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_status text;
+  v_perdonada boolean; v_ret_sess uuid; v_saldo int; v_checked timestamptz; v_vence date; v_n int;
+begin
+  -- ── (a) valid package: recorded, free, booking untouched ──────────────────────
+  select present, session_id, clases_restantes into v_present, v_ret_sess, v_saldo
+    from public.toggle_pase(c_cerr, f_cls);
+  if v_present is not true then raise exception 'RULE FAIL(v4a): closed-window tap did not mark present'; end if;
+  if v_ret_sess is not null then raise exception 'RULE FAIL(v4a): a closed-window tap attributed to session % (expected none — the class is over)', v_ret_sess; end if;
+
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_cerr and fecha = f_cls and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v4a): libre row consumio % (expected false — the missed booking already took the class)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v4a): libre row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v4a): libre row perdonada % (expected false — a free visit is still ONE visit and must COUNT)', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_cerr;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v4a): balance % (expected an untouched 4 — the Terms cap the no-show at one class)', v_clases; end if;
+  if v_saldo is distinct from 4 then raise exception 'RULE FAIL(v4a): returned clases_restantes % (expected 4)', v_saldo; end if;
+  -- the booking is the front desk's non-business: it stays reservada (only pasar_lista_sesion flips it).
+  select status, checked_at into v_status, v_checked from public.reservation where member_id = c_cerr and class_session_id = s_cls;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(v4a): front desk touched the reservation (%)', v_status; end if;
+  if v_checked is not null then raise exception 'RULE FAIL(v4a): front desk stamped checked_at on the missed booking'; end if;
+  -- OFF refunds NOTHING (the row consumed nothing) — the symmetry the old C15 vector proved.
+  select present into v_present from public.toggle_pase(c_cerr, f_cls);
+  if v_present is not false then raise exception 'RULE FAIL(v4a OFF): still present'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_cerr;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v4a OFF): PHANTOM REFUND — balance % (expected 4)', v_clases; end if;
+
+  -- ── (b) EXPIRED package + a missed booking: still admitted (the pardon is above the C9 gate) ──
+  select vence into v_vence from public.clientes where id = c_expcerr;
+  if v_vence >= f_cls then raise exception 'SEED FAIL(v4b): vence % is not before the closed session day %', v_vence, f_cls; end if;
+
+  select present into v_present from public.toggle_pase(c_expcerr, f_cls);
+  if v_present is not true then raise exception 'RULE FAIL(v4b): an EXPIRED member holding that day''s booking was refused at the door — the C9 gate moved above the pardon'; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_expcerr and fecha = f_cls and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v4b): libre row consumio % (expected false)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v4b): libre row perdonada % (expected false)', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_expcerr;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v4b): balance % (expected an untouched 4)', v_clases; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_expcerr and deleted_at is null;
+  if v_n <> 1 then raise exception 'RULE FAIL(v4b): active rows % (expected exactly 1)', v_n; end if;
+end $$;
+
+-- ── (v5) THE COOLDOWN PARDON IS THE ONLY perdonada WRITER — and the visit count skips it (#169) ──
+-- One arrival, recorded twice: the member is marked present in a class (walk-in branch, 5 -> 4) and the
+-- operator taps them at the desk minutes later. The 15-minute cooldown records the second row free —
+-- and now STAMPS it, because that is the one shape a count of VISITS must not count twice.
+--
+-- This vector also pins the `is_walk_in = false` filter on attribution: c_pard's reservation on the
+-- in-window session is an operator-minted WALK-IN, so it is invisible to both the attribution select and
+-- the already-marked no-op, and the tap correctly reaches the cooldown instead of raising.
+--
+-- The tail is the aggregate: asistencias_mes_por_cliente must return 1 for this member off TWO active
+-- rows. `count(*)` alone would say 2 (one arrival counted twice); `count(distinct fecha)` — what it said
+-- before this slice — would say 1 here but also 1 for two real classes in a day, which is the trade the
+-- stamp exists to end.
+do $$
+declare
+  c_pard uuid := current_setting('t.c_pard', true)::uuid;
+  s_id   uuid := current_setting('t.s_id', true)::uuid;
+  f_win  date := current_setting('t.f_win', true)::date;
+  v_gym  uuid := current_setting('t.gym', true)::uuid;
+  v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_perdonada boolean;
+  v_ret_sess uuid; v_n int;
+begin
+  -- Arrange: the CLASS mark (walk-in branch — no booking) consumes one, 5 -> 4, and is NOT pardoned.
+  select present into v_present from public.pasar_lista_sesion(s_id, c_pard);
+  if v_present is not true then raise exception 'SEED FAIL(v5): class mark did not take'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_pard;
+  if v_clases <> 4 then raise exception 'SEED FAIL(v5): expected 4 after the class mark, got %', v_clases; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_pard and class_session_id = s_id and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'SEED FAIL(v5): class row consumio % (expected true)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'SEED FAIL(v5): the PAYING row was stamped perdonada %', v_perdonada; end if;
+
+  -- Act: the desk tap on the same fecha, inside the cooldown. The member's only reservation on the
+  -- in-window session is an operator walk-in, so attribution ignores it (is_walk_in = false) and no
+  -- 'Ya marcada' raise fires — the tap falls through to the cooldown, which is the point.
+  select present, session_id into v_present, v_ret_sess from public.toggle_pase(c_pard, f_win);
+  if v_present is not true then raise exception 'RULE FAIL(v5): the desk tap was refused'; end if;
+  if v_ret_sess is not null then raise exception 'RULE FAIL(v5): the tap attributed to session % — a WALK-IN row is not a booking', v_ret_sess; end if;
+
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_pard and fecha = f_win and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v5): libre row consumio % (expected false — inside the cooldown)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v5): libre row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(v5): the cooldown-pardoned row was NOT stamped perdonada (%) — a visit count will double-count this arrival', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_pard;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v5): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
+
+  -- ── the aggregate: TWO active rows, ONE visit ─────────────────────────────────
+  select count(*) into v_n from public.asistencias where cliente_id = c_pard and deleted_at is null;
+  if v_n <> 2 then raise exception 'RULE FAIL(v5): expected 2 active rows (the arrival recorded twice), got %', v_n; end if;
+  select n into v_n from public.asistencias_mes_por_cliente(v_gym, f_win) where cliente_id = c_pard;
+  if v_n is distinct from 1 then raise exception 'RULE FAIL(v5 aggregate): asistencias_mes_por_cliente returned % for a member with two rows and one pardon (expected 1 VISIT)', v_n; end if;
 end $$;
 
 reset role;

@@ -242,12 +242,29 @@ describe("togglePase — typed outcome (injected fake)", () => {
     expect(res).toEqual({ ok: false, message: "No se pudo registrar la asistencia" });
   });
 
-  it("maps a successful toggle to { ok: true, present, hora }", async () => {
-    const { client } = makeFake({}, { rpc: { data: { present: true, hora: "07:30" } } });
+  it("maps a successful ACCESO LIBRE toggle to { ok: true, present, hora, sessionId: null, clasesRestantes }", async () => {
+    const { client } = makeFake(
+      {},
+      { rpc: { data: { present: true, hora: "07:30", session_id: null, clases_restantes: 4 } } },
+    );
 
     const res = await togglePase(input, client);
 
-    expect(res).toEqual({ ok: true, present: true, hora: "07:30" });
+    expect(res).toEqual({ ok: true, present: true, hora: "07:30", sessionId: null, clasesRestantes: 4 });
+  });
+
+  it("surfaces the ATTRIBUTED session when the RPC lands a LIBRE tap on the member's booking", async () => {
+    // The desk sent no sessionId; the RPC found a booking whose arrival window contains
+    // now and marked THAT class instead (ruling 2026-07-29). The landing context has to
+    // reach the caller, or the desk would show the mark in the wrong place.
+    const { client } = makeFake(
+      {},
+      { rpc: { data: { present: true, hora: "18:02", session_id: "ses-9", clases_restantes: null } } },
+    );
+
+    const res = await togglePase(input, client);
+
+    expect(res).toEqual({ ok: true, present: true, hora: "18:02", sessionId: "ses-9", clasesRestantes: null });
   });
 
   it("omits p_session_id entirely for an ACCESO LIBRE mark", async () => {

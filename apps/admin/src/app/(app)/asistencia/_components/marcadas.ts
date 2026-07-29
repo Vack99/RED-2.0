@@ -68,7 +68,10 @@ export function personasEn(visitas: Visita[]): number {
   return new Set(visitas.map((v) => v.clienteId)).size;
 }
 
-/** How far from now a class may start and still be the screen's opening context. */
+/** How far from now a class may start and still be the screen's opening context. The
+ *  server's attribution window opens on the SAME 90 minutes (@gym/domain's
+ *  `VENTANA_ARRIBO_PREVIA_MIN`, and its SQL twin `ventana_arribo`) so the class the screen
+ *  opens on and the class a LIBRE tap attributes to cannot disagree. */
 const VENTANA_CERCANA_MIN = 90;
 
 /**

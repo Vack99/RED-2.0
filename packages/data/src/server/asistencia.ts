@@ -236,6 +236,16 @@ export const togglePaseSchema = z.object({
 export interface TogglePaseResult {
   present: boolean;
   hora: string | null;
+  /**
+   * The class the visit LANDED in, or null for an ACCESO LIBRE visit. A 2-arg tap on a
+   * member holding a booking inside its arrival window is attributed to that class by the
+   * RPC (ruling 2026-07-29), so this is not always the context the caller sent: the desk
+   * reconciles the mark into THIS session, and the ficha leaves its libre checkbox alone.
+   */
+  sessionId: string | null;
+  /** The cliente's balance AFTER the write; null = ilimitado. The desk repaints the
+   *  tapped row's clases label from it, so a rush no longer shows a page-load count. */
+  clasesRestantes: number | null;
 }
 
 /**
@@ -259,7 +269,10 @@ export type TogglePaseOutcome =
  *
  * With `sessionId` the RPC delegates to `pasar_lista_sesion`: a desk tap inside a class
  * and an Agenda roster tap are the SAME act — one write path, one semantics, reservation
- * flip included.
+ * flip included. WITHOUT one, the RPC still ATTRIBUTES the tap to a booking whose arrival
+ * window contains now (ruling 2026-07-29) and returns the class it landed in as
+ * `sessionId`. Attribution is arm-only: it never undoes a mark — an already-marked
+ * booking refuses with 'Ya marcada en la clase de HH:MM' instead.
  *
  * The read-then-write toggle is one atomic transaction via the `toggle_pase`
  * RPC (ADR-0005): it makes the on/off decision, the guarded ±1 decrement, and
@@ -294,7 +307,13 @@ export async function togglePase(
   if (error) return { ok: false, message: error.message || "No se pudo registrar la asistencia" };
   if (!data) return { ok: false, message: "No se pudo registrar la asistencia" };
 
-  return { ok: true, present: data.present, hora: data.hora };
+  return {
+    ok: true,
+    present: data.present,
+    hora: data.hora,
+    sessionId: data.session_id,
+    clasesRestantes: data.clases_restantes,
+  };
 }
 
 export interface AsistenciaHoy {

@@ -61,6 +61,7 @@ export type Database = {
           hora: string | null
           id: string
           origen: string | null
+          perdonada: boolean
           reservation_id: string | null
         }
         Insert: {
@@ -74,6 +75,7 @@ export type Database = {
           hora?: string | null
           id?: string
           origen?: string | null
+          perdonada?: boolean
           reservation_id?: string | null
         }
         Update: {
@@ -87,6 +89,7 @@ export type Database = {
           hora?: string | null
           id?: string
           origen?: string | null
+          perdonada?: boolean
           reservation_id?: string | null
         }
         Relationships: [
@@ -1483,8 +1486,10 @@ export type Database = {
       pasar_lista_sesion: {
         Args: { p_cliente_id: string; p_session_id: string }
         Returns: {
+          clases_restantes: number
           hora: string
           present: boolean
+          session_id: string
         }[]
       }
       preparar_invitacion: {
@@ -1565,8 +1570,10 @@ export type Database = {
       toggle_pase: {
         Args: { p_cliente_id: string; p_fecha: string; p_session_id?: string }
         Returns: {
+          clases_restantes: number
           hora: string
           present: boolean
+          session_id: string
         }[]
       }
       ventas_count_por_cliente: {
