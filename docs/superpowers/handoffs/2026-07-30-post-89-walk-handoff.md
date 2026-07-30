@@ -282,23 +282,37 @@ its keep even though every shipped assertion passed.
 
 ## 5. Repo state and the sweep
 
+**CORRECTED 2026-07-30** after an independent reconstruction agent caught this section being stale.
+An earlier draft listed two mounted worktrees and four branches; a process restart mid-session pruned
+the `reservation-truthfulness` worktree registration and deleted both `worktree-*` branches. Nothing
+was lost — both sat at `b16c950`, already an ancestor of `main`. **Verify with `git worktree list`
+before acting on any of this; it has moved once already.**
+
+Actual state at close:
+
 ```
-main                              4d06cab   [ahead 1, UNPUSHED]
-issue-177-perfil-nombre           a55f44e   ← the #177 fix, gate-green
-worktree-agent-a7fe192645b2f2536  b16c950   ← STALE: == origin/main, delete it
-worktree-reservation-truthfulness b16c950   ← merged into main last session, sweep it
+main                     b1e3696   [ahead 2, UNPUSHED]
+issue-177-perfil-nombre  a55f44e   ← the #177 fix, gate-green, unmerged
 ```
 
-Mounted worktrees:
+Registered worktrees — only two:
 
 ```
-.claude/worktrees/agent-a7fe192645b2f2536      (holds issue-177-perfil-nombre)
-.claude/worktrees/reservation-truthfulness     (carried from last session)
+<repo root>                                    [main]
+.claude/worktrees/agent-a7fe192645b2f2536      [issue-177-perfil-nombre]
 ```
 
-Sweep order: merge #177 → remove its worktree → `git branch -d issue-177-perfil-nombre` →
-`git branch -D worktree-agent-a7fe192645b2f2536` (stale, never carried work) → verify-then-remove
-the reservation-truthfulness worktree and `git branch -d worktree-reservation-truthfulness`.
+`.claude/worktrees/reservation-truthfulness` still exists **on disk** but has no `.git` entry — git
+has already forgotten it. It is an orphaned directory, not a worktree: `rm -rf` it, do NOT try
+`git worktree remove`. The same is true of ~14 other leftovers in `.claude/worktrees/`
+(`backdate-sold-date`, `coverage-100`, `perf-50ms`, `recibo-email-brand`, `venta-personalizada`,
+`wayfinder-tracker`, and eight `agent-*` dirs) — all from closed cycles, each carrying its own
+`node_modules`. Bulk deletion is safe once `git worktree list` confirms they are unregistered, and
+it will reclaim real disk.
+
+Sweep order: merge #177 (`git merge --ff-only issue-177-perfil-nombre`) → `git worktree remove
+.claude/worktrees/agent-a7fe192645b2f2536` → `git branch -d issue-177-perfil-nombre` → delete the
+orphaned directories.
 
 **Push gate:** `main` is one commit ahead of `origin/main` and nothing was pushed this session.
 Per CLAUDE.md a push needs explicit owner consent for *that* push; the pending commits ride along
