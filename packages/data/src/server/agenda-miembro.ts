@@ -260,6 +260,7 @@ async function fetchSesionesMiembro(
 }
 
 interface ClienteRow {
+  nombre: string;
   clases_restantes: number | null;
   vence: string | null;
   created_at: string | null;
@@ -286,7 +287,7 @@ const fetchClienteRow = cache(async function fetchClienteRow(
 ): Promise<{ data: ClienteRow | null; error: { message: string } | null }> {
   const { data, error } = await supabase
     .from("clientes")
-    .select("clases_restantes, vence, created_at, notificaciones_activadas, favorite_class_type_id")
+    .select("nombre, clases_restantes, vence, created_at, notificaciones_activadas, favorite_class_type_id")
     .eq("gym_id", gymId)
     .limit(1)
     .maybeSingle();
@@ -458,6 +459,12 @@ export interface PlanMembresiaDTO {
 }
 
 export interface PerfilResumenMiembroDTO {
+  /** The member's own name, from THIS gym's `clientes` row (#177) — never auth metadata
+   *  (only self-signup's `full_name` populates that; the sole `/activar` invite door
+   *  never writes it, so an invited member would read their own email instead). Empty
+   *  string when the caller has no cliente row in this gym yet, mirroring `marca`'s
+   *  no-data convention below — `clientes.nombre` itself is NOT NULL at the DB layer. */
+  nombre: string;
   desde: string | null;
   reservas: ProximaReservaDTO[];
   /** In-app notifications preference (default true / opted-in). */
@@ -511,6 +518,7 @@ async function fetchMembresia(
  *  own "sin membresía" state instead of this DTO in that case, so `marca`/`membresia`
  *  never need to be real here. */
 const PERFIL_SIN_MEMBRESIA: PerfilResumenMiembroDTO = {
+  nombre: "",
   desde: null,
   reservas: [],
   notificaciones: true,
@@ -561,6 +569,7 @@ export const getPerfilResumenMiembro = cache(
     }));
 
     return {
+      nombre: cli?.nombre ?? "",
       desde,
       reservas,
       notificaciones: cli?.notificaciones_activadas ?? true,

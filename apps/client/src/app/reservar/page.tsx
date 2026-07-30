@@ -20,8 +20,8 @@ export const metadata: Metadata = {
   description: "Reserva tu clase de la semana.",
 };
 
-/** Initials for the profile avatar: first + last word of the member's name,
- *  falling back to their email's first letter. */
+/** Initials for the profile avatar: first + last word of the member's name.
+ *  Empty `nombre` (no cliente row yet) yields empty initials. */
 function iniciales(nombre: string): string {
   const parts = nombre.trim().split(/\s+/).filter(Boolean);
   if (parts.length === 0) return "";
@@ -79,8 +79,7 @@ export default async function ReservarPage({
     getSaldoMiembro(undefined, hostGym),
     getPerfilResumenMiembro(undefined, hostGym),
   ]);
-  const meta = claims.user_metadata as { full_name?: string } | undefined;
-  const nombre = meta?.full_name ?? (typeof claims.email === "string" ? claims.email : "");
+  const nombre = perfil.nombre;
 
   return (
     <ReservarSemana

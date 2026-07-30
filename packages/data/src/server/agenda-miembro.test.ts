@@ -396,6 +396,18 @@ describe("getPerfilResumenMiembro", () => {
     expect(perfil.reservas).toEqual([]);
   });
 
+  it("surfaces the member's own nombre from their clientes row (#177 — never auth metadata)", async () => {
+    const perfil = await getPerfilResumenMiembro(
+      makeFake({ clientes: [{ gym_id: "gym-1", nombre: "Ana Torres" }], reservation: [] }),
+    );
+    expect(perfil.nombre).toBe("Ana Torres");
+  });
+
+  it("defaults nombre to empty string when no cliente row exists yet", async () => {
+    const perfil = await getPerfilResumenMiembro(makeFake({ clientes: [], reservation: [] }));
+    expect(perfil.nombre).toBe("");
+  });
+
   it("passes a disabled notifications preference through", async () => {
     const perfil = await getPerfilResumenMiembro(
       makeFake({ clientes: [{ gym_id: "gym-1", created_at: null, notificaciones_activadas: false }], reservation: [] }),
@@ -425,6 +437,7 @@ describe("getPerfilResumenMiembro", () => {
   it("returns a safe empty default (never throws) when the caller has no membership yet (audit #10/#15)", async () => {
     const perfil = await getPerfilResumenMiembro(makeFake({ gym_membership: [] }));
     expect(perfil).toEqual({
+      nombre: "",
       desde: null,
       reservas: [],
       notificaciones: true,
@@ -502,18 +515,25 @@ describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", (
       { id: "gym-forge", slug: "forge", timezone: TZ, brand_name: "Forge" },
       { id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" },
     ],
-    clientes: [],
+    // Distinct nombre per gym (#177): a multi-gym member's own clientes row differs by gym,
+    // so the reconciled read must follow the SAME host match as marca — never a limit(1) pick.
+    clientes: [
+      { gym_id: "gym-forge", nombre: "Ana en Forge" },
+      { gym_id: "gym-red", nombre: "Ana en RED" },
+    ],
     reservation: [],
   });
 
   it("host match → the membership in the host gym (newer of the two)", async () => {
     const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "red");
     expect(perfil.marca).toBe("RED");
+    expect(perfil.nombre).toBe("Ana en RED");
   });
 
   it("host match → the membership in the host gym (older of the two, not just newest)", async () => {
     const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "forge");
     expect(perfil.marca).toBe("Forge");
+    expect(perfil.nombre).toBe("Ana en Forge");
   });
 
   it("no host tenant (unmapped) → deterministic fallback to the OLDEST membership", async () => {
