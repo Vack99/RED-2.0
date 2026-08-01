@@ -29,10 +29,10 @@ import type { MesRespaldo } from "@gym/data/server/respaldo";
 import type { StatDTO } from "@gym/data/server/stats";
 import { pesos } from "@gym/format";
 
+import { LogoutButton } from "../../_components/logout-button";
 import { ClassTypesSheet } from "./class-types-sheet";
 import { CoachesSheet } from "./coaches-sheet";
 import { GymContentSheet } from "./gym-content-sheet";
-import { LogoutButton } from "./logout-button";
 import { MensajesSheet } from "./mensajes-sheet";
 import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";

@@ -1,3 +1,5 @@
+import { LogoutButton } from "./logout-button";
+
 /**
  * The admin shell's graceful "no staff access" state (PRD #64/#66, Cluster C-4,
  * audit #19): a signed-in account whose ONLY `gym_membership` row is `member`
@@ -6,6 +8,12 @@
  * now requires a staff role, so every `(app)` page throws for that session; the
  * layout catches it once here. No new abstraction beyond this single small
  * component; RLS is untouched, this is presentation only.
+ *
+ * The sign-out is NOT decoration — without it this screen is a hard lockout.
+ * The layout swaps `children` for this component on every `(app)` route (so
+ * /cuenta, the only other place `LogoutButton` renders, is unreachable) and
+ * hides the TabBar; `decideRedirect` bounces an authed session off /login back
+ * to /inicio. That left clearing the session cookie by hand as the only exit.
  */
 export function SinGimnasio() {
   return (
@@ -15,6 +23,9 @@ export function SinGimnasio() {
         Esta cuenta no tiene acceso de personal a ningún gimnasio. Si eres socio, usa la app de
         reservas de tu gimnasio para agendar tus clases.
       </p>
+      <div className="mt-3">
+        <LogoutButton />
+      </div>
     </div>
   );
 }
