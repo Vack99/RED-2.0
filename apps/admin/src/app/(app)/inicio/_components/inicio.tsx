@@ -82,7 +82,7 @@ export function InicioScreen({
         <H1 size={40} style={{ marginTop: 8 }}>
           BUENOS DÍAS,
           <br />
-          <span style={{ color: "var(--gold)" }}>DAVID.</span>
+          <span style={{ color: "var(--gold)" }}>COACH.</span>
         </H1>
       </div>
 
