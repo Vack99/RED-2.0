@@ -98,6 +98,11 @@ describe("clienteListo — CONTINUAR enablement (email can never gate)", () => {
     expect(clienteListo("new", "Ana", "614 218 34012", false)).toBe(false); // 11
   });
 
+  it("accepts a blank tel — the phone is optional (#190)", () => {
+    expect(clienteListo("new", "Ana", "", false)).toBe(true);
+    expect(clienteListo("new", "Ana", "  ", false)).toBe(true);
+  });
+
   it("EXISTENTE depends only on a picked client (name/tel ignored)", () => {
     expect(clienteListo("existing", "", "", true)).toBe(true);
     expect(clienteListo("existing", "Ana", "614 218 3401", false)).toBe(false);

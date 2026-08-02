@@ -61,7 +61,8 @@ export interface TicketModel {
   marca: string;
   folio: string;
   nombre: string;
-  tel: string;
+  /** Null for a phone-less member (#190) — the ticket then carries no tel line at all. */
+  tel: string | null;
   isNew: boolean;
   concepto: string;
   precioLinea: string;
@@ -142,7 +143,7 @@ export function construirReciboEmail(
         </tr>
       </table>
       <div style="font-size:18px;font-weight:800;letter-spacing:0.4px;margin-top:2px">${escapeHtml(m.nombre)}</div>
-      <div style="margin-top:3px;font-size:11.5px;color:${palette.label}">${escapeHtml(m.tel)}</div>
+      ${m.tel ? `<div style="margin-top:3px;font-size:11.5px;color:${palette.label}">${escapeHtml(m.tel)}</div>` : ""}
       ${rule(14)}
       <div style="${label}">CONCEPTO</div>
       <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-top:6px">
@@ -174,7 +175,7 @@ export function construirReciboEmail(
     `Tu recibo de ${venta.negocio} — Folio ${m.folio}`,
     "",
     `CLIENTE: ${venta.cliente.nombre}${m.isNew ? " (NUEVO)" : ""}`,
-    `TEL: ${m.tel}`,
+    ...(m.tel ? [`TEL: ${m.tel}`] : []),
     `CONCEPTO: ${m.concepto} — ${m.precioLinea}`,
     m.vigenciaLinea,
     ...m.filas.map(([k, v]) => `${k}: ${v}`),

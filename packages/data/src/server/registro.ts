@@ -22,7 +22,11 @@ import { createClient, type SupabaseServer } from "./supabase";
  */
 
 // One required checkbox stamps BOTH terms + privacy acceptance (ADR-0009); the DB
-// rules it mirrors: nombre NOT NULL, tel = 10 digits (clientes_tel_10_digits_ck).
+// rules it mirrors: nombre NOT NULL, and a tel of 10 digits when one is given
+// (clientes_tel_10_digits_ck). The phone requirement below is THIS door's, not the
+// column's — the column is optional since #190, but reclamar_o_crear_cliente still
+// raises 'Teléfono requerido' here: this number is verified auth metadata from a
+// self-signup, not something an operator types at the desk.
 export const registroSchema = z.object({
   nombre: z.string().trim().min(3, "El nombre es demasiado corto"),
   email: z.string().trim().email("Correo inválido"),

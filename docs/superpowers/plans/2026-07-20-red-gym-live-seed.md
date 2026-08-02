@@ -25,7 +25,7 @@
 | plan validity | `dias` / 30 (Ilimitado = `clases NULL`, matches red-demo) |
 | session horizon | 6 weeks from the current gym-local Monday |
 
-**Constraint floor (DB-enforced):** `tel` 10 digits · `clases` NULL or 1–30 · `vigencia_tipo='mes' ⇔ vigencia_dias NULL` · one `popular` per gym · `weekday` 0–5 · `duration_min ∈ {30,45,60,75,90}` · `capacity` 4–40 · `metodo ∈ {efectivo,transferencia,tarjeta}` · unique `(gym_id,folio)`, `(gym_id,nombre)` paquetes, `(gym_id,name)` class_type, `(template_id,starts_at)` session · `role ∈ {owner,operator,member}`.
+**Constraint floor (DB-enforced):** `tel` NULL or 10 digits (#190) · `clases` NULL or 1–30 · `vigencia_tipo='mes' ⇔ vigencia_dias NULL` · one `popular` per gym · `weekday` 0–5 · `duration_min ∈ {30,45,60,75,90}` · `capacity` 4–40 · `metodo ∈ {efectivo,transferencia,tarjeta}` · unique `(gym_id,folio)`, `(gym_id,nombre)` paquetes, `(gym_id,name)` class_type, `(template_id,starts_at)` session · `role ∈ {owner,operator,member}`.
 
 **Pre-flight (once, before Stage 1):** confirm backup posture. Every Stage 1–4 write is a pure INSERT into an empty gym plus one `NULL→value` update on the `red` row — fully reversible via each stage's rollback. A `pg_dump` is belt-and-suspenders; run it if PITR isn't on.
 
@@ -311,9 +311,9 @@ select (select count(*) from perfil where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d5
 
 **Seedable now (19):** 13 Mensualidad ilimitada (the `mensualidad` array — includes Elsa María "Sama" Rodríguez) + 5 Clase individual (the `clase_individual` array — everyone with contact info who is NOT on the Inscritos list bought a single class and already attended it) + 1 test member (Aaron Talavera — folio LAST so his post-test removal leaves the gap at the tail; teardown below).
 
-**Second pass — 9 BLOCKED (do NOT seed here):** the `roster_without_contact` array (Fer la mexicana, Bibi, Brenda Chávez, Dulce Chávez, Alva Valles, Karen Lara, Gaby Bustillos, Diana Hernández, Abrham Lara). `clientes.tel` is `NOT NULL` / 10 digits — they cannot seed until phones arrive. Abrham's package is now resolved (Mensualidad ilimitada, Ago 2026 → Ene 2027, vence 2027-01-07, venta fecha 2026-07-07); he is *additionally* pending only the **monto** he actually paid for the prepay (see open items). They seed in a later run once phones land, folios continuing from the counter (`next_folio` → 1020+; Aaron's 1019 gap stays reserved).
+**Second pass — 9, UNBLOCKED by #190 (2026-08-01):** the `roster_without_contact` array (Fer la mexicana, Bibi, Brenda Chávez, Dulce Chávez, Alva Valles, Karen Lara, Gaby Bustillos, Diana Hernández, Abrham Lara). They were blocked because `clientes.tel` was `NOT NULL`; it is now nullable, so they seed with `tel` NULL and the number is added later on the ficha. Abrham's package is now resolved (Mensualidad ilimitada, Ago 2026 → Ene 2027, vence 2027-01-07, venta fecha 2026-07-07); he is *additionally* pending only the **monto** he actually paid for the prepay (see open items). They seed in a later run, folios continuing from the counter (`next_folio` → 1020+; Aaron's 1019 gap stays reserved).
 
-**Shape.** Per member: one `clientes` row + one `ventas` row, linked by `tel` (unique in the batch). Emails **are** carried now (this reverses the old "email = NULL" rule) and are lowercased on insert. Rows land in the **`sin_invitar`** invitation state — email set, `invitacion_enviada_at` NULL, `auth_user_id` NULL, **no `claim_code`** (the code is minted only by `preparar_invitacion` at send time; the seed must not set it). See the in-class invite section below.
+**Shape.** Per member: one `clientes` row + one `ventas` row, linked by `nombre` (unique in the batch — the tel is not, since #190 allows it to be NULL). Emails **are** carried now (this reverses the old "email = NULL" rule) and are lowercased on insert. Rows land in the **`sin_invitar`** invitation state — email set, `invitacion_enviada_at` NULL, `auth_user_id` NULL, **no `claim_code`** (the code is minted only by `preparar_invitacion` at send time; the seed must not set it). See the in-class invite section below.
 - **Mensualidad ilimitada (13 + Aaron):** `clientes.clases_restantes = NULL`, `paquete_nombre='Mensualidad ilimitada'`, `vence = venta fecha + 30`; `ventas` `monto=1200`, `clases=NULL`, `vigencia_tipo='dias'`, `vigencia_dias=30`, `metodo='efectivo'`, `fecha = last_payment_date` (Aaron = seed-execution day).
 - **Clase individual (5):** paquete sold 1 class, already attended → `clientes.clases_restantes = 0`, `paquete_nombre='Clase individual'`, `vence = fecha + 30 (= 2026-08-20)`; `ventas` `monto=120`, `clases=1` (the sale granted one), `vigencia_tipo='dias'`, `vigencia_dias=30`, `metodo='efectivo'`, `fecha=2026-07-21` (approximate — owner may correct later).
 
@@ -343,7 +343,9 @@ begin
   if (select last_folio from gym_folio_counter where gym_id=v_gym) is distinct from 1000
     then raise exception 'FIREWALL: last_folio is not 1000 — reconcile before seeding'; end if;
 
-  -- One VALUES list → clientes then ventas, joined by tel. folio = chronological by venta fecha, 1001..1019.
+  -- One VALUES list → clientes then ventas, joined by nombre. folio = chronological by venta fecha, 1001..1019.
+  -- The join key is the NAME, not the tel: #190 made clientes.tel optional, and a NULL tel never
+  -- equals itself, so a tel-join would insert the clientes rows and silently drop their ventas rows.
   -- vence = fecha + 30 for every row. Ilimitado: clases_restantes NULL / venta.clases NULL. Clase individual:
   -- attended → clases_restantes 0, venta.clases 1. Emails lowercased; claim_code left NULL ⇒ 'sin_invitar'.
   with seed(folio, nombre, tel, email, paquete, monto, venta_clases, cli_clases, fecha) as (
@@ -377,13 +379,13 @@ begin
            s.fecha + 30,
            (s.fecha::timestamp at time zone 'America/Chihuahua')
     from seed s
-    returning id, tel
+    returning id, nombre
   )
   insert into ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
   select v_gym, c.id, s.folio, s.paquete, s.venta_clases, 'dias', 30, s.monto, 'efectivo',
          (s.fecha::timestamp at time zone 'America/Chihuahua'),
          (s.fecha::timestamp at time zone 'America/Chihuahua')
-  from seed s join ins_cli c on c.tel = s.tel;
+  from seed s join ins_cli c on c.nombre = s.nombre;
 
   -- Direct inserts bypass next_folio(); bump the per-gym counter past the highest seeded folio.
   update gym_folio_counter set last_folio = 1019 where gym_id = v_gym;
@@ -398,7 +400,7 @@ select
   (select count(*) from ventas   where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9') as ventas,
   (select count(*) from clientes where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9' and clases_restantes is null) as ilimitado,
   (select count(*) from clientes where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9' and clases_restantes = 0) as clase_indiv,
-  (select count(*) from clientes where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9' and tel !~ '^[0-9]{10}$') as bad_tel,
+  (select count(*) from clientes where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9' and tel is not null and tel !~ '^[0-9]{10}$') as bad_tel,
   (select count(*) from clientes where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9'
      and email is not null and claim_code is null and invitacion_enviada_at is null and auth_user_id is null) as sin_invitar,
   (select min(folio) from ventas where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d58ab5f9') as folio_min,

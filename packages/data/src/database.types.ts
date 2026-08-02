@@ -382,7 +382,7 @@ export type Database = {
           paquete_nombre: string | null
           phone_e164: string | null
           privacy_accepted_at: string | null
-          tel: string
+          tel: string | null
           terms_accepted_at: string | null
           vence: string | null
         }
@@ -402,7 +402,7 @@ export type Database = {
           paquete_nombre?: string | null
           phone_e164?: string | null
           privacy_accepted_at?: string | null
-          tel: string
+          tel?: string | null
           terms_accepted_at?: string | null
           vence?: string | null
         }
@@ -422,7 +422,7 @@ export type Database = {
           paquete_nombre?: string | null
           phone_e164?: string | null
           privacy_accepted_at?: string | null
-          tel?: string
+          tel?: string | null
           terms_accepted_at?: string | null
           vence?: string | null
         }
@@ -1575,6 +1575,10 @@ export type Database = {
           present: boolean
           session_id: string
         }[]
+      }
+      ventana_arribo: {
+        Args: { p_duration_min: number; p_starts_at: string }
+        Returns: unknown
       }
       ventas_count_por_cliente: {
         Args: { p_gym_id: string }

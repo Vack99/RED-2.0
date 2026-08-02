@@ -200,7 +200,7 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
     const u = urgenciaCliente({ clases: d.clasesRest, dias: d.diasRest });
     return [
       c.nombre,
-      c.tel,
+      c.tel ?? EM_DASH,
       c.email ?? EM_DASH,
       c.birthday ? fmtShort(parseDay(c.birthday)) : EM_DASH,
       d.paquete,

@@ -12,7 +12,9 @@
 -- pack's count, days add [C4], (7) finite + ilimitado pack = ilimitado, days add [C4], (8) idempotent
 -- replay = one venta, same folio [C6], (9) duplicate guard + p_forzar_nuevo override [D2], (10) email
 -- backfill / keep [C7], (11) 'pendiente' rejected [C2], (12) cross-gym paquete = not found, (13) a
--- colliding backfill email fails with the human message and rolls back atomically [C7/D2].
+-- colliding backfill email fails with the human message and rolls back atomically [C7/D2],
+-- (14) a backdated registered sale stacks as-of the sold day and moves the ledger date [§D1/§D2],
+-- (15) an omitted p_tel writes tel = null, while a malformed p_tel is still rejected [#190].
 --
 -- Zero prod UUIDs (ADR-0013 §5): a synthetic gym + operator + catalog, all gen_random_uuid(). One
 -- BEGIN/ROLLBACK so a scratch project is REUSABLE and accumulates no state. Self-asserting: every check
@@ -431,6 +433,41 @@ begin
   if v_dia is distinct from today - 5 then raise exception 'V14 FAIL: ventas.fecha gym-tz day % (expected today-5)', v_dia; end if;
   if v.monto is distinct from 800 then raise exception 'V14 FAIL: venta.monto %', v.monto; end if;
   if v.gym_id is distinct from g then raise exception 'V14 FAIL: venta.gym_id %', v.gym_id; end if;
+end $$;
+
+-- ══ V15 — tel is OPTIONAL (#190): a new-client sale with NO p_tel writes tel = null and every other
+--          column normally; a PRESENT but malformed p_tel is still rejected by the 10-digit rule ══════
+do $$
+declare
+  g uuid := current_setting('t.gym_stk', true)::uuid;
+  today date := (now() at time zone 'America/Mexico_City')::date;
+  k1 uuid := gen_random_uuid();
+  k2 uuid := gen_random_uuid();
+  got_error boolean := false; msg text;
+  r record; c record; n int;
+begin
+  -- (a) p_tel omitted entirely ⇒ the sale lands and the WRITTEN row carries tel = null.
+  select * into r from public.registrar_venta(
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+    p_idempotency_key := k1, p_nombre := 'V15 Sin Tel');
+  select nombre, tel, clases_restantes, vence, paquete_nombre, gym_id into c from public.clientes where id = r.cliente_id;
+  if c.tel is not null then raise exception 'V15 FAIL: tel % (expected null — none was sent)', c.tel; end if;
+  if c.nombre is distinct from 'V15 Sin Tel' then raise exception 'V15 FAIL: nombre %', c.nombre; end if;
+  if c.clases_restantes is distinct from 8 then raise exception 'V15 FAIL: clases_restantes % (expected 8)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 20 then raise exception 'V15 FAIL: vence % (expected hoy+20)', c.vence; end if;
+  if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V15 FAIL: paquete_nombre %', c.paquete_nombre; end if;
+  if c.gym_id is distinct from g then raise exception 'V15 FAIL: cliente gym_id %', c.gym_id; end if;
+  -- (b) a PRESENT tel still has to be 10 digits — optional is not "anything goes".
+  begin
+    perform public.registrar_venta(
+      p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+      p_idempotency_key := k2, p_nombre := 'V15 Tel Malo', p_tel := '61400');
+  exception when others then got_error := true; msg := sqlerrm;
+  end;
+  if not got_error then raise exception 'V15 FAIL: a 5-digit tel was accepted (the 10-digit rule is gone)'; end if;
+  if msg not like '%clientes_tel_10_digits_ck%' then raise exception 'V15 FAIL: wrong error for a malformed tel (%)', msg; end if;
+  select count(*) into n from public.ventas where idempotency_key = k2;
+  if n <> 0 then raise exception 'V15 FAIL: the rejected sale wrote % ventas rows (expected 0)', n; end if;
 end $$;
 
 reset role;

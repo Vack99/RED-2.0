@@ -186,6 +186,25 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(args.p_idempotency_key).toBe(KEY); // the caller's key, passed through
   });
 
+  it("a blank tel sends NO p_tel at all, and still sends p_nombre (#190)", async () => {
+    await crearVenta(input({ mode: "new", nuevoTel: "  " }), fake.client);
+
+    const { args } = lastRpc(fake);
+    // The column is nullable now, but its CHECK still rejects '' — so an absent phone
+    // means an ABSENT argument (the RPC's `default null` writes the null), never "".
+    expect(args).not.toHaveProperty("p_tel");
+    // The regression this pins: p_nombre and p_tel used to ride ONE spread, so making the
+    // phone conditional the naive way would have dropped the name from every NEW sale.
+    expect(args).toHaveProperty("p_nombre", "Andrea Castro");
+  });
+
+  it("still rejects a PARTIAL tel — optional means absent, not half-typed (#190)", async () => {
+    await expect(
+      crearVenta(input({ mode: "new", nuevoTel: "614 21" }), fake.client),
+    ).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
   it("sends p_cliente_id + paquete_id (no client saldo) for an existing-client sale", async () => {
     fake = makeFake({
       paquetes: FINITO,

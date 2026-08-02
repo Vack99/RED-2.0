@@ -36,7 +36,7 @@ export type { PaseClienteDTO, FichaAsistencia, FichaPago } from "./derive";
 export interface ClienteLiteDTO {
   id: string;
   nombre: string;
-  tel: string;
+  tel: string | null;
   inicial: string;
   /** Active package label, or "Sin paquete". */
   paqueteLabel: string;
@@ -401,16 +401,22 @@ export const getClienteFicha = cache(
   },
 );
 
-/** Identity-edit input (nombre + tel + optional email). Trims like crearVenta; tel validity is the
- *  canonical 10-digit MX rule (isTelValido), the same rule the DB CHECK (clientes_tel_10_digits_ck)
- *  enforces. `email` is OPTIONAL and `.email()`-VALIDATED (design §4) — unlike the sale-path `email` field
- *  (crearVentaSchema in ventas.ts, deliberately unvalidated: cash sale never gated), this surface is an edit, not a
- *  sale, so validation is safe here. Blank/whitespace-only input means "no change" (preprocessed to
- *  `undefined`, never forwarded as `''`) — this slice has no explicit "clear the email" arm. */
+/** Identity-edit input (nombre + optional tel + optional email). Trims like crearVenta; a tel, WHEN
+ *  PRESENT, is the canonical 10-digit MX rule (isTelValido) — the same rule the DB CHECK
+ *  (clientes_tel_10_digits_ck) states, which since #190 reads `tel is null or …`. Blank tel is legal and
+ *  means CLEAR (the RPC writes p_tel unconditionally), which is how the placeholder phone gets removed;
+ *  it is sent as `null`, never `''` (the CHECK rejects '' — it strips to 0 digits). `email` is OPTIONAL
+ *  and `.email()`-VALIDATED (design §4) — unlike the sale-path `email` field (crearVentaSchema in
+ *  ventas.ts, deliberately unvalidated: cash sale never gated), this surface is an edit, not a sale, so
+ *  validation is safe here. Blank/whitespace-only email means "no change" (preprocessed to `undefined`,
+ *  never forwarded as `''`) — this slice has no explicit "clear the email" arm. */
 export const actualizarClienteSchema = z.object({
   clienteId: z.string().uuid(),
   nombre: z.string().trim().min(3),
-  tel: z.string().trim().refine(isTelValido, { message: "Teléfono inválido" }),
+  tel: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
+    z.string().trim().refine(isTelValido, { message: "Teléfono inválido" }).optional(),
+  ),
   email: z.preprocess(
     (v) => (typeof v === "string" && v.trim() === "" ? undefined : v),
     z.string().trim().email("Correo inválido").optional(),
@@ -446,7 +452,10 @@ export async function actualizarCliente(
     .rpc("actualizar_cliente", {
       p_cliente_id: input.clienteId,
       p_nombre: input.nombre,
-      p_tel: input.tel,
+      // A blank edit sends null — never '' (the CHECK strips it to 0 digits) and never an omitted
+      // key (p_tel has no DEFAULT, so PostgREST could not resolve the function). The cast covers a
+      // generator gap: supabase's type gen never models RPC argument nullability.
+      p_tel: input.tel ?? (null as unknown as string),
       ...(input.email ? { p_email: input.email } : {}),
     })
     .single();

@@ -162,5 +162,36 @@ begin
 end $$;
 reset role;
 
+-- ══ V4 — clearing the phone (#190): p_tel null writes NULL, and nothing else moves ═══════════════
+-- Before #190 this raised 23502 and was unreachable. It is now the desk's only way to remove a
+-- placeholder phone, so the written row is asserted here rather than trusted from the mocked DAL.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  c   uuid := current_setting('t.c_a1', true)::uuid;
+  rec record;
+begin
+  perform public.actualizar_cliente(c, 'Cliente A1 Editado', null);
+
+  select nombre, tel, clases_restantes, vence, paquete_nombre, email into rec
+    from public.clientes where id = c;
+  if rec.tel              is not null                           then raise exception 'V4 FAIL: tel not cleared, got %', rec.tel; end if;
+  if rec.nombre           is distinct from 'Cliente A1 Editado' then raise exception 'V4 FAIL: nombre touched, got %', rec.nombre; end if;
+  if rec.clases_restantes is distinct from 5                    then raise exception 'V4 FAIL: clases_restantes touched, got %', rec.clases_restantes; end if;
+  if rec.vence            is distinct from date '2099-12-31'    then raise exception 'V4 FAIL: vence touched, got %', rec.vence; end if;
+  if rec.paquete_nombre   is distinct from '8 clases'           then raise exception 'V4 FAIL: paquete_nombre touched, got %', rec.paquete_nombre; end if;
+  if rec.email            is distinct from 'ocupado@test.local' then raise exception 'V4 FAIL: email touched, got %', rec.email; end if;
+
+  -- The empty string is NOT the same fact and must still be rejected by clientes_tel_10_digits_ck.
+  begin
+    perform public.actualizar_cliente(c, 'Cliente A1 Editado', '');
+    raise exception 'V4 FAIL: empty-string tel was accepted';
+  exception when check_violation then null;
+  end;
+end $$;
+reset role;
+
 select 'actualizar_cliente written-row rules: OK' as result;
 rollback;

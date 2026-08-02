@@ -61,7 +61,7 @@ export function ClientesScreen({
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
       const q = query.toLowerCase();
-      list = list.filter((x) => x.c.nombre.toLowerCase().includes(q) || x.c.tel.includes(query));
+      list = list.filter((x) => x.c.nombre.toLowerCase().includes(q) || !!x.c.tel?.includes(query));
     }
     const sorters: Record<Sort, (a: typeof withU[0], b: typeof withU[0]) => number> = {
       dias: (a, b) => a.c.diasRest - b.c.diasRest,
@@ -272,8 +272,12 @@ export function ClientesScreen({
                   <div className="uppercase font-semibold" style={{ fontSize: 14, color: "var(--fg)", letterSpacing: 0.4 }}>{c.nombre}</div>
                   <div className="flex flex-wrap items-center" style={{ fontSize: 11, color: "var(--muted)", marginTop: 3, gap: 6 }}>
                     <span className="uppercase" style={{ letterSpacing: 0.4 }}>{c.paquete}</span>
-                    <span style={{ color: "var(--muted-soft)" }}>·</span>
-                    <Tnum>{c.tel}</Tnum>
+                    {c.tel && (
+                      <>
+                        <span style={{ color: "var(--muted-soft)" }}>·</span>
+                        <Tnum>{c.tel}</Tnum>
+                      </>
+                    )}
                     <Badge
                       state={c.invitacion.estado === "cuenta_activa" ? "success" : "info"}
                       style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.9 }}

@@ -26,6 +26,9 @@ import { EditarClienteSheet } from "./editar-cliente-sheet";
 export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const router = useRouter();
   const c = ficha.cliente;
+  // A phone-less member (#190) gets NO WhatsApp arm: waLink would open a real chat window with no
+  // recipient, which reads as "sent". Bound to a local so the check narrows inside the send callback.
+  const tel = c.tel;
 
   const [present, setPresent] = React.useState(ficha.presentHoy);
   const [horaHoy, setHoraHoy] = React.useState<string | null>(ficha.horaHoy);
@@ -212,15 +215,17 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         }}
       />
 
-      <MensajePicker
-        open={msgOpen}
-        onClose={() => setMsgOpen(false)}
-        mensajes={ficha.mensajes}
-        onEnviar={(m) => {
-          window.open(waLink(c.tel, m.texto), "_blank");
-          setMsgOpen(false);
-        }}
-      />
+      {tel && (
+        <MensajePicker
+          open={msgOpen}
+          onClose={() => setMsgOpen(false)}
+          mensajes={ficha.mensajes}
+          onEnviar={(m) => {
+            window.open(waLink(tel, m.texto), "_blank");
+            setMsgOpen(false);
+          }}
+        />
+      )}
 
       <div
         onTouchStart={onTouchStart}
@@ -250,8 +255,12 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
               {/* Contact line (#79): tel + email on one line under the badges. The
                   email — or a "Sin email" chip when null — taps through to EDITAR. */}
               <div className="flex min-w-0 items-center" style={{ gap: 7, marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-                <Tnum className="shrink-0">{c.tel}</Tnum>
-                <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                {tel && (
+                  <>
+                    <Tnum className="shrink-0">{tel}</Tnum>
+                    <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                  </>
+                )}
                 {ficha.email ? (
                   <button
                     onClick={() => setEditOpen(true)}
@@ -386,13 +395,15 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         </div>
 
         {/* WhatsApp */}
-        <div style={{ padding: "10px 16px 0" }}>
-          <button onClick={mensaje} className="forge-pressable flex w-full items-center" style={{ padding: "12px 14px", background: "transparent", border: "1px solid var(--silver-dim)", color: "var(--fg)", cursor: "pointer", gap: 10 }}>
-            <Icon name="wa" size={16} color="#25d366" />
-            <span className="uppercase font-bold" style={{ fontSize: 12, letterSpacing: 0.8, flex: 1, textAlign: "left" }}>Mandar mensaje</span>
-            <Icon name="arrow" size={14} color="var(--muted)" />
-          </button>
-        </div>
+        {tel && (
+          <div style={{ padding: "10px 16px 0" }}>
+            <button onClick={mensaje} className="forge-pressable flex w-full items-center" style={{ padding: "12px 14px", background: "transparent", border: "1px solid var(--silver-dim)", color: "var(--fg)", cursor: "pointer", gap: 10 }}>
+              <Icon name="wa" size={16} color="#25d366" />
+              <span className="uppercase font-bold" style={{ fontSize: 12, letterSpacing: 0.8, flex: 1, textAlign: "left" }}>Mandar mensaje</span>
+              <Icon name="arrow" size={14} color="var(--muted)" />
+            </button>
+          </div>
+        )}
 
         {/* Invitación — REENVIAR (+ "enviar invitación" when sin_invitar). sin_email has nothing to
             send (backfill via EDITAR first) and cuenta_activa has no invite action (design §3, #71). */}

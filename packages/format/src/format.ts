@@ -35,8 +35,12 @@ export function iniciales(nombre: string): string {
 
 /**
  * Phone intake rule — the single home for "what is a valid tel".
- * A valid MX mobile is EXACTLY 10 digits once non-digits are stripped. Every
- * layer (form, Zod, the DB CHECK) must state this one rule, never its own.
+ * A phone is OPTIONAL (#190), and a phone that IS given is EXACTLY 10 digits once
+ * non-digits are stripped. This function owns only the second half; every layer
+ * (form, Zod, the DB CHECK) must state that one rule, never its own. Whether
+ * absence is allowed is each caller's own condition — the desk permits it, the
+ * self-signup door does not — so `isTelValido` must never be widened to accept "",
+ * or a half-typed number would pass everywhere.
  */
 export const TEL_DIGITS = 10;
 

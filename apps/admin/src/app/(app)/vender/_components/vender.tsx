@@ -142,7 +142,8 @@ export function VenderScreen({
     if (telDigits.length < 10 && !email) return null;
     return (
       clientes.find((c) => {
-        const telHit = telDigits.length >= 10 && c.tel.replace(/\D/g, "") === telDigits;
+        // A phone-less member (#190) can never be a phone match — only the email arm can hit.
+        const telHit = telDigits.length >= 10 && c.tel?.replace(/\D/g, "") === telDigits;
         const emailHit = !!email && !!c.email && c.email.toLowerCase() === email;
         return telHit || emailHit;
       }) ?? null
@@ -161,7 +162,8 @@ export function VenderScreen({
       if (!n) return null;
       return nuevo.tel.trim() ? `${n} · ${nuevo.tel.trim()}` : `${n} · Nuevo`;
     }
-    return existing ? `${existing.nombre} · ${existing.tel}` : null;
+    if (!existing) return null;
+    return existing.tel ? `${existing.nombre} · ${existing.tel}` : existing.nombre;
   })();
   // The relative sold-date label ("Hoy" / "Ayer" / "Hace N días") — the affordance row's
   // value and the collapsed-section suffix, so a backdate reads even with PAQUETE closed.
@@ -314,7 +316,7 @@ export function VenderScreen({
     (c) =>
       !pickerQuery ||
       c.nombre.toLowerCase().includes(pickerQuery.toLowerCase()) ||
-      c.tel.replace(/\D/g, "").includes(pickerQuery.replace(/\D/g, "")),
+      !!c.tel?.replace(/\D/g, "").includes(pickerQuery.replace(/\D/g, "")),
   );
 
   const missing: string[] = [];
@@ -466,7 +468,7 @@ export function VenderScreen({
               <div className="min-w-0 flex-1">
                 <div className="uppercase font-semibold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{cc.nombre}</div>
                 <div className="flex flex-wrap items-center" style={{ fontSize: 11, color: "var(--muted)", marginTop: 2, gap: 6 }}>
-                  <span><Tnum>{cc.tel}</Tnum> · {cc.paqueteLabel}</span>
+                  <span>{cc.tel && <><Tnum>{cc.tel}</Tnum> · </>}{cc.paqueteLabel}</span>
                   {cc.email ? (
                     <span className="min-w-0" style={{ maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cc.email}</span>
                   ) : (
@@ -712,8 +714,12 @@ function ClienteEditor({
               <div className="min-w-0 flex-1">
                 <div className="uppercase font-bold" style={{ fontSize: 14, letterSpacing: 0.4 }}>{existing.nombre}</div>
                 <div className="flex min-w-0 items-center" style={{ gap: 6, marginTop: 3, fontSize: 11.5, color: "var(--muted)" }}>
-                  <Tnum className="shrink-0">{existing.tel}</Tnum>
-                  <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                  {existing.tel && (
+                    <>
+                      <Tnum className="shrink-0">{existing.tel}</Tnum>
+                      <span className="shrink-0" style={{ color: "var(--muted-soft)" }}>·</span>
+                    </>
+                  )}
                   {existing.email ? (
                     <span className="min-w-0" style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{existing.email}</span>
                   ) : (

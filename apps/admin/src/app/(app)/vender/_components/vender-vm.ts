@@ -19,9 +19,10 @@ export function telError(tel: string, blurred: boolean): string | null {
 
 /**
  * CLIENTE-section completion — the CONTINUAR enablement. NUEVO needs a ≥3-char
- * name and a valid 10-digit tel; EXISTENTE needs a picked client. Email is
- * deliberately absent from the signature: it can never gate the sale (#64 —
- * the email is the invite trigger, optional, never a blocker).
+ * name and, if a phone is typed at all, a complete one (#190 made the phone
+ * optional; a half-typed 1–9 digits still blocks). EXISTENTE needs a picked
+ * client. Email is deliberately absent from the signature: it can never gate the
+ * sale (#64 — the email is the invite trigger, optional, never a blocker).
  */
 export function clienteListo(
   mode: Mode,
@@ -29,7 +30,12 @@ export function clienteListo(
   tel: string,
   hasExisting: boolean,
 ): boolean {
-  return mode === "new" ? nombre.trim().length >= 3 && isTelValido(tel) : hasExisting;
+  return mode === "new"
+    // Blank is tested on the trimmed STRING, not on the digit count, so this gate is the
+    // same predicate crearVentaSchema's refine applies: a punctuation-only "-" is a typo the
+    // server rejects, and enabling COBRAR on it would send the operator into a dead end.
+    ? nombre.trim().length >= 3 && (tel.trim() === "" || isTelValido(tel))
+    : hasExisting;
 }
 
 /** The custom tile's id in `sel`. A sentinel, not a uuid — it can never collide with

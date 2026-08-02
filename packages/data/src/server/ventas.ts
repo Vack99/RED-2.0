@@ -81,7 +81,10 @@ export const crearVentaSchema = z
     (v) =>
       v.mode === "existing"
         ? !!v.clienteId
-        : (v.nuevoNombre ?? "").trim().length >= 3 && isTelValido(v.nuevoTel ?? ""),
+        : (v.nuevoNombre ?? "").trim().length >= 3 &&
+          // #190: the phone is OPTIONAL — a blank field is a member who never gave one.
+          // A partially typed one is still a typo, so it keeps failing the 10-digit rule.
+          ((v.nuevoTel ?? "").trim() === "" || isTelValido(v.nuevoTel ?? "")),
     { message: "Datos del cliente incompletos" },
   );
 
@@ -92,7 +95,7 @@ export interface VentaResult {
   fechaDisplay: string;
   compradoDisplay: string;
   venceDisplay: string;
-  cliente: { id: string; nombre: string; tel: string; inicial: string; isNew: boolean };
+  cliente: { id: string; nombre: string; tel: string | null; inicial: string; isNew: boolean };
   paquete: { nombre: string; vigencia: string; precio: number };
   metodo: Metodo;
   metodoDisplay: string;
@@ -241,7 +244,7 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
   }
 
   let nombre: string;
-  let tel: string;
+  let tel: string | null;
   let emailFicha: string | null = null;
   if (input.mode === "existing") {
     const { data: cli, error } = cliRes!;
@@ -251,7 +254,8 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     emailFicha = cli.email?.trim() || null;
   } else {
     nombre = input.nuevoNombre!.trim();
-    tel = input.nuevoTel!.trim();
+    // The CHECK still rejects '' (it strips to 0 digits) — an absent phone is null (#190).
+    tel = input.nuevoTel?.trim() || null;
   }
 
   // Ruling C13/C6: the RPC re-derives price/balance/vence in one locked transaction
@@ -275,7 +279,10 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
               : { p_custom_clases: input.paquete.clases }),
           }),
       ...(input.mode === "existing" && { p_cliente_id: forCliente(input.clienteId!) }),
-      ...(input.mode === "new" && { p_nombre: nombre, p_tel: tel }),
+      ...(input.mode === "new" && { p_nombre: nombre }),
+      // p_tel rides its own spread (#190): the name is unconditional in NEW mode, the phone
+      // is sent only when there is one — omitted, the RPC's `default null` writes the null.
+      ...(input.mode === "new" && tel ? { p_tel: tel } : {}),
       ...(input.email ? { p_email: input.email } : {}),
       ...(input.forzarNuevo ? { p_forzar_nuevo: true } : {}),
       // Backdated sold date (D1) — spread only when present, so a today-sale sends the

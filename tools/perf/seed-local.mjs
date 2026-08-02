@@ -313,7 +313,7 @@ async function main() {
       [FIXTURES.clienteId, GYM_ID, ADMIN_USER.email, uid],
     );
 
-    // tel must be exactly 10 digits (CHECK on clientes).
+    // tel is optional (#190), but a non-null one must be exactly 10 digits (CHECK on clientes).
     await db.query(
       `insert into clientes (gym_id, nombre, tel, email, clases_restantes, vence, paquete_nombre, created_at)
        select $1,

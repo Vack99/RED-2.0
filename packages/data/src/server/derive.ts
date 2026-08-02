@@ -13,7 +13,7 @@ import type { MensajeDTO, PlantillaDTO } from "./plantillas";
 export interface ClienteFacts {
   id: string;
   nombre: string;
-  tel: string;
+  tel: string | null;
   paquete_nombre: string | null;
   clases_restantes: number | null; // NULL = ilimitado
   vence: string | null; // 'YYYY-MM-DD'
@@ -22,7 +22,7 @@ export interface ClienteFacts {
 export interface ClienteDerivado {
   id: string;
   nombre: string;
-  tel: string;
+  tel: string | null;
   inicial: string;
   paquete: string;
   estado: EstadoCliente;

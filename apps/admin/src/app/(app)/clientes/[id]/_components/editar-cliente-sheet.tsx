@@ -18,7 +18,8 @@ export function EditarClienteSheet({
   cliente: {
     id: string;
     nombre: string;
-    tel: string;
+    /** Phone, or null for none (#190) — this sheet is where an absent one gets filled in. */
+    tel: string | null;
     /** Contact email, or "" for none (S3, issue #71). */
     email: string;
     /** Claimed row (auth_user_id set) — the email field is hidden: the verified login email owns it
@@ -28,7 +29,7 @@ export function EditarClienteSheet({
 }) {
   const router = useRouter();
   const [nombre, setNombre] = React.useState(cliente.nombre);
-  const [tel, setTel] = React.useState(cliente.tel);
+  const [tel, setTel] = React.useState(cliente.tel ?? "");
   const [email, setEmail] = React.useState(cliente.email);
   const [saving, setSaving] = React.useState(false);
 
@@ -36,18 +37,21 @@ export function EditarClienteSheet({
     if (open) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional re-seed on open
       setNombre(cliente.nombre);
-      setTel(cliente.tel);
+      setTel(cliente.tel ?? "");
       setEmail(cliente.email);
     }
   }, [open, cliente.nombre, cliente.tel, cliente.email]);
 
   const emailTrim = email.trim();
   const emailValido = emailTrim === "" || isEmailValido(emailTrim);
-  const valido = nombre.trim().length >= 3 && isTelValido(tel) && emailValido;
+  // The phone is optional (#190) — blank clears it. A partially typed one is still wrong.
+  const telTrim = tel.trim();
+  const telValido = telTrim === "" || isTelValido(telTrim);
+  const valido = nombre.trim().length >= 3 && telValido && emailValido;
   // Email has no "clear" arm this slice (RPC §4: NULL/omitted = leave unchanged) — so blanking a
   // previously-set email is deliberately NOT dirty on its own; only a non-empty, different value counts.
   const emailDirty = !cliente.cuentaActiva && emailTrim !== "" && emailTrim !== cliente.email.trim();
-  const dirty = nombre.trim() !== cliente.nombre.trim() || tel.trim() !== cliente.tel.trim() || emailDirty;
+  const dirty = nombre.trim() !== cliente.nombre.trim() || telTrim !== (cliente.tel ?? "").trim() || emailDirty;
   const canSave = valido && dirty && !saving;
 
   const guardar = async () => {
@@ -57,6 +61,7 @@ export function EditarClienteSheet({
       const result = await actualizarClienteAction({
         clienteId: cliente.id,
         nombre,
+        // Blank = clear the phone (#190); the DAL maps it to p_tel null ('' fails the CHECK).
         tel,
         ...(cliente.cuentaActiva ? {} : { email: emailTrim }),
       });

@@ -34,6 +34,9 @@ export function Recibo({
 }) {
   const { folio, cliente: c, paquete: p, metodoDisplay, fechaDisplay, compradoDisplay, venceDisplay, negocio, ciudad, invite, reciboEmail, fechaInicio } = result;
   const isNew = c.isNew;
+  // A phone-less client (#190) gets NO WhatsApp arm: waLink would open a real chat window with no
+  // recipient, which reads as "sent". Bound to a local so the check narrows inside the send callback.
+  const tel = c.tel;
   const primerNombre = c.nombre.split(" ")[0];
   const [showCheck, setShowCheck] = React.useState(false);
   const [msgOpen, setMsgOpen] = React.useState(false);
@@ -103,7 +106,7 @@ export function Recibo({
               {isNew && <div className="uppercase" style={{ fontSize: 9, color: "var(--recibo-label)", letterSpacing: 1.5, padding: "2px 6px", background: "var(--recibo-badge)" }}>NUEVO</div>}
             </div>
             <div className="uppercase font-extrabold" style={{ fontSize: 18, letterSpacing: 0.4, marginTop: 2 }}>{c.nombre}</div>
-            <Tnum style={{ display: "block", marginTop: 3, fontSize: 11.5, color: "var(--recibo-label)" }}>{c.tel}</Tnum>
+            {tel && <Tnum style={{ display: "block", marginTop: 3, fontSize: 11.5, color: "var(--recibo-label)" }}>{tel}</Tnum>}
 
             <div style={{ height: 1, background: "var(--recibo-ink)", opacity: 0.15, margin: "14px 0" }} />
 
@@ -145,7 +148,7 @@ export function Recibo({
         </div>
 
         <div className="flex flex-col" style={{ padding: "20px 16px 0", gap: 10 }}>
-          <Button variant="wa" full icon="wa" onClick={wa}>ENVIAR POR WHATSAPP</Button>
+          {tel && <Button variant="wa" full icon="wa" onClick={wa}>ENVIAR POR WHATSAPP</Button>}
           <div className="flex" style={{ gap: 8 }}>
             {!isNew && (
               <Button variant="secondary" full icon="user" onClick={() => onVerCliente(c.id)}>VER CLIENTE</Button>
@@ -155,16 +158,18 @@ export function Recibo({
         </div>
       </div>
 
-      <MensajePicker
-        open={msgOpen}
-        onClose={() => setMsgOpen(false)}
-        titulo="ENVIAR RECIBO"
-        mensajes={result.mensajes}
-        onEnviar={(m) => {
-          window.open(waLink(c.tel, m.texto), "_blank");
-          setMsgOpen(false);
-        }}
-      />
+      {tel && (
+        <MensajePicker
+          open={msgOpen}
+          onClose={() => setMsgOpen(false)}
+          titulo="ENVIAR RECIBO"
+          mensajes={result.mensajes}
+          onEnviar={(m) => {
+            window.open(waLink(tel, m.texto), "_blank");
+            setMsgOpen(false);
+          }}
+        />
+      )}
     </div>
   );
 }

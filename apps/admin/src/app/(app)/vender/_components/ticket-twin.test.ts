@@ -86,6 +86,14 @@ describe("construirReciboEmail — the ticket twin rendered as the email (#99)",
     expect(text).toContain("INICIO: 11 JUL");
   });
 
+  it("a phone-less client (#190) drops the tel line from both twins instead of throwing", () => {
+    const sinTel: VentaResult = { ...VENTA, cliente: { ...VENTA.cliente, tel: null } };
+    const { html, text } = construirReciboEmail(sinTel);
+    expect(html).toContain("ANDREA RÍOS");
+    expect(html).not.toContain("614 000 0000");
+    expect(text).not.toContain("TEL:");
+  });
+
   it("a today-sale carries no INICIO row (fechaInicio null)", () => {
     const { html, text } = construirReciboEmail(VENTA);
     expect(html).not.toContain("INICIO");

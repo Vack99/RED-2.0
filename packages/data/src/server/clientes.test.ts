@@ -98,10 +98,16 @@ describe("actualizarCliente — write orchestration (injected fake)", () => {
     expect(fake.rpcCalls).toHaveLength(0);
   });
 
-  it("rejects an invalid (non-10-digit) tel before any write", async () => {
+  it("rejects a PARTIAL (non-10-digit) tel before any write", async () => {
     const fake = makeFake();
     await expect(actualizarCliente({ ...valid, tel: "614 123" }, fake.client)).rejects.toThrow();
     expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("blank tel CLEARS the phone (#190) — sends p_tel: null, never ''", async () => {
+    const fake = makeFake();
+    await actualizarCliente({ ...valid, tel: "   " }, fake.client);
+    expect(fake.rpcCalls[0].args).toHaveProperty("p_tel", null);
   });
 
   it("throws 'No autenticado' when getClaims returns no sub (requireOperator wired)", async () => {
