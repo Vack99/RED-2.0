@@ -8,7 +8,13 @@
 --
 -- Since 20260713190100 (D3): anon's `gym` read is COLUMN-granted — the brand-seam columns only.
 -- The anon block additionally proves the granted list still serves the pre-auth lookup and that
--- `legal_name`/`owner_user_id` raise 42501 for anon. (`authenticated` keeps the table-wide grant.)
+-- `legal_name`/`owner_user_id` raise 42501 for anon.
+--
+-- Since 20260802120000 (#213): the SAME narrowing now applies to `authenticated`. That role held
+-- the table-wide grant until 2026-08-02 — so a membership-less identity read every gym's
+-- `legal_name` and `owner_user_id`, which is 4 owner UUIDs today and N at N customers. The
+-- authenticated block below is the assertion #213 asks for: an identity with NO `gym_membership`
+-- row reads ZERO owner_user_id values, and the brand-seam columns it genuinely needs still work.
 --
 -- Written BEFORE the create_gym_tenant_spine migration (TDD, denial-test-first): against a fresh
 -- preview branch with neither table present it FAILS (the tables don't exist); after the migration
@@ -137,6 +143,36 @@ begin
   if n < 2 then raise exception 'READ FAIL: authenticated non-staff sees % gym rows (expected >= 2)', n; end if;
   select count(*) into n from public.gym_domain;
   if n < 5 then raise exception 'READ FAIL: authenticated non-staff sees % gym_domain rows (expected >= 5)', n; end if;
+
+  -- COLUMN GRANTS for `authenticated` (#213, 20260802120000). This block's caller is the exact
+  -- actor the live probe used: a `sub` with NO gym_membership row anywhere. Before #213 it read
+  -- every gym's owner UUID and legal name; the policy (`using (true)`) is unchanged, so ONLY the
+  -- grant stands between this identity and that data — which is why it is asserted here.
+
+  -- The brand-seam columns an authenticated session genuinely needs still resolve. This is the
+  -- "still works" half: without it, a too-aggressive revoke breaks getOperatorGym /
+  -- resolverMiembroGym / the marketing pages SILENTLY, and only in production.
+  perform id, slug, brand_name, timezone, brand_module_id, token_overrides,
+          about_story, about_pull_quote, about_tagline
+    from public.gym;
+
+  -- ZERO owner_user_id values reach a membership-less identity — #213's acceptance, verbatim.
+  begin
+    perform owner_user_id from public.gym;
+    raise exception 'DENIAL FAIL: authenticated non-staff read gym.owner_user_id — #213 did not hold';
+  exception when insufficient_privilege then null;  -- 42501 = correct
+  end;
+  begin
+    perform legal_name from public.gym;
+    raise exception 'DENIAL FAIL: authenticated non-staff read gym.legal_name — #213 did not hold';
+  exception when insufficient_privilege then null;
+  end;
+  -- created_at is the gym's onboarding order — the same census signal gym_domain leaked (#216).
+  begin
+    perform created_at from public.gym;
+    raise exception 'DENIAL FAIL: authenticated non-staff read gym.created_at — #213 did not hold';
+  exception when insufficient_privilege then null;
+  end;
 
   n := 1;
   begin

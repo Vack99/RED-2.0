@@ -1,0 +1,90 @@
+{
+  "$comment": [
+    "The checked-in anon-read surface (#214, epic #203). Every table a replay of",
+    "supabase/migrations/ shows to be readable by the `anon` role must appear here with a",
+    "scope and a reason, or `pnpm test` fails — see tools/guards/anon-read-surface.test.ts.",
+    "",
+    "The obligation set is DERIVED from the migrations, never declared, so there is no flag",
+    "to dodge with: adding `for select to anon using (true)` to a new table fails the build",
+    "until that table is listed here. `scope` is derived too — `all-gyms` means the USING",
+    "predicate is literally `true`, i.e. ONE anonymous call returns every tenant's rows.",
+    "A scoped policy quietly widening back to `using (true)` therefore fails exactly like a",
+    "new table would; that widening is the drift that actually happened (the 2026-07-05",
+    "health audit certified 'anon reads limited to gym + gym_domain', and 15 more landed",
+    "the next day, unnoticed for 27 days).",
+    "",
+    "The publishable key is build-inlined into every browser bundle by design (ADR-0008),",
+    "so this file IS the platform's public read surface. Adding a line is a product",
+    "decision, not a formality."
+  ],
+  "anonReadable": {
+    "gym": {
+      "scope": "all-gyms",
+      "reason": "The pre-auth host->brand lookup runs before any session exists (resolveTenant reads id/slug/brand_module_id). Narrowed at the COLUMN grant instead of the policy: anon and, since #213, authenticated both hold only the 9 brand-seam columns — legal_name, owner_user_id and created_at raise 42501."
+    },
+    "gym_domain": {
+      "scope": "all-gyms",
+      "reason": "Same pre-auth lookup: resolve-tenant.ts:121-125 needs exactly one row for one hostname. Enumeration of the full table is the platform's customer census and is NOT defended by 'hostnames are public DNS facts' — that defends resolving one host. OPEN: #216 narrows this to an equality-only read."
+    },
+    "gym_contact": {
+      "scope": "all-gyms",
+      "reason": "The public contacto page renders the gym's own address/phone/hours. OPEN: #215 scopes it per gym."
+    },
+    "coach": {
+      "scope": "all-gyms",
+      "reason": "Public nosotros/clases pages render the gym's coaches. OPEN: #215 scopes it per gym."
+    },
+    "class_type": {
+      "scope": "all-gyms",
+      "reason": "Public clases page renders the gym's class catalog. OPEN: #215 scopes it per gym."
+    },
+    "class_type_workblock": {
+      "scope": "all-gyms",
+      "reason": "Child rows of class_type, rendered on the same public page. OPEN: #215 scopes it per gym."
+    },
+    "class_type_bring_item": {
+      "scope": "all-gyms",
+      "reason": "Child rows of class_type, rendered on the same public page. OPEN: #215 scopes it per gym."
+    },
+    "class_session": {
+      "scope": "all-gyms",
+      "reason": "The public schedule. Measured live at 614 rows across all 4 gyms in one anonymous call. OPEN: #215 scopes it per gym."
+    },
+    "class_session_coach": {
+      "scope": "all-gyms",
+      "reason": "Join rows for the public schedule. OPEN: #215 scopes it per gym."
+    },
+    "schedule_template": {
+      "scope": "all-gyms",
+      "reason": "Backs the public weekly schedule view. OPEN: #215 scopes it per gym."
+    },
+    "paquetes": {
+      "scope": "all-gyms",
+      "reason": "The public precios page renders the gym's plans. Measured live at 15 rows across all gyms. OPEN: #215 scopes it per gym."
+    },
+    "plan_feature": {
+      "scope": "all-gyms",
+      "reason": "Feature bullets under each plan on the public precios page. OPEN: #215 scopes it per gym."
+    },
+    "about_value": {
+      "scope": "all-gyms",
+      "reason": "Public nosotros page content. OPEN: #215 scopes it per gym."
+    },
+    "facility": {
+      "scope": "all-gyms",
+      "reason": "Public nosotros page content. OPEN: #215 scopes it per gym."
+    },
+    "stat": {
+      "scope": "all-gyms",
+      "reason": "Public nosotros page content. OPEN: #215 scopes it per gym."
+    },
+    "faq": {
+      "scope": "all-gyms",
+      "reason": "Public precios/contacto page content. OPEN: #215 scopes it per gym."
+    },
+    "room": {
+      "scope": "all-gyms",
+      "reason": "Room names shown beside public sessions. OPEN: #215 scopes it per gym."
+    }
+  }
+}
