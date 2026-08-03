@@ -30,6 +30,61 @@ The owner reported that signing into the RED admin host with a Forge admin accou
 
 ---
 
+## THE FULL INVENTORY — all 17 issues, all OPEN, none closed
+
+**The next session addresses every one of these if at all possible.** Verified open at handoff time. Label `tenant-in-effect-2026-08`. **12 are takeable immediately** — only #212 and #219 carry an open blocker, and #203 closes last.
+
+### Ship first — recovers the past, changes no behaviour
+| # | Title | Label |
+|---|---|---|
+| **#204** | Instrument the crossing: log host-gym vs membership-gym disagreement | `ready-for-agent` |
+
+### Owner-only (HITL) — no agent can do these
+| # | Title |
+|---|---|
+| **#205** | Reproduce the cross-tenant login end to end on the live RED admin host |
+| **#206** | Verify the live Supabase Auth Redirect-URL allow-list is host-scoped *(dashboard state, not in git — sizes #217)* |
+| **#207** | Decide the fate of `red-2-0-admin.vercel.app` and preview deployment protection |
+| **#210** | Write the operator-facing doc that says which URL is theirs |
+
+### The reported defect
+| # | Title | Blocked by |
+|---|---|---|
+| **#208** | Prototype: what an operator sees when no redirect target exists (0 gyms, 2+ gyms) | — |
+| **#212** | Reconcile host/membership in the admin app and auto-redirect on mismatch | **#208** |
+
+### The three read exposures + the guard that stops the class recurring
+*(owner's nominated priority for this cycle is #213)*
+| # | Title |
+|---|---|
+| **#213** | Close the `authenticated` column grant on `gym.legal_name` / `owner_user_id` / `created_at` |
+| **#214** | Machine guard: fail the build when a table becomes anon-readable |
+| **#215** | Scope the 15 anon catalog policies so one request cannot enumerate every gym |
+| **#216** | `gym_domain` is anon-readable in full, exposing the complete customer census |
+
+### The rest
+| # | Title | Blocked by |
+|---|---|---|
+| **#211** | Amend ADR-0008 — the tenant may only NARROW, never widen | — |
+| **#219** | `mi_membresia` and `toggle_favorito_tipo` pick a tenant with a bare `LIMIT 1` and no `ORDER BY` | **#211** |
+| **#217** | send-email `correo.ts` falls back to the global Site URL, auto-enrolling users into RED | — |
+| **#218** | Sessions never expire and nothing revokes on role removal | — |
+| **#209** | Harden cookie and transport posture on the shared `ibookit.lat` registrable domain *(lowest — defence in depth)* | — |
+
+### The epic
+| # | Title |
+|---|---|
+| **#203** | Tenant-in-effect: reconcile host↔membership, and close the anon-read exposures — **close last**, with a comment summarising what shipped and what was deliberately dropped |
+
+**Re-verify state before starting** — this snapshot is from 2026-08-02:
+```
+gh issue list --label tenant-in-effect-2026-08 --state all \
+  --json number,title,state,labels \
+  --jq '.[] | "\(.state) #\(.number) \(.title)"' | sort -t'#' -k2 -n
+```
+
+---
+
 ## Work queue, in dependency order
 
 **Start with #204.** It is the only unit that can still recover the past — `auth.audit_log_entries` is empty, no observability package is installed, and the hostname is never persisted anywhere, so *"has this already happened?"* becomes permanently unanswerable the moment behaviour changes. It ships ahead of every ruling because it changes no behaviour.
