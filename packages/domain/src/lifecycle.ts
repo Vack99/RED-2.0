@@ -39,10 +39,25 @@
 //    Clase Individual passes, never members) this engine exists to kill. A
 //    one-off pass can still appear in POR RENOVAR via the DÍAS arm (its own
 //    validity window closing is a real fact); only the classes signal is inert.
+//
+// Amended after an opus review of the first cut (#223 findings 1-6):
+//  · pendienteOnline is NOT synonymous with `vence: null`. The real producer
+//    (packages/data/src/server/derive.ts `esRegistroOnlinePendiente`) marks
+//    it whenever `invitacion === "cuenta_activa" && estado === "sin_clases"`
+//    — and the OLD estado's "sin_clases" covers both "no package" AND
+//    "expired by date". A lapsed online registrant therefore has
+//    `pendienteOnline: true` with a real PAST `vence`. Ordering reads
+//    `fila.pendienteOnline` directly, never inferring it from `vence`.
+//  · The urgencia floor (expired is never crítico) and the `vigentes`/`total`
+//    header-ratio counts now ship in this engine's output, so #225's seven
+//    consumers have something to read instead of re-deriving them.
+//  · The actionable/current tiers sort by the BINDING AXIS (the floored
+//    urgencia nivel), not raw días — a SIN CLASES row with days to spare is
+//    still unable to train today and must not be stranded behind it.
 // ──────────────────────────────────────────────────────────────
 
-import { diasRestantes, estaVencido } from "./rules";
-import type { Clases } from "./types";
+import { diasRestantes, estaVencido, urgenciaCliente } from "./rules";
+import type { Clases, NivelUrgencia, Saldo } from "./types";
 
 /** The pre-expiry window ("por renovar"). Owner ruling 2026-08-02: 10 días —
  *  ERGONOMIC, chosen for legibility, NOT a measured value (#185 Q4 measured
@@ -74,6 +89,25 @@ export type EstadoPaquete = "vigente" | "vencido" | "sin_clases" | "sin_paquete"
 /** INICIO's two bounded tiles. null past day 16, or when nothing binds. */
 export type Tile = "por_renovar" | "aun_a_tiempo" | null;
 
+/** A package's class GRANT as sold — 1..30, or null for ilimitado. Mirrors
+ *  `packages/data/server/paquetes.ts`'s `PaqueteDTO.clases` exactly: the
+ *  catalog's fixed archetype, NEVER a roster row's current remaining
+ *  balance (which drains as the member trains and legitimately passes
+ *  through 1 on its way to 0 for an 8-clase membership). */
+export type ClaseGrant = number | null;
+
+/** The membership-vs-drop-in predicate (#222 Implementation Decisions, #223
+ *  finding 2): classify a package from its own CATALOG FACT, never a
+ *  `paquete_nombre` string match in data/UI. A grant of exactly 1 class is a
+ *  single-session drop-in — `packages/data/src/server/marketing.ts:72-73`
+ *  already encodes this identical rule for the Precios CTA tiering ("1 for
+ *  a single-session drop-in"), so this is the SAME structural fact, given a
+ *  name in the domain vocabulary. A finite grant > 1, or ilimitado (null),
+ *  is a membership. Produces `FilaRosterLifecycle.esPaseSuelto`. */
+export function esPaseSuelto(claseGrant: ClaseGrant): boolean {
+  return claseGrant === 1;
+}
+
 /** POR RENOVAR's breakdown buckets. Day buckets (Connect Gym's observed
  *  today/tomorrow/3d/5d shape) PLUS `clases` — so the buckets always sum to
  *  the tile's headline, including members whose classes (not days) bind. */
@@ -91,15 +125,22 @@ export interface FilaRosterLifecycle {
   clases: Clases;
   /** A spent one-off pass, never a renewal target — the membership-vs-drop-in
    *  predicate the domain vocabulary now carries (#222 Implementation
-   *  Decisions). Ignored when `vence` is null. */
+   *  Decisions). Ignored when `vence` is null. Produce via `esPaseSuelto`
+   *  (below) from the package's own catalog grant — never a `paquete_nombre`
+   *  string match in data/UI. */
   esPaseSuelto: boolean;
   /** Auth-linked app account (Door 2) — the client app already nudges these
    *  at the moment of lapse, so AÚN A TIEMPO excludes them. */
   tieneCuenta: boolean;
   /** Online-registered (Door 2), no active package — a first-class state
-   *  (never "fuera de alcance"). Reconciled with AÚN A TIEMPO by construction:
-   *  a pendienteOnline row always has `vence: null`, so it never reaches the
-   *  vencido branch AÚN A TIEMPO requires. */
+   *  (never "fuera de alcance"). NOT synonymous with `vence: null`: the real
+   *  producer (packages/data/derive.ts `esRegistroOnlinePendiente`) marks
+   *  this whenever the OLD `estado` reads "sin_clases", which covers BOTH
+   *  "no package" AND "expired by date" — so a lapsed online registrant has
+   *  `pendienteOnline: true` with a real PAST `vence`. Reconciled with AÚN A
+   *  TIEMPO by construction instead: that tile requires `!tieneCuenta`, and
+   *  a pendienteOnline row always carries an app account, so it structurally
+   *  can never also be aun_a_tiempo. Ordering reads this flag directly. */
   pendienteOnline: boolean;
   /** Date of the last CONSUMING visit (one that decremented a class), or null
    *  if there has never been one. The clases-arm clock — a later NON-consuming
@@ -126,12 +167,22 @@ export interface FilaLifecycle {
    *  (never silently treated as 0 or "out of range" — see derivarTile). */
   diasDesdeFin: number | null;
   tile: Tile;
+  /** The urgencia FLOOR (#223 finding 3): expired is never crítico — see
+   *  `nivelUrgenciaLifecycle`. `sin_paquete` also floors to "ok" (nothing to
+   *  be urgent about — there is no package). #225 points the seven existing
+   *  consumers (urgenciaCliente's raw callers) at this floored number. */
+  urgencia: NivelUrgencia;
   ausente: boolean;
 }
 
 /** The counts both CLIENTES and INICIO share — the single home for "how many
  *  are por renovar / aún a tiempo", so the two screens can never disagree. */
 export interface ConteosLifecycle {
+  /** `estado === "vigente"` — the header ratio's numerator (story 3/19: "N
+   *  con paquete vigente de M", never a second inline filter count). */
+  vigentes: number;
+  /** The whole roster — the header ratio's "de M" denominator. */
+  total: number;
   porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
   aunATiempo: { total: number };
   pendienteOnline: number;
@@ -156,12 +207,19 @@ function diasDesde(fecha: Date, hoy: Date): number {
   return diasRestantes(hoy, fecha);
 }
 
-function derivarTile(
-  fila: FilaRosterLifecycle,
-  dias: number,
-  estado: EstadoPaquete,
-  diasDesdeFin: number | null,
-): Tile {
+/** The urgencia FLOOR (#223 finding 3, prerequisite of #222's engine
+ *  unification): expired is never crítico. `urgenciaCliente`'s raw días/
+ *  clases thresholds paint every VENCIDO row the same alarming red the
+ *  problem statement measured (19 of 30 rows red, 1 actionable) — once a
+ *  package has actually lapsed there is nothing left to "run out of", so
+ *  the signal floors to "ok". Reuses `urgenciaCliente`'s dimension logic
+ *  UNCHANGED (this ticket only adds; #225 rewrites the seven existing
+ *  consumers to read this floored value). */
+export function nivelUrgenciaLifecycle(saldo: Saldo): NivelUrgencia {
+  return estaVencido(saldo.dias) ? "ok" : urgenciaCliente(saldo).nivel;
+}
+
+function derivarTile(fila: FilaRosterLifecycle, dias: number, estado: EstadoPaquete): Tile {
   // POR RENOVAR: a "live" package — NOT vencido; SIN CLASES still counts
   // (owner stories 6/7) — within RENOVACION_DIAS of its date, or down to
   // RENOVACION_CLASES classes (never via a one-off pass's spent clases — see
@@ -170,18 +228,23 @@ function derivarTile(
   if (estado !== "vencido" && (dias <= RENOVACION_DIAS || esClasesBoundParaRenovar(fila))) {
     return "por_renovar";
   }
-  // AÚN A TIEMPO: clocked from EXPIRY ONLY (owner ruling, #222) — days 1..15
-  // since the DATE lapsed. Excludes one-off passes (never members) and
-  // members with an app account (the client app already nudges them).
-  if (
-    estado === "vencido" &&
-    !fila.esPaseSuelto &&
-    !fila.tieneCuenta &&
-    diasDesdeFin !== null &&
-    diasDesdeFin >= 1 &&
-    diasDesdeFin <= RECUPERACION_DIAS
-  ) {
-    return "aun_a_tiempo";
+  if (estado === "vencido") {
+    // dias < 0 whenever estado is "vencido" (estaVencido), so -dias is
+    // always a definite, positive number here — no null to guard against
+    // (#223 finding 6: a `diasDesdeFin !== null` check used to sit here,
+    // permanently true and therefore dead).
+    const diasDesdeExpiry = -dias;
+    // AÚN A TIEMPO: clocked from EXPIRY ONLY (owner ruling, #222) — days
+    // 1..15 since the DATE lapsed. Excludes one-off passes (never members)
+    // and members with an app account (the client app already nudges them).
+    if (
+      !fila.esPaseSuelto &&
+      !fila.tieneCuenta &&
+      diasDesdeExpiry >= 1 &&
+      diasDesdeExpiry <= RECUPERACION_DIAS
+    ) {
+      return "aun_a_tiempo";
+    }
   }
   return null;
 }
@@ -198,13 +261,23 @@ function calcAusente(fila: FilaRosterLifecycle, hoy: Date): boolean {
 }
 
 /** The lifecycle engine's per-row half: given one roster row and `hoy`,
- *  derive its estado, eje, tile, and ausente fact. Pure — no I/O, no stored
- *  state (ADR-0002). */
+ *  derive its estado, eje, tile, urgencia, and ausente fact. Pure — no I/O,
+ *  no stored state (ADR-0002). */
 export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLifecycle {
   const ausente = calcAusente(fila, hoy);
 
   if (fila.vence === null) {
-    return { fila, estado: "sin_paquete", eje: null, dias: null, diasDesdeFin: null, tile: null, ausente };
+    // sin_paquete: nothing to be urgent about — there is no package.
+    return {
+      fila,
+      estado: "sin_paquete",
+      eje: null,
+      dias: null,
+      diasDesdeFin: null,
+      tile: null,
+      urgencia: "ok",
+      ausente,
+    };
   }
 
   const dias = diasRestantes(fila.vence, hoy);
@@ -224,9 +297,16 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
         ? diasDesde(fila.ultimaVisitaConsumida, hoy)
         : null;
 
-  const tile = derivarTile(fila, dias, estado, diasDesdeFin);
+  const tile = derivarTile(fila, dias, estado);
+  // A one-off pass's spent clases are inert for urgencia too (same principle
+  // as esClasesBoundParaRenovar/sinClases above) — "ilimitado" blinds the
+  // clases dimension so only días can drive a paseSuelto row's urgencia.
+  const urgencia = nivelUrgenciaLifecycle({
+    clases: fila.esPaseSuelto ? "ilimitado" : fila.clases,
+    dias,
+  });
 
-  return { fila, estado, eje, dias, diasDesdeFin, tile, ausente };
+  return { fila, estado, eje, dias, diasDesdeFin, tile, urgencia, ausente };
 }
 
 // ── Ordering (the ruled ordering, #222): actionable → current → expired
@@ -234,18 +314,37 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
 //    sections, no fold (#181 D1: the vendors with no declared "gone" lever
 //    all keep one list where the label simply flips). ────────────────────
 
+/** Non-null accessor for a VENCIDO row's diasDesdeFin. `estado === "vencido"`
+ *  always sets `eje = "fecha"` and `diasDesdeFin = -dias`, a definite number
+ *  (derivarLifecycle) — never null. Asserted, not defaulted: a silent
+ *  `?? Infinity` here would make TWO such rows compare `Infinity - Infinity`
+ *  = NaN, corrupting `toSorted`'s comparator (#223 finding 6). */
+function diasDesdeVencido(f: FilaLifecycle): number {
+  if (f.diasDesdeFin === null) {
+    throw new Error("lifecycle invariant violated: a vencido row has no diasDesdeFin");
+  }
+  return f.diasDesdeFin;
+}
+
+const NIVEL_RANGO: Record<NivelUrgencia, number> = { critico: 0, urgente: 1, pronto: 2, ok: 3 };
+
 function grupoOrden(f: FilaLifecycle): 0 | 1 | 2 {
-  // sin_paquete (a same-day sign-up or a pendienteOnline row) is fresh
-  // business, not history — it is never sorted below the expired (S4).
-  if (f.estado === "sin_paquete" || f.tile === "por_renovar") return 0;
+  // pendienteOnline is read DIRECTLY (finding 1) — it is NOT synonymous with
+  // sin_paquete: a lapsed online registrant carries a real past `vence`
+  // (estado "vencido") and must still never sort below the expired.
+  if (f.fila.pendienteOnline || f.estado === "sin_paquete" || f.tile === "por_renovar") return 0;
   if (f.estado === "vencido") return 2;
   return 1; // vigente, outside the tile (sin_clases is always in por_renovar — see invariant test)
 }
 
 function claveOrden(f: FilaLifecycle): number {
-  if (f.estado === "sin_paquete") return -1; // ahead of even a día-0 renewal
-  if (f.estado === "vencido") return f.diasDesdeFin ?? Infinity; // most-recently-expired first
-  return f.dias ?? 0; // soonest-due first, within both the actionable and current tiers
+  if (f.fila.pendienteOnline || f.estado === "sin_paquete") return -1; // ahead of even a día-0 renewal
+  if (f.estado === "vencido") return diasDesdeVencido(f); // most-recently-expired first
+  // Actionable/current tiers: sort by the BINDING AXIS (the floored urgencia
+  // nivel), not raw días (#223 finding 5) — a SIN CLASES row is critico
+  // regardless of how many días remain, and raw-día sorting stranded it
+  // behind a merely-urgente días-bound row.
+  return NIVEL_RANGO[f.urgencia] * 1000 + (f.dias ?? 0);
 }
 
 /** The roster-level half: order derived rows actionable → current → expired
@@ -257,20 +356,28 @@ export function ordenarLifecycle(filas: FilaLifecycle[]): FilaLifecycle[] {
 
 // ── Counts (the shared counts, #222) ──────────────────────────────────────
 
-const CUBOS_DIAS: { cubo: CuboRenovar; test: (d: number) => boolean }[] = [
-  { cubo: "hoy", test: (d) => d === 0 },
-  { cubo: "manana", test: (d) => d === 1 },
-  { cubo: "dosATres", test: (d) => d >= 2 && d <= 3 },
-  { cubo: "cuatroACinco", test: (d) => d >= 4 && d <= 5 },
-  { cubo: "seisOMas", test: (d) => d >= 6 && d <= RENOVACION_DIAS },
-];
+/** Connect Gym's observed today/tomorrow/3d/5d shape, plus a final catch-all.
+ *  TOTAL by construction (#223 finding 6c): every input lands in a real
+ *  bucket, so the caller never needs an `undefined`/"drop the row" branch —
+ *  the prior `Array.find` + `if (cubo)` could silently drop a row from the
+ *  breakdown, defeating the very guarantee (buckets sum to the headline)
+ *  this function exists to hold. `seisOMas` is both the named 6-10 band AND
+ *  the safety net for anything >= 6, so the buckets-sum-to-total invariant
+ *  holds even if a future caller feeds a día outside [0, RENOVACION_DIAS]. */
+function cuboDias(d: number): CuboRenovar {
+  if (d === 0) return "hoy";
+  if (d === 1) return "manana";
+  if (d <= 3) return "dosATres";
+  if (d <= 5) return "cuatroACinco";
+  return "seisOMas";
+}
 
 /** The roster-level counts both CLIENTES and INICIO share. POR RENOVAR's
  *  `cubos` always sum to `total`: every row lands in EXACTLY one bucket —
  *  `clases` when `clases <= RENOVACION_CLASES` (the binding-axis arm, owner
- *  stories 6/7), else the one day-bucket its `dias` falls into (guaranteed
+ *  stories 6/7), else the one day-bucket `cuboDias` assigns (guaranteed
  *  in [0, RENOVACION_DIAS] whenever it isn't clases-bound, since estado !==
- *  "vencido" is the tile's other gate). */
+ *  "vencido" is the tile's other gate; `cuboDias` is total regardless). */
 export function contarLifecycle(filas: FilaLifecycle[]): ConteosLifecycle {
   const renovar = filas.filter((f) => f.tile === "por_renovar");
   const cubos: Record<CuboRenovar, number> = {
@@ -287,11 +394,14 @@ export function contarLifecycle(filas: FilaLifecycle[]): ConteosLifecycle {
       cubos.clases += 1;
       continue;
     }
-    const cubo = CUBOS_DIAS.find((c) => c.test(f.dias ?? 0));
-    if (cubo) cubos[cubo.cubo] += 1;
+    // A "por_renovar" row is never sin_paquete (see derivarLifecycle's early
+    // return), so `dias` is guaranteed non-null here.
+    cubos[cuboDias(f.dias ?? 0)] += 1;
   }
 
   return {
+    vigentes: filas.filter((f) => f.estado === "vigente").length,
+    total: filas.length,
     porRenovar: { total: renovar.length, cubos },
     aunATiempo: { total: filas.filter((f) => f.tile === "aun_a_tiempo").length },
     pendienteOnline: filas.filter((f) => f.fila.pendienteOnline).length,

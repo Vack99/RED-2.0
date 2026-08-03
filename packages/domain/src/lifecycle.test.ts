@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contarLifecycle, derivarLifecycle, ordenarLifecycle } from "./lifecycle";
+import { contarLifecycle, derivarLifecycle, esPaseSuelto, nivelUrgenciaLifecycle, ordenarLifecycle } from "./lifecycle";
 import type { FilaRosterLifecycle } from "./lifecycle";
 
 // Fixed anchor (arbitrary, mirrors the /proto fixture's own 2026-08-02) so
@@ -29,6 +29,36 @@ const BASE: FilaRosterLifecycle = {
 function fila(overrides: Partial<FilaRosterLifecycle>): FilaRosterLifecycle {
   return { ...BASE, ...overrides };
 }
+
+describe("esPaseSuelto — the membership-vs-drop-in predicate (#223 finding 2)", () => {
+  it("classifies a grant of exactly 1 class as a one-off pass", () => {
+    expect(esPaseSuelto(1)).toBe(true);
+  });
+
+  it("classifies any finite grant > 1 as a membership", () => {
+    expect(esPaseSuelto(2)).toBe(false);
+    expect(esPaseSuelto(8)).toBe(false);
+    expect(esPaseSuelto(12)).toBe(false);
+  });
+
+  it("classifies ilimitado (a null grant) as a membership", () => {
+    expect(esPaseSuelto(null)).toBe(false);
+  });
+});
+
+describe("nivelUrgenciaLifecycle — the urgencia floor (#223 finding 3): expired is never crítico", () => {
+  it("floors an expired saldo to ok, never crítico", () => {
+    // Raw urgenciaCliente would say "critico" for both (dias <= 3) — the
+    // floor is unconditional, not scaled by how long ago it lapsed.
+    expect(nivelUrgenciaLifecycle({ clases: 8, dias: -5 })).toBe("ok");
+    expect(nivelUrgenciaLifecycle({ clases: 8, dias: -40 })).toBe("ok");
+  });
+
+  it("does not floor a still-valid saldo — reuses urgenciaCliente's thresholds unchanged", () => {
+    expect(nivelUrgenciaLifecycle({ clases: 8, dias: 2 })).toBe("critico");
+    expect(nivelUrgenciaLifecycle({ clases: 8, dias: 20 })).toBe("ok");
+  });
+});
 
 describe("derivarLifecycle — estado + eje (fecha wins, ruling A2)", () => {
   it("is vigente with días and clases to spare", () => {
@@ -203,6 +233,21 @@ describe("derivarLifecycle — pendienteOnline y sin_paquete: primera clase, nun
     const r = derivarLifecycle(fila({ vence: null, pendienteOnline: true }), HOY);
     expect(r.tile).not.toBe("aun_a_tiempo");
   });
+
+  it("HIGH RISK CASE (#223 finding 1): a pendienteOnline row with a real 40-día-past vence is estado VENCIDO, not sin_paquete", () => {
+    // The real producer (derive.ts esRegistroOnlinePendiente) marks
+    // pendienteOnline from the OLD estado's "sin_clases", which covers BOTH
+    // no-package AND expired-by-date — so this shape is real, not synthetic.
+    const r = derivarLifecycle(
+      fila({ vence: haceDias(40), clases: 0, pendienteOnline: true, tieneCuenta: true }),
+      HOY,
+    );
+    expect(r.estado).toBe("vencido");
+    expect(r.dias).toBe(-40);
+    // Excluded from AÚN A TIEMPO via tieneCuenta (structural reconciliation),
+    // not because pendienteOnline forces sin_paquete (the false assumption).
+    expect(r.tile).toBeNull();
+  });
 });
 
 describe("derivarLifecycle — la insignia ausente: pisos, no fugas (S9/A9)", () => {
@@ -236,6 +281,26 @@ describe("derivarLifecycle — la insignia ausente: pisos, no fugas (S9/A9)", ()
   });
 });
 
+describe("derivarLifecycle — urgencia integration (#223 finding 3)", () => {
+  it("a VENCIDO row's urgencia is ok regardless of how long ago it expired", () => {
+    expect(derivarLifecycle(fila({ vence: haceDias(1), clases: 8 }), HOY).urgencia).toBe("ok");
+    expect(derivarLifecycle(fila({ vence: haceDias(40), clases: 8 }), HOY).urgencia).toBe("ok");
+  });
+
+  it("a sin_paquete row's urgencia is ok — nothing to be urgent about", () => {
+    expect(derivarLifecycle(fila({ vence: null, pendienteOnline: true }), HOY).urgencia).toBe("ok");
+  });
+
+  it("a SIN CLASES row (días to spare, clases exhausted) still reads crítico via the clases dimension — the floor is about vencido, not sin_clases", () => {
+    expect(derivarLifecycle(fila({ vence: enDias(29), clases: 0 }), HOY).urgencia).toBe("critico");
+  });
+
+  it("a one-off pass's spent clases never drive urgencia — only días can", () => {
+    const r = derivarLifecycle(fila({ vence: enDias(20), clases: 0, esPaseSuelto: true }), HOY);
+    expect(r.urgencia).toBe("ok"); // días=20 alone reads ok; clases=0 must NOT force critico
+  });
+});
+
 describe("ordenarLifecycle — actionable → current → expired, most-recently-expired first", () => {
   it("orders actionable before current before expired", () => {
     const actionable = derivarLifecycle(fila({ vence: enDias(3), clases: 8 }), HOY);
@@ -264,6 +329,25 @@ describe("ordenarLifecycle — actionable → current → expired, most-recently
     const dia9 = derivarLifecycle(fila({ vence: enDias(9), clases: 8 }), HOY);
     const orden = ordenarLifecycle([dia9, dia1]);
     expect(orden).toEqual([dia1, dia9]);
+  });
+
+  it("HIGH (#223 finding 1): a pendienteOnline row lapsed 40 días sorts actionable, never below a plain expired row", () => {
+    const lapsedOnline = derivarLifecycle(
+      fila({ vence: haceDias(40), clases: 0, pendienteOnline: true, tieneCuenta: true }),
+      HOY,
+    );
+    const plainExpired = derivarLifecycle(fila({ vence: haceDias(10), clases: 0 }), HOY);
+    const orden = ordenarLifecycle([plainExpired, lapsedOnline]);
+    expect(orden[0]).toBe(lapsedOnline); // read from fila.pendienteOnline, not inferred from vence
+  });
+
+  it("LOW (#223 finding 5): a SIN CLASES row with días to spare sorts by its binding-axis urgency, not stranded behind a merely-urgente días-bound row", () => {
+    const sinClasesLejos = derivarLifecycle(fila({ vence: enDias(29), clases: 0 }), HOY); // critico via clases
+    const diasBoundUrgente = derivarLifecycle(fila({ vence: enDias(5), clases: 8 }), HOY); // urgente via días (29 > 5)
+    const orden = ordenarLifecycle([diasBoundUrgente, sinClasesLejos]);
+    // Raw-día sorting would strand sinClasesLejos (29 días) behind
+    // diasBoundUrgente (5 días) even though it cannot train today.
+    expect(orden[0]).toBe(sinClasesLejos);
   });
 });
 
@@ -316,6 +400,32 @@ describe("contarLifecycle — el conteo compartido", () => {
     expect(conteos.aunATiempo.total).toBe(1);
     expect(conteos.pendienteOnline).toBe(1);
     expect(conteos.porRenovar.total).toBe(0);
+  });
+
+  it("HIGH (#223 finding 1): a lapsed pendienteOnline row counts ONCE — pendienteOnline only, never also aunATiempo/porRenovar (one verdict)", () => {
+    const filas = [
+      derivarLifecycle(
+        fila({ vence: haceDias(40), clases: 0, pendienteOnline: true, tieneCuenta: true }),
+        HOY,
+      ),
+    ];
+    const conteos = contarLifecycle(filas);
+    expect(conteos.pendienteOnline).toBe(1);
+    expect(conteos.aunATiempo.total).toBe(0);
+    expect(conteos.porRenovar.total).toBe(0);
+  });
+
+  it("MEDIUM (#223 finding 4): vigentes/total feed the header ratio (story 19) — the one VIGENTE number, never a second inline filter count", () => {
+    const filas = [
+      derivarLifecycle(fila({ vence: enDias(20), clases: 8 }), HOY), // vigente
+      derivarLifecycle(fila({ vence: enDias(3), clases: 8 }), HOY), // vigente, also por_renovar
+      derivarLifecycle(fila({ vence: haceDias(5), clases: 8 }), HOY), // vencido
+      derivarLifecycle(fila({ vence: enDias(20), clases: 0 }), HOY), // sin_clases
+      derivarLifecycle(fila({ vence: null, pendienteOnline: true }), HOY), // sin_paquete
+    ];
+    const conteos = contarLifecycle(filas);
+    expect(conteos.vigentes).toBe(2);
+    expect(conteos.total).toBe(5);
   });
 });
 
@@ -431,6 +541,10 @@ describe("lifecycle engine — forge-shaped mix (finite packs, ilimitado, drop-i
     // recienVencidoConCuenta excluded (app account), largoMuerto past día 16.
     expect(conteos.aunATiempo.total).toBe(1);
     expect(conteos.pendienteOnline).toBe(1);
+    // vigentes (#223 finding 4): midCycle + casiEnCero + porVencer + hector + paseSueltoGastado.
+    // agotado is sin_clases, the three vencido rows + registroOnline are not.
+    expect(conteos.vigentes).toBe(5);
+    expect(conteos.total).toBe(10);
   });
 
   it("flags Hector — paid up, vigente, but 24 días unseen — as ausente", () => {
