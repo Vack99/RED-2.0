@@ -13,7 +13,6 @@ import { construirCorreoAuth, respuestaEnvio } from "./correo";
 const BASE = {
   tokenHash: "hash-123",
   redirectTo: "https://red-demo.ibookit.lat/auth/confirm",
-  siteUrl: "https://red.ibookit.lat",
 };
 
 describe("construirCorreoAuth — subject + copy per action type", () => {
@@ -104,12 +103,21 @@ describe("construirCorreoAuth — the minted link", () => {
     }
   });
 
-  it("empty redirectTo falls back to siteUrl/auth/confirm (defensive)", () => {
-    const m = construirCorreoAuth({ ...BASE, redirectTo: "", emailActionType: "signup", gymNombre: null });
-    const u = new URL(m.url);
-    expect(u.host).toBe("red.ibookit.lat");
-    expect(u.pathname).toBe("/auth/confirm");
-    expect(u.searchParams.get("type")).toBe("email");
+  it("empty redirectTo fails closed instead of defaulting to the global Site URL (#217)", () => {
+    expect(() =>
+      construirCorreoAuth({ ...BASE, redirectTo: "", emailActionType: "signup", gymNombre: null }),
+    ).toThrow();
+  });
+
+  it("malformed (non-empty, unparseable) redirectTo also fails closed", () => {
+    expect(() =>
+      construirCorreoAuth({
+        ...BASE,
+        redirectTo: "not-a-url",
+        emailActionType: "signup",
+        gymNombre: null,
+      }),
+    ).toThrow();
   });
 });
 

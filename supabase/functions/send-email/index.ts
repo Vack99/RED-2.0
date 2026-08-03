@@ -81,7 +81,6 @@ Deno.serve(async (req: Request) => {
       token_hash: string;
       redirect_to: string;
       email_action_type: string;
-      site_url: string;
     };
   };
   try {
@@ -94,13 +93,20 @@ Deno.serve(async (req: Request) => {
   const { user, email_data } = parsed;
   const gymNombre = await gymNombrePorHost(email_data.redirect_to);
 
-  const mail = construirCorreoAuth({
-    emailActionType: email_data.email_action_type,
-    tokenHash: email_data.token_hash,
-    redirectTo: email_data.redirect_to,
-    siteUrl: email_data.site_url,
-    gymNombre,
-  });
+  let mail: ReturnType<typeof construirCorreoAuth>;
+  try {
+    mail = construirCorreoAuth({
+      emailActionType: email_data.email_action_type,
+      tokenHash: email_data.token_hash,
+      redirectTo: email_data.redirect_to,
+      gymNombre,
+    });
+  } catch {
+    // Empty/unparseable redirect_to: fail closed rather than defaulting to the
+    // platform's global Site URL, which would auto-enroll this user into
+    // whichever gym owns that host (#217).
+    return json(400, { error: { http_code: 400, message: "redirect_to vacío o inválido" } });
+  }
 
   let status: number | null = null;
   try {

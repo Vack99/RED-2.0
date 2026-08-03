@@ -30,7 +30,6 @@ export interface EntradaCorreoAuth {
   emailActionType: string;
   tokenHash: string;
   redirectTo: string;
-  siteUrl: string;
   gymNombre: string | null;
 }
 
@@ -48,14 +47,19 @@ function tipoOtp(emailActionType: string): string {
 
 /**
  * The link is minted on the GYM'S OWN host (the spam-driver fix — never
- * `${SUPABASE_URL}/auth/v1/verify`): base is `redirectTo` (already
- * `https://{gym-host}/auth/confirm[?codigo=…|?next=…]`), or `${siteUrl}/auth/confirm`
- * if empty (defensive — the input is external). `token_hash` + `type` are appended,
- * PRESERVING any existing query (`codigo`, `next`).
+ * `${SUPABASE_URL}/auth/v1/verify`, and never the platform's global Site URL):
+ * `redirectTo` must already be `https://{gym-host}/auth/confirm[?codigo=…|?next=…]`.
+ * FAILS CLOSED (throws) on an empty or unparseable `redirectTo` instead of
+ * defaulting to the Site URL — that host belongs to exactly one gym, and
+ * defaulting to it would silently enroll the recipient into a tenant they have
+ * no relationship with (#217). `token_hash` + `type` are appended, PRESERVING
+ * any existing query (`codigo`, `next`).
  */
-function construirUrl(redirectTo: string, siteUrl: string, tokenHash: string, tipo: string): string {
-  const base = redirectTo || `${siteUrl}/auth/confirm`;
-  const u = new URL(base);
+function construirUrl(redirectTo: string, tokenHash: string, tipo: string): string {
+  if (!redirectTo) {
+    throw new Error("redirect_to vacío: no se puede enviar el correo sin un host de gym válido");
+  }
+  const u = new URL(redirectTo);
   u.searchParams.set("token_hash", tokenHash);
   u.searchParams.set("type", tipo);
   return u.toString();
@@ -118,10 +122,9 @@ export function construirCorreoAuth({
   emailActionType,
   tokenHash,
   redirectTo,
-  siteUrl,
   gymNombre,
 }: EntradaCorreoAuth): CorreoAuth {
-  const url = construirUrl(redirectTo, siteUrl, tokenHash, tipoOtp(emailActionType));
+  const url = construirUrl(redirectTo, tokenHash, tipoOtp(emailActionType));
   const c = copia(emailActionType);
   const introHtml = c.intro(gymNombre, (s) => `<strong>${s}</strong>`);
   const introText = c.intro(gymNombre, (s) => s);
