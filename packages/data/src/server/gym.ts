@@ -12,6 +12,10 @@ export interface OperatorGym {
   slug: string;
   /** Per-tenant brand, mixed-case as stored (e.g. "RED", "Forge"); render sites uppercase. */
   brandName: string;
+  /** The resolving session's `auth.uid()` — the claim `sub` `requireOperator` already
+   *  returned. Carried so the tenant-crossing log line (#204) can name WHO crossed
+   *  without a second `getClaims()` round trip. */
+  userId: string;
 }
 
 /**
@@ -44,7 +48,7 @@ export interface OperatorGym {
  */
 const resolveOperatorGym = cache(
   async (supabase: SupabaseServer): Promise<OperatorGym> => {
-    await requireOperator(supabase);
+    const userId = await requireOperator(supabase);
 
     const { data: membership } = await supabase
       .from("gym_membership")
@@ -67,6 +71,7 @@ const resolveOperatorGym = cache(
       timezone: gym.timezone,
       slug: gym.slug,
       brandName: gym.brand_name,
+      userId,
     };
   },
 );

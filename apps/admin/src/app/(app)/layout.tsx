@@ -1,6 +1,7 @@
 import { getOperatorGym } from "@gym/data/server/gym";
 import { TabBar, type TabItem } from "@gym/ui/forge/tab-bar";
 
+import { auditTenantInEffect } from "../../lib/tenant";
 import { SinGimnasio } from "./_components/sin-gimnasio";
 
 // The admin app owns its nav table (brand-specific routes + labels); @gym/ui's
@@ -26,11 +27,15 @@ const TABS: readonly TabItem[] = [
  * guarantees SOME authenticated session reaches here) throws — caught once
  * here instead of every page repeating the check, and every page's own
  * `getOperatorGym()` call still resolves for free via its `cache()` memo.
+ *
+ * It is also where the tenant-in-effect comparison runs (#203/#204): the ONE place
+ * that holds both the host-resolved tenant (`x-gym`) and the membership-resolved gym.
+ * Today it only measures — see `src/lib/tenant.ts`.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const esStaff = await getOperatorGym()
-    .then(() => true)
-    .catch(() => false);
+  const gym = await getOperatorGym().catch(() => null);
+  if (gym) await auditTenantInEffect(gym);
+  const esStaff = gym !== null;
 
   return (
     <div className="flex min-h-dvh w-full justify-center bg-backdrop">

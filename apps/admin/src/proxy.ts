@@ -31,9 +31,17 @@ export async function proxy(request: NextRequest) {
     request.nextUrl.searchParams.get('gym') ?? request.cookies.get('gym')?.value ?? null
   const tenant = await resolveTenant(request.headers.get('host'), override)
 
-  let response = NextResponse.next({
-    request: { headers: tenantHeaders(request.headers, tenant) },
-  })
+  // The forwarded header set, rebuilt on demand: `setAll` mutates `request.cookies`
+  // (and therefore `request.headers`) before re-cloning, so this cannot be hoisted to
+  // a value. `x-ruta` carries the pathname a Server Component cannot read for itself —
+  // the crossing log names the path it happened on (#204).
+  const forwarded = () => {
+    const headers = tenantHeaders(request.headers, tenant)
+    headers.set('x-ruta', request.nextUrl.pathname)
+    return headers
+  }
+
+  let response = NextResponse.next({ request: { headers: forwarded() } })
 
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,9 +57,7 @@ export async function proxy(request: NextRequest) {
           }
           // Re-clone AFTER the rotation so the forwarded request carries both the
           // fresh session cookies and the resolved tenant headers.
-          response = NextResponse.next({
-            request: { headers: tenantHeaders(request.headers, tenant) },
-          })
+          response = NextResponse.next({ request: { headers: forwarded() } })
           for (const { name, value, options } of cookiesToSet) {
             response.cookies.set(name, value, options)
           }

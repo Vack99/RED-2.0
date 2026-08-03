@@ -205,12 +205,23 @@ async function gymTenant(
  * NO tenant stamps neither, so the layout falls back to `DEFAULT_BRAND` and the
  * request carries no `x-gym` claim (unknown host → no tenant). Returns a fresh
  * `Headers` (never mutates the caller's).
+ *
+ * The no-tenant arm DELETES rather than merely skipping: `new Headers(base)` copies
+ * whatever the client sent, so an INBOUND `x-gym`/`x-brand` used to survive into the
+ * app untouched on every host that resolves no tenant — preview deployments, the bare
+ * `.vercel.app`, and plain `pnpm dev`. Deleting is what makes "`x-gym` is
+ * proxy-derived" true on EVERY path, which is the precondition for the admin app
+ * reading it at all (#204/#212). It was inert while `apps/admin` read `x-gym` zero
+ * times; it stops being inert the moment the reconciliation lands.
  */
 export function tenantHeaders(base: Headers, tenant: Tenant | null): Headers {
   const headers = new Headers(base);
   if (tenant) {
     headers.set("x-gym", tenant.slug);
     headers.set("x-brand", tenant.brandModuleId);
+  } else {
+    headers.delete("x-gym");
+    headers.delete("x-brand");
   }
   return headers;
 }

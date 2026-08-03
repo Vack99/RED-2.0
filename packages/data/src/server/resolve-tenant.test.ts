@@ -235,4 +235,21 @@ describe("tenantHeaders", () => {
     expect(h.get("host")).toBe("red.localhost");
     expect(h.get("cookie")).toBe("a=1");
   });
+
+  // The forged-header arm. `new Headers(base)` copies what the CLIENT sent, so
+  // without an explicit delete an inbound x-gym/x-brand rides into the app on every
+  // host that resolves no tenant (previews, the bare .vercel.app, `pnpm dev`). The
+  // admin app is about to read x-gym to reconcile it against membership (#204/#212);
+  // that read is only sound if the header can never be caller-supplied.
+  it("a resolved tenant OVERWRITES an inbound x-gym/x-brand", () => {
+    const h = tenantHeaders(new Headers({ "x-gym": "forge", "x-brand": "forge" }), tenant);
+    expect(h.get("x-gym")).toBe("red");
+    expect(h.get("x-brand")).toBe("red");
+  });
+
+  it("no tenant DELETES an inbound x-gym/x-brand rather than letting it through", () => {
+    const h = tenantHeaders(new Headers({ "x-gym": "red", "x-brand": "red" }), null);
+    expect(h.get("x-gym")).toBeNull();
+    expect(h.get("x-brand")).toBeNull();
+  });
 });

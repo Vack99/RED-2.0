@@ -80,6 +80,7 @@ describe("getOperatorGym", () => {
       timezone: "America/Chihuahua",
       slug: "forge",
       brandName: "Forge",
+      userId: "op-1",
     });
   });
 
@@ -90,6 +91,7 @@ describe("getOperatorGym", () => {
       timezone: "America/Chihuahua",
       slug: "forge",
       brandName: "Forge",
+      userId: "op-1",
     });
   });
 
@@ -99,6 +101,13 @@ describe("getOperatorGym", () => {
       gymBrandName: "RED",
     });
     expect((await getOperatorGym(client)).brandName).toBe("RED");
+  });
+
+  // The crossing log (#204) names WHO crossed. It reads the sub off this DTO rather
+  // than issuing its own getClaims(), so the sub must survive the resolution.
+  it("carries the claim sub through as userId", async () => {
+    const { client } = makeFake({ sub: "op-42" });
+    expect((await getOperatorGym(client)).userId).toBe("op-42");
   });
 
   it("filters to staff roles and orders by gym_id IN THE QUERY (the determinism lives in SQL, not JS)", async () => {
