@@ -38,6 +38,9 @@ export interface MarketingGym {
 export const getMarketingGym = cache(
   async (
     slug: string,
+    // No `x-gym-id` here, deliberately: this reads `gym` (by slug), which is the ONE anon
+    // table still `using (true)` because the pre-auth seam resolves the tenant through it.
+    // It is also what produces the gymId every reader below stamps. #215/#216.
     client: SupabaseServer = createAnonClient(),
   ): Promise<MarketingGym | null> => {
     const { data } = await client
@@ -88,7 +91,7 @@ export interface PlanPublicoDTO {
 export const getPlanesPublicos = cache(
   async (
     gymId: string,
-    client: SupabaseServer = createAnonClient(),
+    client: SupabaseServer = createAnonClient(gymId),
   ): Promise<PlanPublicoDTO[]> => {
     const [{ data: rows }, { data: feats }] = await Promise.all([
       client
@@ -178,7 +181,7 @@ export function parseHorarios(raw: unknown): HorarioDTO[] {
  *  page renders its "contacto próximamente" state). Best-effort. Memoized per request. Postgres `numeric`
  *  serializes as a string over PostgREST, so lat/long are coerced to numbers here. */
 export const getContacto = cache(
-  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<ContactoDTO | null> => {
+  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<ContactoDTO | null> => {
     const { data } = await client
       .from("gym_contact")
       .select("address_line, address_note, latitude, longitude, whatsapp, email, instagram, hours")
@@ -236,7 +239,7 @@ export interface FaqPublicaDTO {
 export const getFaqsPublicas = cache(
   async (
     gymId: string,
-    client: SupabaseServer = createAnonClient(),
+    client: SupabaseServer = createAnonClient(gymId),
   ): Promise<FaqPublicaDTO[]> => {
     const { data } = await client
       .from("faq")
@@ -276,7 +279,7 @@ export const getHorarioHoyPublico = cache(
   async (
     gymId: string,
     tz: string,
-    client: SupabaseServer = createAnonClient(),
+    client: SupabaseServer = createAnonClient(gymId),
   ): Promise<HorarioHoyDTO[]> => {
     const hoy = hoyEnZona(tz);
     const low = instanteEnZona(hoy, "00:00", tz);
@@ -319,7 +322,7 @@ export interface ValorPublicoDTO {
 
 /** A gym's values in the operator's display order, anon + gym-scoped. Best-effort []. Memoized. */
 export const getValoresPublicos = cache(
-  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<ValorPublicoDTO[]> => {
+  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<ValorPublicoDTO[]> => {
     const { data } = await client
       .from("about_value")
       .select("id, title, description")
@@ -340,7 +343,7 @@ export interface InstalacionPublicaDTO {
 export const getInstalacionesPublicas = cache(
   async (
     gymId: string,
-    client: SupabaseServer = createAnonClient(),
+    client: SupabaseServer = createAnonClient(gymId),
   ): Promise<InstalacionPublicaDTO[]> => {
     const { data } = await client
       .from("facility")
@@ -360,7 +363,7 @@ export interface StatPublicaDTO {
 
 /** A gym's stat tiles in display order, anon + gym-scoped. Best-effort []. Memoized. */
 export const getStatsPublicas = cache(
-  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<StatPublicaDTO[]> => {
+  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<StatPublicaDTO[]> => {
     const { data } = await client
       .from("stat")
       .select("id, label, value")
@@ -383,7 +386,7 @@ export interface CoachPublicoDTO {
 /** A gym's ACTIVE coach roster in display order, anon + gym-scoped. The anon `using(true)` policy would
  *  expose deactivated coaches too, so the active filter is a QUERY concern here. Best-effort []. Memoized. */
 export const getCoachesPublicos = cache(
-  async (gymId: string, client: SupabaseServer = createAnonClient()): Promise<CoachPublicoDTO[]> => {
+  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<CoachPublicoDTO[]> => {
     const { data } = await client
       .from("coach")
       .select("id, name, initials, role, specialty, bio")
@@ -416,7 +419,7 @@ export interface FormatoPublicoDTO {
 export const getFormatosPublicos = cache(
   async (
     gymId: string,
-    client: SupabaseServer = createAnonClient(),
+    client: SupabaseServer = createAnonClient(gymId),
   ): Promise<FormatoPublicoDTO[]> => {
     const { data } = await client
       .from("class_type")

@@ -48,15 +48,23 @@ export const createClient = cache(async () => {
  * Cookieless ANON server client for the public marketing reads (ADR-0012 §5, the same posture
  * `resolveTenant`'s pre-auth lookup uses). It carries NO session, so it is ALWAYS the `anon` role —
  * independent of whether the visitor happens to be logged in — which is exactly the surface the
- * decision-(b) anon-SELECT policies gate. Per-gym scoping is the caller's job (`.eq('gym_id', …)`),
- * since the anon policies are flat (`using (true)`) across gyms. The URL/anon key are identical for
- * every tenant (ADR-0008), so there is no per-gym secret here. Same `SupabaseServer` shape as the
- * cookie client, so the DAL's injectable-client seam (ADR-0001) is unchanged.
+ * anon-SELECT policies gate. The URL/anon key are identical for every tenant (ADR-0008), so there
+ * is no per-gym secret here. Same `SupabaseServer` shape as the cookie client, so the DAL's
+ * injectable-client seam (ADR-0001) is unchanged.
+ *
+ * `gymId` stamps the `x-gym-id` request header, which PostgREST publishes in the `request.headers`
+ * GUC and the anon catalog policies read through `public.gym_en_peticion()` (#215). Until then
+ * those policies were `using (true)` and per-gym scoping was purely the caller's `.eq('gym_id', …)`
+ * — a convention, so ONE anonymous call returned every gym's catalog (614 class_session rows across
+ * 4 gyms, measured live). The header is NOT an authz input: every row behind it is already public
+ * for that gym. It is the scope selector that turns "give me everything" into "give me one gym".
+ * Omitting it is a valid state (the unmapped-host case) and yields ZERO rows, not an error.
  */
-export function createAnonClient(): SupabaseServer {
+export function createAnonClient(gymId?: string): SupabaseServer {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    gymId ? { global: { headers: { 'x-gym-id': gymId } } } : undefined,
   )
 }
 

@@ -12,8 +12,15 @@
 --       clientes (member-owned) and schedule_template_coach (the one scheduling child deliberately
 --       LEFT OUT of the anon set) stays invisible to anon.
 --   (c) NO OTHER anon widening exists — the authoritative machine check: the exact set of tables
---       carrying an anon-role SELECT policy equals the 17-table allowlist (2 Phase-3 spine + 14
---       decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE policy exists.
+--       carrying an anon-role SELECT policy equals the allowlist (16 since #216 dropped gym_domain:
+--       `gym` + 14 decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE
+--       policy exists.
+--   (d)-(f) #215: one anonymous call cannot span gyms. The decision-(b) policies stopped being
+--       `using (true)` and now key on the gym the REQUEST names (x-gym-id → `request.headers` →
+--       public.gym_en_peticion()). A second gym is seeded so "gym B is invisible while naming gym
+--       A" is non-vacuous, the reverse direction proves the scope FOLLOWS the request rather than
+--       pinning one gym, and the no-header / malformed-header cases must be EMPTY, never an error
+--       (an unmapped host degrades to DEFAULT_BRAND with no content; it must not 500).
 --
 -- Self-asserting (every check RAISEs on failure; a clean run returns one 'OK' row). Wrapped in
 -- BEGIN/ROLLBACK — touches no row. gym A is minted fresh with gen_random_uuid (decoupled from the
@@ -32,6 +39,7 @@ begin;
 do $$
 declare
   gym_a uuid := gen_random_uuid();
+  gym_b uuid := gen_random_uuid();
   ct    uuid;
   co    uuid;
   cs    uuid;
@@ -69,14 +77,37 @@ begin
   --   clientes — the canonical member-owned table (anon must never read a member).
   insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_a, tmpl, co);
   insert into public.clientes (gym_id, nombre, tel) values (gym_a, 'Socio Probe', '5555555555');
+
+  -- Gym B (#215): the cross-gym probe. Before #215 every anon policy was `using (true)`,
+  -- so ONE anonymous call returned both gyms — measured live at 614 class_session rows
+  -- across 4 gyms. Seeded on the four tables that live probe actually counted, so the
+  -- "cannot return more than one gym" assertion below is non-vacuous.
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_b, 'anon-catalog-gym-b', 'Anon Catalog Gym B', 'America/Chihuahua', 'forge');
+  insert into public.coach (gym_id, name, initials, role) values (gym_b, 'Probe B', 'PB', 'coach')
+    returning id into co;
+  insert into public.class_type (gym_id, name) values (gym_b, 'AnonProbeB-' || substr(gen_random_uuid()::text, 1, 8))
+    returning id into ct;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_b, ct, now() + interval '1 day', 60, 10);
+  insert into public.paquetes (gym_id, nombre, clases, precio, vigencia_tipo, vigencia_dias, popular, orden)
+    values (gym_b, 'AnonProbeB-' || substr(gen_random_uuid()::text, 1, 8), 5, 100, 'dias', 20, false, 999);
+  insert into public.gym_contact (gym_id, address_line) values (gym_b, 'Av. Probe B 2');
+
+  -- Carried out of this block so the anon section can stamp them as the request's gym.
+  perform set_config('test.gym_a', gym_a::text, true);
+  perform set_config('test.gym_b', gym_b::text, true);
 end $$;
 
 -- ── (c) Authoritative: the anon-SELECT table set == the 16-table allowlist, and NO anon write ─────
 do $$
 declare
   expected text[] := array[
+    -- gym_domain LEFT OUT since #216: anon holds neither policy nor grant on it and reaches
+    -- one hostname only through public.gym_id_por_host (SECURITY DEFINER). If it reappears
+    -- here the customer census is public again, and this array is what says so.
     'about_value','class_session','class_session_coach','class_type','class_type_bring_item',
-    'class_type_workblock','coach','faq','facility','gym','gym_contact','gym_domain','paquetes',
+    'class_type_workblock','coach','faq','facility','gym','gym_contact','paquetes',
     'plan_feature','room','schedule_template','stat'
   ];
   got     text[];
@@ -107,6 +138,12 @@ end $$;
 
 -- ── (a)+(b) Row-level, as anon: reads every decision-(b) table, denied the two probes ─────────────
 set local role anon;
+
+-- Since #215 the anon policies key on the gym the REQUEST names, read out of PostgREST's
+-- `request.headers` GUC by public.gym_en_peticion(). This is exactly what PostgREST sets
+-- per request; `createAnonClient(gymId)` is what puts x-gym-id in it.
+select set_config('request.headers', json_build_object('x-gym-id', current_setting('test.gym_a'))::text, true);
+
 do $$
 declare n int;
 begin
@@ -132,7 +169,53 @@ begin
   if n <> 0 then raise exception 'ANON DENIAL FAIL: anon reads % schedule_template_coach rows (must be 0)', n; end if;
   select count(*) into n from public.clientes;
   if n <> 0 then raise exception 'ANON DENIAL FAIL: anon reads % clientes rows (member-owned, must be 0)', n; end if;
+
+  -- (d) #215's acceptance: ONE anonymous call cannot return rows for more than one gym.
+  -- The request names gym A, so gym B's seeded rows must be invisible on the four tables
+  -- the live probe actually enumerated.
+  select count(*) into n from public.coach        where gym_id = current_setting('test.gym_b')::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s coach rows', n; end if;
+  select count(*) into n from public.class_session where gym_id = current_setting('test.gym_b')::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s class_session rows', n; end if;
+  select count(*) into n from public.paquetes     where gym_id = current_setting('test.gym_b')::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s paquetes rows', n; end if;
+  select count(*) into n from public.gym_contact  where gym_id = current_setting('test.gym_b')::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s gym_contact rows', n; end if;
 end $$;
+
+-- (e) The other direction — proves the scoping FOLLOWS the request rather than pinning one
+-- gym: naming gym B shows B's rows and hides A's. Per-gym publication is the product.
+select set_config('request.headers', json_build_object('x-gym-id', current_setting('test.gym_b'))::text, true);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.coach where gym_id = current_setting('test.gym_b')::uuid;
+  if n < 1 then raise exception 'ANON READ FAIL: naming gym B returned % of its own coach rows', n; end if;
+  select count(*) into n from public.coach where gym_id = current_setting('test.gym_a')::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym B and read % of gym A''s coach rows', n; end if;
+end $$;
+
+-- (f) No header at all — the unmapped-host / plain-`pnpm dev` case. Must be EMPTY, never an
+-- error: a public page on an unmapped host degrades to DEFAULT_BRAND with no content, and a
+-- malformed header must not 500 a public page either.
+select set_config('request.headers', json_build_object('x-gym-id', 'not-a-uuid')::text, true);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.coach;
+  if n <> 0 then raise exception 'SCOPE FAIL: a malformed x-gym-id returned % coach rows', n; end if;
+end $$;
+
+select set_config('request.headers', '{}', true);
+do $$
+declare n int;
+begin
+  select count(*) into n from public.coach;
+  if n <> 0 then raise exception 'SCOPE FAIL: no x-gym-id returned % coach rows (expected 0)', n; end if;
+  select count(*) into n from public.class_session;
+  if n <> 0 then raise exception 'SCOPE FAIL: no x-gym-id returned % class_session rows (expected 0)', n; end if;
+end $$;
+
 reset role;
 
 select 'anon catalog read matrix: OK' as result;
