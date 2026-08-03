@@ -1,6 +1,34 @@
 import { describe, expect, it } from "vitest";
 
-import { isEmailValido, isTelValido, telDigits, TEL_DIGITS } from "./format";
+import { foldDiacritics, isEmailValido, isTelValido, telDigits, TEL_DIGITS } from "./format";
+
+describe("foldDiacritics", () => {
+  it("strips accents so an unaccented query matches an accented name (#224)", () => {
+    expect(foldDiacritics("chavez")).toBe(foldDiacritics("Chávez"));
+    expect(foldDiacritics("Chávez")).toBe("chavez");
+  });
+
+  it("still matches when the query itself is typed with accents", () => {
+    expect(foldDiacritics("Chávez")).toBe(foldDiacritics("Chávez"));
+  });
+
+  it("folds other accented names (héctor -> hector)", () => {
+    expect(foldDiacritics("Héctor")).toBe("hector");
+    expect(foldDiacritics("hector")).toBe(foldDiacritics("Héctor"));
+  });
+
+  it("is case-insensitive independent of accents", () => {
+    expect(foldDiacritics("CHÁVEZ")).toBe("chavez");
+  });
+
+  it("is a no-op on plain ASCII/digit text (phone search unaffected)", () => {
+    expect(foldDiacritics("614-123-4567")).toBe("614-123-4567");
+  });
+
+  it("handles empty input", () => {
+    expect(foldDiacritics("")).toBe("");
+  });
+});
 
 describe("isTelValido", () => {
   it("accepts exactly 10 digits (the canonical MX rule)", () => {

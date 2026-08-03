@@ -6,11 +6,12 @@
 // through it (never an inline toLocaleString) so grouping/locale live in one place.
 const PESO_FMT = new Intl.NumberFormat("es-MX");
 
-/** Hoisted regexes — created once, not per call. Both are used only with
+/** Hoisted regexes — created once, not per call. All three are used only with
  *  `.replace`/`.split` (no `.test`/`.exec`), so the `g`-flag `lastIndex` trap
  *  does not apply. */
 const NON_DIGIT = /\D/g;
 const WHITESPACE = /\s+/;
+const DIACRITIC = /\p{Diacritic}/gu;
 
 export function pesos(n: number | null | undefined): string {
   return "$" + PESO_FMT.format(n ?? 0);
@@ -31,6 +32,17 @@ export function iniciales(nombre: string): string {
       .join("")
       .toUpperCase() || "?"
   );
+}
+
+/**
+ * Accent-insensitive search fold: lowercase + strip Unicode diacritics, so
+ * "chavez" and "Chávez" fold to the same "chavez" (#224 — roster search).
+ * Apply this to BOTH the typed query and the candidate text at a search
+ * seam; never to a sort key — sort must stay accent-correct
+ * (localeCompare), so this is search-only.
+ */
+export function foldDiacritics(s: string): string {
+  return (s || "").normalize("NFD").replace(DIACRITIC, "").toLowerCase();
 }
 
 /**

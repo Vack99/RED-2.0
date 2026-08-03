@@ -10,6 +10,7 @@ import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
+import { foldDiacritics } from "@gym/format";
 import { markInAppNav } from "../../../../lib/nav";
 
 type Sort = "dias" | "nombre" | "asist";
@@ -60,8 +61,11 @@ export function ClientesScreen({
     if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
-      const q = query.toLowerCase();
-      list = list.filter((x) => x.c.nombre.toLowerCase().includes(q) || !!x.c.tel?.includes(query));
+      // Diacritic-folded (#224): "chavez" must find "Chávez". Folding applies to both
+      // the query and the candidate name; the phone check stays a raw digit/string
+      // match (tel never carries diacritics) and the sort comparator below is untouched.
+      const q = foldDiacritics(query);
+      list = list.filter((x) => foldDiacritics(x.c.nombre).includes(q) || !!x.c.tel?.includes(query));
     }
     const sorters: Record<Sort, (a: typeof withU[0], b: typeof withU[0]) => number> = {
       dias: (a, b) => a.c.diasRest - b.c.diasRest,
