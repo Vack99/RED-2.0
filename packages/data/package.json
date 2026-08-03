@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/database.types.ts",
     "./client": "./src/client.ts",
+    "./cookie-options": "./src/cookie-options.ts",
     "./server/_auth": "./src/server/_auth.ts",
     "./server/about-values": "./src/server/about-values.ts",
     "./server/activacion": "./src/server/activacion.ts",

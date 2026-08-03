@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 import { resolveTenant, tenantHeaders } from "@gym/data/server/resolve-tenant";
+import { SECURE_COOKIES, SUPABASE_COOKIE_OPTIONS } from "@gym/data/cookie-options";
 import type { Database } from "@gym/data";
 
 /**
@@ -71,6 +72,9 @@ export async function proxy(request: NextRequest) {
           }
         },
       },
+      // MUST match the other three @supabase/ssr construction sites exactly
+      // (#209) — see @gym/data/cookie-options.
+      cookieOptions: SUPABASE_COOKIE_OPTIONS,
     },
   );
 
@@ -78,7 +82,12 @@ export async function proxy(request: NextRequest) {
   // above fires as a side effect when the SDK rotates the token.
   await supabase.auth.getClaims();
 
-  if (tenant) response.cookies.set("gym", tenant.slug, { path: "/", sameSite: "lax" });
+  if (tenant)
+    response.cookies.set("gym", tenant.slug, {
+      path: "/",
+      sameSite: "lax",
+      secure: SECURE_COOKIES,
+    });
   return response;
 }
 

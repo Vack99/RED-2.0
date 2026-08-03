@@ -5,6 +5,7 @@ import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
+import { SUPABASE_COOKIE_OPTIONS } from '../cookie-options'
 import type { Database } from '../database.types'
 
 /**
@@ -17,6 +18,9 @@ import type { Database } from '../database.types'
  * during a Server Component render (cookies are read-only there) — `proxy.ts`
  * owns session refresh. Authorize with `getClaims()`/`getUser()`, never
  * `getSession()`.
+ *
+ * `cookieOptions` MUST match the other three `@supabase/ssr` construction
+ * sites exactly (#209) — see `../cookie-options`.
  */
 export const createClient = cache(async () => {
   const cookieStore = await cookies()
@@ -40,6 +44,7 @@ export const createClient = cache(async () => {
           }
         },
       },
+      cookieOptions: SUPABASE_COOKIE_OPTIONS,
     },
   )
 })
