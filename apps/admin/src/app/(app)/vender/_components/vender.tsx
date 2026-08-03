@@ -11,7 +11,7 @@ import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
 import { calcVigenciaEnd } from "@gym/domain/rules";
-import { DOW, fmtFull, fmtNavegadorDia, fmtShort, isoDay, MON, parseDay, pesos, sameDay } from "@gym/format";
+import { DOW, fmtFull, fmtNavegadorDia, fmtShort, foldDiacritics, isoDay, MON, parseDay, pesos, sameDay } from "@gym/format";
 import { crearVentaAction } from "../actions";
 import { PersonalizadoEditor } from "./personalizado-editor";
 import { Recibo } from "./recibo";
@@ -315,7 +315,9 @@ export function VenderScreen({
   const filteredClients = clientes.filter(
     (c) =>
       !pickerQuery ||
-      c.nombre.toLowerCase().includes(pickerQuery.toLowerCase()) ||
+      // Diacritic-folded (#224): "chavez" must find "Chávez" in the sale-screen
+      // picker too. The tel arm below is untouched (separate pre-existing defect).
+      foldDiacritics(c.nombre).includes(foldDiacritics(pickerQuery)) ||
       !!c.tel?.replace(/\D/g, "").includes(pickerQuery.replace(/\D/g, "")),
   );
 

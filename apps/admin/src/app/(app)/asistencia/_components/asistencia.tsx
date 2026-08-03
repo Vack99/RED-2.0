@@ -8,7 +8,7 @@ import { forgeToast } from "@gym/ui/forge/toaster";
 import { Avatar, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
-import { addDays, DOW, firstName, fmtFull, isoDay, MON, parseDay, sameDay } from "@gym/format";
+import { addDays, DOW, firstName, fmtFull, foldDiacritics, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
@@ -203,8 +203,9 @@ export function AsistenciaScreen({
     [sesiones],
   );
 
+  // Diacritic-folded (#224): "chavez" must find "Chávez" at PASA LISTA too.
   const filtered = clientes.filter((c) =>
-    c.nombre.toLowerCase().includes(query.trim().toLowerCase()),
+    foldDiacritics(c.nombre).includes(foldDiacritics(query.trim())),
   );
   // Booked members lead in a class context. Both halves keep the roster's alphabetical
   // order and a row NEVER moves when marked — group membership is the booking, not the

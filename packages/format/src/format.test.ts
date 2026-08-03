@@ -8,13 +8,26 @@ describe("foldDiacritics", () => {
     expect(foldDiacritics("Chávez")).toBe("chavez");
   });
 
-  it("still matches when the query itself is typed with accents", () => {
-    expect(foldDiacritics("Chávez")).toBe(foldDiacritics("Chávez"));
+  it("folds NFC and NFD encodings of the same accented name to the same value (the real desk case: iOS/macOS clipboard paste yields NFD)", () => {
+    const nfc = "Chávez"; // precomposed: U+00E1 ("á", a-with-acute) as one code point
+    const nfd = "Chávez"; // decomposed: "a" (U+0061) + combining acute accent (U+0301)
+    expect(nfc).not.toBe(nfd); // sanity: distinct JS strings before folding
+    expect(foldDiacritics(nfc)).toBe(foldDiacritics(nfd));
+    expect(foldDiacritics(nfc)).toBe("chavez");
   });
 
   it("folds other accented names (héctor -> hector)", () => {
     expect(foldDiacritics("Héctor")).toBe("hector");
     expect(foldDiacritics("hector")).toBe(foldDiacritics("Héctor"));
+  });
+
+  // ñ/ü fold too, not just acute/grave vowels -- deliberate, not an accident of
+  // \p{Diacritic}: the desk operator types plain ASCII, so "munoz" must find "Muñoz"
+  // and "aguero" must find "Agüero" exactly like the acute-accent cases above.
+  it("folds ñ and ü for search (deliberate -- munoz must find Muñoz)", () => {
+    expect(foldDiacritics("Muñoz")).toBe("munoz");
+    expect(foldDiacritics("Peña")).toBe("pena");
+    expect(foldDiacritics("Agüero")).toBe("aguero");
   });
 
   it("is case-insensitive independent of accents", () => {

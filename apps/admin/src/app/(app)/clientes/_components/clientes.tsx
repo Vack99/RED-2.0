@@ -47,7 +47,14 @@ export function ClientesScreen({
   const [sort, setSort] = React.useState<Sort>("dias");
 
   const withU = React.useMemo(
-    () => clientes.map((c) => ({ c, u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }) })),
+    () =>
+      clientes.map((c) => ({
+        c,
+        u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }),
+        // Folded once per client here (not per keystroke in the filter below) — the
+        // candidate side of the #224 diacritic fold.
+        nombrePlegado: foldDiacritics(c.nombre),
+      })),
     [clientes],
   );
   const renovarCount = withU.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente").length;
@@ -62,10 +69,12 @@ export function ClientesScreen({
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
       // Diacritic-folded (#224): "chavez" must find "Chávez". Folding applies to both
-      // the query and the candidate name; the phone check stays a raw digit/string
-      // match (tel never carries diacritics) and the sort comparator below is untouched.
+      // the query and the candidate name (the candidate side is pre-folded once per
+      // client in `withU` above, not per keystroke here); the phone check stays a raw
+      // digit/string match (tel never carries diacritics) and the sort comparator
+      // below is untouched.
       const q = foldDiacritics(query);
-      list = list.filter((x) => foldDiacritics(x.c.nombre).includes(q) || !!x.c.tel?.includes(query));
+      list = list.filter((x) => x.nombrePlegado.includes(q) || !!x.c.tel?.includes(query));
     }
     const sorters: Record<Sort, (a: typeof withU[0], b: typeof withU[0]) => number> = {
       dias: (a, b) => a.c.diasRest - b.c.diasRest,
