@@ -99,14 +99,19 @@ function makeFake(
           return builder(rows.cobro ?? null, []);
         case "plantillas":
           return builder(null, rows.plantillas ?? []);
-        // Slice #25: getOperatorGym's membership + gym lookups — default to
-        // Forge's real zone, matching the shared supabase-fake.test-helper.
-        // brand_name (#97) is the injected negocio fallback — a distinct mixed-case
-        // value proves it passes through to result.negocio when perfil is absent.
+        // Slice #25: getOperatorGyms' membership read, with the embedded `gym(...)` FK
+        // join it now makes in ONE round trip — default to Forge's real zone, matching
+        // the shared supabase-fake.test-helper. brand_name (#97) is the injected negocio
+        // fallback — a distinct mixed-case value proves it passes through to
+        // result.negocio when perfil is absent.
         case "gym_membership":
-          return builder({ gym_id: "test-gym" }, []);
-        case "gym":
-          return builder({ timezone: "America/Chihuahua", brand_name: "Forge" }, []);
+          return builder(null, [
+            {
+              gym_id: "test-gym",
+              role: "owner",
+              gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" },
+            },
+          ]);
         default:
           return builder(null, []);
       }

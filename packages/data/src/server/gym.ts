@@ -1,5 +1,6 @@
 import "server-only";
 
+import { headers } from "next/headers";
 import { cache } from "react";
 
 import { createClient, type SupabaseServer } from "./supabase";
@@ -19,64 +20,125 @@ export interface OperatorGym {
 }
 
 /**
- * The operator's gym (ADR-0013 membership: `auth.uid() -> gym_membership ->
- * gym`), memoized per request via React `cache()`. Every DAL reader that needs
- * the gym-local calendar (audit finding 1, PRD #17) resolves its `tz` through
- * here — one round trip per request (deduped by `cache()`), not one per call
- * site. Readers also scope their queries to the returned `id` (spec 2026-07-13
- * §1.1): a scope selector, not a boundary — RLS stays the boundary (ADR-0001).
+ * EVERY gym the session staffs (ADR-0013 membership: `auth.uid() -> gym_membership ->
+ * gym`), ordered by `gym_id`, memoized per request via React `cache()`. The list is the
+ * primitive because the tenant reconciliation (#212) and the 2+-gym chooser (#208) both
+ * need all of them; `getOperatorGym` is the pick made on top of it.
  *
  * `gym_membership`'s RLS self-read policy already scopes the read to the caller
- * (ADR-0013 §4), so no explicit `user_id` filter is added here.
- * `requireOperator` gives a clean "No autenticado" instead of a confusing "Sin
- * gym asignado" for an anonymous caller.
+ * (ADR-0013 §4), so no explicit `user_id` filter is added here. `requireOperator` gives
+ * a clean "No autenticado" instead of a confusing "Sin gym asignado" for an anonymous
+ * caller.
  *
- * The staff-role filter (`owner`|`operator`) and the `gym_id` order live IN THE
- * QUERY (spec §1.3): a `.limit(1)` read picks its row at the DB, so filtering or
- * sorting in JS after the fact cannot make the pick deterministic — an
- * unordered, unfiltered read under multi-membership could land on a `member`
- * row (a socio who self-registered — audit #19) and lock the real operator out
- * of their own admin app. With the filter in the query, a member-only session
- * simply resolves no row → SinGimnasio. RLS is untouched.
+ * The staff-role filter (`owner`|`operator`) and the `gym_id` order live IN THE QUERY
+ * (spec §1.3): they are what make the pick deterministic, so a `member` row (a socio who
+ * self-registered — audit #19) can never win and lock the real operator out of their own
+ * admin app. A member-only session simply resolves no row → SinGimnasio. RLS is untouched.
  *
  * `cache()` keys on argument identity, so it MUST wrap a function keyed on the
  * already-resolved client — never on `client?: SupabaseServer` directly. A page
  * calling `getOperatorGym()` (no arg) and a DAL read calling `getOperatorGym(supabase)`
- * would otherwise land in different buckets and run the 2-query resolution twice per
- * page (perf audit 2026-07-14). `createClient` is itself `cache()`d, so resolving here
- * yields the SAME instance every DAL caller already holds — one bucket, one round trip.
+ * would otherwise land in different buckets and run the resolution twice per page (perf
+ * audit 2026-07-14). `createClient` is itself `cache()`d, so resolving here yields the
+ * SAME instance every DAL caller already holds — one bucket, one round trip.
  */
-const resolveOperatorGym = cache(
-  async (supabase: SupabaseServer): Promise<OperatorGym> => {
+const resolveOperatorGyms = cache(
+  async (supabase: SupabaseServer): Promise<OperatorGym[]> => {
     const userId = await requireOperator(supabase);
 
-    const { data: membership } = await supabase
+    // ONE request (embedded FK join) instead of the old membership-then-gym pair:
+    // gym_membership.gym_id → gym is a many-to-one FK, so PostgREST embeds `gym` as a
+    // single object per row, never an array (the shape `resolverMiembroGym` reads).
+    const { data: memberships } = await supabase
       .from("gym_membership")
-      .select("gym_id")
+      .select("gym_id, gym(timezone, slug, brand_name)")
       .in("role", ["owner", "operator"])
-      .order("gym_id")
-      .limit(1)
-      .maybeSingle();
-    if (!membership) throw new Error("Sin gym asignado");
+      .order("gym_id");
 
-    const { data: gym } = await supabase
-      .from("gym")
-      .select("timezone, slug, brand_name")
-      .eq("id", membership.gym_id)
-      .maybeSingle();
-    if (!gym) throw new Error("Gym no encontrado");
-
-    return {
-      id: membership.gym_id,
-      timezone: gym.timezone,
-      slug: gym.slug,
-      brandName: gym.brand_name,
-      userId,
-    };
+    return (memberships ?? []).flatMap((m) =>
+      m.gym
+        ? [
+            {
+              id: m.gym_id,
+              timezone: m.gym.timezone,
+              slug: m.gym.slug,
+              brandName: m.gym.brand_name,
+              userId,
+            },
+          ]
+        : [],
+    );
   },
 );
 
-export async function getOperatorGym(client?: SupabaseServer): Promise<OperatorGym> {
+/**
+ * The tenant the HOST names (`x-gym`, stamped by `proxy.ts`), or `null` when no
+ * `gym_domain` row matched — the bare `.vercel.app`, every preview, plain `pnpm dev`.
+ *
+ * The `catch` is required, not defensive padding: the DAL unit tests inject a client and
+ * never enter a request scope, where `headers()` throws. Deliberately NOT a parameter —
+ * an extra argument splits `resolveOperatorGyms`' `cache()` bucket (see its docstring).
+ */
+async function hostGymSlug(): Promise<string | null> {
+  try {
+    return (await headers()).get("x-gym");
+  } catch {
+    return null;
+  }
+}
+
+/** Every gym the session staffs, ordered by `gym_id`. */
+export async function getOperatorGyms(client?: SupabaseServer): Promise<OperatorGym[]> {
   const supabase = client ?? (await createClient());
-  return resolveOperatorGym(supabase);
+  return resolveOperatorGyms(supabase);
+}
+
+/**
+ * The ONE gym this request operates on: the gym the host names when the session staffs
+ * it, else the first by `gym_id` (the stable pick every caller already agreed on).
+ *
+ * Host-aware on purpose (#212). Without it a multi-gym operator on host B reads gym A's
+ * rows under gym B's chrome — the reported defect reproduced INSIDE one request, below
+ * the layout's reconciliation. Every DAL reader that needs the gym-local calendar (audit
+ * finding 1, PRD #17) resolves its `tz` through here, and scopes its queries to the
+ * returned `id` (spec 2026-07-13 §1.1): a scope selector, not a boundary — RLS stays the
+ * boundary (ADR-0001).
+ */
+export async function getOperatorGym(client?: SupabaseServer): Promise<OperatorGym> {
+  const gyms = await getOperatorGyms(client);
+  const host = await hostGymSlug();
+  const gym = gyms.find((g) => g.slug === host) ?? gyms[0];
+  if (!gym) throw new Error("Sin gym asignado");
+  return gym;
+}
+
+/**
+ * `gym_id → admin hostname` for the gyms passed in — THE redirect target (#212) and the
+ * chooser's links (#208). Server-derived from ids that came out of the caller's own
+ * membership rows, so no param, header or cookie can steer it (issue #212's first
+ * non-negotiable constraint); it reads under the caller's session, and #216 scoped
+ * `gym_domain` to exactly that.
+ *
+ * A gym may map several admin hosts (dev mirror + live): `created_at` order + first-wins
+ * makes the choice deterministic rather than a plan-order coin flip, and `.localhost`
+ * rows are dev-only tenancy hosts — never a reachable target (the same rule
+ * `construirUrlInvitacion` applies to the client side). A gym with no admin host is
+ * simply absent from the map; the caller renders it without a link.
+ */
+export async function getAdminHosts(
+  gymIds: readonly string[],
+  client?: SupabaseServer,
+): Promise<Record<string, string>> {
+  const supabase = client ?? (await createClient());
+  const { data } = await supabase
+    .from("gym_domain")
+    .select("gym_id, hostname")
+    .in("gym_id", [...gymIds])
+    .eq("app", "admin")
+    .not("hostname", "like", "%localhost")
+    .order("created_at", { ascending: true });
+
+  const hosts: Record<string, string> = {};
+  for (const row of data ?? []) hosts[row.gym_id] ??= row.hostname;
+  return hosts;
 }

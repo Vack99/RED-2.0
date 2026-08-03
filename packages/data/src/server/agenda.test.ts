@@ -101,8 +101,15 @@ function makeFake(
   const client = {
     auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
     from: (table: string) => {
-      if (table === "gym_membership") return builder(table, [{ gym_id: "gym-1", role: "owner" }]);
-      if (table === "gym") return builder(table, [{ id: "gym-1", timezone: rows.gymTimezone ?? TZ }]);
+      // getOperatorGyms reads gym_membership with an embedded `gym(...)` FK join.
+      if (table === "gym_membership")
+        return builder(table, [
+          {
+            gym_id: "gym-1",
+            role: "owner",
+            gym: { timezone: rows.gymTimezone ?? TZ, slug: "forge", brand_name: "Forge" },
+          },
+        ]);
       return builder(table, (rows as Record<string, Record<string, unknown>[]>)[table] ?? []);
     },
     rpc: (name: string, args: Record<string, unknown>) => {

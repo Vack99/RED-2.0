@@ -22,23 +22,37 @@ import type { OperatorGym } from "@gym/data/server/gym";
  */
 
 /**
- * What the host says versus what the session's membership says.
+ * What the request does about the host's tenant claim, given the gyms the session staffs.
  *
- *  - `absent`   — no `gym_domain` row matched, so the proxy stamped no `x-gym`. Covers
- *                 `red-2-0-admin.vercel.app`, EVERY preview deployment, and plain
+ *  - `render`   — the host names one of my gyms, OR names nothing at all. The absent case
+ *                 covers `red-2-0-admin.vercel.app`, EVERY preview deployment, and plain
  *                 `pnpm dev` (`apps/*` run bare `next dev` on `localhost:3000` and there
- *                 is no bare `localhost` row in `gym_domain`). This MUST keep rendering:
- *                 treating absent as a crossing locks the owner out of local dev.
- *  - `match`    — the host names the gym this session staffs. The only normal state.
- *  - `crossing` — the host names a DIFFERENT gym. Authenticated, but not authorized
- *                 *for this tenant*.
+ *                 is no bare `localhost` row in `gym_domain`).
+ *  - `redirect` — exactly one staff gym and the host names another: the owner's ruling
+ *                 (2026-08-02) is to send the operator to their own host.
+ *  - `choose`   — 2+ staff gyms and the host names none, so there is no single correct
+ *                 target and a redirect would be a guess → VariosGimnasios (#208).
+ *  - `none`     — the session staffs no gym at all → SinGimnasio.
  */
-export type TenantCheck = "absent" | "match" | "crossing";
+export type TenantDecision =
+  | { kind: "render"; gym: string }
+  | { kind: "redirect"; gym: string }
+  | { kind: "choose" }
+  | { kind: "none" };
 
-/** Pure, so the three-way branch is testable without Next's request machinery. */
-export function compareTenant(hostGym: string | null, membershipGym: string): TenantCheck {
-  if (!hostGym) return "absent";
-  return hostGym === membershipGym ? "match" : "crossing";
+/**
+ * Pure, so all four arms are testable without Next's request machinery. `misGyms` arrives
+ * ordered by `gym_id`, so `misGyms[0]` is the same stable pick `getOperatorGym` makes.
+ *
+ * The absent arm comes FIRST and is load-bearing: treating "the proxy stamped no `x-gym`"
+ * as a crossing locks the owner out of local dev.
+ */
+export function decideTenant(hostGym: string | null, misGyms: readonly string[]): TenantDecision {
+  if (misGyms.length === 0) return { kind: "none" };
+  if (!hostGym) return { kind: "render", gym: misGyms[0] };
+  if (misGyms.includes(hostGym)) return { kind: "render", gym: hostGym };
+  if (misGyms.length === 1) return { kind: "redirect", gym: misGyms[0] };
+  return { kind: "choose" };
 }
 
 /**
@@ -56,26 +70,32 @@ export function compareTenant(hostGym: string | null, membershipGym: string): Te
  * anywhere in the repo, so stdout/stderr on the Vercel function is the only sink that
  * exists. JSON on one line so it survives whatever drain is configured later.
  *
- * `getOperatorGym` is `cache()`-memoized per request, and the `(app)` layout renders
- * once, so one crossing produces one line.
+ * `getOperatorGyms` is `cache()`-memoized per request, and the `(app)` layout renders
+ * once, so one crossing produces one line. `outcome` names what the app DID about it, so
+ * the line stays readable once the behaviour changes again.
+ *
+ * A crossing is a host naming a gym I do not staff — the `redirect` and `choose` arms.
+ * `none` is not one: a session with no staff membership has no tenant to cross into.
  */
-export async function auditTenantInEffect(gym: OperatorGym): Promise<TenantCheck> {
+export async function auditTenantInEffect(gyms: readonly OperatorGym[]): Promise<TenantDecision> {
   const h = await headers();
   const hostGym = h.get("x-gym");
-  const check = compareTenant(hostGym, gym.slug);
+  const misGyms = gyms.map((g) => g.slug);
+  const decision = decideTenant(hostGym, misGyms);
 
-  if (check === "crossing") {
+  if (decision.kind === "redirect" || decision.kind === "choose") {
     console.warn(
       JSON.stringify({
         event: "tenant-crossing",
         hostGym,
-        membershipGym: gym.slug,
+        membershipGyms: misGyms,
         // Stamped by proxy.ts — a Server Component cannot read its own pathname.
         path: h.get("x-ruta"),
-        userId: gym.userId,
+        userId: gyms[0].userId,
+        outcome: decision.kind,
       }),
     );
   }
 
-  return check;
+  return decision;
 }

@@ -291,8 +291,9 @@ describe("reenviarInvitacion — REENVIAR re-sends the same code (injected fake 
  */
 interface Rows {
   clientes?: Record<string, unknown>[];
+  /** getOperatorGyms reads this with an embedded `gym(...)` FK join — one round trip,
+   *  so each membership row carries its gym pre-joined rather than a second table. */
   gym_membership?: Record<string, unknown>[];
-  gym?: Record<string, unknown>[];
   /** `.rpc(fnName, args)` responses, keyed by function name — ventas_count_por_cliente /
    *  asistencias_mes_por_cliente resolve directly (no `.single()`), mirroring the DAL. */
   rpc?: Record<string, { cliente_id: string; n: number }[]>;
@@ -408,8 +409,9 @@ const FIXTURE_CLIENTES = [
 
 const OPERATOR_ROWS: Rows = {
   clientes: FIXTURE_CLIENTES,
-  gym_membership: [{ gym_id: "g-1", role: "operator" }],
-  gym: [{ id: "g-1", timezone: "America/Chihuahua", brand_name: "Forge" }],
+  gym_membership: [
+    { gym_id: "g-1", role: "operator", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } },
+  ],
   rpc: {
     // Self-registered cli-online, never charged: 0 ventas → primeraCompra true (#77).
     // Desk client cli-desk has a sale on record → primeraCompra false. Rows missing
@@ -548,8 +550,9 @@ describe("getRosterResumen — vigentes/totalActivos from count-only queries (Fi
   it("vigentes counts only the fully-active row; totalActivos also counts por_vencer", async () => {
     const fake = makeReadFake({
       clientes: RESUMEN_CLIENTES,
-      gym_membership: [{ gym_id: "g-1", role: "operator" }],
-      gym: [{ id: "g-1", timezone: TZ, brand_name: "Forge" }],
+      gym_membership: [
+        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+      ],
     });
 
     const resumen = await getRosterResumen(fake.client);
@@ -620,8 +623,10 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     const orCalls: string[] = [];
     const rows: Record<string, Record<string, unknown>[]> = {
       clientes: [FICHA_CLIENTE],
-      gym_membership: [{ gym_id: "g-1", role: "operator" }],
-      gym: [{ id: "g-1", timezone: TZ, brand_name: "Forge" }], // #97: injected negocio fallback
+      // #97: brand_name is the injected negocio fallback, now pre-joined onto the membership.
+      gym_membership: [
+        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+      ],
       asistencias,
       ventas: [venta],
       perfil: [],

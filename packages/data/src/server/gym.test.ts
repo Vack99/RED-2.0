@@ -1,18 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { getOperatorGym } from "./gym";
+import { getAdminHosts, getOperatorGym, getOperatorGyms } from "./gym";
 import type { SupabaseServer } from "./supabase";
 
 /**
- * getOperatorGym — the operator's gym/tz/slug resolution (ADR-0013 membership).
- * Spec 2026-07-13 §1.3: the staff-role filter and the `gym_id` order live IN THE
- * QUERY (`.in()` + `.order()`), not in JS — a `.limit(1)` read picks its row at
- * the DB, so determinism under multi-membership can only come from the query
- * itself. This fake therefore FILTERS `.in()` and SORTS `.order()` for real
- * (purpose-built for this function; the shared helper only records), and the
- * SinGimnasio behavior for a member-only session falls out of the filter — no
- * JS role check remains to test separately. Injectable client (ADR-0001); RLS
- * itself (staff write, cross-tenant denial) is proven at the DB layer.
+ * getOperatorGyms/getOperatorGym — the operator's gym/tz/slug resolution (ADR-0013
+ * membership). Spec 2026-07-13 §1.3: the staff-role filter and the `gym_id` order live
+ * IN THE QUERY (`.in()` + `.order()`), not in JS — they are what make the pick
+ * deterministic. This fake therefore FILTERS `.in()` and SORTS `.order()` for real
+ * (purpose-built for this function; the shared helper only records) and pre-joins the
+ * embedded `gym(...)` FK the read now uses, and the SinGimnasio behavior for a
+ * member-only session falls out of the filter — no JS role check remains to test
+ * separately. Injectable client (ADR-0001); RLS itself (staff write, cross-tenant
+ * denial) is proven at the DB layer.
+ *
+ * `hostGymSlug()` reads `next/headers`, which throws outside a request scope — exactly
+ * where these tests live — so every case here exercises the no-host fallback path.
  */
 function makeFake(opts: {
   sub?: string | null;
@@ -20,28 +23,49 @@ function makeFake(opts: {
   gymTimezone?: string;
   gymSlug?: string;
   gymBrandName?: string;
+  dominios?: Record<string, unknown>[];
 }) {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
-  const membership = opts.membership ?? [{ gym_id: "gym-1", role: "owner" }];
+  const gymPorDefecto = {
+    timezone: opts.gymTimezone ?? "America/Chihuahua",
+    slug: opts.gymSlug ?? "forge",
+    brand_name: opts.gymBrandName ?? "Forge",
+  };
+  const membership = (opts.membership ?? [{ gym_id: "gym-1", role: "owner" }]).map((m) => ({
+    gym: gymPorDefecto,
+    ...m,
+  }));
   const inCalls: [string, unknown[]][] = [];
   const orderCalls: string[] = [];
+  const eqCalls: [string, unknown][] = [];
+  const notCalls: [string, string, unknown][] = [];
 
-  function membershipBuilder() {
-    let rows = [...membership];
+  function listBuilder(rows: Record<string, unknown>[]) {
+    let list = [...rows];
     const b: Record<string, unknown> = {
       select: () => b,
       in: (col: string, vals: unknown[]) => {
         inCalls.push([col, vals]);
-        rows = rows.filter((r) => vals.includes(r[col]));
+        list = list.filter((r) => vals.includes(r[col]));
+        return b;
+      },
+      eq: (col: string, val: unknown) => {
+        eqCalls.push([col, val]);
+        list = list.filter((r) => r[col] === val);
+        return b;
+      },
+      not: (col: string, op: string, val: unknown) => {
+        notCalls.push([col, op, val]);
+        list = list.filter((r) => !String(r[col]).endsWith("localhost"));
         return b;
       },
       order: (col: string) => {
         orderCalls.push(col);
-        rows = [...rows].sort((a, bb) => String(a[col]).localeCompare(String(bb[col])));
+        list = [...list].sort((a, bb) => String(a[col]).localeCompare(String(bb[col])));
         return b;
       },
-      limit: () => b,
-      maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
+      then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+        resolve({ data: list, error: null }),
     };
     return b;
   }
@@ -49,27 +73,12 @@ function makeFake(opts: {
   const client = {
     auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
     from: (table: string) => {
-      if (table === "gym_membership") return membershipBuilder();
-      if (table === "gym") {
-        return {
-          select: () => ({
-            eq: () => ({
-              maybeSingle: async () => ({
-                data: {
-                  timezone: opts.gymTimezone ?? "America/Chihuahua",
-                  slug: opts.gymSlug ?? "forge",
-                  brand_name: opts.gymBrandName ?? "Forge",
-                },
-                error: null,
-              }),
-            }),
-          }),
-        };
-      }
+      if (table === "gym_membership") return listBuilder(membership);
+      if (table === "gym_domain") return listBuilder(opts.dominios ?? []);
       throw new Error(`unexpected table ${table}`);
     },
   };
-  return { client: client as unknown as SupabaseServer, inCalls, orderCalls };
+  return { client: client as unknown as SupabaseServer, inCalls, orderCalls, eqCalls, notCalls };
 }
 
 describe("getOperatorGym", () => {
@@ -142,5 +151,78 @@ describe("getOperatorGym", () => {
   it("throws 'No autenticado' for an anonymous caller", async () => {
     const { client } = makeFake({ sub: null });
     await expect(getOperatorGym(client)).rejects.toThrow("No autenticado");
+  });
+});
+
+describe("getOperatorGyms", () => {
+  it("returns EVERY staff gym ordered by gym_id — the chooser (#208) needs the list, not the pick", async () => {
+    const { client } = makeFake({
+      membership: [
+        { gym_id: "gym-b", role: "operator", gym: { timezone: "UTC", slug: "red", brand_name: "RED" } },
+        { gym_id: "gym-c", role: "member" }, // socio row — filtered by the query
+        { gym_id: "gym-a", role: "owner" },
+      ],
+    });
+    expect((await getOperatorGyms(client)).map((g) => g.slug)).toEqual(["forge", "red"]);
+  });
+
+  it("is empty for a member-only session, instead of throwing (the layout branches on it)", async () => {
+    const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "member" }] });
+    expect(await getOperatorGyms(client)).toEqual([]);
+  });
+
+  // PostgREST embeds `gym` as null when the FK row is unreadable (RLS) or missing; a
+  // membership pointing at nothing is not a gym the operator can be sent to.
+  it("drops a membership whose embedded gym did not come back", async () => {
+    const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "owner", gym: null }] });
+    expect(await getOperatorGyms(client)).toEqual([]);
+  });
+});
+
+/**
+ * getAdminHosts — THE redirect-target source (#212 constraint 1: server-derived, never
+ * from a param/header/cookie) and the chooser's links (#208).
+ */
+describe("getAdminHosts", () => {
+  it("maps each gym to its admin hostname", async () => {
+    const { client } = makeFake({
+      dominios: [
+        { gym_id: "gym-a", hostname: "admin.forge.mx", app: "admin", created_at: "2024-01-01" },
+        { gym_id: "gym-b", hostname: "admin.red.mx", app: "admin", created_at: "2024-01-01" },
+      ],
+    });
+    expect(await getAdminHosts(["gym-a", "gym-b"], client)).toEqual({
+      "gym-a": "admin.forge.mx",
+      "gym-b": "admin.red.mx",
+    });
+  });
+
+  it("scopes to the ids asked for, to app='admin', and drops the dev-only .localhost rows", async () => {
+    const { client, inCalls, eqCalls, notCalls } = makeFake({
+      dominios: [
+        { gym_id: "gym-a", hostname: "admin.forge.localhost", app: "admin", created_at: "2020-01-01" },
+        { gym_id: "gym-a", hostname: "admin.forge.mx", app: "admin", created_at: "2024-01-01" },
+      ],
+    });
+    expect(await getAdminHosts(["gym-a"], client)).toEqual({ "gym-a": "admin.forge.mx" });
+    expect(inCalls).toEqual([["gym_id", ["gym-a"]]]);
+    expect(eqCalls).toEqual([["app", "admin"]]);
+    expect(notCalls).toEqual([["hostname", "like", "%localhost"]]);
+  });
+
+  it("first-wins on created_at when a gym maps several admin hosts (dev mirror + live)", async () => {
+    const { client, orderCalls } = makeFake({
+      dominios: [
+        { gym_id: "gym-a", hostname: "nuevo.forge.mx", app: "admin", created_at: "2026-01-01" },
+        { gym_id: "gym-a", hostname: "admin.forge.mx", app: "admin", created_at: "2020-01-01" },
+      ],
+    });
+    expect(await getAdminHosts(["gym-a"], client)).toEqual({ "gym-a": "admin.forge.mx" });
+    expect(orderCalls).toEqual(["created_at"]);
+  });
+
+  it("omits a gym with no admin host — the chooser renders it without a link", async () => {
+    const { client } = makeFake({ dominios: [] });
+    expect(await getAdminHosts(["gym-a"], client)).toEqual({});
   });
 });

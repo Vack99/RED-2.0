@@ -36,21 +36,16 @@ function makeFake(
   const calls: WriteCall[] = [];
 
   function table(name: string) {
+    // getOperatorGyms reads gym_membership with an embedded `gym(...)` FK join.
     if (name === "gym_membership") {
       return {
         select: () => ({
           in: () => ({
-            order: () => ({
-              limit: () => ({ maybeSingle: async () => ({ data: { gym_id: "gym-1" }, error: null }) }),
+            order: async () => ({
+              data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+              error: null,
             }),
           }),
-        }),
-      };
-    }
-    if (name === "gym") {
-      return {
-        select: () => ({
-          eq: () => ({ maybeSingle: async () => ({ data: { timezone: "America/Chihuahua" }, error: null }) }),
         }),
       };
     }

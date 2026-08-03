@@ -75,6 +75,11 @@ export function makeFake(
   const inCalls: Record<string, [string, unknown[]][]> = {};
   const orderCalls: Record<string, string[]> = {};
   const rpcCalls: [string, unknown][] = [];
+  const gymRow = {
+    timezone: rows.gymTimezone ?? "America/Chihuahua",
+    slug: rows.gymSlug ?? "forge",
+    brand_name: rows.gymBrandName ?? "Forge",
+  };
 
   const builder = (table: string, list: unknown[]) => {
     // A paginating read calls `.from(table)` once PER page, each returning a fresh
@@ -148,16 +153,11 @@ export function makeFake(
       getClaims: async () => ({ data: { claims: { sub: "test-operator" } } }),
     },
     from: (table: string) => {
+      // getOperatorGyms reads gym_membership with an embedded `gym(...)` FK join (one
+      // round trip), so the fake pre-joins the gym row onto the membership row.
       if (table === "gym_membership")
-        return builder(table, [{ gym_id: "test-gym", role: "owner" }]);
-      if (table === "gym")
-        return builder(table, [
-          {
-            timezone: rows.gymTimezone ?? "America/Chihuahua",
-            slug: rows.gymSlug ?? "forge",
-            brand_name: rows.gymBrandName ?? "Forge",
-          },
-        ]);
+        return builder(table, [{ gym_id: "test-gym", role: "owner", gym: gymRow }]);
+      if (table === "gym") return builder(table, [gymRow]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },
     // A scalar-returning function (e.g. marcadas_presencia) is awaited directly —

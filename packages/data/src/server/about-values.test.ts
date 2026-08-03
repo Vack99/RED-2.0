@@ -50,21 +50,18 @@ function makeFake(opts: FakeOpts = {}): { client: SupabaseServer; calls: Calls }
   const client = {
     auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
     from: (table: string) => {
+      // getOperatorGyms reads gym_membership with an embedded `gym(...)` FK join.
       if (table === "gym_membership") {
         return {
           select: () => ({
             in: () => ({
-              order: () => ({
-                limit: () => ({
-                  maybeSingle: async () => ({ data: { gym_id: "gym-1" }, error: null }),
-                }),
+              order: async () => ({
+                data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+                error: null,
               }),
             }),
           }),
         };
-      }
-      if (table === "gym") {
-        return { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: { timezone: "America/Chihuahua" }, error: null }) }) }) };
       }
 
       return {
