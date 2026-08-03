@@ -104,6 +104,7 @@ begin
   insert into public.asistencias (gym_id, cliente_id, fecha, consumio, deleted_at) values
     (gym_t, c_b, '2026-06-12', true, null);
 
+  perform set_config('t.gym',      gym_t::text,    true);   -- #219: the RPC now takes the gym
   perform set_config('t.member_a', member_a::text, true);
   perform set_config('t.member_b', member_b::text, true);
   perform set_config('t.member_c', member_c::text, true);
@@ -115,9 +116,11 @@ end $$;
 -- ── anon: cannot execute the RPC ──
 set local role anon;
 do $$
-declare raised boolean := false;
+declare
+  gym_t uuid := current_setting('t.gym', true)::uuid;
+  raised boolean := false;
 begin
-  begin perform public.mi_membresia(); exception when others then raised := true; end;
+  begin perform public.mi_membresia(gym_t); exception when others then raised := true; end;
   if not raised then raise exception 'ANON DENIAL FAIL: anon executed mi_membresia'; end if;
 end $$;
 reset role;
@@ -129,6 +132,7 @@ set local role authenticated;
 do $$
 declare
   c_a uuid := current_setting('t.c_a', true)::uuid;
+  gym_t uuid := current_setting('t.gym', true)::uuid;
   n_ventas int; n_asist int; r record;
 begin
   -- Contract-A: a member reads NO raw ventas / asistencias rows (staff-only policies; RLS default-deny).
@@ -138,7 +142,7 @@ begin
   if n_asist  <> 0 then raise exception 'CONTRACT-A FAIL: member_a read % asistencias rows directly', n_asist; end if;
 
   -- The RPC returns the caller's own scalars.
-  select * into r from public.mi_membresia();
+  select * into r from public.mi_membresia(gym_t);
   if r.paquete_nombre is distinct from '8 clases' then raise exception 'PARITY FAIL: paquete_nombre % (expected 8 clases)', r.paquete_nombre; end if;
   if r.clases_restantes is distinct from 3        then raise exception 'PARITY FAIL: clases_restantes % (expected 3)', r.clases_restantes; end if;
   if r.vence is distinct from (current_date + 20) then raise exception 'PARITY FAIL: vence % (expected +20d)', r.vence; end if;
@@ -159,9 +163,11 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.member_b', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare r record;
+declare
+  gym_t uuid := current_setting('t.gym', true)::uuid;
+  r record;
 begin
-  select * into r from public.mi_membresia();
+  select * into r from public.mi_membresia(gym_t);
   -- member_b reads member_b's OWN numbers (NOT member_a's), proving the auth.uid() self-pin.
   if r.paquete_nombre is distinct from 'Ilimitado' then raise exception 'CROSS-MEMBER FAIL: member_b got paquete_nombre % (expected Ilimitado)', r.paquete_nombre; end if;
   if r.clases_restantes is not null                then raise exception 'ILIMITADO FAIL: clases_restantes % (expected NULL)', r.clases_restantes; end if;
@@ -177,9 +183,11 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.member_c', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare r record;
+declare
+  gym_t uuid := current_setting('t.gym', true)::uuid;
+  r record;
 begin
-  select * into r from public.mi_membresia();
+  select * into r from public.mi_membresia(gym_t);
   -- Anchor = the LAST-WRITTEN sale (created_at 06-20, monto 900), NOT the one with the latest fecha
   -- (06-15, monto 800). A fecha-desc anchor would return 800 — this is the §D3/C1 regression guard.
   if r.anchor_monto is distinct from 900 then
@@ -202,9 +210,11 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.member_a', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare r record;
+declare
+  gym_t uuid := current_setting('t.gym', true)::uuid;
+  r record;
 begin
-  select * into r from public.mi_membresia();
+  select * into r from public.mi_membresia(gym_t);
   if r.clases_restantes is distinct from 3 or r.anchor_monto is distinct from 800 then
     raise exception 'CROSS-MEMBER FAIL: member_a numbers drifted after member_b call (clases %, monto %)', r.clases_restantes, r.anchor_monto;
   end if;

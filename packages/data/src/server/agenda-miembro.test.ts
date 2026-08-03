@@ -536,6 +536,30 @@ describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", (
     expect((await getPerfilResumenMiembro(makeFake(uno()), "red")).marca).toBe("RED");
     expect((await getPerfilResumenMiembro(makeFake(uno()), "un-host-cualquiera")).marca).toBe("RED");
   });
+
+  /**
+   * #219: `mi_membresia()` used to pick its own tenant with a bare `limit 1` and no `order by`, so
+   * the DTO could carry gym B's balance/expiry beside gym A's `marca` and `tz`. It now takes the gym
+   * — and it must be the SAME one the rest of this DTO resolved, or the split is back.
+   */
+  it("hands mi_membresia the same gym the DTO's marca/tz came from", async () => {
+    const visto: { gym?: unknown } = {};
+    const espia = (host: string | null) =>
+      getPerfilResumenMiembro(
+        makeFake(dosGimnasios(), (name, args) => {
+          if (name === "mi_membresia") visto.gym = args.p_gym_id;
+          return { data: [], error: null };
+        }),
+        host,
+      );
+
+    expect((await espia("red")).marca).toBe("RED");
+    expect(visto.gym).toBe("gym-red");
+    expect((await espia("forge")).marca).toBe("Forge");
+    expect(visto.gym).toBe("gym-forge");
+    expect((await espia(null)).marca).toBe("Forge"); // oldest-membership fallback, never a roulette
+    expect(visto.gym).toBe("gym-forge");
+  });
 });
 
 /**

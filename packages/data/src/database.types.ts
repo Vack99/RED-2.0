@@ -1474,7 +1474,7 @@ export type Database = {
         Returns: undefined
       }
       mi_membresia: {
-        Args: never
+        Args: { p_gym_id: string }
         Returns: {
           anchor_dia: string
           anchor_monto: number
@@ -1566,7 +1566,7 @@ export type Database = {
       }
       staff_gym: { Args: never; Returns: string }
       toggle_favorito_tipo: {
-        Args: { p_class_type_id: string }
+        Args: { p_class_type_id: string; p_gym_id: string }
         Returns: {
           favorito: string
         }[]

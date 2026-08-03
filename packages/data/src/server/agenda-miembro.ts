@@ -476,12 +476,18 @@ export interface PerfilResumenMiembroDTO {
  *  (Contract-A: raw ventas/asistencias never reach here — the RPC returns only the anchor monto/vigencia/
  *  day + the attendedSincePurchase count). Funnelled through the pure derive.ts sub-helpers so the number
  *  equals the admin ficha's. null when the caller has no cliente row. `paqueteNombre` also feeds the
- *  current-plan marking below. */
+ *  current-plan marking below.
+ *
+ *  `gymId` is the host-reconciled gym `resolverMiembroGym` already picked (#219): the RPC used to pick
+ *  its own tenant with a bare `limit 1`, so a member with clientes rows in two gyms could read the OTHER
+ *  gym's balance, expiry and — through that gym's timezone — a wrongly-zoned anchor day, inside the DTO
+ *  whose `marca`/`tz` came from THIS gym. One gym in, one tenant out. */
 async function fetchMembresia(
   supabase: SupabaseServer,
   tz: string,
+  gymId: string,
 ): Promise<{ membresia: MembresiaDerivada | null; paqueteNombre: string | null }> {
-  const { data, error } = await supabase.rpc("mi_membresia");
+  const { data, error } = await supabase.rpc("mi_membresia", { p_gym_id: gymId });
   if (error) throw error;
   const row = data?.[0];
   if (!row) return { membresia: null, paqueteNombre: null };
@@ -536,7 +542,7 @@ export const getPerfilResumenMiembro = cache(
 
     const [reservas, { membresia, paqueteNombre }, catalogo] = await Promise.all([
       fetchProximasReservas(supabase, tz, gymId),
-      fetchMembresia(supabase, tz),
+      fetchMembresia(supabase, tz, gymId),
       // The member reads their own gym's catalog through their session (paquetes_/plan_feature_member_
       // _select, is_member_of); the anon reader is reused with the member client + their gym id.
       getPlanesPublicos(gymId, supabase),

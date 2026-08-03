@@ -30,7 +30,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm), the
 // per-package RLS/RPC-rule vectors (asistencias_unicidad proves the #89 visit-ledger invariants at
 // the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them), and
-// finally gym2_probe — the end-to-end second-gym capstone.
+// then dos_gimnasios_tenant_pin — the two-membership actor (#219), which generalizes the single-gym
+// favorito/mi_membresia rules just above it — and finally gym2_probe, the end-to-end second-gym capstone.
 // Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
 // A future slice adds a vector to a file here — not a second harness. Two guards in the normal
 // `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
@@ -74,6 +75,7 @@ export const SUITE = [
   'favorito_rules.sql',
   'roster_clase_rules.sql',
   'mi_membresia_rules.sql',
+  'dos_gimnasios_tenant_pin.sql',
   'gym2_probe.sql',
 ];
 

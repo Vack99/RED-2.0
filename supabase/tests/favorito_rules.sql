@@ -66,6 +66,7 @@ select set_config('request.jwt.claims',
 set local role authenticated;
 do $$
 declare
+  gym  uuid := current_setting('t.gym', true)::uuid;   -- #219: the RPC now takes the gym
   cta  uuid := current_setting('t.cta', true)::uuid;
   ctb  uuid := current_setting('t.ctb', true)::uuid;
   ctx  uuid := current_setting('t.ctx', true)::uuid;
@@ -73,7 +74,7 @@ declare
   v_ret uuid; v_stored uuid; raised boolean; v_rows int;
 begin
   -- set: toggle an unset favorite → writes cta, RPC returns cta
-  select favorito into v_ret from public.toggle_favorito_tipo(cta);
+  select favorito into v_ret from public.toggle_favorito_tipo(cta, gym);
   if v_ret is distinct from cta then raise exception 'RULE FAIL(set): RPC returned % (expected cta)', v_ret; end if;
   select favorite_class_type_id into v_stored from public.clientes where id = c_self;
   if v_stored is distinct from cta then raise exception 'RULE FAIL(set): stored % (expected cta)', v_stored; end if;
@@ -83,20 +84,20 @@ begin
   if v_stored is distinct from cta then raise exception 'RULE FAIL(persist): re-read % (expected cta)', v_stored; end if;
 
   -- switch: toggling a DIFFERENT id replaces (single favorite, never two)
-  select favorito into v_ret from public.toggle_favorito_tipo(ctb);
+  select favorito into v_ret from public.toggle_favorito_tipo(ctb, gym);
   if v_ret is distinct from ctb then raise exception 'RULE FAIL(switch): RPC returned % (expected ctb)', v_ret; end if;
   select favorite_class_type_id into v_stored from public.clientes where id = c_self;
   if v_stored is distinct from ctb then raise exception 'RULE FAIL(switch): stored % (expected ctb)', v_stored; end if;
 
   -- clear: toggling the SAME id (ctb) again clears to NULL (the on/off heart)
-  select favorito into v_ret from public.toggle_favorito_tipo(ctb);
+  select favorito into v_ret from public.toggle_favorito_tipo(ctb, gym);
   if v_ret is not null then raise exception 'RULE FAIL(clear): RPC returned % (expected NULL)', v_ret; end if;
   select favorite_class_type_id into v_stored from public.clientes where id = c_self;
   if v_stored is not null then raise exception 'RULE FAIL(clear): stored % (expected NULL)', v_stored; end if;
 
   -- tenant pin: toggling a class type of ANOTHER gym raises; favorite stays NULL
   raised := false;
-  begin perform public.toggle_favorito_tipo(ctx); exception when others then raised := true; end;
+  begin perform public.toggle_favorito_tipo(ctx, gym); exception when others then raised := true; end;
   if not raised then raise exception 'RULE FAIL(tenant): toggling a cross-gym class type did not raise'; end if;
   select favorite_class_type_id into v_stored from public.clientes where id = c_self;
   if v_stored is not null then raise exception 'RULE FAIL(tenant): favorite moved to % on rejected cross-gym toggle', v_stored; end if;
@@ -113,9 +114,9 @@ reset role;
 -- ════════════════════════════════════════════════════════════════════════════════
 set local role anon;
 do $$
-declare cta uuid := current_setting('t.cta', true)::uuid; raised boolean := false;
+declare cta uuid := current_setting('t.cta', true)::uuid; gym uuid := current_setting('t.gym', true)::uuid; raised boolean := false;
 begin
-  begin perform public.toggle_favorito_tipo(cta); exception when others then raised := true; end;
+  begin perform public.toggle_favorito_tipo(cta, gym); exception when others then raised := true; end;
   if not raised then raise exception 'RULE FAIL(anon): anon executed toggle_favorito_tipo'; end if;
 end $$;
 reset role;

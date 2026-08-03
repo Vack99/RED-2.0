@@ -327,3 +327,65 @@ describe("toggleFavoritoTipo", () => {
     expect(res).toEqual({ ok: false, error: "Tipo de clase no encontrado" });
   });
 });
+
+/**
+ * toggle_favorito_tipo tenant pin (#219): the RPC used to pick its own tenant with a bare `limit 1`
+ * and no `order by`, so a member with clientes rows in two gyms could have the heart written onto the
+ * OTHER gym's row — or be refused `Tipo de clase no encontrado` on their own gym's class. The gym is
+ * now the host-reconciled one, the SAME pick `fetchFavoritoId` reads back.
+ */
+describe("toggleFavoritoTipo — tenant pin (#219)", () => {
+  const dosGimnasios = (): Rows => ({
+    gym_membership: [
+      { gym_id: "gym-cua", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
+      { gym_id: "gym-her", created_at: "2024-01-01T00:00:00Z" },
+    ],
+    gym: [
+      { id: "gym-cua", slug: "cua", timezone: TZ },
+      { id: "gym-her", slug: "her", timezone: TZ },
+    ],
+  });
+
+  /** Records the gym the RPC was called with. */
+  function espia(rows: Rows) {
+    const visto: { gym?: unknown } = {};
+    const fake = makeFake(rows, (name, args) => {
+      if (name === "toggle_favorito_tipo") visto.gym = args.p_gym_id;
+      return { data: [{ favorito: args.p_class_type_id }], error: null };
+    });
+    return { fake, visto };
+  }
+
+  it("host match → the RPC is handed the HOST gym, not the oldest membership", async () => {
+    const { fake, visto } = espia(dosGimnasios());
+    expect(await toggleFavoritoTipo(CTID, fake, "her")).toEqual({ ok: true, favorito: CTID });
+    expect(visto.gym).toBe("gym-her");
+  });
+
+  it("host match on the older gym → that one", async () => {
+    const { fake, visto } = espia(dosGimnasios());
+    await toggleFavoritoTipo(CTID, fake, "cua");
+    expect(visto.gym).toBe("gym-cua");
+  });
+
+  it("no host tenant → the deterministic OLDEST-membership fallback, never a roulette", async () => {
+    const { fake, visto } = espia(dosGimnasios());
+    await toggleFavoritoTipo(CTID, fake, null);
+    expect(visto.gym).toBe("gym-cua");
+  });
+
+  it("host names a gym the caller is NOT a member of → same oldest-membership fallback (never widens)", async () => {
+    const { fake, visto } = espia(dosGimnasios());
+    await toggleFavoritoTipo(CTID, fake, "otro");
+    expect(visto.gym).toBe("gym-cua");
+  });
+
+  it("no membership at all → refused without calling the RPC", async () => {
+    const { fake, visto } = espia({ gym_membership: [] });
+    expect(await toggleFavoritoTipo(CTID, fake)).toEqual({
+      ok: false,
+      error: "No eres miembro de este gimnasio",
+    });
+    expect(visto.gym).toBeUndefined();
+  });
+});

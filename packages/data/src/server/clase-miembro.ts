@@ -361,6 +361,11 @@ export const getConfirmacionReserva = cache(
  * `toggle_favorito_tipo` RPC. The RPC owns the on/off flip, the single-favorite invariant,
  * and the tenant pin; this thin seam validates the id and returns the new favorite (null =
  * cleared). `client` injectable (ADR-0001).
+ *
+ * `hostGymSlug` feeds the SAME host reconciliation every reader here uses (#219): the RPC used
+ * to pick its own tenant with a bare `limit 1`, so a member with clientes rows in two gyms could
+ * write the heart onto the other gym's row — or be refused with `Tipo de clase no encontrado` on
+ * their own gym's class. It is passed the resolved gym, the same one `fetchFavoritoId` reads back.
  */
 export type ToggleFavoritoResultado =
   | { ok: true; favorito: string | null }
@@ -369,13 +374,17 @@ export type ToggleFavoritoResultado =
 export async function toggleFavoritoTipo(
   rawClassTypeId: unknown,
   client?: SupabaseServer,
+  hostGymSlug?: string | null,
 ): Promise<ToggleFavoritoResultado> {
   const parsed = sessionIdSchema.safeParse(rawClassTypeId);
   if (!parsed.success) return { ok: false, error: "Tipo de clase inválido" };
 
   const supabase = client ?? (await createClient());
+  const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+  if (!miembro) return { ok: false, error: "No eres miembro de este gimnasio" };
   const { data, error } = await supabase.rpc("toggle_favorito_tipo", {
     p_class_type_id: parsed.data,
+    p_gym_id: miembro.gymId,
   });
   if (error) return { ok: false, error: error.message || "No se pudo actualizar tu favorita" };
   return { ok: true, favorito: data?.[0]?.favorito ?? null };
