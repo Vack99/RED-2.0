@@ -269,6 +269,11 @@ max_frequency = "5s"
 # 4152127777 = "123456"
 
 # Configure logged in session timeouts.
+# DELIBERATELY STILL COMMENTED (#218, docs/adr/0016-session-revocation-and-lifetime.md §3): this
+# block configures a LOCAL stack only, and the hosted equivalent (Auth -> Sessions) is Pro-plan
+# only while this project is on the free tier. Uncommenting it would look like a session posture
+# the deployed project does not have. The agreed values, to be set in the DASHBOARD on Pro, are
+# timebox = "30d" and inactivity_timeout = "14d" (single-session-per-user stays off).
 # [auth.sessions]
 # Force log out after the specified duration.
 # timebox = "24h"
