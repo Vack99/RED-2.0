@@ -63,12 +63,18 @@ medida. Onboarding de un gimnasio = fila `gym` + dominio, **nunca** un despliegu
 (ADR-0008).
 
 **Flagged ambiguity:** *inquilino* (el gimnasio = tenant) ≠ *cliente* (un miembro
-del gym, glosario arriba). El host resuelve *presentación y UX*, no *autorización*:
-`x-gym`/`x-brand` son metadatos influenciables por el atacante (ADR-0008); qué filas
-puede leer/escribir una sesión lo decide **solo** la RLS por membresía. El único uso
-autoritativo-del-lado-servidor del host es fijar el `gym_id` de un **registro** nuevo
-(nunca lo aporta el cliente — ADR-0009), y por eso un host desconocido resuelve *sin
-inquilino* en vez de caer a Forge. `@gym/brand` es solo-presentación y no puede
+del gym, glosario arriba). El **inquilino-en-efecto** es una propiedad de la petición
+*derivada del servidor* que solo puede **reducir** a un gimnasio del que quien llama ya
+tiene fila `gym_membership` — **nunca ampliar** (ADR-0008, enmienda 2026-08-02). Sale del
+host reconciliado contra la membresía, jamás de un parámetro, header o cookie que el
+llamante controle: `tenantHeaders` **borra** un `x-gym`/`x-brand` entrante cuando ningún
+inquilino resuelve, así que el header es siempre sellado por el proxy. Qué filas puede
+**leer** una sesión lo decide **solo** la RLS por membresía. En **escritura** el host sí
+es autoritativo dos veces, a propósito: fija el `gym_id` de un **registro** nuevo (nunca
+lo aporta el cliente — ADR-0009) y alimenta `reclamar_o_crear_cliente`, que **inserta**
+una fila `gym_membership` — por eso un host desconocido resuelve *sin inquilino* en vez
+de caer a Forge, y por eso el app **reconcilia** host↔membresía en vez de servir en
+silencio (#203/#212). `@gym/brand` es solo-presentación y no puede
 importar `@gym/data` ni `@gym/domain` (frontera dependency-cruiser, ADR-0011 §6).
 **Segunda ambigüedad:** *gym_membership* (quién pertenece a qué gimnasio con qué rol)
 ≠ la futura pantalla **membresía** del mock (la *suscripción/plan* del miembro,
