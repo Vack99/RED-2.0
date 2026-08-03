@@ -9,7 +9,7 @@
 
 ## The verdict in four sentences
 
-The login succeeds because **nothing anywhere compares the gym a hostname belongs to against the gyms a session is a member of**. `apps/admin/src/proxy.ts:78` gates on `decideRedirect(authed, pathname)` — a boolean — and `apps/admin` reads `x-gym` **zero** times. No tenant data crosses: the red team built eight exploit chains and killed all eight at the read boundary, and RLS is genuinely correct for the single-gym case. But three live cross-tenant *reads* exist that have nothing to do with the host seam, and one live **write** path takes the host as its tenant — which makes "the tenant is presentation-only" literally false.
+The login succeeds because **nothing anywhere compares the gym a hostname belongs to against the gyms a session is a member of**. `apps/admin/src/proxy.ts:71` gates on `decideRedirect(authed, pathname)` — a boolean — and `apps/admin` reads `x-gym` **zero** times. No tenant data crosses: the red team built eight exploit chains and killed all eight at the read boundary, and RLS is genuinely correct for the single-gym case. But three live cross-tenant *reads* exist that have nothing to do with the host seam, and one live **write** path takes the host as its tenant — which makes "the tenant is presentation-only" literally false.
 
 **This is a truthfulness and attribution defect on the read path, sitting on top of a host-driven tenant-enrollment write on the member path — and there is no record of whether either has already happened.**
 
@@ -22,7 +22,7 @@ The login succeeds because **nothing anywhere compares the gym a hostname belong
 | Fact | Evidence |
 |---|---|
 | Proxy resolves tenant from `host`, stamps `x-gym`/`x-brand` | `apps/admin/src/proxy.ts:32-36`; `packages/data/src/server/resolve-tenant.ts:210-213` |
-| Auth gate takes no tenant input | `apps/admin/src/proxy.ts:78` → `apps/admin/src/lib/auth.ts:13` — `decideRedirect(authed: boolean, pathname: string)` |
+| Auth gate takes no tenant input | `apps/admin/src/proxy.ts:71` → `apps/admin/src/lib/auth.ts:13` — `decideRedirect(authed: boolean, pathname: string)` |
 | `apps/admin` reads `x-gym` **zero** times | 3 grep hits, all comments; `cuenta/respaldo/route.ts:61` explicitly says *"never x-gym"* |
 | Admin data gym = lowest UUID among staff memberships | `packages/data/src/server/gym.ts:49-56` — `.order("gym_id").limit(1)`; pinned by `gym.test.ts:111` |
 | Same rule in SQL | `supabase/migrations/20260713190200_staff_gym_deterministic.sql:7-15` |
@@ -47,7 +47,7 @@ Cookies are host-only. The Forge admin **re-authenticated on RED's form and it w
 - **`cuenta/respaldo/route.ts` is the most correct file in the seam.** Takes no gym identifier, derives from `auth.uid()`, splits 401/403 cleanly, sanitises the filename from the membership-resolved slug. **The export does not cross** — only the chrome lies.
 - **Host-wins precedence works.** `resolve-tenant.ts:176-177` + the `matched` flag: a mapped customer domain cannot be `?gym=`-steered. Tested at `resolve-tenant.test.ts:116,151`.
 - **`resolveBrand` fails safe.** `apps/admin/src/lib/brand.ts:17` validates `x-brand` against the registry with a `DEFAULT_BRAND` fallback.
-- **The `token_overrides` CSS sink is the best-built defence in the repo.** `packages/brand/src/token-overrides.ts:36` — `z.strictObject` over 33 keys + `/^[A-Za-z0-9#%(),./ -]+$/`. Injection characters are *unrepresentable*, not filtered.
+- **The `token_overrides` CSS sink is the best-built defence in the repo.** `packages/brand/src/token-overrides.ts:38` (the value regex `/^[A-Za-z0-9#%(),./ -]+$/`, preceded by `.min(1)` at `:36`) plus `z.strictObject` at `:48` and `:51` over the 33 `TOKEN_KEYS`. Injection characters are *unrepresentable*, not filtered.
 - **`gym_domain` has no write policy at all.** Default-deny + Vercel DNS verification ⇒ a hostile operator cannot map a domain. The threat the topology anticipated holds.
 - **Single-gym RLS isolation is exact.** `gym2_probe.sql:123-160` proves a gym-2 operator draws folio 1001 off gym 2's counter with real gym-1 rows seeded; `scheduling_rls_denial.sql:111-141` proves 0 rows, 0 affected, denied inserts.
 - **`gym_folio_counter`: RLS on, zero policies** — the only such table. Default-deny on the money counter, reachable only via `next_folio`, which gates itself with `is_staff_of`.
@@ -71,7 +71,7 @@ The HMAC firma (`20260713190000_reclamar_tenant_binding.sql:61-62`) proves *the 
 **Breaking point:** already reachable. Bound by whether any live flow omits `redirect_to` — `unmeasured — mint an admin-initiated invite/recovery without redirectTo and read the link's host`. The repo has a defensive test for exactly this fallback (`correo.test.ts:107-108`), which suggests the path is considered reachable.
 
 ### 2. `gym` is readable by every authenticated identity, including tenants' owner UUIDs
-`gym_anon_select` is `FOR SELECT TO anon, authenticated USING (true)` (`20260702150000_create_tenant_spine.sql:46-48`). `20260713190100_gym_anon_column_grants.sql:14-17` narrowed the **anon** column grant and stopped there. Live `information_schema.column_privileges`: `authenticated` still holds SELECT on `legal_name`, `owner_user_id`, `created_at`.
+`gym_anon_select` is `FOR SELECT TO anon, authenticated USING (true)` (`20260702150000_create_gym_tenant_spine.sql:46-48`). `20260713190100_gym_anon_column_grants.sql:14-17` narrowed the **anon** column grant and stopped there. Live `information_schema.column_privileges`: `authenticated` still holds SELECT on `legal_name`, `owner_user_id`, `created_at`.
 
 Proven live with a fabricated `sub` holding no membership row: all 4 gyms returned, with owner `auth.users` UUIDs and one `legal_name`.
 
@@ -117,10 +117,10 @@ Consequence on one screen: `agenda-miembro.ts:484` calls `mi_membresia()` (host-
 
 Both take **zero arguments**, so no app-layer fix is available — this is a signature change.
 
-### 8. `agenda-miembro.ts:157` silently swallows the crossing, and passing tests lock it in
+### 8. `agenda-miembro.ts:156` silently swallows the crossing, and passing tests lock it in
 `const elegido = enHost ?? memberships[0]` — when `x-gym` names a gym the caller does not belong to, the page renders the oldest membership's gym under the foreign brand. Pinned by `agenda-miembro.test.ts:524` (*"host names a gym the caller is NOT a member of → same oldest-membership fallback"*), `:574`, and `clase-miembro.test.ts:255`.
 
-**Unreported consequence:** the same line returns `tz: gym.timezone` (`:159`). A wrong-gym fallback renders **class times in the wrong timezone** — a member can miss a real class.
+**Unreported consequence:** four lines down, `:160` returns `tz: gym.timezone`. A wrong-gym fallback renders **class times in the wrong timezone** — a member can miss a real class.
 
 **These two tests are the entire contractual cost of a refusal-on-mismatch fix.** It is a two-test change, not a migration.
 
@@ -155,7 +155,7 @@ HSTS on the tenant hosts is **bare** (`max-age=63072000`, no `includeSubDomains`
 - **`requireOperator` is not an operator check** — `packages/data/src/server/_auth.ts:18-21` checks only `claims.sub`, while `cuenta/respaldo/route.ts:13-16` documents it as *"throws on a missing operator claim."* No exploit (the real gate is two lines later), but it is the sentence a reviewer would trust while deleting the line that works.
 - **Deleting a gym frees its hostname.** `gym_domain_gym_id_fkey` is `CASCADE` while `clientes`/`ventas`/`cobro` are `NO ACTION`. A gym with clients cannot be deleted (good), but any successful delete frees a unique hostname for re-insertion under a different `gym_id`, with no audit row and a ≤60s cache lag. Re-pointing a live customer hostname is one INSERT.
 - **Nothing tells an operator which URL is theirs.** Grep for `red-admin.ibookit|forge-admin.ibookit` across `docs/` returns only internal engineering artifacts. There is no operator onboarding doc, no welcome email, no bookmark handoff. **The control currently preventing this defect in production is an operator remembering the correct hostname** — undocumented, untested, unowned.
-- **The `/proto` auth bypass is uncommitted, and so is what it protects.** `apps/admin/src/proxy.ts:71-78` skips the auth gate for `/proto*` when `NODE_ENV !== 'production'`. `apps/admin/src/app/proto/` exists as **untracked** WIP (wayfinder #189 — `_shell.tsx`, `_fixtures.ts`, and 5 variant routes), so the bypass is live in dev for real routes. Inert in production (the pages 404 under a production build, and Vercel builds previews with `NODE_ENV=production`). Its stated deletion condition is **not** yet satisfied. Side effect worth knowing: `tools/guards/client-seam.test.ts` fails on `proto/_shell.tsx` while that WIP sits in the tree, which blocks every commit through the pre-commit hook.
+- **~~A `/proto` auth bypass in `proxy.ts`~~ — RETRACTED.** An analyst reported an uncommitted `NODE_ENV !== 'production'` bypass for `/proto*` at `apps/admin/src/proxy.ts:71-78`, and it was in the working tree when the audit ran. That change was **reverted during the session**: `apps/admin/src/proxy.ts` is now clean at HEAD, 92 lines, with zero occurrences of `proto` or `NODE_ENV`. `decideRedirect` at `:71` gates `/proto` exactly like every other route. **There is no bypass.** Recorded rather than deleted because it is the one finding in this audit that was falsified by re-checking, and that is worth seeing.
 
 ---
 
@@ -242,7 +242,7 @@ But it wrote *"the tenant is presentation-only"* when the true statement is *"th
 
 > *The tenant-in-effect is a server-derived request property that may only NARROW to a tenant the caller already holds a `gym_membership` row for, never widen; it is derived from the host reconciled against membership; and when the host names no membership of the caller, the app refuses rather than guesses.*
 
-Compatible with all 96 existing policies. Deletes three of the four ad-hoc pickers. Generalises the exception CONTEXT.md already concedes. Closes findings 6, 8, 9. Closes none of 2, 3, 4 — those are separate work, and finding 3 is the more urgent half.
+Compatible with all 96 existing policies — **modelled — no policy reads a header or a caller-supplied gym today (live `pg_policies` sweep), so a rule about which tenant the *app* selects cannot conflict with any of them; not verified policy-by-policy.** Deletes three of the four ad-hoc pickers (`getOperatorGym`, `staff_gym()`, and the duplicated `resolverMiembroGym`, leaving one shared rule). Generalises the exception CONTEXT.md already concedes. Closes findings 6, 8, 9. Closes none of 2, 3, 4 — those are separate work, and finding 3 is the more urgent half.
 
 ### Substitution test on the defence
 
@@ -254,9 +254,14 @@ Sentences defending the current design that stay true if you swap this system fo
 | *"the RLS-by-membership boundary *is* the isolation, and it holds even if `proxy.ts` is wrong or bypassed."* | `docs/adr/0008…:37` — and now partly false (findings 2, 3) |
 | *"one shared DB and two deployments are a shared blast radius, which is exactly why the RLS-by-membership boundary is non-negotiable."* | `docs/adr/0008…:41` |
 | *"inlining them at build time is correct, not a leak of per-tenant config."* | `docs/adr/0008…:47` — **this is the sentence that stops you asking what the shared `anon` role can read.** Findings 3 and the `gym_domain` census are downstream of it. |
-| *"A global identity therefore buys an attacker nothing: `auth.uid()` alone grants zero rows anywhere."* | `2026-07-27-auth-structure-scale-audit.md:35` — **false**, proven live |
-| *"Anon reads limited to `gym` + `gym_domain` only — ✅ PASS"* | `docs/health/2026-07-05…:27` — true on its date, falsified the next day |
 | *"El host resuelve presentación y UX, no autorización"* | `CONTEXT.md:66` |
+
+**Two more sentences fail, but for a different reason — do not confuse the two defects.** These are not category-level claims that survive substitution; they are *specific claims about this system that measurement falsified*. Substitution would not have caught them; re-running the check did.
+
+| Quote | Location | Defect |
+|---|---|---|
+| *"A global identity therefore buys an attacker nothing: `auth.uid()` alone grants zero rows anywhere."* | `docs/Context/2026-07-27-auth-structure-scale-audit.md:35` | **False when written.** It grants 4 rows and 4 owner UUIDs — proven live. It audited the 25 *scoped* SELECT policies and never counted the unscoped one. |
+| *"Anon reads limited to `gym` + `gym_domain` only — ✅ PASS"* | `docs/health/2026-07-05-post-cutover-db-audit.md:27` | **True on its date, falsified the next day** by `20260706160000` and never re-run. A PASS with no expiry and no re-runner is a belief. |
 
 Sentences that **pass** and should be kept verbatim: `docs/adr/0008…:36` (the RED-host-spoofing sentence — names a specific outcome in this system) and ADR-0013:98-102 (*"Never delete a reader's `.eq("gym_id", …)` as 'redundant with RLS'"* — names the mechanism, the failure, and the false belief it corrects).
 
@@ -286,8 +291,8 @@ Sentences that **pass** and should be kept verbatim: `docs/adr/0008…:36` (the 
 
 - **Keep ADR-0008's hinge (host never widens authorization).** *Exit trigger:* a policy or RPC anywhere reads a header, `current_setting`, or a caller-supplied gym without a membership check or an HMAC firma — **count must stay at 0**; re-check on every migration that touches a policy.
 - **Keep the shared Supabase project.** *Exit trigger:* `undecided — how much per-tenant blast-radius is tolerable before splitting projects? The owner draws that line.* The measurable half: revisit if any customer contractually requires data residency or a tenant-scoped breach notification.
-- **Keep `host` over `x-forwarded-host`.** *Exit trigger:* any proxy (Cloudflare, self-hosted) is inserted in front of Vercel. Add a guard test asserting `host === x-forwarded-host` so this fails loudly instead of silently.
-- **Keep host-only cookies (no `Domain`).** *Exit trigger:* anyone proposes cross-app SSO between the admin and client deploys. That proposal is the trigger; it inherits cookie tossing across every tenant.
+- **Keep `host` over `x-forwarded-host`.** *Exit trigger:* the count of network hops in front of Vercel rises above **0** (any Cloudflare or self-hosted proxy). Add a guard test asserting `host === x-forwarded-host` so this fails loudly on hop #1 instead of silently.
+- **Keep host-only cookies (no `Domain`).** *Exit trigger:* `undecided — is cross-app SSO between the admin and client deploys ever wanted? The owner answers that before this has a threshold.* If the answer is yes, the trigger fires on proposal #1, because widening to `Domain=.ibookit.lat` inherits cookie tossing across all **7** production tenant hosts and forfeits `__Host-` permanently.
 - **Keep the client's oldest-membership fallback on the client app only.** *Exit trigger:* the 1st member holding `clientes` rows in 2 gyms — at which point the timezone consequence (finding 8) becomes a missed class.
 - **Keep the single Vercel deploy per app.** *Exit trigger:* gym count passes ~250 (the TTL cache breaking point), or the 1st customer needing a per-tenant rollback.
 
@@ -297,7 +302,7 @@ Sentences that **pass** and should be kept verbatim: `docs/adr/0008…:36` (the 
 
 | Claim | Basis |
 |---|---|
-| Auth gate takes no tenant input; `apps/admin` reads `x-gym` zero times | **measured** — `proxy.ts:78`, `auth.ts:13`, 3 grep hits all comments |
+| Auth gate takes no tenant input; `apps/admin` reads `x-gym` zero times | **measured** — `proxy.ts:71`, `auth.ts:13`, 3 grep hits all comments |
 | Cookies host-only; session does not cross hosts | **measured** — `@supabase/ssr` source + live `curl -sI` |
 | `gym.legal_name`/`owner_user_id` readable by any authenticated identity | **measured** — live `column_privileges` + a fabricated-`sub` query returning 4 rows |
 | 614 `class_session` rows scrapeable as anon across 4 gyms | **measured** — live query as `anon` |
@@ -383,3 +388,18 @@ Sentences that **pass** and should be kept verbatim: `docs/adr/0008…:36` (the 
 - **Cut** *"`getOperatorGym` being host-blind is a UX gap, not an isolation gap."* — M2 in the other direction. Isolation is intact; *attribution* is not, and a sale written to the wrong ledger and folio sequence is a correctness defect in the money path.
 - **Cut** a paragraph re-explaining what RLS is before quoting the predicates, and a recap of the TTL cache implementation — Rule 7 (restates without adding).
 - **Not triggered:** ranked list under the tier floor (15 entries vs. a floor of 8); an all-tagged output establishing nothing (the measured column of the confidence ledger carries 9 live-verified claims).
+
+### Second pass — corrections forced by `/code-review` (2026-08-02, post-commit `7f2265f`)
+
+A two-axis review re-verified the citations against the repo. **Five were wrong and one finding was false.** Logged here rather than silently patched, because an audit that miscites is committing the defect it warns about.
+
+- **RETRACTED in full:** the `/proto` auth-bypass finding — Rule 5. `apps/admin/src/proxy.ts` is clean at HEAD, 92 lines, with **zero** occurrences of `proto` or `NODE_ENV`. The uncommitted change an analyst read was reverted mid-session. The bullet now records the retraction instead of the claim. This is the only finding in the audit that re-checking falsified, and I have left the scar visible.
+- **`proxy.ts:78` → `proxy.ts:71`** (3 occurrences, including the headline sentence and the confidence ledger) — Rule 5. `decideRedirect(authed, …)` is at `:71`; `:78` is the `gym` cookie set.
+- **`agenda-miembro.ts:157` → `:156`, and `:159` → `:160`** — Rule 5. Both off by one; `:159` is blank.
+- **`20260702150000_create_tenant_spine.sql` → `…_create_gym_tenant_spine.sql`** — Rule 5. Wrong filename.
+- **`token-overrides.ts:36` → `:38` (regex) + `:48`/`:51` (`strictObject`)** — Rule 5. `:36` is `.min(1)`. The 33-key count was correct.
+- **Split two rows out of the substitution-test table** — Rule 4 misapplied. `auth-structure-scale-audit.md:35` and `health/2026-07-05…:27` are *falsified specifics*, not category-level claims that survive substitution. Two different defects; conflating them weakens both.
+- **Tagged** *"compatible with all 96 existing policies"* as `modelled` with its inputs — Rule 5. It was load-bearing, unsourced, and absent from the ledger.
+- **Rewrote two exit triggers** that had no numeral and no tag — Rule 3, the exact shape Rule 7's sweep is supposed to catch and did not: *"any proxy is inserted in front of Vercel"* → hop count above 0; *"anyone proposes cross-app SSO"* → an `undecided —` tag naming who decides.
+
+**What the review confirmed rather than corrected**, so this reads as a check and not a mea culpa: every quoted ADR and doc sentence is **verbatim** (ADR-0008 `:35/:36/:37/:41/:47`, ADR-0012 `:28`, ADR-0013 `:98`, `CONTEXT.md:66`/`:68-70`, `prd-brand-system.md:71`, and both falsified sentences above) — so the accusations levelled at those sentences rest on accurate quotes. 24 code citations, 16 migration ranges, and 11 test citations verified true, along with every DB-free claim (no `vercel.json`, bare `next dev`, no proxy test file, `x-gym` = 3 comment-only hits, `signOut` in exactly 2 places, `gym_folio_counter` RLS-on with no policy).
