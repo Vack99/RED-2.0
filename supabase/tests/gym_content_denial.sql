@@ -6,7 +6,8 @@
 -- Proves, for all four tables: staff of gym A (is_staff_of) can read/write/delete their own gym's
 -- rows; an authenticated member of gym A (is_member_of, non-staff) can read but never write; staff of
 -- a DIFFERENT gym B is denied every read/write/delete path into gym A's rows; and anon READS all four
--- tables (decision b discharged in #50 — the gym content is public marketing surface).
+-- tables FOR THE GYM THE REQUEST NAMES and no other (decision b discharged in #50 — the gym content is
+-- public marketing surface — scoped per gym by #215).
 --
 -- Self-asserting: every check RAISEs on failure; a clean run returns one 'OK' row. Zero hardcoded prod
 -- UUIDs (ADR-0013 §5): gym A is minted fresh (gen_random_uuid — decoupled from the #86-seeded forge),
@@ -61,6 +62,13 @@ begin
     values (gym_a, 'Miembros activos', '500+', 0) returning id into stat_id;
   insert into public.faq (gym_id, question, answer, sort_order)
     values (gym_a, '¿Necesito membresía anual?', 'No, manejamos paquetes por clases.', 0) returning id into faq_id;
+
+  -- Gym B's own content — the cross-gym probe the anon section needs since #215 (naming gym A must
+  -- return none of it). Every actor below reads `where gym_id = gym_a` or by a gym-A row id, so these
+  -- rows do not perturb a single count.
+  insert into public.about_value (gym_id, title, description, sort_order) values (gym_b, 'Valor B', 'x', 0);
+  insert into public.facility    (gym_id, name,  description, sort_order) values (gym_b, 'Área B',  'x', 0);
+  insert into public.stat        (gym_id, label, value,       sort_order) values (gym_b, 'Stat B',  '1', 0);
 
   perform set_config('t.gym_a',    gym_a::text,    true);
   perform set_config('t.gym_b',    gym_b::text,    true);
@@ -172,15 +180,21 @@ begin
 end $$;
 reset role;
 
--- ── anon: reads all four gym-content tables (decision (b) discharged in #50 — content is public) ──
+-- ── anon: reads the NAMED gym's content and no other gym's (#50 made it public, #215 scoped it) ────
 -- Post-#50 (20260706160000_phase6_anon_catalog_read) the marketing pages render gym content anonymously.
--- The staff-delete earlier in this suite removed the seeded faq row, so anon expects 0 faqs but >=1 of
--- the others (about_value/facility survive; stat gained a staff-inserted row). The exhaustive anon
--- allowlist is asserted in anon_catalog_read.sql.
+-- Since #215 those policies key on the gym the REQUEST names (x-gym-id → PostgREST's `request.headers`
+-- GUC → public.gym_en_peticion(), what createAnonClient(gymId) stamps), so the suite names a gym exactly
+-- as PostgREST would and gym B's rows (seeded above) must stay invisible. The staff-delete earlier in
+-- this suite removed the seeded faq row, so anon expects 0 faqs but >=1 of the others
+-- (about_value/facility survive; stat gained a staff-inserted row). The exhaustive anon allowlist is
+-- asserted in anon_catalog_read.sql.
 reset role;
 set local role anon;
+select set_config('request.headers', json_build_object('x-gym-id', current_setting('t.gym_a'))::text, true);
 do $$
-declare n int;
+declare
+  n int;
+  gym_b uuid := current_setting('t.gym_b', true)::uuid;
 begin
   select count(*) into n from public.about_value;
   if n < 1 then raise exception 'ANON READ FAIL: anon reads % about_value rows (public since #50)', n; end if;
@@ -188,6 +202,14 @@ begin
   if n < 1 then raise exception 'ANON READ FAIL: anon reads % facility rows (public since #50)', n; end if;
   select count(*) into n from public.stat;
   if n < 1 then raise exception 'ANON READ FAIL: anon reads % stat rows (public since #50)', n; end if;
+
+  -- #215: the request named gym A, so gym B's content (seeded, non-vacuous) must not come back.
+  select count(*) into n from public.about_value where gym_id = gym_b;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s about_value rows', n; end if;
+  select count(*) into n from public.facility where gym_id = gym_b;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s facility rows', n; end if;
+  select count(*) into n from public.stat where gym_id = gym_b;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s stat rows', n; end if;
 end $$;
 reset role;
 

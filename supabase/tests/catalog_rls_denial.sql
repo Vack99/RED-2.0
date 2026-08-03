@@ -14,7 +14,8 @@
 --      every write attempt against gym A's rows affects 0 rows (update AND insert denied).
 --   3) a gym-A MEMBER (is_member_of, no staff role) reads gym A's catalog but every write
 --      attempt affects 0 rows (curated class: members never write).
---   4) anon reads all 5 tables (decision b discharged in #50 — the catalog is public).
+--   4) anon reads all 5 tables FOR THE GYM THE REQUEST NAMES and no other (decision b discharged in
+--      #50 — the catalog is public; scoped per gym by #215).
 --
 -- HOW TO RUN: node supabase/tests/run-denial-suite.mjs (SUPABASE_TARGET_REF override), or
 -- ad hoc via the Supabase MCP execute_sql.
@@ -31,6 +32,7 @@ declare
   operator_b  uuid := gen_random_uuid();
   member_a    uuid := gen_random_uuid();
   ct_a        uuid;
+  ct_b        uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'catalog-denial-gym-a', 'Catalog Denial Gym A', 'America/Chihuahua',   'forge'),
@@ -55,6 +57,16 @@ begin
   insert into public.class_type_workblock (gym_id, class_type_id, label) values (gym_a, ct_a, 'Calentamiento');
   insert into public.class_type_bring_item (gym_id, class_type_id, label) values (gym_a, ct_a, 'Toalla');
 
+  -- Gym B's own catalog — the cross-gym probe the anon section needs since #215 (naming gym A must
+  -- return none of it). Invisible to every authenticated actor below (their policies scope to gym A,
+  -- and operator_b's assertions are all `where gym_id = gym_a`), so the exact counts there stand.
+  insert into public.coach (gym_id, name, initials, role) values (gym_b, 'Coach B', 'CB', 'coach');
+  insert into public.room  (gym_id, name) values (gym_b, 'Sala B');
+  insert into public.class_type (gym_id, name) values (gym_b, 'Funcional B')
+    returning id into ct_b;
+  insert into public.class_type_workblock  (gym_id, class_type_id, label) values (gym_b, ct_b, 'Calentamiento');
+  insert into public.class_type_bring_item (gym_id, class_type_id, label) values (gym_b, ct_b, 'Toalla');
+
   perform set_config('t.gym_a',        gym_a::text,      true);
   perform set_config('t.gym_b',        gym_b::text,      true);
   perform set_config('t.operator_a',   operator_a::text, true);
@@ -63,19 +75,32 @@ begin
   perform set_config('t.class_type_a', ct_a::text,       true);
 end $$;
 
--- ── anon: reads all 5 tables (decision (b) discharged in #50 — the catalog is public) ─────────────
+-- ── anon: reads all 5 tables FOR THE NAMED GYM ONLY (#50 made them public, #215 scoped them) ──────
 -- Post-#50 (20260706160000_phase6_anon_catalog_read) the showcased catalog is anon-readable; the
--- marketing pages consume exactly these tables. The exhaustive anon allowlist lives in
--- anon_catalog_read.sql — here we assert the five S0 tables flipped from 0 to visible.
+-- marketing pages consume exactly these tables. Since #215 the anon policies key on the gym the
+-- REQUEST names (x-gym-id → PostgREST's `request.headers` GUC → public.gym_en_peticion()), which is
+-- what createAnonClient(gymId) stamps — so the suite must name a gym exactly as PostgREST would, and
+-- gym B's rows (seeded above) must stay invisible while gym A is named. The exhaustive anon allowlist
+-- and the no-header / malformed-header cases live in anon_catalog_read.sql.
 set local role anon;
+select set_config('request.headers', json_build_object('x-gym-id', current_setting('t.gym_a'))::text, true);
 do $$
-declare n int;
+declare
+  n int;
+  gym_b uuid := current_setting('t.gym_b', true)::uuid;
 begin
   select count(*) into n from public.coach;                   if n < 1 then raise exception 'ANON READ FAIL: coach % rows (public since #50)', n; end if;
   select count(*) into n from public.class_type;              if n < 1 then raise exception 'ANON READ FAIL: class_type % rows (public since #50)', n; end if;
   select count(*) into n from public.class_type_workblock;    if n < 1 then raise exception 'ANON READ FAIL: class_type_workblock % rows (public since #50)', n; end if;
   select count(*) into n from public.class_type_bring_item;   if n < 1 then raise exception 'ANON READ FAIL: class_type_bring_item % rows (public since #50)', n; end if;
   select count(*) into n from public.room;                    if n < 1 then raise exception 'ANON READ FAIL: room % rows (public since #50)', n; end if;
+
+  -- #215: the request named gym A, so gym B's catalog (seeded, non-vacuous) must not come back.
+  select count(*) into n from public.coach                  where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s coach rows', n; end if;
+  select count(*) into n from public.class_type             where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s class_type rows', n; end if;
+  select count(*) into n from public.class_type_workblock   where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s workblock rows', n; end if;
+  select count(*) into n from public.class_type_bring_item  where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s bring_item rows', n; end if;
+  select count(*) into n from public.room                   where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s room rows', n; end if;
 end $$;
 reset role;
 

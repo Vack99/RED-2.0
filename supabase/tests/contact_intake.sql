@@ -14,7 +14,8 @@
 --     • staff of the gym READ their rows and mark-read (UPDATE read_at); a DIFFERENT gym's staff is
 --       denied every read/update path (cross-tenant isolation).
 --   gym_contact (curated/showcased class, replayed from gym_content) —
---     • member of the gym reads, member write denied; cross-tenant staff read/write denied; anon reads.
+--     • member of the gym reads, member write denied; cross-tenant staff read/write denied; anon reads
+--       the gym the REQUEST names and no other (scoped per gym by #215).
 --
 -- Self-asserting: every check RAISEs on failure; a clean run returns one 'OK' row. Zero hardcoded prod
 -- UUIDs (ADR-0013 §5): gym A is minted fresh (gen_random_uuid — decoupled from the #86-seeded forge),
@@ -59,6 +60,12 @@ begin
   insert into public.gym_contact (gym_id, address_line, latitude, longitude, whatsapp, email, instagram, hours)
     values (gym_a, 'Av. Probe 1', 25.6866, -100.3161, '528100000000', 'probe@a.mx', 'probe.a',
             '[{"day":"Lunes","opens":"05:30","closes":"22:00"},{"day":"Domingo","closed":true}]'::jsonb);
+
+  -- Gym B's own contact row — the cross-gym probe the anon read needs since #215 (naming gym A must
+  -- return none of it). gym_contact's PK is gym_id and gym B is a seeded gym, so `on conflict do
+  -- nothing`: either way gym B ends up holding exactly one row and the assertion is non-vacuous.
+  insert into public.gym_contact (gym_id, address_line) values (gym_b, 'Av. Probe B 2')
+    on conflict (gym_id) do nothing;
 
   perform set_config('t.gym_a',    gym_a::text,    true);
   perform set_config('t.gym_b',    gym_b::text,    true);
@@ -217,12 +224,18 @@ begin
 end $$;
 reset role;
 
+-- Since #215 the anon gym_contact policy keys on the gym the REQUEST names (x-gym-id → PostgREST's
+-- `request.headers` GUC → public.gym_en_peticion(), what createAnonClient(gymId) stamps for getContacto),
+-- so the suite names a gym exactly as PostgREST would and gym B's row (seeded above) must stay invisible.
 set local role anon;
+select set_config('request.headers', json_build_object('x-gym-id', current_setting('t.gym_a'))::text, true);
 do $$
 declare n int;
 begin
   select count(*) into n from public.gym_contact where gym_id = current_setting('t.gym_a', true)::uuid;
   if n <> 1 then raise exception 'ANON READ FAIL: anon reads % gym_contact rows (public contact surface, expected 1)', n; end if;
+  select count(*) into n from public.gym_contact where gym_id = current_setting('t.gym_b', true)::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s gym_contact rows', n; end if;
 end $$;
 reset role;
 

@@ -9,7 +9,8 @@
 --
 -- Vectors proved:
 --   1) staff of gym A: reads all 4 tables + create_class_session RPC lands a session in gym A.
---   2) anon reads class_session/class_session_coach/schedule_template (decision b discharged in #50),
+--   2) anon reads class_session/class_session_coach/schedule_template FOR THE GYM THE REQUEST NAMES
+--      and no other (decision b discharged in #50, scoped per gym by #215),
 --      but NOT schedule_template_coach (excluded from the anon set), and — slice #56 — NOT
 --      gym_membership: the member AGENDA is membership-scoped, so anon has no anchor to read it from
 --      even though the raw catalog is public.
@@ -38,6 +39,9 @@ declare
   coach_a     uuid;
   tmpl_a      uuid;
   session_a   uuid;
+  ct_b        uuid;
+  coach_b     uuid;
+  session_b   uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'scheduling-denial-gym-a', 'Scheduling Denial Gym A', 'America/Chihuahua',   'forge'),
@@ -67,7 +71,21 @@ begin
     values (gym_a, ct_a, '2026-07-06 18:00:00-06', 45, 24, tmpl_a) returning id into session_a;
   insert into public.class_session_coach (gym_id, session_id, coach_id) values (gym_a, session_a, coach_a);
 
+  -- Gym B's own scheduling rows — the cross-gym probe the anon section needs since #215 (naming gym A
+  -- must return none of them). Invisible to every authenticated actor below (member_a/operator_a are
+  -- gym-A-scoped and operator_b's assertions are all `where gym_id = gym_a`), so the exact counts stand.
+  insert into public.coach (gym_id, name, initials, role) values (gym_b, 'Coach B', 'CB', 'coach')
+    returning id into coach_b;
+  insert into public.class_type (gym_id, name) values (gym_b, 'Metcon B')
+    returning id into ct_b;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
+    values (gym_b, ct_b, 1, '19:00', 45, 24);
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_b, ct_b, '2026-07-06 19:00:00-06', 45, 24) returning id into session_b;
+  insert into public.class_session_coach (gym_id, session_id, coach_id) values (gym_b, session_b, coach_b);
+
   perform set_config('t.gym_a',      gym_a::text,      true);
+  perform set_config('t.gym_b',      gym_b::text,      true);
   perform set_config('t.operator_a', operator_a::text, true);
   perform set_config('t.operator_b', operator_b::text, true);
   perform set_config('t.member_a',   member_a::text,   true);
@@ -75,14 +93,20 @@ begin
   perform set_config('t.session_a',  session_a::text,  true);
 end $$;
 
--- ── anon: reads the public catalog (decision (b), #50), but NOT the template coach join ───────────
+-- ── anon: reads the NAMED gym's public catalog (#50), but NOT the template coach join ─────────────
 -- Post-#50 (20260706160000_phase6_anon_catalog_read) anon SELECTs class_session, class_session_coach
--- and schedule_template — the marketing pages' public surface. schedule_template_coach is deliberately
--- LEFT OUT of the anon set (PRD #49 names "class sessions +coach join", not the template's coach join),
--- so it stays invisible to anon. The exhaustive anon allowlist is asserted in anon_catalog_read.sql.
+-- and schedule_template — the marketing pages' public surface. Since #215 those policies key on the
+-- gym the REQUEST names (x-gym-id → PostgREST's `request.headers` GUC → public.gym_en_peticion(), what
+-- createAnonClient(gymId) stamps), so the suite names a gym exactly as PostgREST would and gym B's rows
+-- (seeded above) must stay invisible. schedule_template_coach is deliberately LEFT OUT of the anon set
+-- (PRD #49 names "class sessions +coach join", not the template's coach join), so it stays invisible to
+-- anon at any header. The exhaustive anon allowlist is asserted in anon_catalog_read.sql.
 set local role anon;
+select set_config('request.headers', json_build_object('x-gym-id', current_setting('t.gym_a'))::text, true);
 do $$
-declare n int;
+declare
+  n int;
+  gym_b uuid := current_setting('t.gym_b', true)::uuid;
 begin
   select count(*) into n from public.class_session;           if n < 1 then raise exception 'ANON READ FAIL: class_session % rows (public since #50)', n; end if;
   select count(*) into n from public.class_session_coach;     if n < 1 then raise exception 'ANON READ FAIL: class_session_coach % rows (public since #50)', n; end if;
@@ -93,6 +117,11 @@ begin
   -- caller has no gym to scope a member agenda to — the public catalog is readable, the member agenda
   -- is not. (The fixture block above already seeded 3 memberships, so a leak would read 3, not 0.)
   select count(*) into n from public.gym_membership; if n <> 0 then raise exception 'ANON DENIAL FAIL: anon sees % gym_membership rows (member-agenda anchor must be anon-invisible)', n; end if;
+
+  -- #215: the request named gym A, so gym B's scheduling rows (seeded, non-vacuous) must not come back.
+  select count(*) into n from public.class_session       where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s class_session rows', n; end if;
+  select count(*) into n from public.class_session_coach where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s class_session_coach rows', n; end if;
+  select count(*) into n from public.schedule_template   where gym_id = gym_b; if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s schedule_template rows', n; end if;
 end $$;
 reset role;
 
