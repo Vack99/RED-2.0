@@ -51,17 +51,18 @@ async function gymNombrePorHost(redirectTo: string): Promise<string | null> {
     return null;
   }
   const supabase = createClient(supabaseUrl, supabaseAnonKey);
-  const { data: domain } = await supabase
-    .from("gym_domain")
-    .select("gym_id")
-    .eq("hostname", hostname)
-    .eq("app", "client")
-    .maybeSingle();
-  if (!domain) return null;
+  // Through the SECURITY DEFINER projection, not the table: `gym_domain` stopped being
+  // anon-readable in #216 (one anonymous call returned the whole customer census). Same
+  // two-step, same anon key, same degrade-to-null on a miss.
+  const { data: gymId } = await supabase.rpc("gym_id_por_host", {
+    p_hostname: hostname,
+    p_app: "client",
+  });
+  if (!gymId) return null;
   const { data: gym } = await supabase
     .from("gym")
     .select("brand_name")
-    .eq("id", domain.gym_id)
+    .eq("id", gymId)
     .maybeSingle();
   return gym?.brand_name ?? null;
 }

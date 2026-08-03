@@ -1446,6 +1446,10 @@ export type Database = {
         }
         Returns: undefined
       }
+      gym_id_por_host: {
+        Args: { p_app?: string | null; p_hostname: string }
+        Returns: string | null
+      }
       has_role: { Args: { p_gym: string; p_role: string }; Returns: boolean }
       invitacion_info: {
         Args: { p_codigo: string }

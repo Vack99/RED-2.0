@@ -313,6 +313,13 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     return {
       from: (t: string) =>
         table((t === "gym" ? gyms : domains) as unknown as Record<string, unknown>[]),
+      // resolveTenant's host arm goes through the SECURITY DEFINER projection since #216
+      // (`gym_domain` is no longer anon-readable); construirUrlInvitacion still reads the
+      // table, under a staff session the member-scoped policy admits.
+      rpc: async (_fn: string, args: { p_hostname: string }) => ({
+        data: domains.find((d) => d.hostname === args.p_hostname)?.gym_id ?? null,
+        error: null,
+      }),
     } as unknown as SupabaseServer;
   }
 

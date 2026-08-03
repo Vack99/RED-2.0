@@ -15,16 +15,16 @@
     "",
     "The publishable key is build-inlined into every browser bundle by design (ADR-0008),",
     "so this file IS the platform's public read surface. Adding a line is a product",
-    "decision, not a formality."
+    "decision, not a formality.",
+    "",
+    "`gym_domain` is deliberately ABSENT: #216 took it off this surface entirely. anon now",
+    "resolves one known hostname through public.gym_id_por_host (SECURITY DEFINER) and holds",
+    "neither policy nor grant on the table, so it cannot enumerate the customer census."
   ],
   "anonReadable": {
     "gym": {
       "scope": "all-gyms",
       "reason": "The pre-auth host->brand lookup runs before any session exists (resolveTenant reads id/slug/brand_module_id). Narrowed at the COLUMN grant instead of the policy: anon and, since #213, authenticated both hold only the 9 brand-seam columns — legal_name, owner_user_id and created_at raise 42501."
-    },
-    "gym_domain": {
-      "scope": "all-gyms",
-      "reason": "Same pre-auth lookup: resolve-tenant.ts:121-125 needs exactly one row for one hostname. Enumeration of the full table is the platform's customer census and is NOT defended by 'hostnames are public DNS facts' — that defends resolving one host. OPEN: #216 narrows this to an equality-only read."
     },
     "gym_contact": {
       "scope": "all-gyms",

@@ -21,65 +21,74 @@ const DOMAINS: DomainRow[] = [
   { hostname: "red.localhost", gym_id: "gym-red" },
 ];
 
-// Minimal fake of the client: a per-table `.select().eq().maybeSingle()` chain that
-// resolves the first seeded row matching every `.eq(col, val)` (or null).
+// Minimal fake of the client. The `gym` arm is a `.select().eq().maybeSingle()` chain
+// resolving the first seeded row; the HOST arm is `.rpc("gym_id_por_host")` — since #216
+// `gym_domain` is no longer anon-readable, so resolution goes through the SECURITY
+// DEFINER projection instead of a table read.
+function hostRpc(domains: DomainRow[]) {
+  return (_fn: string, args: { p_hostname: string }) =>
+    Promise.resolve({
+      data: domains.find((d) => d.hostname === args.p_hostname)?.gym_id ?? null,
+      error: null,
+    });
+}
+
 function fakeDb(gyms: GymRow[], domains: DomainRow[]): SupabaseServer {
-  const table = (rows: Record<string, unknown>[]) => {
-    let filtered = rows;
-    const b = {
-      select: () => b,
-      eq: (col: string, val: unknown) => {
-        filtered = filtered.filter((r) => r[col] === val);
-        return b;
-      },
-      maybeSingle: () => Promise.resolve({ data: filtered[0] ?? null, error: null }),
-    };
-    return b;
-  };
   return {
-    from: (t: string) =>
-      table((t === "gym" ? gyms : domains) as unknown as Record<string, unknown>[]),
+    from: () => gymTable(gyms as unknown as Record<string, unknown>[]),
+    rpc: hostRpc(domains),
   } as unknown as SupabaseServer;
+}
+
+function gymTable(rows: Record<string, unknown>[], erring?: { erred: boolean }) {
+  let filtered = rows;
+  const b = {
+    select: () => b,
+    eq: (col: string, val: unknown) => {
+      filtered = filtered.filter((r) => r[col] === val);
+      return b;
+    },
+    maybeSingle: () => {
+      if (erring && !erring.erred) {
+        erring.erred = true;
+        return Promise.resolve({ data: null, error: { message: "transient" } });
+      }
+      return Promise.resolve({ data: filtered[0] ?? null, error: null });
+    },
+  };
+  return b;
 }
 
 const db = () => fakeDb(GYMS, DOMAINS);
 
-// A `.from`-counting wrapper: every table read is one `from` call, so the spy count
-// is the number of DB round trips a resolution actually spent — the observable the
-// cache is meant to drive to zero on a hit.
+// A round-trip counter. Both arms cost one trip — the `gym` read is a `from`, the host
+// read is an `rpc` — so `trips` is the number of DB round trips a resolution actually
+// spent: the observable the cache is meant to drive to zero on a hit.
 function spyDb(gyms: GymRow[] = GYMS, domains: DomainRow[] = DOMAINS) {
-  const base = fakeDb(gyms, domains) as unknown as { from: (t: string) => unknown };
-  const from = vi.fn(base.from);
-  return { client: { from } as unknown as SupabaseServer, from };
+  const from = vi.fn(() => gymTable(gyms as unknown as Record<string, unknown>[]));
+  const rpcImpl = hostRpc(domains);
+  const rpc = vi.fn(rpcImpl);
+  const trips = { get mock() { return { calls: [...from.mock.calls, ...rpc.mock.calls] }; } };
+  return { client: { from, rpc } as unknown as SupabaseServer, from: trips };
 }
 
-// Like spyDb, but the named table's FIRST `.maybeSingle()` resolves with a transient
-// PostgREST error (data:null + error set) instead of a row; every later read succeeds.
-// Models one DB blip so the "errors are not cached" contract is falsifiable via the spy.
-function spyErringDb(errorTable: "gym" | "gym_domain") {
-  let erred = false;
-  const table = (rows: Record<string, unknown>[], name: string) => {
-    let filtered = rows;
-    const b = {
-      select: () => b,
-      eq: (col: string, val: unknown) => {
-        filtered = filtered.filter((r) => r[col] === val);
-        return b;
-      },
-      maybeSingle: () => {
-        if (name === errorTable && !erred) {
-          erred = true;
-          return Promise.resolve({ data: null, error: { message: "transient" } });
-        }
-        return Promise.resolve({ data: filtered[0] ?? null, error: null });
-      },
-    };
-    return b;
-  };
-  const from = vi.fn((t: string) =>
-    table((t === "gym" ? GYMS : DOMAINS) as unknown as Record<string, unknown>[], t),
-  );
-  return { client: { from } as unknown as SupabaseServer, from };
+// Like spyDb, but the named arm's FIRST call resolves with a transient PostgREST error
+// (data:null + error set) instead of a row; every later read succeeds. Models one DB blip
+// so the "errors are not cached" contract is falsifiable via the counter.
+function spyErringDb(errorArm: "gym" | "gym_domain") {
+  const gymErring = errorArm === "gym" ? { erred: false } : undefined;
+  let hostErred = errorArm === "gym_domain" ? false : true;
+  const from = vi.fn(() => gymTable(GYMS as unknown as Record<string, unknown>[], gymErring));
+  const base = hostRpc(DOMAINS);
+  const rpc = vi.fn((fn: string, args: { p_hostname: string }) => {
+    if (!hostErred) {
+      hostErred = true;
+      return Promise.resolve({ data: null, error: { message: "transient" } });
+    }
+    return base(fn, args);
+  });
+  const trips = { get mock() { return { calls: [...from.mock.calls, ...rpc.mock.calls] }; } };
+  return { client: { from, rpc } as unknown as SupabaseServer, from: trips };
 }
 
 // The cache is module-level (correct: host/slug→tenant is GLOBAL public mapping, not

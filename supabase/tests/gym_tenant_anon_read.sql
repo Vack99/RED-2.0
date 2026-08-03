@@ -1,8 +1,10 @@
 -- Anon-read / write-denial test for the tenant spine (gym + gym_domain), slice #18.
 --
--- These two tables are the ONE pre-auth anon-read surface in Phase 3 (ADR-0013 §3): the proxy
--- resolves host → gym BEFORE any session exists, and hostnames are public DNS facts, so `anon`
--- must SELECT both. Every write, by contrast, must be denied to anon AND to a non-staff
+-- These two tables are the ONE pre-auth read surface in Phase 3 (ADR-0013 §3): the proxy
+-- resolves host → gym BEFORE any session exists. Since #216 that read is SPLIT — anon SELECTs
+-- `gym` (column-narrowed) but reaches `gym_domain` only through `gym_id_por_host`, a SECURITY
+-- DEFINER projection that answers one hostname and cannot be turned into a scan. Every write,
+-- by contrast, must be denied to anon AND to a non-staff
 -- authenticated caller — Phase 3 adds NO write policy to either table (rows are seeded by the
 -- migration, which runs as the migration role and bypasses RLS). This proves both halves.
 --
@@ -41,18 +43,41 @@ begin
   if not rls_dom then raise exception 'DENIAL FAIL: RLS not enabled on public.gym_domain'; end if;
 end $$;
 
+-- Capture a real hostname BEFORE dropping to anon: since #216 anon cannot read the table,
+-- so it can no longer find one for itself — which is the point of the change.
+select set_config('test.hostname', (select hostname from public.gym_domain order by hostname limit 1), true);
+
 -- ── 2) As anon: reads allowed, every write denied ─────────────────────────────
 set local role anon;
 
 do $$
 declare
   n int;
+  g uuid;
 begin
-  -- READ: anon sees the seeded rows (>= 2 gyms, >= 5 domains)
+  -- READ: anon sees the seeded gym rows (>= 2)
   select count(*) into n from public.gym;
   if n < 2 then raise exception 'READ FAIL: anon sees % gym rows (expected >= 2)', n; end if;
-  select count(*) into n from public.gym_domain;
-  if n < 5 then raise exception 'READ FAIL: anon sees % gym_domain rows (expected >= 5)', n; end if;
+
+  -- gym_domain since #216: anon resolves ONE hostname it already knows, through the
+  -- SECURITY DEFINER projection…
+  select public.gym_id_por_host(current_setting('test.hostname')) into g;
+  if g is null then
+    raise exception 'READ FAIL: anon could not resolve a known hostname via gym_id_por_host — the pre-auth seam is broken';
+  end if;
+  if public.gym_id_por_host('nope.example.invalid') is not null then
+    raise exception 'READ FAIL: gym_id_por_host answered for an unmapped hostname';
+  end if;
+
+  -- …and CANNOT enumerate the table. Grant revoked AND no policy, so either a 42501 or
+  -- an empty result is correct; a row count is not.
+  begin
+    select count(*) into n from public.gym_domain;
+    if n <> 0 then
+      raise exception 'DENIAL FAIL: anon enumerated % gym_domain rows — the customer census is still public (#216)', n;
+    end if;
+  exception when insufficient_privilege then null;  -- 42501 = correct
+  end;
 
   -- COLUMN GRANTS (D3, 20260713190100): anon reads exactly the brand-seam columns the pre-auth
   -- host→brand lookup needs (resolveTenant: id/slug/brand_module_id; marketing: brand_name/
@@ -141,8 +166,14 @@ declare
 begin
   select count(*) into n from public.gym;
   if n < 2 then raise exception 'READ FAIL: authenticated non-staff sees % gym rows (expected >= 2)', n; end if;
+
+  -- gym_domain since #216: narrowed from `using (true)` to the caller's OWN gyms. This
+  -- actor holds no gym_membership row, so it sees NOTHING — the census was the identical
+  -- exposure one role over, and every member holds an authenticated JWT.
   select count(*) into n from public.gym_domain;
-  if n < 5 then raise exception 'READ FAIL: authenticated non-staff sees % gym_domain rows (expected >= 5)', n; end if;
+  if n <> 0 then
+    raise exception 'DENIAL FAIL: authenticated non-member sees % gym_domain rows — expected 0 (#216)', n;
+  end if;
 
   -- COLUMN GRANTS for `authenticated` (#213, 20260802120000). This block's caller is the exact
   -- actor the live probe used: a `sub` with NO gym_membership row anywhere. Before #213 it read

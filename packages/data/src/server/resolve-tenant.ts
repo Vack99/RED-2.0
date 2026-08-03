@@ -118,14 +118,13 @@ async function resolveHostUncached(
   client: SupabaseServer,
   hostname: string,
 ): Promise<Resolved<HostResolution>> {
-  const { data: domain, error } = await client
-    .from("gym_domain")
-    .select("gym_id")
-    .eq("hostname", hostname)
-    .maybeSingle();
+  // Through the RPC, not the table: `gym_domain` stopped being anon-readable in #216
+  // (one anonymous call returned the platform's whole customer census). The definer
+  // projection answers "which gym owns THIS hostname" and cannot be turned into a scan.
+  const { data: gymId, error } = await client.rpc("gym_id_por_host", { p_hostname: hostname });
   if (error) return { value: { matched: false, tenant: null }, cacheable: false };
-  if (!domain) return { value: { matched: false, tenant: null }, cacheable: true };
-  const gym = await gymTenant(client, "id", domain.gym_id);
+  if (!gymId) return { value: { matched: false, tenant: null }, cacheable: true };
+  const gym = await gymTenant(client, "id", gymId);
   return { value: { matched: true, tenant: gym.value }, cacheable: gym.cacheable };
 }
 
