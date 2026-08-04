@@ -12,11 +12,14 @@
 --        RPC did NOT re-expose raw sales/attendance history to members).
 --     3) cross-member isolation (SAME gym): member_b's mi_membresia returns member_b's OWN numbers, and
 --        member_a's call is unaffected — self-pin by auth.uid(), never a parameter / gym scope.
---   PARITY (== admin ficha getClienteFicha Part B, same filters)
+--   PARITY (== admin ficha getClienteFicha Part B, same filters; #173)
 --     4) member_a (finite plan): the RPC returns the pass-throughs + the anchor scalars of the NEWEST sale
---        (not an older one) + attendedSincePurchase computed exactly as the admin ficha does — consumio
---        rows, not soft-deleted, fecha >= the anchor gym-tz day; a before-anchor row, a consumio=false
---        row, and a soft-deleted row are all excluded.
+--        (not an older one) + attendedSincePurchase computed exactly as the admin ficha does — VISITS
+--        (not soft-deleted, not perdonada), fecha >= the anchor gym-tz day. A before-anchor row and a
+--        soft-deleted row are excluded; a consumio=false (BOOKED) row now COUNTS (#173: reservar_clase
+--        already charges the balance at booking time, so gating this count on consumio=true dropped
+--        every booked visit); a perdonada row (the second record of one cooldown-paired arrival) is
+--        excluded even though it is neither soft-deleted nor consumio=false.
 --     5) BOUNDARY-DAY (design-gate constraint 1): the anchor sale is timestamped across gym-midnight
 --        ('2026-06-15 05:30+00' = '2026-06-14 23:30' in America/Mexico_City), so anchor_dia is the gym-tz
 --        day 2026-06-14 (NOT the UTC day 2026-06-15). An asistencia dated exactly on that gym-tz day is
@@ -88,14 +91,20 @@ begin
     (gym_t, c_c, '2026-06-05', true, null),
     (gym_t, c_c, '2026-06-25', true, null);
 
-  -- member_a attendances: boundary-day (gym-tz anchor day) + after = COUNTED; before / consumio=false /
-  -- soft-deleted = EXCLUDED. Expected attendedSincePurchase = 2.
+  -- member_a attendances (#173): boundary-day (gym-tz anchor day) + after = COUNTED, INCLUDING a
+  -- booked (consumio=false) visit; before-anchor / soft-deleted / perdonada = EXCLUDED. Expected
+  -- attendedSincePurchase = 3 (06-14, 06-18, 06-20).
   insert into public.asistencias (gym_id, cliente_id, fecha, consumio, deleted_at) values
     (gym_t, c_a, '2026-06-14', true,  null),      -- boundary day (gym tz) → COUNTED
     (gym_t, c_a, '2026-06-20', true,  null),      -- after anchor → COUNTED
-    (gym_t, c_a, '2026-06-13', true,  null),      -- before anchor day → excluded
-    (gym_t, c_a, '2026-06-18', false, null),      -- did not consume → excluded
+    (gym_t, c_a, '2026-06-13', true,  null),      -- before anchor day → excluded (date)
+    (gym_t, c_a, '2026-06-18', false, null),      -- BOOKED visit (consumio=false) → NOW COUNTED (#173)
     (gym_t, c_a, '2026-06-19', true,  now());     -- soft-deleted → excluded
+  -- A pardoned duplicate (the second record of one cooldown-paired arrival, 20260729120000) is
+  -- excluded even though it is neither soft-deleted nor consumio=false — same rule
+  -- asistencias_mes_por_cliente already applies.
+  insert into public.asistencias (gym_id, cliente_id, fecha, consumio, perdonada, deleted_at) values
+    (gym_t, c_a, '2026-06-21', true, true, null); -- perdonada → excluded
 
   -- member_b sale: ilimitado / vigencia 'mes', monto 1400. created_at set = fecha (non-backdated) so
   -- the count boundary (now created_at-based, §D3/C2) lands on 2026-06-10, not the test-txn now().
@@ -152,9 +161,10 @@ begin
   if r.anchor_vigencia_dias is distinct from 30   then raise exception 'PARITY FAIL: anchor_vigencia_dias % (expected 30)', r.anchor_vigencia_dias; end if;
   -- BOUNDARY: anchor_dia is the gym-tz day 2026-06-14, NOT the UTC day 2026-06-15.
   if r.anchor_dia is distinct from date '2026-06-14' then raise exception 'BOUNDARY FAIL: anchor_dia % (expected 2026-06-14 gym-tz, not 2026-06-15 UTC)', r.anchor_dia; end if;
-  -- attendedSincePurchase = 2 (boundary-day + after; before / not-consumed / soft-deleted excluded). A
-  -- UTC-date bug would drop the boundary-day row and yield 1.
-  if r.attended_since_purchase is distinct from 2 then raise exception 'PARITY FAIL: attended_since_purchase % (expected 2)', r.attended_since_purchase; end if;
+  -- attendedSincePurchase = 3 (boundary-day + the booked consumio=false visit + after; before-anchor /
+  -- soft-deleted / perdonada excluded — #173). A UTC-date bug would drop the boundary-day row and yield
+  -- 2; the pre-#173 consumio=true filter would drop the booked visit and also yield 2.
+  if r.attended_since_purchase is distinct from 3 then raise exception 'PARITY FAIL: attended_since_purchase % (expected 3)', r.attended_since_purchase; end if;
 end $$;
 reset role;
 

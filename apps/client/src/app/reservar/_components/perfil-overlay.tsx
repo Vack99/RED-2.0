@@ -263,11 +263,11 @@ function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void 
               </span>
             ) : m.ilimitado ? (
               <span className="text-[13px] text-fg">
-                <b className="font-bold text-accent">Ilimitado</b> · sin límite este mes
+                <b className="font-bold text-accent">Ilimitado</b> · sin límite en tu paquete
               </span>
             ) : m.gauge ? (
               <span className="text-[13px] text-fg">
-                <b className="font-bold text-accent">{m.gauge.usadas}</b> de {m.gauge.total} clases este mes
+                <b className="font-bold text-accent">{m.gauge.usadas}</b> de {m.gauge.total} clases de tu paquete
               </span>
             ) : (
               <span className="text-[13px] text-fg">

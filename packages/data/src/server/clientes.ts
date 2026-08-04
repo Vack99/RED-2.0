@@ -312,7 +312,7 @@ export const getClienteFicha = cache(
           // the same 23:11 for two marks 17 seconds apart. A many-to-one FK embed on the
           // select that is already here: no extra round trip, no new column, no migration.
           .select(
-            "fecha, hora, consumio, class_session_id, class_session(starts_at, is_special, special_name, class_type(name))",
+            "fecha, hora, consumio, perdonada, class_session_id, class_session(starts_at, is_special, special_name, class_type(name))",
           )
           .eq("cliente_id", id)
           .is("deleted_at", null)
@@ -347,13 +347,18 @@ export const getClienteFicha = cache(
       gym.brandName,
     ).negocio;
 
-    // Classes consumed since the last purchase (Part B clases-gauge denominator):
-    // count `consumio` rows at/after the anchor sale's WRITE INSTANT (created_at, not
-    // fecha — C2/C14), not just its calendar day. A check-in earlier the same day as a
-    // renewal was already spent from the pre-renewal balance, so day-granularity
-    // double-counts it; and a backdated fecha would wrongly re-count gap visits that
-    // already decremented the balance live. ventaDia is the gym-local calendar day;
-    // ventaHora is the gym-local "HH:MM:SS" wall clock, directly string-comparable
+    // Classes consumed since the last purchase (Part B clases-gauge denominator): a VISIT
+    // count, the same unit asistencias_mes_por_cliente uses (20260729120000:764) — NOT
+    // `consumio` (#173): a booked class visit is written consumio=false because
+    // reservar_clase already charged the balance at booking time, so gating on consumio
+    // dropped every booked visit from this counter. `perdonada` (added alongside
+    // `consumio`) is excluded instead — it marks the second record of one cooldown-paired
+    // arrival, never a real second visit. Counted at/after the anchor sale's WRITE INSTANT
+    // (created_at, not fecha — C2/C14), not just its calendar day: a check-in earlier the
+    // same day as a renewal was already spent from the pre-renewal balance, so
+    // day-granularity double-counts it, and a backdated fecha would wrongly re-count gap
+    // visits that already decremented the balance live. ventaDia is the gym-local calendar
+    // day; ventaHora is the gym-local "HH:MM:SS" wall clock, directly string-comparable
     // against asistencias.hora (a Postgres `time`). Null `hora` (back-entry rows,
     // predating the column) are counted: no recorded time can prove they preceded it.
     const ventas = ventasRes.data ?? [];
@@ -368,7 +373,7 @@ export const getClienteFicha = cache(
         // so count the rows in hand — no extra round trip.
         attendedSincePurchase = (asistRes.data ?? []).filter(
           (a) =>
-            a.consumio &&
+            !a.perdonada &&
             (a.fecha > ventaDia ||
               (a.fecha === ventaDia && (a.hora === null || a.hora >= ventaHora))),
         ).length;
@@ -379,7 +384,7 @@ export const getClienteFicha = cache(
           .from("asistencias")
           .select("id", { count: "exact", head: true })
           .eq("cliente_id", id)
-          .eq("consumio", true)
+          .eq("perdonada", false)
           .is("deleted_at", null)
           .or(`fecha.gt.${ventaDia},and(fecha.eq.${ventaDia},or(hora.gte.${ventaHora},hora.is.null))`);
         attendedSincePurchase = count ?? 0;

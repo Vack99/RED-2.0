@@ -228,7 +228,9 @@ export function gaugeFill(remaining: number, denom: number): number {
 }
 
 /** Clases-bar denominator: the balance granted at the last purchase = what's left
- *  now plus every class consumed since that purchase (`consumio` attendances). */
+ *  now plus every visit counted since that purchase (#173: not-soft-deleted, not
+ *  `perdonada` — a booked class visit is written `consumio = false`, so gating on
+ *  `consumio` would drop it from this denominator too). */
 export function clasesDenom(clasesRest: number, attendedSincePurchase: number): number {
   return clasesRest + attendedSincePurchase;
 }
@@ -263,7 +265,8 @@ export interface FichaClienteRow extends ClienteFacts {
 }
 /** Asistencia rows the ficha renders (absolute date + check-in time). The window
  *  is the rolling last 30 days, widened back to the last purchase when older, so
- *  the same rows feed both the historial and `attendedSincePurchase` (`consumio`). */
+ *  the same rows feed both the historial and `attendedSincePurchase` (#173: every
+ *  visit — `deleted_at is null and not perdonada` — not just `consumio` ones). */
 export interface FichaAsistRow {
   fecha: string;
   hora: string | null;
@@ -493,8 +496,13 @@ export function shapeFicha(
 // so the member's "N de N clases" gauge equals the admin ficha's for the same client — ONE derivation
 // home. Contract-A is preserved by construction: no raw ventas/asistencias arrays reach this layer, only
 // the anchor monto/vigencia display fields + the attendedSincePurchase count the RPC already computed.
-// The gauge inherits the separately-tracked consume-at-booking skew (#57/#60) BY DESIGN — parity with the
-// admin ficha is the criterion, not a "fix" here.
+// The gauge no longer inherits the consume-at-booking skew (#57/#60) that 20260706210000 deliberately
+// left unfixed: a class is charged (clasesRestantes decremented) at booking time, but was only counted
+// into attendedSincePurchase at ATTENDANCE if the visit happened to be written consumio = true — a
+// walk-in row. A booked visit is written consumio = false (already charged), so it never joined the
+// count at all, undercounting every booked class forever (#173). Both surfaces now count VISITS
+// (deleted_at is null and not perdonada), the unit asistencias_mes_por_cliente already counts — parity
+// with the admin ficha is still the criterion, and both were fixed together.
 
 /** The scalars `mi_membresia()` returns — the RLS-privileged anchor fields + the entitlement pass-throughs. */
 export interface MembresiaFacts {

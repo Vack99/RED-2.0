@@ -742,13 +742,37 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     expect(ficha?.clasesGauge?.usadas).toBe(1);
   });
 
+  it("counts a booked visit (consumio=false) — #173: reservar_clase already charged it at booking, not attendance", async () => {
+    const { client } = makeFichaFake([
+      // A booking flips class_session_id + charges the balance at reservar_clase time, so the
+      // resulting asistencia is written consumio=false. Gating this count on consumio=true (the
+      // pre-#173 bug) dropped every booked visit, undercounting the gauge's "usadas".
+      { cliente_id: "cli-ficha", fecha: VENTA_DIA, hora: "18:00:00", consumio: false, deleted_at: null },
+    ]);
+
+    const ficha = await getClienteFicha("cli-ficha", client);
+
+    expect(ficha?.clasesGauge?.usadas).toBe(1);
+  });
+
+  it("excludes a perdonada row — the second record of one cooldown-paired arrival, not a real second visit", async () => {
+    const { client } = makeFichaFake([
+      { cliente_id: "cli-ficha", fecha: VENTA_DIA, hora: "18:00:00", consumio: true, deleted_at: null },
+      { cliente_id: "cli-ficha", fecha: VENTA_DIA, hora: "18:01:00", consumio: false, perdonada: true, deleted_at: null },
+    ]);
+
+    const ficha = await getClienteFicha("cli-ficha", client);
+
+    expect(ficha?.clasesGauge?.usadas).toBe(1);
+  });
+
   it("old purchase predating the 30-day window: the head-count query carries the same instant anchor", async () => {
     const { client, orCalls } = makeFichaFake(
       [
         // Both rows predate the window, so the in-hand fetch (gte ventanaIso) drops
         // them; only the head-count query can see them — its count must feed usadas.
-        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "15:00:00", consumio: true, deleted_at: null },
-        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, deleted_at: null },
+        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "15:00:00", consumio: true, perdonada: false, deleted_at: null },
+        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, perdonada: false, deleted_at: null },
       ],
       { ...FICHA_VENTA, fecha: OLD_INSTANTE, created_at: OLD_INSTANTE },
     );
