@@ -148,9 +148,14 @@ worlds:
 
           - id: backdate-sold-date
             title: "Backdate a subscription's sold date in admin checkout"
-            what: "Wayfinder map to backdate a subscription's sold date (as-of-date, ledger moves, PAQUETE affordance) — planning stage"
-            status: in-flight
+            what: "Quiet 'Inicia: Hoy ›' affordance in PAQUETE; registrar_venta takes p_fecha_inicio (past-only, 30-day cap), stacking evaluated as-of that date, ledger date moves with it, 'latest sale' re-anchored on insertion order"
+            status: shipped
             github: { issues: ["112-118"], label: quest:backdate-sold-date }
+            evidence:
+              - { type: commit, ref: 3ea9c4b, note: "RPC bounds, as-of stacking, latest-sale re-anchor (DB + data layer)" }
+              - { type: commit, ref: 3462f5f, note: "checkout UX + receipt annotation (UI)" }
+              - { type: path, ref: supabase/migrations/20260714110000_registrar_venta_backdate.sql, note: "live in prod — verified single overload carrying p_fecha_inicio" }
+              - { type: path, ref: supabase/tests/registrar_venta_backdate.sql, note: "denial-suite vectors on the written rows" }
 
   # ============================================================
   # WORLD 2 — Sellable Product
