@@ -145,8 +145,11 @@ const URGENCIA_CLASES = { critico: 1, urgente: 3, pronto: 5 };
  * dimension (clases | días). `vinculante` is whichever lapses first. Ilimitado
  * has no class pressure, so only días can make it urgent. Replaces the threshold
  * engine that was copy-pasted into the clientes screen (invisible to the
- * dependency boundary). derivarEstado's coarser por_vencer is the lifecycle
- * projection of the same idea.
+ * dependency boundary). This is the RAW dimension logic — every display consumer
+ * reads it through `nivelUrgenciaLifecycle` (lifecycle.ts), which floors a
+ * `vencido`/`sin_paquete` estado to "ok" (#225 finding 1 / F3); `derivarEstado`'s
+ * vigente/vencido/sin_clases is a SEPARATE predicate (the retired por_vencer band
+ * lived here, not there).
  */
 export function urgenciaCliente(saldo: Saldo): Urgencia {
   const dias = saldo.dias;

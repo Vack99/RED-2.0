@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
+import { paseSueltoNombres } from "@gym/domain/lifecycle";
 import { calcVigenciaEnd } from "@gym/domain/rules";
 import type { Vigencia } from "@gym/domain/types";
 import { fmtShort, hoyEnZona } from "@gym/format";
@@ -61,6 +62,26 @@ export const getPaquetes = cache(
         popular: p.popular,
       };
     });
+  },
+);
+
+/** The gym's pase-suelto package NAMES — a dedicated, error-SURFACING read (#225 F5).
+ *  `getPaquetes` above is deliberately best-effort (`[]` on a read error — fine for a
+ *  decorative price list), but a swallowed error HERE would silently misclassify
+ *  every drop-in package as a membership everywhere estado/vigentes/POR RENOVAR/the
+ *  export read it — wrong numbers with no signal, not a merely-empty list. Throws
+ *  instead, mirroring `respaldo.ts`'s `if (paquetesRes.error) throw` — a catalog
+ *  outage becomes a visible error, never a silent misclassification flood. */
+export const getPaseSueltoNombres = cache(
+  async (client?: SupabaseServer): Promise<ReadonlySet<string>> => {
+    const supabase = client ?? (await createClient());
+    const gym = await getOperatorGym(supabase);
+    const { data, error } = await supabase
+      .from("paquetes")
+      .select("nombre, clases")
+      .eq("gym_id", gym.id);
+    if (error) throw error;
+    return paseSueltoNombres(data ?? []);
   },
 );
 

@@ -48,8 +48,10 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   // the ficha's own copied `diasRest <= 5` threshold engine (DELETED) — a vencido
   // package no longer paints its días/vence accent as urgent (nothing left to run out
   // of), and the threshold now lives in exactly one place (rules.ts's urgenciaCliente).
+  // `c.estado` (#225 F3) floors sin_paquete too — a same-day sign-up must not paint
+  // as urgent either (its bare diasRest/clasesRest of 0 would otherwise read crítico).
   const urgente =
-    nivelUrgenciaLifecycle({ clases: c.clasesRest, dias: c.diasRest }) !== "ok";
+    nivelUrgenciaLifecycle({ clases: c.clasesRest, dias: c.diasRest }, c.estado) !== "ok";
   const compraLabel = ficha.primeraCompra ? "COBRAR PRIMERA COMPRA" : "RENOVAR";
   const irAVender = () => router.push(`/vender?cliente=${c.id}`);
 

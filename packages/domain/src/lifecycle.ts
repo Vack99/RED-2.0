@@ -110,6 +110,18 @@ export function esPaseSuelto(claseGrant: ClaseGrant): boolean {
   return claseGrant === 1;
 }
 
+/** Build the pase-suelto NAME Set from a package catalog — the ONE place this Set is
+ *  assembled (#225 F5; was triplicated across packages/data/src/server/clientes.ts ×2
+ *  and export/rows.ts). Lives here, not in packages/data/src/server/derive.ts, to
+ *  avoid a circular import (derive.ts → plantilla-ctx.ts → paquetes.ts would close a
+ *  loop back to derive.ts if paquetes.ts's error-surfacing reader depended on it —
+ *  see paquetes.ts's `getPaseSueltoNombres`). Pure; callers own surfacing a catalog
+ *  READ failure loudly — a swallowed error here would silently misclassify every
+ *  drop-in package as a membership across estado/vigentes/POR RENOVAR/the export. */
+export function paseSueltoNombres(paquetes: { nombre: string; clases: ClaseGrant }[]): ReadonlySet<string> {
+  return new Set(paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
+}
+
 /** POR RENOVAR's breakdown buckets. Day buckets (Connect Gym's observed
  *  today/tomorrow/3d/5d shape) PLUS `clases` — so the buckets always sum to
  *  the tile's headline, including members whose classes (not days) bind. */
@@ -197,9 +209,11 @@ function clasesNum(c: Clases): number {
 /** Whether the CLASES axis binds at the POR RENOVAR threshold — false for a
  *  one-off pass (see file header: the classes signal is inert for a
  *  membership-vs-drop-in row; a spent single-use pass is not "running out"
- *  of anything). */
-function esClasesBoundParaRenovar(fila: FilaRosterLifecycle): boolean {
-  return !fila.esPaseSuelto && clasesNum(fila.clases) <= RENOVACION_CLASES;
+ *  of anything). Primitives, not `FilaRosterLifecycle` (#225 F4), so
+ *  `esPorRenovar` — the single-row predicate exposed to consumers with no
+ *  full roster context — can share it too. */
+function esClasesBoundParaRenovar(esPaseSuelto: boolean, clases: Clases): boolean {
+  return !esPaseSuelto && clasesNum(clases) <= RENOVACION_CLASES;
 }
 
 /** Whole days elapsed from `fecha` to `hoy` (positive once `fecha` is in the
@@ -215,10 +229,38 @@ function diasDesde(fecha: Date, hoy: Date): number {
  *  problem statement measured (19 of 30 rows red, 1 actionable) — once a
  *  package has actually lapsed there is nothing left to "run out of", so
  *  the signal floors to "ok". Reuses `urgenciaCliente`'s dimension logic
- *  UNCHANGED (this ticket only adds; #225 rewrites the seven existing
- *  consumers to read this floored value). */
-export function nivelUrgenciaLifecycle(saldo: Saldo): NivelUrgencia {
+ *  UNCHANGED (this ticket only adds).
+ *
+ *  Second floor arm (#225 F3): `sin_paquete` also floors to "ok" — a
+ *  package-less client (a same-day sign-up, or a pendienteOnline row) has
+ *  nothing to run out of either, and must never look like old churn (story
+ *  13). `derivarLifecycle` never reaches this call for a sin_paquete row
+ *  (its early return already hardcodes urgencia "ok" — see below), but the
+ *  OTHER #225 consumers call this with only a bare Saldo (no `vence`, so no
+ *  way to self-detect "no package") — `estado` is optional so those callers
+ *  can pass it and get the same floor. Omitting it (the 1-arg form) is only
+ *  safe when the caller already knows the row has a package. */
+export function nivelUrgenciaLifecycle(saldo: Saldo, estado?: EstadoPaquete): NivelUrgencia {
+  if (estado === "sin_paquete") return "ok";
   return estaVencido(saldo.dias) ? "ok" : urgenciaCliente(saldo).nivel;
+}
+
+/** Whether a package is POR RENOVAR (#225 F4) — the SAME gate `derivarTile`
+ *  uses below, exposed for consumers that ask about ONE row without the full
+ *  roster context `derivarLifecycle` needs (the pase de lista badge, the
+ *  directory's filter/count — pre-#225-F4 those re-coined their OWN "por
+ *  renovar" via the urgencia gradient, a second live meaning of the phrase).
+ *  A live package (not vencido, not sin_paquete) within RENOVACION_DIAS of
+ *  its date, or down to RENOVACION_CLASES classes (paseSuelto-exempt on the
+ *  clases arm — see esClasesBoundParaRenovar). */
+export function esPorRenovar(
+  estado: EstadoPaquete,
+  dias: number,
+  clases: Clases,
+  esPaseSuelto: boolean,
+): boolean {
+  if (estado === "vencido" || estado === "sin_paquete") return false;
+  return dias <= RENOVACION_DIAS || esClasesBoundParaRenovar(esPaseSuelto, clases);
 }
 
 function derivarTile(fila: FilaRosterLifecycle, dias: number, estado: EstadoPaquete): Tile {
@@ -227,7 +269,7 @@ function derivarTile(fila: FilaRosterLifecycle, dias: number, estado: EstadoPaqu
   // RENOVACION_CLASES classes (never via a one-off pass's spent clases — see
   // esClasesBoundParaRenovar). A SIN CLASES row (clases <= 0, not a one-off
   // pass) always satisfies the clases arm, so it is always in this tile.
-  if (estado !== "vencido" && (dias <= RENOVACION_DIAS || esClasesBoundParaRenovar(fila))) {
+  if (esPorRenovar(estado, dias, fila.clases, fila.esPaseSuelto)) {
     return "por_renovar";
   }
   if (estado === "vencido") {
@@ -391,7 +433,7 @@ export function contarLifecycle(filas: FilaLifecycle[]): ConteosLifecycle {
   };
 
   for (const f of renovar) {
-    if (esClasesBoundParaRenovar(f.fila)) {
+    if (esClasesBoundParaRenovar(f.fila.esPaseSuelto, f.fila.clases)) {
       cubos.clases += 1;
       continue;
     }

@@ -3,7 +3,7 @@
 // inicial at read. No I/O, no Supabase — unit-tested in derive.test.ts. The DAL
 // fetches rows and the attendance counts, then maps each through here.
 
-import { RENOVACION_CLASES, RENOVACION_DIAS } from "@gym/domain/lifecycle";
+import { esPorRenovar } from "@gym/domain/lifecycle";
 import { derivarEstado, diasRestantes, estaVencido, forfeit } from "@gym/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@gym/domain/types";
 import { DOW, fechaEnZona, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
@@ -37,11 +37,13 @@ export interface ClienteDerivado {
 /** Package names the gym's catalog grants exactly 1 class (the membership-vs-drop-in
  *  predicate, `esPaseSuelto` in `@gym/domain/lifecycle`) — matched against a roster
  *  row's `paquete_nombre`, since `clientes` stores only the sold package's display
- *  name, never its catalog grant (that lives on `paquetes`, keyed by name). Callers
- *  build this once per read from `getPaquetes` (packages/data/server/paquetes.ts) via
- *  `esPaseSuelto(p.clases)`; omitted callers (e.g. the pase de lista, which has no
- *  catalog fetch of its own) get the conservative default — every package reads as a
- *  membership, matching pre-#225 behavior for that screen. */
+ *  name, never its catalog grant (that lives on `paquetes`, keyed by name). Built via
+ *  `paseSueltoNombres` (`@gym/domain/lifecycle` — not this file, to avoid a circular
+ *  import through plantilla-ctx.ts → paquetes.ts, #225 F5). Every read that surfaces
+ *  `estado`/urgencia/POR RENOVAR to a human now threads a REAL set through (#225 F2:
+ *  getClientesRoster, getRosterResumen, getClienteFicha, getClientesParaPase, the
+ *  export) — this default is for tests/degenerate callers only, never a
+ *  silently-accepted gap. */
 const NINGUN_PASE_SUELTO: ReadonlySet<string> = new Set();
 
 export function derivarCliente(
@@ -88,35 +90,37 @@ export interface PaseClienteDTO {
   /** Remaining-classes label, e.g. "Ilimitado", "5 clases", "Sin paquete". */
   clasesLabel: string;
   diasRest: number;
-  /** Active package due for renewal. The SAME POR RENOVAR gate the #223/#225
-   *  engine's tile uses (días <= RENOVACION_DIAS OR clases <= RENOVACION_CLASES,
-   *  gated on the package still being live) — never a hand-inlined day threshold,
-   *  and never the retired por_vencer estado value. The pase de lista has no
-   *  package-catalog fetch of its own, so this omits the esPaseSuelto exemption
-   *  (a spent one-off pass reads porVencer via its clases arm here, same as a
-   *  membership) — an accepted, documented gap for this screen only. */
+  /** Active package due for renewal — `esPorRenovar` (@gym/domain/lifecycle), the
+   *  SAME single-row POR RENOVAR predicate the roster/INICIO tile and the
+   *  directory's filter/count use (#225 F4): días <= RENOVACION_DIAS OR clases <=
+   *  RENOVACION_CLASES (paseSuelto-exempt), gated on the package still being live.
+   *  Never a hand-inlined day threshold, and never the retired por_vencer estado
+   *  value. */
   porVencer: boolean;
 }
 
 /**
  * The pase de lista's slim per-client projection. Derives through derivarCliente
- * so `porVencer` reads the SAME POR RENOVAR gate the roster/INICIO tile use
- * (RENOVACION_DIAS/RENOVACION_CLASES, @gym/domain/lifecycle) — the pase shares the
- * one definition of "due for renewal" instead of re-coining a `<= 5`.
+ * so `porVencer` reads the SAME POR RENOVAR predicate the roster/INICIO tile use
+ * (`esPorRenovar`, @gym/domain/lifecycle) — the pase shares the one definition of
+ * "due for renewal" instead of re-coining a `<= 5`. `paseSueltoNombres` (#225 F2)
+ * is the gym's package catalog, so a spent one-off pass is correctly exempted from
+ * the clases arm here too, not just on the roster/dashboard/export.
  */
-export function derivarPaseCliente(c: ClienteFacts, hoy: Date): PaseClienteDTO {
-  const d = derivarCliente(c, hoy, 0);
+export function derivarPaseCliente(
+  c: ClienteFacts,
+  hoy: Date,
+  paseSueltoNombres: ReadonlySet<string> = NINGUN_PASE_SUELTO,
+): PaseClienteDTO {
+  const d = derivarCliente(c, hoy, 0, paseSueltoNombres);
   const clasesLabel = !c.paquete_nombre
     ? "Sin paquete"
     : c.clases_restantes === null
       ? "Ilimitado"
       : `${c.clases_restantes} clase${c.clases_restantes === 1 ? "" : "s"}`;
-  const clasesNum = c.clases_restantes === null ? Infinity : c.clases_restantes;
-  // Mirrors lifecycle.ts's derivarTile POR RENOVAR gate: only a still-live package
-  // (vigente or sin_clases — never vencido/sin_paquete) can be "due".
-  const porVencer =
-    (d.estado === "vigente" || d.estado === "sin_clases") &&
-    (d.diasRest <= RENOVACION_DIAS || clasesNum <= RENOVACION_CLASES);
+  const clasesBase: Clases = c.clases_restantes === null ? "ilimitado" : c.clases_restantes;
+  const esPaseSueltoRow = c.paquete_nombre !== null && paseSueltoNombres.has(c.paquete_nombre);
+  const porVencer = esPorRenovar(d.estado, d.diasRest, clasesBase, esPaseSueltoRow);
   return {
     id: d.id,
     nombre: d.nombre,
@@ -344,6 +348,12 @@ export function shapeFicha(
    *  price list ({precios}) and how-to-pay ({datos_pago}). Optional + LAST so the
    *  pure unit tests keep their positional call shape; the DAL fills them in. */
   extras: { precios?: string; datos_pago?: string } = {},
+  /** The gym's pase-suelto package catalog (#225 F2) — without it a spent one-off
+   *  pass inside its own validity window reads SIN CLASES on the ficha while the
+   *  SAME row reads VIGENTE on the roster/dashboard/export (two live estados for
+   *  one client). Optional + LAST, mirroring `extras`, so existing positional test
+   *  calls keep working; the DAL fills it in. */
+  paseSueltoNombres: ReadonlySet<string> = NINGUN_PASE_SUELTO,
 ): FichaDerivada {
   const historial: FichaAsistencia[] = asistencias
     // Today is rendered separately (the leaf re-prepends a HOY row); excluding it
@@ -386,7 +396,7 @@ export function shapeFicha(
   const compradoDisplay = latest ? fmtShort(fechaEnZona(latest.fecha, tz)) : "—";
   const altaDisplay = fmtShort(fechaEnZona(c.created_at, tz));
 
-  const cliente = derivarCliente(c, hoy, asistencias.length);
+  const cliente = derivarCliente(c, hoy, asistencias.length, paseSueltoNombres);
 
   // Saldo depletion gauges, anchored to the last purchase (`ventas[0]`). No ventas
   // → no anchor → both null (UI renders just the números). Ilimitado clases → the
@@ -415,7 +425,15 @@ export function shapeFicha(
     clases: fmtClases(cliente.clasesRest),
     paquete: cliente.paquete,
     vence: cliente.venceDisplay,
-    dias: fmtDias(cliente.diasRest),
+    // sin_paquete (#225 F1): derivarCliente sets diasRest to 0 for a package-less
+    // client (nothing to count down to) — feeding that straight into fmtDias would
+    // compose a FALSE "vence en 0 días" (a same-day expiry that isn't real) into the
+    // seeded Renovación body. Honest copy instead. The body's fixed "vence en
+    // {dias}" prefix has no grammatically clean substitution for "no package"
+    // either (same class of constraint as fmtDias' negative-días residual below) —
+    // a full fix needs the seeded plantillas.body text, migration-gated and out of
+    // scope here.
+    dias: cliente.estado === "sin_paquete" ? "sin paquete activo" : fmtDias(cliente.diasRest),
     precios: extras.precios,
     datos_pago: extras.datos_pago,
     negocio,

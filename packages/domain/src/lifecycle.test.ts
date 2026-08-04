@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { contarLifecycle, derivarLifecycle, esPaseSuelto, nivelUrgenciaLifecycle, ordenarLifecycle } from "./lifecycle";
+import {
+  contarLifecycle,
+  derivarLifecycle,
+  esPaseSuelto,
+  esPorRenovar,
+  nivelUrgenciaLifecycle,
+  ordenarLifecycle,
+  paseSueltoNombres,
+} from "./lifecycle";
 import type { FilaRosterLifecycle } from "./lifecycle";
 
 // Fixed anchor (arbitrary, mirrors the /proto fixture's own 2026-08-02) so
@@ -46,6 +54,23 @@ describe("esPaseSuelto — the membership-vs-drop-in predicate (#223 finding 2)"
   });
 });
 
+describe("paseSueltoNombres — the ONE catalog Set-builder (#225 F5)", () => {
+  it("collects only the catalog names whose grant is exactly 1 class", () => {
+    const set = paseSueltoNombres([
+      { nombre: "1 clase", clases: 1 },
+      { nombre: "8 clases", clases: 8 },
+      { nombre: "Ilimitado", clases: null },
+    ]);
+    expect(set.has("1 clase")).toBe(true);
+    expect(set.has("8 clases")).toBe(false);
+    expect(set.has("Ilimitado")).toBe(false);
+  });
+
+  it("is empty for an empty catalog", () => {
+    expect(paseSueltoNombres([]).size).toBe(0);
+  });
+});
+
 describe("nivelUrgenciaLifecycle — the urgencia floor (#223 finding 3): expired is never crítico", () => {
   it("floors an expired saldo to ok, never crítico", () => {
     // Raw urgenciaCliente would say "critico" for both (dias <= 3) — the
@@ -57,6 +82,38 @@ describe("nivelUrgenciaLifecycle — the urgencia floor (#223 finding 3): expire
   it("does not floor a still-valid saldo — reuses urgenciaCliente's thresholds unchanged", () => {
     expect(nivelUrgenciaLifecycle({ clases: 8, dias: 2 })).toBe("critico");
     expect(nivelUrgenciaLifecycle({ clases: 8, dias: 20 })).toBe("ok");
+  });
+
+  it("floors sin_paquete to ok regardless of the bare saldo (#225 F3) — new business must never read as churn", () => {
+    // derivarCliente sets diasRest/clases to 0 for a package-less row — without
+    // the estado floor that reads as 0 días AND 0 clases, i.e. "crítico".
+    expect(nivelUrgenciaLifecycle({ clases: 0, dias: 0 }, "sin_paquete")).toBe("ok");
+  });
+
+  it("does NOT floor vigente/sin_clases when estado is passed — only vencido/sin_paquete floor", () => {
+    expect(nivelUrgenciaLifecycle({ clases: 0, dias: 20 }, "sin_clases")).toBe("critico");
+    expect(nivelUrgenciaLifecycle({ clases: 8, dias: 2 }, "vigente")).toBe("critico");
+  });
+});
+
+describe("esPorRenovar — the single-row POR RENOVAR predicate (#225 F4)", () => {
+  it("is true within RENOVACION_DIAS of a live package's date", () => {
+    expect(esPorRenovar("vigente", 5, 8, false)).toBe(true);
+    expect(esPorRenovar("vigente", 11, 8, false)).toBe(false);
+  });
+
+  it("is true at/under RENOVACION_CLASES, exempting a pase suelto", () => {
+    expect(esPorRenovar("vigente", 20, 1, false)).toBe(true);
+    expect(esPorRenovar("vigente", 20, 1, true)).toBe(false); // paseSuelto exemption
+  });
+
+  it("a sin_clases row always qualifies via the clases arm", () => {
+    expect(esPorRenovar("sin_clases", 20, 0, false)).toBe(true);
+  });
+
+  it("is false for vencido and sin_paquete — never a renewal candidate", () => {
+    expect(esPorRenovar("vencido", -1, 0, false)).toBe(false);
+    expect(esPorRenovar("sin_paquete", 0, 0, false)).toBe(false);
   });
 });
 

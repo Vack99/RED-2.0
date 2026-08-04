@@ -221,6 +221,17 @@ describe("buildRespaldoRows — urgencia labels (#225: floored — a vencido pac
     );
     expect(r.clientes.rows[0][8]).toBe("OK");
   });
+
+  it('"OK" for a sin_paquete client — the SECOND floor arm, never "Crítico" (#225 F3)', () => {
+    // derivarCliente forces diasRest/clasesRest to 0 for a package-less client — without
+    // the estado floor that bare {clases:0, dias:0} reads "Crítico" (story 13: new
+    // business must never look like old churn).
+    const r = buildRespaldoRows(
+      data({ clientes: [cliente({ paquete_nombre: null, vence: null, clases_restantes: null })] }),
+    );
+    expect(r.clientes.rows[0][7]).toBe("Sin paquete");
+    expect(r.clientes.rows[0][8]).toBe("OK");
+  });
 });
 
 describe("buildRespaldoRows — clases-restantes label", () => {

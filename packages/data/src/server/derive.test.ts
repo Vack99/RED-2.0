@@ -323,6 +323,55 @@ describe("shapeFicha", () => {
     const f = shapeFicha(clienteRow, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "X", body }], "FORGE", 0);
     expect(f.mensajes[0].texto).toBe("{precios}|{datos_pago}");
   });
+
+  it("a sin_paquete client gets sensible {dias} copy, never a fake day-0 countdown (#225 F1)", () => {
+    const noPaquete: FichaClienteRow = {
+      ...clienteRow,
+      paquete_nombre: null,
+      clases_restantes: null,
+      vence: null,
+    };
+    const body = "Tu paquete vence en {dias} — ¿lo renovamos?";
+    const f = shapeFicha(noPaquete, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
+    expect(f.cliente.estado).toBe("sin_paquete");
+    expect(f.mensajes[0].texto).not.toContain("0 días"); // the fake countdown this closes
+    expect(f.mensajes[0].texto).toBe("Tu paquete vence en sin paquete activo — ¿lo renovamos?");
+  });
+
+  it("an expired client's {dias} renders the signed day count, never the old 'vencido' (#225 F1)", () => {
+    const vencido: FichaClienteRow = { ...clienteRow, vence: "2026-05-20" }; // hoy 2026-05-27 → dias -7
+    const body = "Tu paquete vence en {dias} — ¿lo renovamos?";
+    const f = shapeFicha(vencido, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
+    expect(f.cliente.estado).toBe("vencido");
+    expect(f.mensajes[0].texto).toBe("Tu paquete vence en -7 días — ¿lo renovamos?");
+    expect(f.mensajes[0].texto).not.toContain("vence en vencido"); // the #188 S12 defect
+  });
+
+  it("threads the pase-suelto catalog through to the ficha's estado (#225 F2) — matches the roster/export", () => {
+    const paseSueltoRow: FichaClienteRow = {
+      ...clienteRow,
+      paquete_nombre: "1 clase",
+      clases_restantes: 0, // spent — its NORMAL end state after one visit
+      vence: "2026-06-20", // still inside its own validity window
+    };
+    const sinCatalogo = shapeFicha(paseSueltoRow, [], [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
+    expect(sinCatalogo.cliente.estado).toBe("sin_clases"); // no catalog passed — the old, wrong reading
+
+    const conCatalogo = shapeFicha(
+      paseSueltoRow,
+      [],
+      [],
+      HOY,
+      HOY_ISO,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      0,
+      {},
+      new Set(["1 clase"]),
+    );
+    expect(conCatalogo.cliente.estado).toBe("vigente"); // matches getClientesRoster/getRosterResumen/the export
+  });
 });
 
 describe("gauge helpers (pure)", () => {

@@ -125,6 +125,7 @@ function build(seed: Seed): RosterClient {
     asistEsteMes: seed.asistEsteMes,
     invitacion: seed.invitacion ?? SIN_INVITAR,
     pendienteOnline: false,
+    esPaseSuelto: false,
     diasSinVenir: seed.diasSinVenir,
     ultimaVisita: visita(seed.diasSinVenir),
   };

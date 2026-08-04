@@ -21,11 +21,21 @@ export function renderMensajes(plantillas: PlantillaDTO[], ctx: PlantillaContext
 /** The {dias} token: days-to-expiry as a short es-MX display string. día 0 (the vence
  *  day itself) is a valid training day (ruling C9 / `estaVencido`) and must never read
  *  "vencido" — the off-by-one #225 exists to close ("Tu paquete vence en vencido" for
- *  every member on their vence day). Only NEGATIVE días (genuinely expired, or no
- *  package → 0) read "vencido"; a positive/zero count reads "{n} día(s)". */
+ *  every member on their vence day).
+ *
+ *  A genuinely NEGATIVE día count (expired) has no grammatically correct
+ *  substitution here (#225 F1 residual): the seeded Renovación body is the fixed
+ *  string "Tu paquete vence en {dias} — ¿lo renovamos?", and no value plugged into
+ *  "{dias}" can turn "vence en" into "venció hace" from inside the token — that
+ *  needs the seeded `plantillas.body` text itself, which is migration-gated (DDL
+ *  seed data) and OUT OF SCOPE for this ticket. This renders the LEAST-BROKEN
+ *  value instead — the signed day count ("-3 días") — never the old "vencido",
+ *  which composed literal nonsense ("vence en vencido", the exact #188 S12 defect).
+ *  Callers with a package-less client (estado sin_paquete, diasRest forced to 0)
+ *  must NOT call this at all — see shapeFicha's ctx, which substitutes real copy
+ *  instead of a fake day-0 countdown. */
 export function fmtDias(diasRest: number): string {
-  if (diasRest < 0) return "vencido";
-  return `${diasRest} día${diasRest === 1 ? "" : "s"}`;
+  return `${diasRest} día${Math.abs(diasRest) === 1 ? "" : "s"}`;
 }
 
 /** The {clases} token: classes-remaining as a short es-MX display string. Ilimitado

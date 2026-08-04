@@ -84,9 +84,13 @@ describe("fmtDias", () => {
     expect(fmtDias(0)).toBe("0 días");
   });
 
-  it("reports a negative count (genuinely expired) as vencido", () => {
-    expect(fmtDias(-1)).toBe("vencido");
-    expect(fmtDias(-3)).toBe("vencido");
+  it("renders a negative count (genuinely expired) as the signed day count — never the old 'vencido' (#225 F1)", () => {
+    // "vencido" composed literal nonsense into the seeded body ("Tu paquete vence
+    // en vencido" — #188 S12). No token value can fully fix that fixed-prefix
+    // sentence without editing the seeded plantillas.body text (migration-gated,
+    // out of scope) — this is the documented least-broken residual.
+    expect(fmtDias(-1)).toBe("-1 día");
+    expect(fmtDias(-3)).toBe("-3 días");
   });
 });
 

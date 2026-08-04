@@ -24,8 +24,10 @@ export type Clases = number | "ilimitado";
  *  and the POR RENOVAR tile (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts), never estado. */
 export type EstadoCliente = "vigente" | "vencido" | "sin_clases" | "sin_paquete";
 
-/** Retention urgency level — DERIVED from saldo. Finer-grained than
- *  EstadoCliente's por_vencer; drives the directory's "por renovar" model. */
+/** Retention urgency level — DERIVED from saldo. FLOORED to "ok" for a `vencido` or
+ *  `sin_paquete` estado (`nivelUrgenciaLifecycle`, #225 F3) — nothing left to run out
+ *  of either way. Drives the directory's accent color/sort; POR RENOVAR (the
+ *  "por renovar" gate) is a SEPARATE predicate (`esPorRenovar`, lifecycle.ts). */
 export type NivelUrgencia = "critico" | "urgente" | "pronto" | "ok";
 
 /** A client's retention urgency: level + which dimension binds.

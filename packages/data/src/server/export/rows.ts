@@ -16,7 +16,7 @@
 import { derivarCliente } from "../derive";
 import type { ClienteFacts } from "../derive";
 import { fechaEnZona, fmtShort, isoDay, parseDay } from "@gym/format";
-import { esPaseSuelto, nivelUrgenciaLifecycle } from "@gym/domain/lifecycle";
+import { nivelUrgenciaLifecycle, paseSueltoNombres } from "@gym/domain/lifecycle";
 import type { CorteMes, EstadoCliente, NivelUrgencia } from "@gym/domain/types";
 
 // ── The contract — RespaldoData (DAL → shaper) + RespaldoRows (shaper → workbook) ──
@@ -201,14 +201,17 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
   ];
   // The membership-vs-drop-in fact (#225): a roster row's `paquete_nombre` carries
   // no grant, so esPaseSuelto resolves against the catalog gather already supplies.
-  const paseSuelto = new Set(data.paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
+  // paseSueltoNombres (@gym/domain/lifecycle) is the ONE place this Set is built
+  // (#225 F5) — was triplicated across this file + clientes.ts before.
+  const paseSuelto = paseSueltoNombres(data.paquetes);
   const rows = data.clientes.map((c) => {
     // REUSE the read-side derivation — never re-derive estado/urgencia (ADR-0002).
     // asistEsteMes is omitted from this sheet, so pass 0 (build-spec §0). Urgencia is
-    // the FLOORED level (#225 finding 1): a vencido package is never "Crítico" — there
-    // is nothing left to run out of.
+    // the FLOORED level (#225 finding 1 + F3): a vencido OR sin_paquete package is
+    // never "Crítico" — nothing to run out of either way (new business must not
+    // read as churn, story 13).
     const d = derivarCliente(c, data.generadoHoy, 0, paseSuelto);
-    const u = nivelUrgenciaLifecycle({ clases: d.clasesRest, dias: d.diasRest });
+    const u = nivelUrgenciaLifecycle({ clases: d.clasesRest, dias: d.diasRest }, d.estado);
     return [
       c.nombre,
       c.tel ?? EM_DASH,

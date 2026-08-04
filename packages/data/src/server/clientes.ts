@@ -3,7 +3,6 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { esPaseSuelto } from "@gym/domain/lifecycle";
 import type { ResumenRoster } from "@gym/domain/types";
 import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
@@ -25,7 +24,7 @@ import {
 import { getCobro } from "./cobro";
 import { getOperatorGym } from "./gym";
 import { enviarInvitacion, type EnvioResult, type MailTransport } from "./invitaciones";
-import { getPaquetes } from "./paquetes";
+import { getPaquetes, getPaseSueltoNombres } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
 import { EMAIL_EN_USO_MSG, EmailEnUsoError } from "./ventas";
 import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
@@ -100,22 +99,27 @@ export const getClientesLite = cache(
 
 /** Roster for the pase de lista, derived-at-read (ADR-0002): a thin fetch that
  *  defers each row to the pure, tested derivarPaseCliente. `porVencer` is the
- *  domain's por_vencer (días OR clases), shared with the directory — not an
- *  inline `<= 5` that drops the clases dimension. */
+ *  domain's esPorRenovar predicate, shared with the directory/dashboard — not an
+ *  inline `<= 5` that drops the clases dimension. `paseSuelto` (#225 F2) is the
+ *  gym's catalog, so a spent one-off pass reads correctly here too — this read
+ *  used to have no catalog fetch of its own, and diverged from the roster/export. */
 export const getClientesParaPase = cache(
   async (client?: SupabaseServer): Promise<PaseClienteDTO[]> => {
     const supabase = client ?? (await createClient());
     const gym = await getOperatorGym(supabase); // resolved FIRST — the read is gym-scoped (§1.1)
-    const { data } = await supabase
-      .from("clientes")
-      .select("id, nombre, tel, paquete_nombre, clases_restantes, vence")
-      .eq("gym_id", gym.id)
-      .order("nombre");
+    const [{ data }, paseSuelto] = await Promise.all([
+      supabase
+        .from("clientes")
+        .select("id, nombre, tel, paquete_nombre, clases_restantes, vence")
+        .eq("gym_id", gym.id)
+        .order("nombre"),
+      getPaseSueltoNombres(supabase),
+    ]);
 
     if (!data) return [];
 
     const hoy = hoyEnZona(gym.timezone);
-    return data.map((c) => derivarPaseCliente(c, hoy));
+    return data.map((c) => derivarPaseCliente(c, hoy, paseSuelto));
   },
 );
 
@@ -150,6 +154,11 @@ export interface ClienteRosterDTO extends ClienteDerivado {
   invitacion: InvitacionDerivada;
   /** Auth-linked (Door 2) member with no active package — the roster filter chip. */
   pendienteOnline: boolean;
+  /** The membership-vs-drop-in fact (#225 F4) — lets the directory's "por renovar"
+   *  filter/count call the SAME `esPorRenovar` predicate the tile/pase de lista use,
+   *  with the pase-suelto exemption intact, instead of re-deriving it client-side
+   *  from a raw `paquete_nombre` string match. */
+  esPaseSuelto: boolean;
 }
 
 /** Full roster, derived-at-read with this month's attendance count per client. */
@@ -162,11 +171,12 @@ export const getClientesRoster = cache(
 
     // The roster genuinely needs every cliente row; the asistencias leg only feeds a
     // per-cliente count, so that leg is a grouped DB-side count (asistencias_mes_por_cliente)
-    // instead of pulling the whole month's rows just to tally them in JS. `paquetes` is
+    // instead of pulling the whole month's rows just to tally them in JS. `paseSuelto` is
     // the small catalog leg estado needs (#225): a roster row stores only the sold
     // package's display name, never its class GRANT, so esPaseSuelto (the
-    // membership-vs-drop-in predicate) has to resolve against the catalog.
-    const [clientesRes, countsRes, paquetes] = await Promise.all([
+    // membership-vs-drop-in predicate) has to resolve against the catalog — via the
+    // error-surfacing getPaseSueltoNombres (#225 F5), not getPaquetes' best-effort [].
+    const [clientesRes, countsRes, paseSuelto] = await Promise.all([
       supabase
         .from("clientes")
         .select(
@@ -178,7 +188,7 @@ export const getClientesRoster = cache(
         p_gym_id: gym.id,
         p_desde: monthStartIso(hoy),
       }),
-      getPaquetes(supabase, tz),
+      getPaseSueltoNombres(supabase),
     ]);
 
     const clientes = clientesRes.data;
@@ -186,7 +196,6 @@ export const getClientesRoster = cache(
 
     const counts: Record<string, number> = {};
     for (const r of countsRes.data ?? []) counts[r.cliente_id] = r.n;
-    const paseSuelto = new Set(paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
 
     return clientes.map((c) => {
       const base = derivarCliente(c, hoy, counts[c.id] ?? 0, paseSuelto);
@@ -195,6 +204,7 @@ export const getClientesRoster = cache(
         ...base,
         invitacion,
         pendienteOnline: esRegistroOnlinePendiente(invitacion.estado, base.estado),
+        esPaseSuelto: c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre),
       };
     });
   },
@@ -212,10 +222,11 @@ export interface RosterResumenDTO extends ResumenRoster {
  *  runs through `derivarCliente`/`derivarEstado` (the ONE estado source), never a
  *  hand-rolled `.gte()`/`.or()` restatement of the bands (the pre-#225 shape here
  *  drifted from derivarEstado the moment its own bands changed, exactly the "two live
- *  meanings of a band" bug this ticket exists to kill). `paquetes` is the small
- *  catalog leg esPaseSuelto needs (a roster row's `paquete_nombre` carries no grant).
- *  Two selects, no `.order` on the roster leg, no per-row display columns beyond what
- *  estado needs — a fetch, not the full directory roster. */
+ *  meanings of a band" bug this ticket exists to kill). `paseSuelto` is the small
+ *  catalog leg esPaseSuelto needs (a roster row's `paquete_nombre` carries no grant),
+ *  fetched via the error-surfacing getPaseSueltoNombres (#225 F5). Two selects, no
+ *  `.order` on the roster leg, no per-row display columns beyond what estado needs —
+ *  a fetch, not the full directory roster. */
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
@@ -223,7 +234,7 @@ export const getRosterResumen = cache(
     const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
 
-    const [{ data: clientesData }, paquetes] = await Promise.all([
+    const [{ data: clientesData }, paseSuelto] = await Promise.all([
       supabase
         .from("clientes")
         // id/nombre/tel are unused by this read but ClienteFacts (derivarCliente's input
@@ -232,11 +243,10 @@ export const getRosterResumen = cache(
           "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
         )
         .eq("gym_id", gym.id),
-      getPaquetes(supabase, tz),
+      getPaseSueltoNombres(supabase),
     ]);
 
     const clientes = clientesData ?? [];
-    const paseSuelto = new Set(paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
 
     let vigentes = 0;
     let nuevosOnline = 0;
@@ -290,7 +300,7 @@ export const getClienteFicha = cache(
     // purchase (predating the window) is reconciled by the exact count below (Part B).
     const ventanaIso = toIsoDay(addDays(hoy, -FICHA_VENTANA_DIAS));
 
-    const [asistRes, ventasRes, vecinos, perfilRes, plantillas, paquetes, cobro] =
+    const [asistRes, ventasRes, vecinos, perfilRes, plantillas, paquetes, cobro, paseSuelto] =
       await Promise.all([
         supabase
           .from("asistencias")
@@ -314,8 +324,12 @@ export const getClienteFicha = cache(
         getVecinos(id, supabase),
         supabase.from("perfil").select("negocio").eq("gym_id", gym.id).maybeSingle(),
         listarPlantillas(supabase),
+        // Best-effort for the {precios} display token (a swallowed error here just
+        // shows an empty price list) — NOT the same leg as the estado-critical
+        // paseSuelto Set below (#225 F2/F5), which must not silently degrade.
         getPaquetes(supabase, tz).catch(() => []),
         getCobro(supabase).catch(() => null),
+        getPaseSueltoNombres(supabase),
       ]);
 
     const negocio = resolverIdentidad(
@@ -377,6 +391,7 @@ export const getClienteFicha = cache(
       negocio,
       attendedSincePurchase,
       { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
+      paseSuelto,
     );
 
     return { ...ficha, hoyIso, vecinos, invitacion: derivarInvitacion(c, tz), email: c.email };
