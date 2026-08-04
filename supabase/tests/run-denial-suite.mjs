@@ -32,8 +32,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them), and
 // then dos_gimnasios_tenant_pin — the two-membership actor (#219), which generalizes the single-gym
 // favorito/mi_membresia rules just above it — then revocacion_sesion_membresia (#218), which reuses
-// that two-membership shape to prove session revocation is global, and finally gym2_probe, the
-// end-to-end second-gym capstone.
+// that two-membership shape to prove session revocation is global, then class_session_delete_restrict
+// (epic #203 slice 4 — attendance retention), a schema-layer sibling of asistencias_unicidad proving
+// the class_session/reservation FKs now REFUSE a delete instead of cascading it away, and finally
+// gym2_probe, the end-to-end second-gym capstone.
 // Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
 // A future slice adds a vector to a file here — not a second harness. Two guards in the normal
 // `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
@@ -79,6 +81,7 @@ export const SUITE = [
   'mi_membresia_rules.sql',
   'dos_gimnasios_tenant_pin.sql',
   'revocacion_sesion_membresia.sql',
+  'class_session_delete_restrict.sql',
   'gym2_probe.sql',
 ];
 

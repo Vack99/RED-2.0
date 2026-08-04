@@ -11,8 +11,26 @@
 -- ============================================================================
 
 -- 1. Drop everything the seed created (children first) ------------------------
-delete from asistencias           where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f' and id::text like '5eed0000-%';
-delete from reservation           where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f' and id::text like '5eed0000-%';
+-- asistencias/reservation are FK-RESTRICTed to class_session as of migration 20260803130000
+-- (attendance retention): the class_session delete below now REFUSES if any row still references
+-- it — including real interaction data from demo walkthroughs (pasar_lista_sesion / reservar_clase
+-- mint a real gen_random_uuid() id, not the 5eed0000-… namespace the seed's own rows carry). This
+-- gym is a disposable demo, so tearing down that real data too is correct — it must just be
+-- EXPLICIT rather than an implicit cascade the class_session delete used to trigger silently. Both
+-- deletes below therefore match by class_session_id membership (what would block the delete), not
+-- only by the row's own id prefix (what the seed itself wrote).
+delete from asistencias
+ where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f'
+   and (id::text like '5eed0000-%'
+     or class_session_id in (
+          select id from class_session
+           where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f' and id::text like '5eed0000-%'));
+delete from reservation
+ where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f'
+   and (id::text like '5eed0000-%'
+     or class_session_id in (
+          select id from class_session
+           where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f' and id::text like '5eed0000-%'));
 delete from ventas                where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f' and id::text like '5eed0000-%';
 delete from class_session         where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f' and id::text like '5eed0000-%'; -- cascades class_session_coach
 delete from schedule_template_week  where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f'
@@ -76,13 +94,29 @@ update auth.users set raw_user_meta_data = jsonb_set(raw_user_meta_data,'{full_n
 update auth.users set raw_user_meta_data = jsonb_set(raw_user_meta_data,'{full_name}','"Testing1D3"')
  where id='0112b173-7465-417b-90d5-f313652473c8';
 
--- 5. Check: everything below must be 0 except clientes=4 / ventas=8 -----------
-select
- (select count(*) from clientes    where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') clientes,        -- 4
- (select count(*) from ventas      where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') ventas,          -- 8
- (select count(*) from asistencias where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') asistencias,     -- 0
- (select count(*) from reservation where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') reservas,        -- 0
- (select count(*) from class_session     where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') sesiones,  -- 1 (Reto RED)
- (select count(*) from schedule_template where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') plantillas,-- 5
- (select count(*) from perfil      where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') perfil,          -- 0
- (select count(*) from cobro       where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f') cobro;           -- 0
+-- 5. Verify: RAISEs on a mismatch instead of just printing numbers for a human to eyeball. The old
+--    plain `select … -- 0` shape is exactly how this script reported "success" the one time its own
+--    cascade silently destroyed real attendance: the count really was 0 after the wipe, so the
+--    comment's expectation matched and nothing looked wrong. A loud failure now stops the script.
+do $$
+declare
+  v_clientes int; v_ventas int; v_asistencias int; v_reservas int;
+  v_sesiones int; v_plantillas int; v_perfil int; v_cobro int;
+begin
+  select count(*) into v_clientes    from clientes            where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_ventas      from ventas               where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_asistencias from asistencias          where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_reservas    from reservation          where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_sesiones    from class_session        where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_plantillas  from schedule_template    where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_perfil      from perfil               where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+  select count(*) into v_cobro       from cobro                where gym_id='daa1c888-192b-4cf6-9fc0-023e314a803f';
+
+  if v_clientes <> 4 or v_ventas <> 8 or v_asistencias <> 0 or v_reservas <> 0
+     or v_sesiones <> 1 or v_plantillas <> 5 or v_perfil <> 0 or v_cobro <> 0 then
+    raise exception 'demo teardown FAILED — clientes=% (want 4) ventas=% (want 8) asistencias=% (want 0) reservas=% (want 0) sesiones=% (want 1) plantillas=% (want 5) perfil=% (want 0) cobro=% (want 0)',
+      v_clientes, v_ventas, v_asistencias, v_reservas, v_sesiones, v_plantillas, v_perfil, v_cobro;
+  end if;
+end $$;
+
+select 'red-demo teardown: OK' as result;
