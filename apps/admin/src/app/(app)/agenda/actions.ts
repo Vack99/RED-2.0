@@ -1,18 +1,21 @@
 "use server";
 
 import {
+  cancelarReservaCliente,
   cancelarSesion,
   crearHorarioRecurrente,
   crearSesion,
   editarSesion,
   getSesionRoster,
   pasarListaSesion,
+  reservarClaseCliente,
   type AgendaResultado,
   type CancelarSesionInput,
   type CrearHorarioRecurrenteInput,
   type CrearSesionInput,
   type EditarSesionInput,
   type PasarListaSesionInput,
+  type ReservaClienteInput,
   type SesionRosterDTO,
 } from "@gym/data/server/agenda";
 import { crearClassType } from "@gym/data/server/catalog";
@@ -58,4 +61,14 @@ export async function pasarListaSesionAction(
   input: PasarListaSesionInput,
 ): Promise<AgendaResultado<{ present: boolean; hora: string | null }>> {
   return pasarListaSesion(input);
+}
+
+/** Book a member into a future session on their behalf — the phone booking (#238). */
+export async function reservarClaseClienteAction(input: ReservaClienteInput): Promise<AgendaResultado> {
+  return reservarClaseCliente(input);
+}
+
+/** Cancel a reserva on a member's behalf — the operator's undo, which refunds the class. */
+export async function cancelarReservaClienteAction(input: ReservaClienteInput): Promise<AgendaResultado> {
+  return cancelarReservaCliente(input);
 }

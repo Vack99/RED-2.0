@@ -62,8 +62,12 @@ export interface QuickGlanceSheetProps {
   candidates?: CandidateRow[];
   rosterLoading?: boolean;
   rosterBusy?: Set<string>;
+  /** #238 tense: is now earlier than this session's arrival window opens? Drives the add
+   *  button's verb + the empty state only — the parent owns the write-path branch. */
+  antesDeVentana?: boolean;
   onTogglePresent?: (clienteId: string) => void;
   onAddWalkIn?: (clienteId: string) => void;
+  onCancelReserva?: (clienteId: string) => void;
 }
 
 export function QuickGlanceSheet({
@@ -83,8 +87,10 @@ export function QuickGlanceSheet({
   candidates = [],
   rosterLoading = false,
   rosterBusy,
+  antesDeVentana = false,
   onTogglePresent,
   onAddWalkIn,
+  onCancelReserva,
 }: QuickGlanceSheetProps) {
   const col = disponibilidadColor(estado);
   const free = Math.max(0, cap - booked);
@@ -148,8 +154,10 @@ export function QuickGlanceSheet({
             candidates={candidates}
             loading={rosterLoading}
             busy={rosterBusy ?? EMPTY_BUSY}
+            antesDeVentana={antesDeVentana}
             onToggle={onTogglePresent}
             onAddWalkIn={onAddWalkIn}
+            onCancelReserva={onCancelReserva}
           />
         )}
       </div>

@@ -16,6 +16,12 @@ import { Avatar, Eyebrow, Input, Tnum } from "../ui";
  * A booked member still unmarked once their arrival window closed reads as a quiet THIRD
  * state — dimmed, with a "NO ASISTIÓ" caption. It is derived at read, never stored, so
  * the same single tap that marks anyone else supersedes it (ruling 2026-07-29).
+ *
+ * ONE add affordance, whose verb follows the TENSE (#238): AGREGAR RESERVA while the class
+ * is still far off, AGREGAR VISITA once its arrival window is open. The component only
+ * renders that tense — the write path behind the tap is the parent's, decided against a
+ * clock read at tap time. A booked-not-present row also gets the operator's cancel, because
+ * a phone booking charges the member the instant it is made.
  */
 
 export interface RosterRow {
@@ -42,21 +48,58 @@ export function rosterResumen(rows: Pick<RosterRow, "present">[]): { presentes: 
   return { presentes: rows.filter((r) => r.present).length, total: rows.length };
 }
 
+/**
+ * The add-button verb and the empty-state line, both derived from the SAME tense so the two
+ * can never contradict each other (#238): before the session's arrival window opens the tap
+ * books a reserva, once it is open the tap records an arrival. The label may lag a window
+ * that opened while the sheet sat there — deliberately: the WRITE re-reads the clock at tap
+ * time (the parent's handler), so a stale label is cosmetic and a stale write is impossible.
+ */
+export function copiaAgregar(antesDeVentana: boolean): { boton: string; vacio: string } {
+  const que = antesDeVentana ? "reserva" : "visita";
+  return { boton: `Agregar ${que}`, vacio: `Nadie reservó todavía · agrega una ${que}` };
+}
+
+/**
+ * Whether a roster row gets the operator's cancel affordance: a reserva still awaiting its
+ * member. A row already marked present does not — removing THAT is what the present-toggle
+ * already does. Nor does a `noAsistio` row: its window has closed, which means the class
+ * started, and the RPC refuses a cancel from then on (ADR-0010 §4) — no point offering it.
+ */
+export function puedeCancelarReserva(row: Pick<RosterRow, "present" | "noAsistio">): boolean {
+  return !row.present && !row.noAsistio;
+}
+
 export interface SessionRosterProps {
   rows: RosterRow[];
   candidates: CandidateRow[];
   loading: boolean;
   /** clienteIds with a mark/add in flight — their row shows a pending affordance. */
   busy: Set<string>;
+  /** Tense (#238): is now EARLIER than the session's arrival window opens? Copy only — the
+   *  parent re-derives it against a fresh clock inside `onAddWalkIn` to choose the write. */
+  antesDeVentana: boolean;
   onToggle: (clienteId: string) => void;
   onAddWalkIn: (clienteId: string) => void;
+  /** Remove a booked-not-present member's reserva (refunds the class). Omit for no affordance. */
+  onCancelReserva?: (clienteId: string) => void;
 }
 
-export function SessionRoster({ rows, candidates, loading, busy, onToggle, onAddWalkIn }: SessionRosterProps) {
+export function SessionRoster({
+  rows,
+  candidates,
+  loading,
+  busy,
+  antesDeVentana,
+  onToggle,
+  onAddWalkIn,
+  onCancelReserva,
+}: SessionRosterProps) {
   const [adding, setAdding] = React.useState(false);
   const [query, setQuery] = React.useState("");
 
   const { presentes, total } = rosterResumen(rows);
+  const copia = copiaAgregar(antesDeVentana);
   const q = query.trim().toLowerCase();
   const matches = q ? candidates.filter((c) => c.nombre.toLowerCase().includes(q)) : candidates;
 
@@ -77,12 +120,16 @@ export function SessionRoster({ rows, candidates, loading, busy, onToggle, onAdd
         <>
           <div style={{ marginTop: 10 }}>
             {rows.length === 0 ? (
-              <div style={{ padding: "16px 2px", fontSize: 12.5, color: "var(--muted)" }}>
-                Nadie reservó todavía · agrega una visita
-              </div>
+              <div style={{ padding: "16px 2px", fontSize: 12.5, color: "var(--muted)" }}>{copia.vacio}</div>
             ) : (
               rows.map((r) => (
-                <RosterRowView key={r.clienteId} row={r} busy={busy.has(r.clienteId)} onToggle={onToggle} />
+                <RosterRowView
+                  key={r.clienteId}
+                  row={r}
+                  busy={busy.has(r.clienteId)}
+                  onToggle={onToggle}
+                  onCancelReserva={onCancelReserva}
+                />
               ))
             )}
           </div>
@@ -143,7 +190,7 @@ export function SessionRoster({ rows, candidates, loading, busy, onToggle, onAdd
               }}
             >
               <Icon name="plus" size={15} color="var(--gold)" />
-              Agregar visita
+              {copia.boton}
             </button>
           )}
         </>
@@ -156,11 +203,14 @@ const RosterRowView = React.memo(function RosterRowView({
   row,
   busy,
   onToggle,
+  onCancelReserva,
 }: {
   row: RosterRow;
   busy: boolean;
   onToggle: (clienteId: string) => void;
+  onCancelReserva?: (clienteId: string) => void;
 }) {
+  const cancelable = onCancelReserva !== undefined && puedeCancelarReserva(row);
   return (
     <div
       onClick={() => !busy && onToggle(row.clienteId)}
@@ -195,6 +245,28 @@ const RosterRowView = React.memo(function RosterRowView({
           )}
         </div>
       </div>
+      {/* The operator's undo (#235): charging is at booking, so a mis-tapped name has cost a
+          member a class that only this gives back. Quiet and small — it sits beside the mark
+          box, never replacing it, and stops the row's own toggle from firing underneath. */}
+      {cancelable && (
+        <button
+          type="button"
+          disabled={busy}
+          aria-label={`Cancelar la reserva de ${row.nombre}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onCancelReserva?.(row.clienteId);
+          }}
+          className="forge-pressable flex shrink-0 items-center justify-center"
+          style={{
+            width: 26, height: 26, marginRight: 2,
+            background: "transparent", border: "1px solid var(--line)",
+            cursor: busy ? "default" : "pointer",
+          }}
+        >
+          <Icon name="close" size={12} color="var(--muted)" />
+        </button>
+      )}
       <div
         className="flex shrink-0 items-center justify-center"
         style={{

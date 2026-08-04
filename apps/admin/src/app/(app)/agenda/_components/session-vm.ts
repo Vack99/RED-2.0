@@ -1,3 +1,4 @@
+import { antesDeVentanaArribo } from "@gym/domain/rules";
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 import type { EstadoSesion as EstadoUi } from "@gym/ui/forge/agenda/session-view";
 
@@ -13,6 +14,10 @@ export interface CardVM {
   id: string;
   /** Gym-local "HH:MM" wall clock (from horaEnZona) — the card time + editor hora seed. */
   time: string;
+  /** The session's ABSOLUTE start, ISO — what the roster's tense predicate reads at tap time
+   *  (#238). An instant, not a wall clock: `time` is already tz-folded and cannot be compared
+   *  to a clock. ISO rather than a Date so the VM stays a plain serializable payload. */
+  startsAtIso: string;
   mins: number;
   tipo: string;
   /** Comma-joined coach names, or "Por asignar" when none. */
@@ -39,6 +44,7 @@ export function toCardVM(dto: SesionAgendaDTO, hora: string): CardVM {
   return {
     id: dto.id,
     time: hora,
+    startsAtIso: dto.startsAt.toISOString(),
     mins: dto.duracionMin,
     tipo: dto.tipo,
     coaches: dto.coaches.length ? dto.coaches.map((c) => c.nombre).join(", ") : "Por asignar",
@@ -51,4 +57,15 @@ export function toCardVM(dto: SesionAgendaDTO, hora: string): CardVM {
     esEspecial: dto.esEspecial,
     specialName: dto.nombreEspecial,
   };
+}
+
+/**
+ * Which write path the operator's pick takes (#238) — the whole feature in one line, and the
+ * one place a correct rule wired to the wrong callback would slip through. `ahora` is a
+ * PARAMETER because the caller must read the clock inside the tap handler: the label may be
+ * stale from an earlier render, the branch never is (the #235 amendment). Past the arrival
+ * window's opening edge — including long past its close — this is always "pase".
+ */
+export function accionAgregar(startsAtIso: string, ahora: Date): "reservar" | "pase" {
+  return antesDeVentanaArribo(new Date(startsAtIso), ahora) ? "reservar" : "pase";
 }

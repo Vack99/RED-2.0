@@ -4,6 +4,8 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
+import { antesDeVentanaArribo } from "@gym/domain/rules";
+import type { AgendaResultado } from "@gym/data/server/agenda";
 import { DateStrip } from "@gym/ui/forge/agenda/date-strip";
 import { EditorSheet, type CoachOption, type EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 import { QuickGlanceSheet } from "@gym/ui/forge/agenda/quick-glance-sheet";
@@ -14,16 +16,18 @@ import { Icon } from "@gym/ui/forge/icon";
 import { forgeToast } from "@gym/ui/forge/toaster";
 
 import {
+  cancelarReservaClienteAction,
   cancelarSesionAction,
   crearClassTypeAction,
   crearHorarioRecurrenteAction,
   crearSesionAction,
   editarSesionAction,
   pasarListaSesionAction,
+  reservarClaseClienteAction,
   rosterSesionAction,
 } from "../actions";
 import { pasoAgenda } from "./paso-agenda";
-import type { CardVM } from "./session-vm";
+import { accionAgregar, type CardVM } from "./session-vm";
 
 /**
  * The Agenda orchestrator (PRD #36 S7): DÍA and SEMANA over one week of data, the
@@ -195,19 +199,23 @@ export function AgendaScreen(props: AgendaScreenProps) {
   const closeGlance = () => setGlance((g) => ({ ...g, open: false }));
   const closeEditor = () => setEditor((e) => ({ ...e, open: false }));
 
-  // Reservation-aware Pasar lista: one atomic RPC per tap (booked → asistida no re-consume;
-  // walk-in → is_walk_in reservation + consume; untoggle reverses). The RPC is authoritative,
-  // so we reload the roster from it rather than optimistically guessing membership, then refresh
-  // the agenda so a walk-in's occupancy bump lands on the card counts.
-  const runPase = async (clienteId: string) => {
+  // Every roster write shares one shape: busy-gate the cliente, run the RPC, surface its
+  // Spanish raise through the toast, then reload the roster (the RPC is authoritative — never
+  // optimistically guess membership) and refresh the agenda so the occupancy bump lands on the
+  // card counts, CUPO, the lugares-libres line and the day header's reservas total.
+  const runRoster = async (
+    clienteId: string,
+    accion: (sessionId: string) => Promise<AgendaResultado>,
+    errorTitle: string,
+  ) => {
     const card = glance.card;
     if (!card || rosterBusy.has(clienteId)) return;
     const sessionId = card.id;
     setRosterBusy((prev) => new Set(prev).add(clienteId));
     try {
-      const res = await pasarListaSesionAction({ sessionId, clienteId });
+      const res = await accion(sessionId);
       if (!res.ok) {
-        forgeToast({ tone: "warning", title: "No se pudo pasar lista", body: res.error });
+        forgeToast({ tone: "warning", title: errorTitle, body: res.error });
         return;
       }
       const fresh = await rosterSesionAction(sessionId);
@@ -221,6 +229,36 @@ export function AgendaScreen(props: AgendaScreenProps) {
       });
     }
   };
+
+  // Reservation-aware Pasar lista: one atomic RPC per tap (booked → asistida no re-consume;
+  // walk-in → is_walk_in reservation + consume; untoggle reverses).
+  const runPase = (clienteId: string) =>
+    runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista");
+
+  // THE tense branch (#238), and it lives HERE, in the handler, against a clock read at THIS
+  // instant — never one captured at render (the #235 amendment). A sheet left open across the
+  // window's opening edge still shows the stale AGREGAR RESERVA label, and that is fine: the
+  // tap below re-reads the clock and checks the member in. A stale label is cosmetic; a stale
+  // write is a false record. There is deliberately no interval here — #231 owns the tick.
+  const runAgregar = (clienteId: string) => {
+    const card = glance.card;
+    if (!card) return;
+    if (accionAgregar(card.startsAtIso, new Date()) === "pase") return runPase(clienteId);
+    return runRoster(
+      clienteId,
+      (sessionId) => reservarClaseClienteAction({ sessionId, clienteId }),
+      "No se pudo reservar",
+    );
+  };
+
+  // The undo. Charging is at booking, so a mis-tapped name has cost that member a class —
+  // this is the only thing that gives it back (the present-toggle would mark them ATTENDED).
+  const runCancelarReserva = (clienteId: string) =>
+    runRoster(
+      clienteId,
+      (sessionId) => cancelarReservaClienteAction({ sessionId, clienteId }),
+      "No se pudo cancelar la reserva",
+    );
 
   const openCreate = () => {
     closeGlance();
@@ -484,8 +522,10 @@ export function AgendaScreen(props: AgendaScreenProps) {
           candidates={glance.candidates}
           rosterLoading={glance.loading}
           rosterBusy={rosterBusy}
+          antesDeVentana={antesDeVentanaArribo(new Date(glance.card.startsAtIso), new Date())}
           onTogglePresent={runPase}
-          onAddWalkIn={runPase}
+          onAddWalkIn={runAgregar}
+          onCancelReserva={runCancelarReserva}
         />
       )}
 

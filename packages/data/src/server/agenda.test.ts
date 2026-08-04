@@ -3,12 +3,14 @@ import { describe, expect, it } from "vitest";
 import { instanteEnZona } from "@gym/format";
 
 import {
+  cancelarReservaCliente,
   cancelarSesion,
   crearHorarioRecurrente,
   crearSesion,
   editarSesion,
   getAgendaDia,
   getAgendaSemana,
+  reservarClaseCliente,
 } from "./agenda";
 import type { SupabaseServer } from "./supabase";
 
@@ -572,6 +574,80 @@ describe("cancelarSesion — write orchestration (injected fake)", () => {
     const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: null, error: null }) });
     const result = await cancelarSesion({ sesionId: "nope" }, client);
     expect(result.ok).toBe(false);
+    expect(rpcCalls).toHaveLength(0);
+  });
+});
+
+/**
+ * The phone-booking seam (#238). This proves PLUMBING and nothing else: that the schema
+ * refuses before any call, that the operator is re-authenticated, and that the named target
+ * reaches the right RPC under the right argument name — `p_cliente_id`, the non-null argument
+ * that selects the staff path (#237). Whether that path charges the right member, refuses a
+ * blocked one, or holds the tenant boundary is invisible here (the RPC is mocked) and is
+ * proven against the real schema in supabase/tests/.
+ */
+describe("reservarClaseCliente — the operator's phone booking (injected fake)", () => {
+  const valid = () => ({ sessionId: ID("9"), clienteId: ID("3") });
+
+  it("sends the exact reservar_clase payload, naming the target cliente", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: [{ reservation_id: "r1", clases_restantes: 4 }], error: null }) });
+    const result = await reservarClaseCliente(valid(), client);
+    expect(result).toEqual({ ok: true });
+    expect(rpcCalls).toEqual([
+      { name: "reservar_clase", args: { p_session_id: ID("9"), p_cliente_id: ID("3") } },
+    ]);
+  });
+
+  it("surfaces the RPC's Spanish raise verbatim (the member path's own vocabulary)", async () => {
+    const { client } = makeFake({}, { rpc: () => ({ data: null, error: { message: "Sin clases disponibles" } }) });
+    expect(await reservarClaseCliente(valid(), client)).toEqual({ ok: false, error: "Sin clases disponibles" });
+  });
+
+  it("rejects a non-uuid clienteId before any RPC call", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: null, error: null }) });
+    expect((await reservarClaseCliente({ ...valid(), clienteId: "nope" }, client)).ok).toBe(false);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("rejects a non-uuid sessionId before any RPC call", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: null, error: null }) });
+    expect((await reservarClaseCliente({ ...valid(), sessionId: "nope" }, client)).ok).toBe(false);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("re-authenticates the operator: an unauthenticated caller never reaches the RPC", async () => {
+    const { client, rpcCalls } = makeFake({}, { sub: null, rpc: () => ({ data: null, error: null }) });
+    expect(await reservarClaseCliente(valid(), client)).toEqual({ ok: false, error: "No autenticado" });
+    expect(rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("cancelarReservaCliente — the operator's undo (injected fake)", () => {
+  const valid = () => ({ sessionId: ID("9"), clienteId: ID("3") });
+
+  it("sends the exact cancelar_reserva payload, naming the target cliente", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: [{ reservation_id: "r1", clases_restantes: 5 }], error: null }) });
+    const result = await cancelarReservaCliente(valid(), client);
+    expect(result).toEqual({ ok: true });
+    expect(rpcCalls).toEqual([
+      { name: "cancelar_reserva", args: { p_session_id: ID("9"), p_cliente_id: ID("3") } },
+    ]);
+  });
+
+  it("surfaces the after-start refusal verbatim", async () => {
+    const { client } = makeFake({}, { rpc: () => ({ data: null, error: { message: "La clase ya comenzó" } }) });
+    expect(await cancelarReservaCliente(valid(), client)).toEqual({ ok: false, error: "La clase ya comenzó" });
+  });
+
+  it("rejects a non-uuid clienteId before any RPC call", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: null, error: null }) });
+    expect((await cancelarReservaCliente({ ...valid(), clienteId: "nope" }, client)).ok).toBe(false);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("re-authenticates the operator: an unauthenticated caller never reaches the RPC", async () => {
+    const { client, rpcCalls } = makeFake({}, { sub: null, rpc: () => ({ data: null, error: null }) });
+    expect(await cancelarReservaCliente(valid(), client)).toEqual({ ok: false, error: "No autenticado" });
     expect(rpcCalls).toHaveLength(0);
   });
 });

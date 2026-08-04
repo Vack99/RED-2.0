@@ -559,3 +559,54 @@ export async function pasarListaSesion(
     };
   });
 }
+
+export const reservaClienteSchema = z.object({
+  sessionId: z.string().uuid(),
+  clienteId: z.string().uuid(),
+});
+export type ReservaClienteInput = z.infer<typeof reservaClienteSchema>;
+
+/** Book a member into a future session ON THEIR BEHALF — the operator path of
+ *  `reservar_clase` (#237: a non-null `p_cliente_id` selects it and is staff-gated inside
+ *  the definer body). The record is a member's own booking in every respect: it consumes a
+ *  class now, counts toward cupo, and shows in the member's app (#235). The RPC owns every
+ *  guard and all the balance math (ADR-0005 seam) — this seam validates, re-auths, and
+ *  surfaces the Spanish raise verbatim. The Agenda reloads the roster, so no row is mapped
+ *  back. `client` injectable (ADR-0001). */
+export async function reservarClaseCliente(raw: unknown, client?: SupabaseServer): Promise<AgendaResultado> {
+  const parsed = reservaClienteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  const input = parsed.data;
+
+  return ejecutar(async () => {
+    const supabase = client ?? (await createClient());
+    await requireOperator(supabase);
+    const { error } = await supabase.rpc("reservar_clase", {
+      p_session_id: input.sessionId,
+      p_cliente_id: input.clienteId,
+    });
+    if (error) throw new Error(error.message || "No se pudo reservar");
+    return {};
+  });
+}
+
+/** Undo an operator-made reserva — the operator path of `cancelar_reserva` (#237), and NOT
+ *  optional: charging is at booking, so a mis-tap costs the wrong member a class that only
+ *  this refunds (#235). The RPC refuses once the class has started, and refunds exactly what
+ *  the booking spent. Twin of reservarClaseCliente in every other respect. */
+export async function cancelarReservaCliente(raw: unknown, client?: SupabaseServer): Promise<AgendaResultado> {
+  const parsed = reservaClienteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  const input = parsed.data;
+
+  return ejecutar(async () => {
+    const supabase = client ?? (await createClient());
+    await requireOperator(supabase);
+    const { error } = await supabase.rpc("cancelar_reserva", {
+      p_session_id: input.sessionId,
+      p_cliente_id: input.clienteId,
+    });
+    if (error) throw new Error(error.message || "No se pudo cancelar la reserva");
+    return {};
+  });
+}
