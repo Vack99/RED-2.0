@@ -4,7 +4,7 @@ import * as React from "react";
 
 import { Sheet } from "../sheet";
 import { type EstadoSesion, countLabel, occupancyPct } from "./session-view";
-import { SessionRoster, type CandidateRow, type RosterRow } from "./session-roster";
+import { SessionRoster, type CandidateRow, type RosterRow, type VentaSugerida } from "./session-roster";
 import { SpecialStar } from "./special-star";
 
 /**
@@ -67,6 +67,9 @@ export interface QuickGlanceSheetProps {
   antesDeVentana?: boolean;
   /** #238: `now >= startsAt`. Hides the roster's cancel × once the RPC would refuse it. */
   claseIniciada?: boolean;
+  /** #235 story 10: the last add the RPC refused over balance/vigencia — the roster shows that
+   *  member's line to Vender. The parent owns both the classification and the prebuilt href. */
+  ventaSugerida?: VentaSugerida;
   onTogglePresent?: (clienteId: string) => void;
   onAddWalkIn?: (clienteId: string) => void;
   onCancelReserva?: (clienteId: string) => void;
@@ -91,6 +94,7 @@ export function QuickGlanceSheet({
   rosterBusy,
   antesDeVentana = false,
   claseIniciada = false,
+  ventaSugerida,
   onTogglePresent,
   onAddWalkIn,
   onCancelReserva,
@@ -159,6 +163,7 @@ export function QuickGlanceSheet({
             busy={rosterBusy ?? EMPTY_BUSY}
             antesDeVentana={antesDeVentana}
             claseIniciada={claseIniciada}
+            ventaSugerida={ventaSugerida}
             onToggle={onTogglePresent}
             onAddWalkIn={onAddWalkIn}
             onCancelReserva={onCancelReserva}

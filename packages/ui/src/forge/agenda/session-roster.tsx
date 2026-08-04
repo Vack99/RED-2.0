@@ -22,6 +22,10 @@ import { Avatar, Eyebrow, Input, Tnum } from "../ui";
  * renders that tense — the write path behind the tap is the parent's, decided against a
  * clock read at tap time. A booked-not-present row also gets the operator's cancel, because
  * a phone booking charges the member the instant it is made.
+ *
+ * When that add is refused for a reason a SALE fixes, the parent hands back `ventaSugerida` and
+ * the picker grows a persistent line to Vender for that member (#235 story 10) — the caller is
+ * still on the line, and the toast that named the reason is already gone.
  */
 
 export interface RosterRow {
@@ -40,6 +44,13 @@ export interface CandidateRow {
   nombre: string;
   inicial: string;
   paquete: string;
+}
+
+/** A pick the RPC refused for a reason a sale fixes, and where to go fix it (#235 story 10).
+ *  `href` arrives PREBUILT — routes are the app's knowledge, never this kit's. */
+export interface VentaSugerida {
+  nombre: string;
+  href: string;
 }
 
 /** "3/5 presentes" — the roster headline. `total` counts every booked member + walk-in
@@ -87,6 +98,8 @@ export interface SessionRosterProps {
   antesDeVentana: boolean;
   /** `now >= startsAt` — the cancel RPC's own gate, so the × is not offered past it. */
   claseIniciada: boolean;
+  /** The last add the RPC refused over balance/vigencia (#235 story 10). Omit for no line. */
+  ventaSugerida?: VentaSugerida;
   onToggle: (clienteId: string) => void;
   onAddWalkIn: (clienteId: string) => void;
   /** Remove a booked-not-present member's reserva (refunds the class). Omit for no affordance. */
@@ -100,6 +113,7 @@ export function SessionRoster({
   busy,
   antesDeVentana,
   claseIniciada,
+  ventaSugerida,
   onToggle,
   onAddWalkIn,
   onCancelReserva,
@@ -143,6 +157,31 @@ export function SessionRoster({
               ))
             )}
           </div>
+
+          {/* The blocked pick's one tap to the sale (#235 story 10). PERSISTENT, unlike the toast
+              that named the reason: the operator is reading the caller their options, and by the
+              time they decide the toast is long gone. Sits ABOVE the add affordance so it stands
+              whether the picker is open or shut, and the parent clears it on the next pick. */}
+          {ventaSugerida && (
+            <div
+              className="flex items-center justify-between"
+              style={{
+                marginTop: 12, gap: 10, padding: "9px 10px",
+                background: "var(--yellow-soft)", border: "1px solid var(--yellow-edge)",
+              }}
+            >
+              <span style={{ minWidth: 0, fontSize: 11.5, letterSpacing: 0.2, color: "var(--fg)" }}>
+                <span className="uppercase font-semibold">{ventaSugerida.nombre}</span> necesita un paquete
+              </span>
+              <a
+                href={ventaSugerida.href}
+                className="forge-pressable uppercase shrink-0"
+                style={{ fontSize: 10.5, fontWeight: 800, letterSpacing: 1.2, color: "var(--gold)", textDecoration: "none" }}
+              >
+                Vender
+              </a>
+            </div>
+          )}
 
           {adding ? (
             <div style={{ marginTop: 12 }}>

@@ -8,7 +8,7 @@ import type { AgendaResultado } from "@gym/data/server/agenda";
 import { DateStrip } from "@gym/ui/forge/agenda/date-strip";
 import { EditorSheet, type CoachOption, type EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 import { QuickGlanceSheet } from "@gym/ui/forge/agenda/quick-glance-sheet";
-import type { CandidateRow, RosterRow } from "@gym/ui/forge/agenda/session-roster";
+import type { CandidateRow, RosterRow, VentaSugerida } from "@gym/ui/forge/agenda/session-roster";
 import { SessionCard } from "@gym/ui/forge/agenda/session-card";
 import { WeekGroup, type WeekRow } from "@gym/ui/forge/agenda/week-group";
 import { Icon } from "@gym/ui/forge/icon";
@@ -26,7 +26,7 @@ import {
   rosterSesionAction,
 } from "../actions";
 import { pasoAgenda } from "./paso-agenda";
-import { accionAgregar, type CardVM } from "./session-vm";
+import { accionAgregar, sugerenciaVenta, type CardVM } from "./session-vm";
 
 /**
  * The Agenda orchestrator (PRD #36 S7): DÍA and SEMANA over one week of data, the
@@ -166,6 +166,11 @@ export function AgendaScreen(props: AgendaScreenProps) {
   }>({ open: false, card: null, loading: false, roster: [], candidates: [] });
   // clienteIds with a pase in flight — drives the roster's pending affordance.
   const [rosterBusy, setRosterBusy] = React.useState<Set<string>>(() => new Set());
+  // #235 story 10: the last PICKER add the RPC refused over balance or vigencia. The toast that
+  // named the reason is gone by the time the operator has read the caller their options, so the
+  // sheet keeps a line to that member's sale — the whole point being that they are still on the
+  // phone. Only the add flow sets it; the present-toggle on an existing row never does.
+  const [ventaSugerida, setVentaSugerida] = React.useState<VentaSugerida | null>(null);
   const [editor, setEditor] = React.useState<EditorState>({
     open: false,
     mode: "create",
@@ -195,7 +200,10 @@ export function AgendaScreen(props: AgendaScreenProps) {
       setGlance((g) => (g.card?.id === card.id ? { ...g, loading: false, roster: res.roster, candidates: res.candidates } : g));
     });
   };
-  const closeGlance = () => setGlance((g) => ({ ...g, open: false }));
+  const closeGlance = () => {
+    setVentaSugerida(null);
+    setGlance((g) => ({ ...g, open: false }));
+  };
   const closeEditor = () => setEditor((e) => ({ ...e, open: false }));
 
   // Every roster write shares one shape: busy-gate the cliente, run the RPC, surface its
@@ -206,6 +214,9 @@ export function AgendaScreen(props: AgendaScreenProps) {
     clienteId: string,
     accion: (sessionId: string) => Promise<AgendaResultado>,
     errorTitle: string,
+    // #235 story 10: the RPC's own sentence, handed to the caller that asked for it. Additive —
+    // the toast fires either way; this is only how the add flow learns WHY it was refused.
+    onFail?: (error: string) => void,
   ) => {
     const card = glance.card;
     if (!card || rosterBusy.has(clienteId)) return;
@@ -215,6 +226,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
       const res = await accion(sessionId);
       if (!res.ok) {
         forgeToast({ tone: "warning", title: errorTitle, body: res.error });
+        onFail?.(res.error);
         return;
       }
       const fresh = await rosterSesionAction(sessionId);
@@ -231,8 +243,10 @@ export function AgendaScreen(props: AgendaScreenProps) {
 
   // Reservation-aware Pasar lista: one atomic RPC per tap (booked → asistida no re-consume;
   // walk-in → is_walk_in reservation + consume; untoggle reverses).
-  const runPase = (clienteId: string) =>
-    runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista");
+  // `onFail` is the add flow's alone: the roster's present-toggle calls this with one argument
+  // (SessionRosterProps.onToggle takes only a clienteId), so a blocked re-toggle never offers a sale.
+  const runPase = (clienteId: string, onFail?: (error: string) => void) =>
+    runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista", onFail);
 
   // THE tense branch (#238), and it lives HERE, in the handler, against a clock read at THIS
   // instant — never one captured at render (the #235 amendment). A sheet left open across the
@@ -242,11 +256,19 @@ export function AgendaScreen(props: AgendaScreenProps) {
   const runAgregar = (clienteId: string) => {
     const card = glance.card;
     if (!card) return;
-    if (accionAgregar(card.startsAtIso, new Date()) === "pase") return runPase(clienteId);
+    // Any new pick supersedes the last suggestion — a different candidate, or the same member
+    // retried after the sale went through. Nothing re-sets it on success, so this is the clear.
+    setVentaSugerida(null);
+    // Both tenses can hit a sellable wall: reservar_clase gates on balance AND vigencia,
+    // pasar_lista_sesion on vigencia for a walk-in. The classifier is what tells them apart.
+    const sugerir = (error: string) =>
+      setVentaSugerida(sugerenciaVenta(error, glance.candidates.find((c) => c.id === clienteId)));
+    if (accionAgregar(card.startsAtIso, new Date()) === "pase") return runPase(clienteId, sugerir);
     return runRoster(
       clienteId,
       (sessionId) => reservarClaseClienteAction({ sessionId, clienteId }),
       "No se pudo reservar",
+      sugerir,
     );
   };
 
@@ -527,6 +549,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
           rosterBusy={rosterBusy}
           antesDeVentana={accionAgregar(glance.card.startsAtIso, ahora) === "reservar"}
           claseIniciada={new Date(glance.card.startsAtIso).getTime() <= ahora.getTime()}
+          ventaSugerida={ventaSugerida ?? undefined}
           onTogglePresent={runPase}
           onAddWalkIn={runAgregar}
           onCancelReserva={runCancelarReserva}

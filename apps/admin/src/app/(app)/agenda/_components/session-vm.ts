@@ -1,5 +1,6 @@
 import { antesDeVentanaArribo } from "@gym/domain/rules";
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
+import type { VentaSugerida } from "@gym/ui/forge/agenda/session-roster";
 import type { EstadoSesion as EstadoUi } from "@gym/ui/forge/agenda/session-view";
 
 /**
@@ -68,4 +69,36 @@ export function toCardVM(dto: SesionAgendaDTO, hora: string): CardVM {
  */
 export function accionAgregar(startsAtIso: string, ahora: Date): "reservar" | "pase" {
   return antesDeVentanaArribo(new Date(startsAtIso), ahora) ? "reservar" : "pase";
+}
+
+/**
+ * The only two refusals a SALE fixes (#235 story 10). Exact match, because these strings are OURS:
+ * both are `raise exception` literals in our own RPCs — reservar_clase's expiry and zero-balance
+ * gates (20260803140000_reserva_manual_staff_target.sql:145,151), and 'Paquete vencido' again on
+ * pasar_lista_sesion's walk-in arm (20260729120000:270) — and the DAL hands the raise through
+ * verbatim (agenda.ts `ejecutar`). Change a raise, change this list; they mirror each other.
+ *
+ * Every other refusal is a fact a sale does not touch: 'Clase llena' is the room, 'Ya reservaste
+ * esta clase' is the booking, 'La clase ya comenzó' is the clock, 'No autorizado' is the operator.
+ * Offering VENDER on any of those would send the operator to charge a member for nothing.
+ */
+const BLOQUEOS_VENDIBLES = ["Sin clases disponibles", "Paquete vencido"];
+
+export function esBloqueoVendible(error: string): boolean {
+  return BLOQUEOS_VENDIBLES.includes(error);
+}
+
+/**
+ * The blocked pick's bridge to the sale (#235 story 10) — the whole decision in one pure place, and
+ * `null` is "render nothing". Two conditions, both required: the refusal must be one a sale fixes,
+ * and the picker must still be able to NAME the member (an unknown id would offer an anonymous
+ * VENDER). The href is the existing #77 deep link, which lands on Vender with that member already
+ * selected — the re-search this story exists to delete.
+ */
+export function sugerenciaVenta(
+  error: string,
+  cliente: { id: string; nombre: string } | undefined,
+): VentaSugerida | null {
+  if (!cliente || !esBloqueoVendible(error)) return null;
+  return { nombre: cliente.nombre, href: `/vender?cliente=${cliente.id}` };
 }
