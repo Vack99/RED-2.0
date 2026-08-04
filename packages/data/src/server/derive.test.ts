@@ -123,29 +123,29 @@ describe("derivarCliente", () => {
 });
 
 describe("derivarPaseCliente", () => {
-  it("flags porVencer on the CLASES dimension (<= RENOVACION_CLASES) even with days to spare", () => {
+  it("flags porRenovar on the CLASES dimension (<= RENOVACION_CLASES) even with days to spare", () => {
     // 1 class left, 24 days left: POR RENOVAR's clases arm fires at <= RENOVACION_CLASES (1).
     const p = derivarPaseCliente(facts({ clases_restantes: 1, vence: "2026-06-20" }), HOY);
     expect(p.diasRest).toBe(24);
-    expect(p.porVencer).toBe(true);
+    expect(p.porRenovar).toBe(true);
     expect(p.clasesLabel).toBe("1 clase");
   });
 
-  it("flags porVencer on the DÍAS dimension (<= RENOVACION_DIAS)", () => {
+  it("flags porRenovar on the DÍAS dimension (<= RENOVACION_DIAS)", () => {
     const p = derivarPaseCliente(facts({ clases_restantes: 8, vence: "2026-05-30" }), HOY);
     expect(p.diasRest).toBe(3);
-    expect(p.porVencer).toBe(true);
+    expect(p.porRenovar).toBe(true);
   });
 
-  it("is not porVencer when both dimensions are healthy", () => {
+  it("is not porRenovar when both dimensions are healthy", () => {
     const p = derivarPaseCliente(facts({ clases_restantes: 8, vence: "2026-06-20" }), HOY);
-    expect(p.porVencer).toBe(false);
+    expect(p.porRenovar).toBe(false);
     expect(p.clasesLabel).toBe("8 clases");
   });
 
-  it("is not porVencer once expired (estado vencido — never a POR RENOVAR candidate)", () => {
+  it("is not porRenovar once expired (estado vencido — never a POR RENOVAR candidate)", () => {
     const p = derivarPaseCliente(facts({ clases_restantes: 5, vence: "2026-05-25" }), HOY);
-    expect(p.porVencer).toBe(false);
+    expect(p.porRenovar).toBe(false);
   });
 
   it("labels ilimitado and never flags it on clases", () => {
@@ -154,7 +154,7 @@ describe("derivarPaseCliente", () => {
       HOY,
     );
     expect(p.clasesLabel).toBe("Ilimitado");
-    expect(p.porVencer).toBe(false);
+    expect(p.porRenovar).toBe(false);
   });
 
   it("handles a client with no package", () => {
@@ -163,7 +163,7 @@ describe("derivarPaseCliente", () => {
       HOY,
     );
     expect(p.clasesLabel).toBe("Sin paquete");
-    expect(p.porVencer).toBe(false);
+    expect(p.porRenovar).toBe(false);
   });
 });
 

@@ -96,12 +96,12 @@ export interface PaseClienteDTO {
    *  RENOVACION_CLASES (paseSuelto-exempt), gated on the package still being live.
    *  Never a hand-inlined day threshold, and never the retired por_vencer estado
    *  value. */
-  porVencer: boolean;
+  porRenovar: boolean;
 }
 
 /**
  * The pase de lista's slim per-client projection. Derives through derivarCliente
- * so `porVencer` reads the SAME POR RENOVAR predicate the roster/INICIO tile use
+ * so `porRenovar` reads the SAME POR RENOVAR predicate the roster/INICIO tile use
  * (`esPorRenovar`, @gym/domain/lifecycle) — the pase shares the one definition of
  * "due for renewal" instead of re-coining a `<= 5`. `paseSueltoNombres` (#225 F2)
  * is the gym's package catalog, so a spent one-off pass is correctly exempted from
@@ -120,7 +120,7 @@ export function derivarPaseCliente(
       : `${c.clases_restantes} clase${c.clases_restantes === 1 ? "" : "s"}`;
   const clasesBase: Clases = c.clases_restantes === null ? "ilimitado" : c.clases_restantes;
   const esPaseSueltoRow = c.paquete_nombre !== null && paseSueltoNombres.has(c.paquete_nombre);
-  const porVencer = esPorRenovar(d.estado, d.diasRest, clasesBase, esPaseSueltoRow);
+  const porRenovar = esPorRenovar(d.estado, d.diasRest, clasesBase, esPaseSueltoRow);
   return {
     id: d.id,
     nombre: d.nombre,
@@ -128,7 +128,7 @@ export function derivarPaseCliente(
     paquete: d.paquete,
     clasesLabel,
     diasRest: d.diasRest,
-    porVencer,
+    porRenovar,
   };
 }
 

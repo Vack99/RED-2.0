@@ -99,7 +99,7 @@ export const getClientesLite = cache(
 );
 
 /** Roster for the pase de lista, derived-at-read (ADR-0002): a thin fetch that
- *  defers each row to the pure, tested derivarPaseCliente. `porVencer` is the
+ *  defers each row to the pure, tested derivarPaseCliente. `porRenovar` is the
  *  domain's esPorRenovar predicate, shared with the directory/dashboard — not an
  *  inline `<= 5` that drops the clases dimension. `paseSuelto` (#225 F2) is the
  *  gym's catalog, so a spent one-off pass reads correctly here too — this read

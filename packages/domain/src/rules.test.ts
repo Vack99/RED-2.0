@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, resumirRoster, stackPaquete, urgenciaCliente, ventanaArribo } from "./rules";
+import { baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, stackPaquete, urgenciaCliente, ventanaArribo } from "./rules";
 import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
@@ -109,18 +109,6 @@ describe("derivarEstado — the #223/#225 engine's estado predicate (fecha wins,
   });
   it("esPaseSuelto does NOT exempt the fecha axis: an expired drop-in is still vencido", () => {
     expect(derivarEstado({ clases: 0, dias: -1 }, true)).toBe("vencido");
-  });
-});
-
-describe("resumirRoster", () => {
-  it("is all-zero for an empty roster", () => {
-    expect(resumirRoster([])).toEqual({ vigentes: 0, total: 0 });
-  });
-  it("counts vigentes (estado === vigente); total is the whole roster, not a narrower 'activos' subset", () => {
-    expect(resumirRoster(["vigente", "vigente", "vencido", "sin_clases", "sin_paquete"])).toEqual({
-      vigentes: 2,
-      total: 5,
-    });
   });
 });
 

@@ -40,10 +40,10 @@ export interface Urgencia {
 
 /** Roster lifecycle summary — counts derived from each cliente's estado (ADR-0002).
  *  The single shape the dashboard + directory consume so "who counts as vigente"
- *  lives in one home (resumirRoster), never an inline filter. Mirrors lifecycle.ts's
- *  ConteosLifecycle.vigentes/.total exactly (#225) — never "activos" applied to a
- *  person, and the denominator is the WHOLE roster, not a narrower "not sin_clases"
- *  subset (the old totalActivos, retired). */
+ *  lives in one home (`contarLifecycle`, lifecycle.ts), never an inline filter.
+ *  Mirrors lifecycle.ts's ConteosLifecycle.vigentes/.total exactly (#225) — never
+ *  "activos" applied to a person, and the denominator is the WHOLE roster, not a
+ *  narrower "not sin_clases" subset (the old totalActivos, retired). */
 export interface ResumenRoster {
   /** Clientes whose package is vigente (estado === "vigente"). */
   vigentes: number;

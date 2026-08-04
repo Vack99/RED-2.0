@@ -698,7 +698,7 @@ const PaseRow = React.memo(function PaseRow({
         </div>
         <div style={{ fontSize: 11.5, color: "var(--muted)", marginTop: 3 }}>
           {clasesLabel}
-          {c.porVencer && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
+          {c.porRenovar && <span style={{ color: "var(--gold)", fontWeight: 700 }}> · VENCE {c.diasRest}D</span>}
           {otras && (
             <span className="uppercase" style={{ color: "var(--gold)", fontWeight: 700 }}> · {otras}</span>
           )}

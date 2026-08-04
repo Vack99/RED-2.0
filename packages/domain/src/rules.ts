@@ -18,7 +18,6 @@ import type {
   PlantillaContext,
   PlantillaHorario,
   ResumenMes,
-  ResumenRoster,
   Saldo,
   SesionOcupacion,
   Urgencia,
@@ -119,20 +118,6 @@ export function derivarEstado(saldo: Saldo, esPaseSuelto = false): EstadoCliente
   return "vigente";
 }
 
-/**
- * Summarize a roster of derived estados into the counts the dashboard + directory
- * headline share (ADR-0002, #225). The single home for "who counts as vigente":
- * `vigentes` is `estado === "vigente"`; `total` is the whole roster — the "/ N"
- * denominator (never a narrower "not sin_clases" subset — no "activos" applied to
- * a person). Screens call this, never an inline `.filter(...).length`.
- */
-export function resumirRoster(estados: EstadoCliente[]): ResumenRoster {
-  let vigentes = 0;
-  for (const estado of estados) {
-    if (estado === "vigente") vigentes += 1;
-  }
-  return { vigentes, total: estados.length };
-}
 
 // Retention-urgency thresholds, tuned for 8/12-class, 20–30 day memberships.
 // The single home for "running out": the directory roster, its sort, and any
