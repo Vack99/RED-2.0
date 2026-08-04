@@ -5,6 +5,7 @@ import {
   derivarLifecycle,
   esPaseSuelto,
   esPorRenovar,
+  muestraAusente,
   nivelUrgenciaLifecycle,
   ordenarLifecycle,
   paseSueltoNombres,
@@ -265,6 +266,12 @@ describe("derivarLifecycle — AÚN A TIEMPO, clocked from expiry only", () => {
   it("día 44 (long-dead) is well outside the window", () => {
     expect(derivarLifecycle(fila({ vence: haceDias(44), clases: 8 }), HOY).tile).toBeNull();
   });
+
+  it("#229 opus review F4 — structural invariant: tile === 'aun_a_tiempo' always implies eje === 'fecha' (A2 fecha-wins makes the clases arm unreachable here)", () => {
+    const r = derivarLifecycle(fila({ vence: haceDias(5), clases: 8 }), HOY);
+    expect(r.tile).toBe("aun_a_tiempo");
+    expect(r.eje).toBe("fecha");
+  });
 });
 
 describe("derivarLifecycle — pendienteOnline y sin_paquete: primera clase, nunca 'fuera de alcance'", () => {
@@ -360,6 +367,58 @@ describe("derivarLifecycle — diasSinVenir (#229): the {n}D SIN VENIR numeral",
     expect(under.ausente).toBe(false);
     expect(over.diasSinVenir).toBe(15);
     expect(over.ausente).toBe(true);
+  });
+});
+
+describe("muestraAusente — the badge's population gate (#229 opus review F1/F2/F5): the recovery WINDOW, never tile membership", () => {
+  it("shows for a vigente (paid-up, still trainable) row", () => {
+    const r = derivarLifecycle(fila({ vence: enDias(20), clases: 8 }), HOY);
+    expect(r.estado).toBe("vigente");
+    expect(muestraAusente(r)).toBe(true);
+  });
+
+  it("hides for a sin_clases row — date-valid but unable to train today (story 11: paid-AND-ABLE, not merely paid)", () => {
+    const r = derivarLifecycle(fila({ vence: enDias(20), clases: 0 }), HOY);
+    expect(r.estado).toBe("sin_clases");
+    expect(muestraAusente(r)).toBe(false);
+  });
+
+  it("shows for a LAPSED member WITH an app account, day 1-15 — A9: it does not vanish at lapse (#188 S9), even though tieneCuenta excludes them from the AÚN A TIEMPO tile itself", () => {
+    const r = derivarLifecycle(fila({ vence: haceDias(5), clases: 8, tieneCuenta: true }), HOY);
+    expect(r.estado).toBe("vencido");
+    expect(r.tile).toBeNull(); // excluded from the TILE (has an account)…
+    expect(muestraAusente(r)).toBe(true); // …but the badge's window gate doesn't care about tieneCuenta
+  });
+
+  it("hides for a lapsed member past día 16 — 'the dead', no longer this fact's audience", () => {
+    const r = derivarLifecycle(fila({ vence: haceDias(16), clases: 8 }), HOY);
+    expect(r.estado).toBe("vencido");
+    expect(muestraAusente(r)).toBe(false);
+  });
+
+  it("hides for sin_paquete — nothing paid", () => {
+    const r = derivarLifecycle(fila({ vence: null, pendienteOnline: true }), HOY);
+    expect(r.estado).toBe("sin_paquete");
+    expect(muestraAusente(r)).toBe(false);
+  });
+});
+
+describe("contarLifecycle — fueraDeAlcance (#229 opus review F3): the day-16+ horizon disclosure", () => {
+  it("counts vencido rows past RECUPERACION_DIAS, excluding a spent one-off pass", () => {
+    const filas = [
+      derivarLifecycle(fila({ vence: haceDias(16), clases: 8 }), HOY), // just past the window
+      derivarLifecycle(fila({ vence: haceDias(44), clases: 8 }), HOY), // long-dead
+      derivarLifecycle(fila({ vence: haceDias(20), clases: 0, esPaseSuelto: true }), HOY), // spent pass — never a recovery target
+      derivarLifecycle(fila({ vence: haceDias(5), clases: 8 }), HOY), // inside the window — not counted
+      derivarLifecycle(fila({ vence: enDias(20), clases: 8 }), HOY), // vigente — not counted
+    ];
+    const conteos = contarLifecycle(filas);
+    expect(conteos.fueraDeAlcance).toBe(2);
+  });
+
+  it("is independent of tieneCuenta — an account-holder past día 16 still counts (the disclosure is about days elapsed, not the account exclusion)", () => {
+    const filas = [derivarLifecycle(fila({ vence: haceDias(30), clases: 8, tieneCuenta: true }), HOY)];
+    expect(contarLifecycle(filas).fueraDeAlcance).toBe(1);
   });
 });
 

@@ -17,6 +17,7 @@
 
 import {
   derivarFilaLifecycle,
+  muestraAusente,
   ordenarLifecycle,
   type ConteosLifecycle,
   type FilaLifecycle,
@@ -46,12 +47,16 @@ export interface FilaRoster {
   /** The SAME AÚN A TIEMPO tile membership INICIO's tile counts (#229) — the
    *  directory's own filter/count on this population. */
   aunATiempo: boolean;
-  /** The `{n}D SIN VENIR` badge's ready-to-render decision (#229): the engine's
-   *  `ausente` fact, gated to paid-up members — `vigente`/`sin_clases` (the
-   *  package is still current), OR the exact AÚN A TIEMPO population (a lapsed
-   *  member 1-15 días past expiry still shows the fact, per A9 — it does not
-   *  vanish at lapse). Never true for `sin_paquete`/`pendienteOnline` (nothing
-   *  paid) or a plain long-dead `vencido` row outside the recovery window. */
+  /** The `{n}D SIN VENIR` badge's ready-to-render decision (#229, gate fixed by
+   *  opus review F1/F2/F5): the engine's `ausente` fact, gated by
+   *  `muestraAusente` — the recovery WINDOW (`vigente`, or `vencido` within
+   *  `RECUPERACION_DIAS` of expiry), never tile membership. A lapsed member
+   *  WITH an app account still shows the fact inside that window (A9 — it
+   *  does not vanish at lapse — even though `tieneCuenta` excludes them from
+   *  the AÚN A TIEMPO tile itself). Never true for `sin_clases` (paid but
+   *  unable to train today — story 11 targets paid-AND-ABLE), `sin_paquete`/
+   *  `pendienteOnline` (nothing paid), or a `vencido` row past the window
+   *  (the "dead"). */
   ausente: boolean;
   /** The badge's numeral — meaningless when `ausente` is false. */
   diasSinVenir: number;
@@ -92,13 +97,13 @@ function saldoParaUrgencia(c: ClienteRosterDTO): Saldo {
 
 /** Map one already-derived roster row to the engine's per-row input. The thin
  *  `derivarFilaLifecycle` constructor (#228 F4) still supplies eje/diasDesdeFin/
- *  urgencia AND `tile` for the por_renovar/null cases — its `esPorRenovar` call
- *  takes the exact same (estado, dias, clases, esPaseSuelto) the DTO's own
- *  `tile` was derived from, so the two can never disagree there. Only the ONE
- *  value that thin ctor structurally cannot produce — "aun_a_tiempo" (it has no
- *  `tieneCuenta`/visit clocks) — is taken from the DTO's real stamped tile
- *  (#229, `getClientesRoster` ran this SAME row through the FULL engine). This
- *  widens what the thin ctor could produce; it never overrides/contradicts it. */
+ *  urgencia (unaffected by the richer #226 facts — no re-derivation needed
+ *  there). `tile`/`ausente`/`diasSinVenir` are taken straight off the DTO
+ *  (#229 opus review F7): `getClientesRoster` already ran this SAME row through
+ *  the FULL engine (`derivarLifecycle`) and stamped its real verdict, so a
+ *  second hand-rolled derivation here — even one restricted to "only widen,
+ *  never contradict" — is the exact "kept in sync by one line" risk #228's
+ *  opus review F4 flagged; trust the DTO instead. */
 function aFilaLifecycle(c: ClienteRosterDTO): FilaLifecycle {
   const base = derivarFilaLifecycle({
     estado: c.estado,
@@ -107,8 +112,7 @@ function aFilaLifecycle(c: ClienteRosterDTO): FilaLifecycle {
     esPaseSuelto: c.esPaseSuelto,
     pendienteOnline: c.pendienteOnline,
   });
-  const tile = c.tile === "aun_a_tiempo" ? c.tile : base.tile;
-  return { ...base, tile, ausente: c.ausente, diasSinVenir: c.diasSinVenir };
+  return { ...base, tile: c.tile, ausente: c.ausente, diasSinVenir: c.diasSinVenir };
 }
 
 /** The screen's one entry point into the lifecycle engine: order (ruled),
@@ -135,20 +139,16 @@ export function derivarVistaRoster(clientes: ClienteRosterDTO[]): RosterVista {
     .map((f) => {
       const c = porFila.get(f);
       if (!c) return null;
-      const aunATiempo = f.tile === "aun_a_tiempo";
-      // The badge's paid-up gate (#222 story 11 / #229): vigente/sin_clases (the
-      // package is still current), OR the exact AÚN A TIEMPO population — a
-      // lapsed member 1-15 días past expiry still shows the absence fact (A9,
-      // it does not vanish at lapse). Never sin_paquete/pendienteOnline (nothing
-      // paid) and never a plain long-dead vencido row outside that window.
-      const paidUp = c.estado === "vigente" || c.estado === "sin_clases";
       return {
         c,
         urgencia: f.urgencia,
         vinculante: urgenciaCliente(saldoParaUrgencia(c)).vinculante,
         renovar: f.tile === "por_renovar",
-        aunATiempo,
-        ausente: c.ausente && (paidUp || aunATiempo),
+        aunATiempo: f.tile === "aun_a_tiempo",
+        // The badge's gate (#229 opus review F1/F2/F5): `muestraAusente` — the
+        // recovery WINDOW, never tile membership — so a lapsed member WITH an
+        // app account still shows the fact inside it (A9).
+        ausente: c.ausente && muestraAusente(f),
         diasSinVenir: c.diasSinVenir,
         diasDesdeVencido: f.diasDesdeFin,
         nombrePlegado: foldDiacritics(c.nombre),

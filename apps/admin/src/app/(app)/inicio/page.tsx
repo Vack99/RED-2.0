@@ -30,6 +30,7 @@ export default async function Page() {
       nuevosOnline={roster.nuevosOnline}
       porRenovar={roster.porRenovar}
       aunATiempo={roster.aunATiempo}
+      fueraDeAlcance={roster.fueraDeAlcance}
       recientes={recientes}
       eyebrow={eyebrow}
       lockup={<Lockup size={12} />}

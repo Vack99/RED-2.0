@@ -41,7 +41,7 @@ function mk(id: string, overrides: Partial<ClienteRosterDTO>): ClienteRosterDTO 
 
 describe("derivarVistaRoster — ordering (wiring onto ordenarLifecycle)", () => {
   it("orders actionable (por renovar) before current before expired", () => {
-    const actionable = mk("a", { diasRest: 5 }); // <= RENOVACION_DIAS
+    const actionable = mk("a", { diasRest: 5, tile: "por_renovar" }); // <= RENOVACION_DIAS
     const current = mk("c", { diasRest: 20 });
     const expired = mk("e", { estado: "vencido", diasRest: -10, clasesRest: 0, clasesRestLabel: "0" });
 
@@ -57,7 +57,7 @@ describe("derivarVistaRoster — ordering (wiring onto ordenarLifecycle)", () =>
     // BOTH `vencido200` here would have read pendienteOnline:true and topped
     // the list ahead of `venceHoy` — the "longest-dead first and loudest"
     // defect spec #222 opens with.
-    const venceHoy = mk("hoy", { estado: "vigente", diasRest: 0 });
+    const venceHoy = mk("hoy", { estado: "vigente", diasRest: 0, tile: "por_renovar" });
     const vencido200 = mk("viejo", {
       estado: "vencido",
       diasRest: -200,
@@ -139,7 +139,7 @@ describe("derivarVistaRoster — nombrePlegado", () => {
 describe("derivarVistaRoster — conteos (header ratio + filter chips)", () => {
   it("matches hand counts on a small mixed roster", () => {
     const vigente = mk("v", { estado: "vigente", diasRest: 20 });
-    const porRenovar = mk("r", { estado: "vigente", diasRest: 3 });
+    const porRenovar = mk("r", { estado: "vigente", diasRest: 3, tile: "por_renovar" });
     const vencido = mk("x", { estado: "vencido", diasRest: -5, clasesRest: 0, clasesRestLabel: "0" });
     const online = mk("o", {
       estado: "sin_paquete",
@@ -180,7 +180,7 @@ describe("derivarVistaRoster — #229: AÚN A TIEMPO filter flag + the {n}D SIN 
     expect(filas[0]?.diasSinVenir).toBe(24);
   });
 
-  it("shows the badge for a lapsed member INSIDE the AÚN A TIEMPO window (A9: does not vanish at lapse)", () => {
+  it("shows the badge for a lapsed member INSIDE the recovery window (A9: does not vanish at lapse)", () => {
     const c = mk("r", {
       estado: "vencido",
       diasRest: -5,
@@ -194,7 +194,35 @@ describe("derivarVistaRoster — #229: AÚN A TIEMPO filter flag + the {n}D SIN 
     expect(filas[0]?.ausente).toBe(true);
   });
 
-  it("hides the badge for a plain long-dead vencido row OUTSIDE the recovery window, even if the engine's ausente fact is true", () => {
+  it("#229 opus review F1/F2/F5: shows the badge for a lapsed member WITH an app account inside the window — excluded from the AÚN A TIEMPO TILE (tieneCuenta), but the window gate doesn't care", () => {
+    const c = mk("ca", {
+      estado: "vencido",
+      diasRest: -5,
+      clasesRest: 0,
+      clasesRestLabel: "0",
+      tile: null, // excluded from the tile itself — an app account already nudges them
+      ausente: true,
+      diasSinVenir: 5,
+    });
+    const { filas } = derivarVistaRoster([c]);
+    expect(filas[0]?.aunATiempo).toBe(false); // not in the tile…
+    expect(filas[0]?.ausente).toBe(true); // …but the badge still shows (A9)
+  });
+
+  it("#229 opus review F1/F2/F5: hides the badge for a sin_clases row — date-valid but unable to train today (story 11: paid-AND-ABLE, not merely paid)", () => {
+    const c = mk("sc", {
+      estado: "sin_clases",
+      diasRest: 20,
+      clasesRest: 0,
+      clasesRestLabel: "0",
+      ausente: true,
+      diasSinVenir: 20,
+    });
+    const { filas } = derivarVistaRoster([c]);
+    expect(filas[0]?.ausente).toBe(false);
+  });
+
+  it("hides the badge for a plain long-dead vencido row PAST the recovery window, even if the engine's ausente fact is true", () => {
     const c = mk("x", {
       estado: "vencido",
       diasRest: -200,
@@ -205,7 +233,7 @@ describe("derivarVistaRoster — #229: AÚN A TIEMPO filter flag + the {n}D SIN 
       diasSinVenir: 200,
     });
     const { filas } = derivarVistaRoster([c]);
-    expect(filas[0]?.ausente).toBe(false); // "the dead" — never paid-up, never the recovery population
+    expect(filas[0]?.ausente).toBe(false); // "the dead" — past RECUPERACION_DIAS, no longer this fact's audience
   });
 
   it("hides the badge for a sin_paquete/pendienteOnline row, even if the engine's ausente fact is true", () => {

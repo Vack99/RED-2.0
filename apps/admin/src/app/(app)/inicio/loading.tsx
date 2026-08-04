@@ -127,7 +127,12 @@ export default function Loading() {
             </div>
             <Skeleton width={30} height={26} />
           </div>
-          <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
+          {/* The day-16+ disclosure footer (#229 opus review F3) — always
+              visible, ahead of the CTA/zero-state branch. */}
+          <div style={{ padding: "10px 16px 11px", borderBottom: "1px solid var(--line)" }}>
+            <Skeleton height={10} width="80%" />
+          </div>
+          <div style={{ padding: "12px 16px" }}>
             <Skeleton height={13} />
           </div>
         </div>

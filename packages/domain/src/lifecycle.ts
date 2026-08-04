@@ -222,6 +222,15 @@ export interface ConteosLifecycle {
   porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
   aunATiempo: { total: number };
   pendienteOnline: number;
+  /** The day-16+ horizon disclosure (#229 opus review F3, Fitco's "N ya
+   *  pasaron ese límite"): `vencido`, not a one-off pass, past
+   *  `RECUPERACION_DIAS` since expiry — the population AÚN A TIEMPO
+   *  deliberately drops off the bottom of. INDEPENDENT of `tieneCuenta`: an
+   *  account-holder inside the window is excluded from the TILE for a
+   *  different reason (the client app already nudges them) — this
+   *  disclosure is only about days elapsed, and must not re-explain that
+   *  exclusion under the same number. */
+  fueraDeAlcance: number;
 }
 
 function clasesNum(c: Clases): number {
@@ -300,9 +309,18 @@ function derivarTile(fila: FilaRosterLifecycle, dias: number, estado: EstadoPaqu
     // (#223 finding 6: a `diasDesdeFin !== null` check used to sit here,
     // permanently true and therefore dead).
     const diasDesdeExpiry = -dias;
-    // AÚN A TIEMPO: clocked from EXPIRY ONLY (owner ruling, #222) — days
-    // 1..15 since the DATE lapsed. Excludes one-off passes (never members)
-    // and members with an app account (the client app already nudges them).
+    // AÚN A TIEMPO: clocked from EXPIRY ONLY (owner ruling 1 + A2 fecha-wins,
+    // #222) — days 1..15 since the DATE lapsed. Excludes one-off passes
+    // (never members) and members with an app account (the client app
+    // already nudges them). STRUCTURAL INVARIANT (#229 opus review F4): this
+    // branch is only ever reached once `estado === "vencido"`, and FECHA WINS
+    // (A2) means a vencido row's `eje` is ALWAYS "fecha" — `sin_clases` (the
+    // only estado that sets `eje = "clases"`) can only occur while a package
+    // is still vigente-BY-DATE. So `tile === "aun_a_tiempo"` ALWAYS implies
+    // `eje === "fecha"`; there is no clases arm to break out here, which is
+    // exactly why this tile is count-only with no bucket breakdown (unlike
+    // POR RENOVAR's día/clases arms) — see `AunATiempoTile` in
+    // apps/admin/.../inicio/_components/inicio.tsx.
     if (
       !fila.esPaseSuelto &&
       !fila.tieneCuenta &&
@@ -334,6 +352,34 @@ function calcDiasSinVenir(fila: FilaRosterLifecycle, hoy: Date): number {
  *  (#222) — the engine always computes the fact. */
 function calcAusente(fila: FilaRosterLifecycle, hoy: Date): boolean {
   return calcDiasSinVenir(fila, hoy) >= AUSENTE_DIAS;
+}
+
+/** Whether the `{n}D SIN VENIR` badge may be SHOWN for this row (#229 opus
+ *  review F1/F2/F5) — the recovery WINDOW itself, never tile membership: a
+ *  `vigente` package (paid-up, still trainable), OR a `vencido` one within
+ *  `RECUPERACION_DIAS` of its expiry (the SAME 1-15-día window AÚN A TIEMPO
+ *  clocks from — `derivarTile`'s own predicate — but WITHOUT that tile's
+ *  `tieneCuenta`/`esPaseSuelto` exclusion arms). A member with an app account
+ *  whose package lapsed yesterday still shows this fact: A9 rules the absence
+ *  fact does not vanish at lapse (#188 S9 is verbatim this defect) — the tile
+ *  excludes them because the client app already nudges them at lapse, not
+ *  because their absence stopped being true.
+ *
+ *  Deliberately excludes `sin_clases`: a class-exhausted-but-date-valid
+ *  member cannot train today regardless of how many días are left on the
+ *  package, so días-remaining is not "paid-and-able" (story 11 targets the
+ *  paid-AND-ABLE drifter, not merely the paid one). Deliberately excludes
+ *  `sin_paquete` (nothing paid) and a `vencido` row past the window (the
+ *  "dead" — no longer reachable, no longer this fact's audience).
+ *
+ *  This is ONLY the population gate — callers AND it with the engine's own
+ *  `ausente` fact (`ausente && muestraAusente(f)`); it says nothing about
+ *  whether the client has actually been absent. */
+export function muestraAusente(f: Pick<FilaLifecycle, "estado" | "diasDesdeFin">): boolean {
+  return (
+    f.estado === "vigente" ||
+    (f.estado === "vencido" && f.diasDesdeFin !== null && f.diasDesdeFin <= RECUPERACION_DIAS)
+  );
 }
 
 /** The lifecycle engine's per-row half: given one roster row and `hoy`,
@@ -391,13 +437,19 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
  *  (packages/data) but does NOT have the richer `FilaRosterLifecycle` input
  *  `derivarLifecycle` needs (`vence` as a Date, `tieneCuenta`, visit facts).
  *  `getRosterResumen` and the CLIENTES view-model (`clientes-vm.ts`) used this for
- *  exactly that reason through #228 — until #229 wired the #226 visit-facts
- *  aggregate into both reads, at which point both callers graduated to calling
- *  `derivarLifecycle` directly (the full engine) and stamping its real
- *  `tile`/`ausente`/`diasSinVenir` onto their DTOs instead. This constructor stays
- *  exported (a future caller with only the thinner shape has the same "don't
- *  hand-roll eje/diasDesdeFin/urgencia" need #228's opus review caught — finding
- *  4: a hand-rolled copy had set them to placeholder values that VIOLATE this
+ *  exactly that reason through #228. #229 wired the #226 visit-facts aggregate
+ *  into BOTH reads and had `getClientesRoster` (packages/data) stamp the real
+ *  `tile`/`ausente`/`diasSinVenir` straight onto `ClienteRosterDTO` — so
+ *  `getRosterResumen` graduated to calling `derivarLifecycle` directly and
+ *  dropped this constructor entirely, but `clientes-vm.ts` did NOT: it still
+ *  calls this for eje/diasDesdeFin/urgencia (unaffected by the richer facts —
+ *  no re-derivation needed there) and takes tile/ausente/diasSinVenir straight
+ *  off the DTO instead (#229 opus review F7 — trusting the DTO's own already-
+ *  computed verdict, never a second hand-rolled copy kept in sync by hand).
+ *  This constructor stays exported for exactly that thinner need (a future
+ *  caller with only estado/días/clases has the same "don't hand-roll eje/
+ *  diasDesdeFin/urgencia" problem #228's opus review caught — finding 4: a
+ *  hand-rolled copy had set them to placeholder values that VIOLATE this
  *  engine's own invariants, `ordenarLifecycle`'s `diasDesdeVencido` asserts a
  *  vencido row's `diasDesdeFin` is never null).
  *
@@ -582,5 +634,16 @@ export function contarLifecycle(filas: FilaLifecycle[]): ConteosLifecycle {
     porRenovar: { total: renovar.length, cubos },
     aunATiempo: { total: filas.filter((f) => f.tile === "aun_a_tiempo").length },
     pendienteOnline: filas.filter((f) => f.fila.pendienteOnline).length,
+    // #229 opus review F3: vencido, not a one-off pass (a spent pass was never
+    // a recovery target in the first place), past RECUPERACION_DIAS since
+    // expiry. `diasDesdeFin` is `-dias`, always non-null for a vencido row
+    // (derivarLifecycle) — never dereferenced null here.
+    fueraDeAlcance: filas.filter(
+      (f) =>
+        f.estado === "vencido" &&
+        !f.fila.esPaseSuelto &&
+        f.diasDesdeFin !== null &&
+        f.diasDesdeFin > RECUPERACION_DIAS,
+    ).length,
   };
 }

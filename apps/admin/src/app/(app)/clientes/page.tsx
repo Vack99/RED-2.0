@@ -5,7 +5,7 @@ import { ClientesScreen } from "./_components/clientes";
 export default async function Page({
   searchParams,
 }: {
-  searchParams: Promise<{ online?: string; renovar?: string; aunATiempo?: string }>;
+  searchParams: Promise<{ online?: string; renovar?: string; atiempo?: string }>;
 }) {
   const [clientes, sp] = await Promise.all([getClientesRoster(), searchParams]);
   return (
@@ -16,8 +16,9 @@ export default async function Page({
       // mirrors the existing `online` one and the filter's own state variable
       // (`renovar`).
       initialRenovar={sp.renovar === "1"}
-      // INICIO's AÚN A TIEMPO tile (#229) — same mechanism.
-      initialAunATiempo={sp.aunATiempo === "1"}
+      // INICIO's AÚN A TIEMPO tile (#229) — same mechanism. `atiempo` (opus
+      // review nit), lowercase like every other param (online/renovar/cliente).
+      initialAunATiempo={sp.atiempo === "1"}
     />
   );
 }

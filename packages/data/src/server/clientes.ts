@@ -252,7 +252,13 @@ export const getClientesRoster = cache(
       const clasesBase: Clases = c.clases_restantes === null ? "ilimitado" : c.clases_restantes;
       const { tile, ausente, diasSinVenir } = derivarLifecycle(
         {
-          vence: c.vence ? parseDay(c.vence) : null,
+          // Mirrors derivarCliente's own `tienePaquete` gate (#229 opus review
+          // F6) — a bare `c.vence` check alone would let a package-less row
+          // with a stray non-null `vence` column read sin_paquete on
+          // derivarCliente's estado but NOT sin_paquete here, drifting CLIENTES
+          // and INICIO's verdict on the same row (story 19: same word, same
+          // number).
+          vence: c.paquete_nombre && c.vence ? parseDay(c.vence) : null,
           clases: clasesBase,
           esPaseSuelto: esPaseSueltoRow,
           tieneCuenta: c.auth_user_id !== null,
@@ -293,8 +299,13 @@ export interface RosterResumenDTO extends ResumenRoster {
   porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
   /** INICIO's AÚN A TIEMPO tile (#229) — the SAME `contarLifecycle`/tile predicate
    *  the directory's own AÚN A TIEMPO filter/count read, so the tile's count and
-   *  `/clientes?aunATiempo=1`'s row count can never disagree (spec story 19). */
+   *  `/clientes?atiempo=1`'s row count can never disagree (spec story 19). */
   aunATiempo: { total: number };
+  /** The day-16+ horizon disclosure (#229 opus review F3) — vencido, not a
+   *  one-off pass, past `RECUPERACION_DIAS` since expiry. The tile's own
+   *  footer line names this count so the "N ya pasaron ese límite" fact
+   *  (Fitco) isn't silently dropped. */
+  fueraDeAlcance: number;
 }
 
 /** `vigentes`/`total`/`nuevosOnline`/`porRenovar`/`aunATiempo` for the dashboard,
@@ -361,7 +372,9 @@ export const getRosterResumen = cache(
 
       return derivarLifecycle(
         {
-          vence: c.vence ? parseDay(c.vence) : null,
+          // Mirrors derivarCliente's own `tienePaquete` gate (#229 opus review
+          // F6) — see getClientesRoster's identical comment.
+          vence: c.paquete_nombre && c.vence ? parseDay(c.vence) : null,
           clases: clasesBase,
           esPaseSuelto: esPaseSueltoRow,
           tieneCuenta: c.auth_user_id !== null,
@@ -374,9 +387,10 @@ export const getRosterResumen = cache(
       );
     });
 
-    const { vigentes, total, porRenovar, aunATiempo, pendienteOnline: nuevosOnline } = contarLifecycle(filas);
+    const { vigentes, total, porRenovar, aunATiempo, fueraDeAlcance, pendienteOnline: nuevosOnline } =
+      contarLifecycle(filas);
 
-    return { vigentes, total, nuevosOnline, porRenovar, aunATiempo };
+    return { vigentes, total, nuevosOnline, porRenovar, aunATiempo, fueraDeAlcance };
   },
 );
 

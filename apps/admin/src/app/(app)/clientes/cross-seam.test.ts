@@ -92,6 +92,25 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       auth_user_id: "auth-online-1",
       created_at: "2026-01-01T00:00:00Z",
     },
+    {
+      // #229 opus review nit — the tile's most distinctive gate, exercised
+      // cross-seam: SAME 5-día-lapsed window as c-vencido, but WITH an app
+      // account. Excluded from the AÚN A TIEMPO TILE (tieneCuenta) — the
+      // client app already nudges them — yet `muestraAusente`'s window gate
+      // doesn't care about tieneCuenta at all (F1/F2/F5), so the badge still
+      // shows on this row in the directory even though it never joins the tile.
+      id: "c-vencido-cuenta",
+      gym_id: "g-1",
+      nombre: "Vencido Con Cuenta",
+      tel: null,
+      paquete_nombre: "8 clases",
+      clases_restantes: 5,
+      vence: toIsoDay(addDays(HOY, -5)),
+      email: null,
+      invitacion_enviada_at: null,
+      auth_user_id: "auth-cuenta-1",
+      created_at: "2026-01-01T00:00:00Z",
+    },
   ];
 
   /** A minimal chain-capturing fake covering exactly what getRosterResumen and
@@ -143,7 +162,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
 
     expect(resumen.vigentes).toBe(3); // c-hoy + c-lejos + c-clases
     expect(resumen.porRenovar.total).toBe(2); // c-hoy (día) + c-clases (clases)
-    expect(resumen.total).toBe(5);
+    expect(resumen.total).toBe(6);
 
     expect(conteos.vigentes).toBe(resumen.vigentes);
     expect(conteos.porRenovar.total).toBe(resumen.porRenovar.total);
@@ -170,5 +189,21 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
     const filtered = filas.filter((f) => f.aunATiempo);
     expect(filtered).toHaveLength(resumen.aunATiempo.total);
     expect(filtered.map((f) => f.c.id)).toEqual(["c-vencido"]);
+  });
+
+  /**
+   * #229 opus review F1/F2/F5, cross-seam: the tile's own most distinctive
+   * gate (`tieneCuenta`) must NOT leak into the badge's visibility. c-vencido
+   * and c-vencido-cuenta share the identical 5-día-lapsed window; only the
+   * account fact differs, and only the TILE membership differs with it — the
+   * `{n}D SIN VENIR` badge (`muestraAusente`) reads estado/diasDesdeFin alone.
+   */
+  it("a lapsed member WITH an app account is excluded from the AÚN A TIEMPO tile but still shows the ausente fact (A9 — it does not vanish at lapse)", async () => {
+    const roster = await getClientesRoster(makeSharedFake(SHARED_CLIENTES));
+    const { filas } = derivarVistaRoster(roster);
+    const conCuenta = filas.find((f) => f.c.id === "c-vencido-cuenta")!;
+
+    expect(conCuenta.aunATiempo).toBe(false); // excluded from the TILE (has an account)
+    expect(conCuenta.ausente).toBe(true); // but the window gate doesn't care about tieneCuenta
   });
 });

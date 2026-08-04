@@ -32,6 +32,11 @@ interface InicioScreenProps {
    *  fetch, no second aggregate — #226's `asistencias_ultima_visita_por_cliente`
    *  is the ONE new call this tile costs). */
   aunATiempo: { total: number };
+  /** The day-16+ horizon disclosure (#229 opus review F3) — vencido, not a
+   *  one-off pass, past RECUPERACION_DIAS since expiry: the population AÚN A
+   *  TIEMPO deliberately drops. Named in the tile's own footer line (Fitco's
+   *  "N ya pasaron ese límite") so it isn't silently dropped from the screen too. */
+  fueraDeAlcance: number;
   recientes: AsistenciaHoy[];
   /** Pre-formatted greeting eyebrow (carries the year), built server-side via fmtEyebrow. */
   eyebrow: string;
@@ -46,6 +51,7 @@ export function InicioScreen({
   nuevosOnline,
   porRenovar,
   aunATiempo,
+  fueraDeAlcance,
   recientes,
   eyebrow,
   lockup,
@@ -210,7 +216,9 @@ export function InicioScreen({
         />
         <AunATiempoTile
           total={aunATiempo.total}
-          onVerTodos={() => router.push("/clientes?aunATiempo=1")}
+          fueraDeAlcance={fueraDeAlcance}
+          totalRoster={total}
+          onVerTodos={() => router.push("/clientes?atiempo=1")}
         />
       </div>
 
@@ -407,29 +415,50 @@ function RenovarTile({
  *  sub-arms to break down (`{ total: number }`, `packages/domain/src/lifecycle.ts`)
  *  — this tile does not invent one.
  *
- *  Color (mirrors #228 opus review F1): `--warning`/`--warning-soft`, NEVER
- *  RED's `--gold` (1.74:1 contrast, proven unusable).
+ *  Color (opus review nit): a fixed NEUTRAL `--fg` + "refresh" icon, never
+ *  `--warning` (that's POR RENOVAR's accent) — two identically-loud tiles
+ *  would flatten the hierarchy the walked design deliberately kept: this
+ *  queue reads quieter, a recovery list, not an alarm.
+ *
+ *  Footer disclosure (#229 opus review F3): names the day-16+ horizon this
+ *  tile drops (Fitco's "N ya pasaron ese límite") — the only honest way to
+ *  ship a tile with a hard cutoff is to say what it silently excludes,
+ *  always visible (unlike the zero/nonzero branch below it).
  *
  *  Zero count renders calm "todo al día" copy and does NOT deep-link (spec
  *  story 18) — same idiom as RenovarTile's own zero state. */
-function AunATiempoTile({ total, onVerTodos }: { total: number; onVerTodos: () => void }) {
-  const accent = total > 0 ? "var(--warning)" : "var(--muted)";
+function AunATiempoTile({
+  total,
+  fueraDeAlcance,
+  totalRoster,
+  onVerTodos,
+}: {
+  total: number;
+  fueraDeAlcance: number;
+  totalRoster: number;
+  onVerTodos: () => void;
+}) {
+  const accent = "var(--fg)";
   return (
     <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
-      <div
-        className="flex items-center"
-        style={{ gap: 10, padding: "13px 16px 12px", borderBottom: total > 0 ? "1px solid var(--line)" : "none" }}
-      >
-        <Icon name="clock" size={15} color={accent} />
+      <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
+        <Icon name="refresh" size={15} color={accent} />
         <div className="min-w-0 flex-1">
           <Eyebrow color={accent}>AÚN A TIEMPO</Eyebrow>
           <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>
-            {total > 0
-              ? `Vencieron hace 1 a ${RECUPERACION_DIAS} días — sin cuenta en la app`
-              : "Nadie por recuperar"}
+            {total > 0 ? `Vencieron hace 1 a ${RECUPERACION_DIAS} días` : "Nadie por recuperar"}
           </div>
         </div>
         <Tnum className="font-extrabold" style={{ fontSize: 26, lineHeight: 1, color: accent }}>{total}</Tnum>
+      </div>
+
+      {/* The day-16+ disclosure (F3) — always visible, independent of the
+          zero/nonzero branch below: the rule that makes this tile work is
+          naming who it drops. */}
+      <div style={{ padding: "10px 16px 11px", borderBottom: "1px solid var(--line)", fontSize: 10, color: "var(--muted)", lineHeight: 1.5 }}>
+        Esta lista se cierra a los {RECUPERACION_DIAS} días.{" "}
+        <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{fueraDeAlcance}</Tnum> de{" "}
+        <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{totalRoster}</Tnum> ya pasaron ese límite.
       </div>
 
       {total === 0 ? (
@@ -440,7 +469,7 @@ function AunATiempoTile({ total, onVerTodos }: { total: number; onVerTodos: () =
           <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Todo al día — nadie por recuperar.</div>
         </div>
       ) : (
-        // Deep link: lands on /clientes?aunATiempo=1 — the same rows the count
+        // Deep link: lands on /clientes?atiempo=1 — the same rows the count
         // promised (same tile predicate, story 19: same word, same number).
         <button
           onClick={onVerTodos}
@@ -448,7 +477,6 @@ function AunATiempoTile({ total, onVerTodos }: { total: number; onVerTodos: () =
           style={{
             gap: 7,
             padding: "12px 16px",
-            borderTop: "1px solid var(--line)",
             background: "transparent",
             color: "var(--fg)",
             fontSize: 10.5,
