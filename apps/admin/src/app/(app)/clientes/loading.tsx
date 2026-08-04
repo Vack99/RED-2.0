@@ -3,7 +3,8 @@ import { AppBar, H1 } from "@gym/ui/forge/ui";
 
 /**
  * Route loading fallback mirroring clientes.tsx (the roster) — DIRECTORIO AppBar,
- * title + counts, search/filter row, count·orden bar, and the roster rows.
+ * title + ratio header, search/filter row, count·orden bar, and the roster rows
+ * (each with the estado badge placeholder above the numeral, #227).
  */
 export default function Loading() {
   return (

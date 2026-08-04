@@ -31,7 +31,7 @@ import {
   contarLifecycle,
 } from "@gym/domain/lifecycle";
 import { urgenciaCliente } from "@gym/domain/rules";
-import type { NivelUrgencia } from "@gym/domain/types";
+import type { NivelUrgencia, Saldo } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
 import { foldDiacritics } from "@gym/format";
 
@@ -58,13 +58,33 @@ export interface FilaRoster {
   nombrePlegado: string;
 }
 
+/** The header ratio's `vigentes`/`total` + the filter chips' `porRenovar`/
+ *  `pendienteOnline` counts — ONE shared source (`contarLifecycle`), never
+ *  an inline `.filter(...).length` restatement. `aunATiempo` is DROPPED
+ *  (#227 F4, compiler-enforced, not comment-enforced): this vm hardcodes
+ *  every row's `tieneCuenta` to `false` (see `aFilaLifecycle` below), so
+ *  `contarLifecycle`'s `aunATiempo.total` is structurally always 0 here —
+ *  a fake zero a future INICIO tile (#228) could reach for by accident once
+ *  the real RPC lands. Narrowing the TYPE keeps that read a compile error
+ *  instead of a silent wrong number. */
+export type ConteosRoster = Omit<ConteosLifecycle, "aunATiempo">;
+
 export interface RosterVista {
   /** Ruled order (`ordenarLifecycle`). */
   filas: FilaRoster[];
-  /** The header ratio's `vigentes`/`total` + the filter chips' `porRenovar`/
-   *  `pendienteOnline` counts — ONE shared source (`contarLifecycle`), never
-   *  an inline `.filter(...).length` restatement. */
-  conteos: ConteosLifecycle;
+  conteos: ConteosRoster;
+}
+
+/** The saldo the engine actually reasons about for a package's urgency: a
+ *  pase suelto's classes are BLIND (mirrors `derivarLifecycle`'s own
+ *  `clases: fila.esPaseSuelto ? "ilimitado" : fila.clases` — a spent 1-class
+ *  drop-in is its NORMAL end state, not a running-out signal). #227 F2: this
+ *  vm independently derives urgencia/vinculante (see file header — it can't
+ *  call `derivarLifecycle` itself), so both call sites have to apply the
+ *  SAME blind or a spent drop-in renders crítico-red with "0 clases" as its
+ *  primary numeral and jumps the actionable tier via NIVEL_RANGO. */
+function saldoParaUrgencia(c: ClienteRosterDTO): Saldo {
+  return { clases: c.esPaseSuelto ? "ilimitado" : c.clasesRest, dias: c.diasRest };
 }
 
 /** Map one already-derived roster row to the engine's per-row input. The
@@ -76,7 +96,7 @@ function aFilaLifecycle(c: ClienteRosterDTO): FilaLifecycle {
     vence: null, // unread by ordering/counts; a real Date needs a fetch #227 doesn't add
     clases: c.clasesRest,
     esPaseSuelto: c.esPaseSuelto,
-    tieneCuenta: false, // unread by ordering/counts; aunATiempo needs it, not rendered here
+    tieneCuenta: false, // unread by ordering/counts; aunATiempo needs it, not rendered here (F4)
     pendienteOnline: c.pendienteOnline,
     ultimaVisitaConsumida: null, // unread by ordering/counts (clases-eje diasDesdeFin only)
     ultimaVisita: null, // unread by ordering/counts (feeds only the ausente badge, #228)
@@ -90,7 +110,7 @@ function aFilaLifecycle(c: ClienteRosterDTO): FilaLifecycle {
     dias: c.diasRest,
     diasDesdeFin: c.estado === "vencido" ? -c.diasRest : null,
     tile: esPorRenovar(c.estado, c.diasRest, c.clasesRest, c.esPaseSuelto) ? "por_renovar" : null,
-    urgencia: nivelUrgenciaLifecycle({ clases: c.clasesRest, dias: c.diasRest }, c.estado),
+    urgencia: nivelUrgenciaLifecycle(saldoParaUrgencia(c), c.estado),
     ausente: false, // not surfaced by CLIENTES (#227) — INICIO's badge, lands with #228's RPC
   };
 }
@@ -107,20 +127,30 @@ export function derivarVistaRoster(clientes: ClienteRosterDTO[]): RosterVista {
     return f;
   });
 
-  const conteos = contarLifecycle(filasEngine);
+  // #227 F4: build the narrowed shape explicitly rather than casting — drops
+  // `aunATiempo`, which this vm cannot honestly compute (see ConteosRoster).
+  const { vigentes, total, porRenovar, pendienteOnline } = contarLifecycle(filasEngine);
+  const conteos: ConteosRoster = { vigentes, total, porRenovar, pendienteOnline };
 
-  const filas: FilaRoster[] = ordenarLifecycle(filasEngine).map((f) => {
-    const c = porFila.get(f)!;
-    const saldo = { clases: c.clasesRest, dias: c.diasRest };
-    return {
-      c,
-      urgencia: f.urgencia,
-      vinculante: urgenciaCliente(saldo).vinculante,
-      renovar: f.tile === "por_renovar",
-      diasDesdeVencido: f.diasDesdeFin,
-      nombrePlegado: foldDiacritics(c.nombre),
-    };
-  });
+  // #227 F8: `porFila` is keyed by FilaLifecycle object identity, which holds
+  // today (`ordenarLifecycle` reorders the array via `toSorted`, never
+  // cloning elements) but isn't a contract `ordenarLifecycle`'s signature
+  // promises. Fail soft — drop a row rather than crash the render — if a
+  // future copy-returning implementation ever breaks that assumption.
+  const filas: FilaRoster[] = ordenarLifecycle(filasEngine)
+    .map((f) => {
+      const c = porFila.get(f);
+      if (!c) return null;
+      return {
+        c,
+        urgencia: f.urgencia,
+        vinculante: urgenciaCliente(saldoParaUrgencia(c)).vinculante,
+        renovar: f.tile === "por_renovar",
+        diasDesdeVencido: f.diasDesdeFin,
+        nombrePlegado: foldDiacritics(c.nombre),
+      };
+    })
+    .filter((f): f is FilaRoster => f !== null);
 
   return { filas, conteos };
 }

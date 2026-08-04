@@ -54,6 +54,20 @@
 //  · The actionable/current tiers sort by the BINDING AXIS (the floored
 //    urgencia nivel), not raw días — a SIN CLASES row with days to spare is
 //    still unable to train today and must not be stranded behind it.
+//
+// Amended after an opus review of #227 (F1): the "lapsed online registrant
+// still has pendienteOnline: true" case described above is GONE — the
+// producer was narrowed to `invitacion === "cuenta_activa" && estado ===
+// "sin_paquete"` (a member who has never bought a package). That broader
+// gate had promoted every account-holder whose package merely lapsed into
+// this engine's group-0 "actionable" tier (claveOrden -1, ahead of even a
+// día-0 renewal) — at a roster where every member has an app account, the
+// entire dead roster topped the list, the exact defect spec #222 opens
+// with. A lapsed account-holder is now plain `vencido` (group 2; the
+// client app already nudges them at lapse — the same reason AÚN A TIEMPO
+// excludes account-holders), so `fila.pendienteOnline === true` now always
+// implies `fila.vence === null` too — it is now synonymous with "no
+// package ever existed," not merely correlated with it.
 // ──────────────────────────────────────────────────────────────
 
 import { derivarEstado, diasRestantes, estaVencido, urgenciaCliente } from "./rules";
@@ -146,15 +160,16 @@ export interface FilaRosterLifecycle {
   /** Auth-linked app account (Door 2) — the client app already nudges these
    *  at the moment of lapse, so AÚN A TIEMPO excludes them. */
   tieneCuenta: boolean;
-  /** Online-registered (Door 2), no active package — a first-class state
-   *  (never "fuera de alcance"). NOT synonymous with `vence: null`: the real
-   *  producer (packages/data/derive.ts `esRegistroOnlinePendiente`) marks
-   *  this whenever the OLD `estado` reads "sin_clases", which covers BOTH
-   *  "no package" AND "expired by date" — so a lapsed online registrant has
-   *  `pendienteOnline: true` with a real PAST `vence`. Reconciled with AÚN A
-   *  TIEMPO by construction instead: that tile requires `!tieneCuenta`, and
-   *  a pendienteOnline row always carries an app account, so it structurally
-   *  can never also be aun_a_tiempo. Ordering reads this flag directly. */
+  /** Online-registered (Door 2) member who has NEVER bought a package — a
+   *  first-class state (never "fuera de alcance"). The real producer
+   *  (packages/data/server/derive.ts `esRegistroOnlinePendiente`) marks this
+   *  whenever `estado === "sin_paquete"` (#227 F1 — narrowed from any
+   *  non-vigente estado, which had wrongly promoted every lapsed
+   *  account-holder into this flag too), so `pendienteOnline: true` now
+   *  ALWAYS implies `vence: null`. Reconciled with AÚN A TIEMPO twice over:
+   *  that tile requires `!tieneCuenta` (a pendienteOnline row always carries
+   *  an account), AND its `estado === "vencido"` gate can never be true for a
+   *  sin_paquete row in the first place. Ordering reads this flag directly. */
   pendienteOnline: boolean;
   /** Date of the last CONSUMING visit (one that decremented a class), or null
    *  if there has never been one. The clases-arm clock — a later NON-consuming
@@ -372,9 +387,11 @@ function diasDesdeVencido(f: FilaLifecycle): number {
 const NIVEL_RANGO: Record<NivelUrgencia, number> = { critico: 0, urgente: 1, pronto: 2, ok: 3 };
 
 function grupoOrden(f: FilaLifecycle): 0 | 1 | 2 {
-  // pendienteOnline is read DIRECTLY (finding 1) — it is NOT synonymous with
-  // sin_paquete: a lapsed online registrant carries a real past `vence`
-  // (estado "vencido") and must still never sort below the expired.
+  // pendienteOnline is read DIRECTLY (finding 1) rather than inferred from
+  // sin_paquete — belt-and-suspenders: the real producer (#227 F1) now only
+  // ever sets it alongside estado "sin_paquete", but this function takes
+  // whatever a caller hands it, so the explicit OR keeps a first-class
+  // pendienteOnline row in group 0 even if a future/test producer diverges.
   if (f.fila.pendienteOnline || f.estado === "sin_paquete" || f.tile === "por_renovar") return 0;
   if (f.estado === "vencido") return 2;
   return 1; // vigente, outside the tile (sin_clases is always in por_renovar — see invariant test)

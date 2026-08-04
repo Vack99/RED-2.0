@@ -316,7 +316,7 @@ export function ClientesScreen({
                     unified engine — never a verdict on the person. Shown on every row,
                     including a pendienteOnline one below (a package fact still holds
                     even when the numeral area becomes COBRAR). */}
-                <Badge state={c.estado} style={{ padding: "2px 6px", fontSize: 8, letterSpacing: 0.8, marginBottom: 6 }} />
+                <Badge state={c.estado} style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.8, marginBottom: 6 }} />
                 {c.pendienteOnline ? (
                   // Online-pending rows have meaningless días/clases zeros; swap the
                   // numbers for a one-tap COBRAR deep-link to Vender (#77).
@@ -329,13 +329,15 @@ export function ClientesScreen({
                   </button>
                 ) : c.estado === "vencido" && f.diasDesdeVencido !== null ? (
                   // VENCIDO (#227 AC): days-SINCE-expiry, always positive — never the raw
-                  // negative diasRest a vigente/sin_clases row uses below.
+                  // negative diasRest a vigente/sin_clases row uses below. The caption is
+                  // the expiry DATE (#227 F6), not the word "vencido" again — the badge
+                  // right above already says that.
                   <>
                     <div className="flex items-baseline justify-end" style={{ gap: 3 }}>
                       <Tnum className="font-extrabold" style={{ fontSize: 17, lineHeight: 1, color: col }}>{f.diasDesdeVencido}</Tnum>
                       <span style={{ fontSize: 10, color: "var(--muted)" }}>{f.diasDesdeVencido === 1 ? "día" : "días"}</span>
                     </div>
-                    <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.3 }}>vencido</div>
+                    <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.3 }}><Tnum>{c.venceDisplay}</Tnum></div>
                   </>
                 ) : bindingIsDias ? (
                   <>

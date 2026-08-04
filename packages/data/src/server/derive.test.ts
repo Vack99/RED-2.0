@@ -733,11 +733,14 @@ describe("derivarInvitacion — badge copy (es-MX)", () => {
   });
 });
 
-describe("esRegistroOnlinePendiente — tile/filter population", () => {
-  it("is true for an auth-linked member with no vigente package — any non-vigente estado (#225)", () => {
-    expect(esRegistroOnlinePendiente("cuenta_activa", "sin_clases")).toBe(true);
-    expect(esRegistroOnlinePendiente("cuenta_activa", "vencido")).toBe(true); // a lapsed online registrant
+describe("esRegistroOnlinePendiente — tile/filter population (#227 F1: narrowed to sin_paquete)", () => {
+  it("is true ONLY for an auth-linked member who has never bought a package", () => {
     expect(esRegistroOnlinePendiente("cuenta_activa", "sin_paquete")).toBe(true); // same-day online sign-up
+  });
+
+  it("is false for an auth-linked member whose package lapsed by date OR ran out of clases — a plain vencido/sin_clases, never re-classed as a fresh arrival (#227 F1)", () => {
+    expect(esRegistroOnlinePendiente("cuenta_activa", "vencido")).toBe(false); // a lapsed online registrant — the client app already nudges them
+    expect(esRegistroOnlinePendiente("cuenta_activa", "sin_clases")).toBe(false);
   });
 
   it("is false for an auth-linked member who has a vigente package", () => {
@@ -748,6 +751,7 @@ describe("esRegistroOnlinePendiente — tile/filter population", () => {
     // the exact cohort finding #12 says self-registrants were indistinguishable from
     expect(esRegistroOnlinePendiente("sin_email", "sin_clases")).toBe(false);
     expect(esRegistroOnlinePendiente("invitacion_enviada", "sin_clases")).toBe(false);
+    expect(esRegistroOnlinePendiente("sin_email", "sin_paquete")).toBe(false);
   });
 });
 

@@ -187,16 +187,25 @@ export function derivarInvitacion(f: InvitacionFacts, tz: string): InvitacionDer
 }
 
 /** Tile/filter population — a "registro online pendiente": an auth-linked member
- *  (Door 2 self-registrant) with no active package. Reuses the existing derived
- *  `estado` (#225: any NON-vigente state — vencido/sin_clases/sin_paquete all mean
- *  "nothing to sell against as EXISTENTE"; pre-#225 this read only the old broad
- *  "sin_clases", which conflated all three), NOT a second 'active package' rule
- *  (CONTEXT 'registro online pendiente'). */
+ *  (Door 2 self-registrant) who has NEVER bought a package (`estado === "sin_paquete"`)
+ *  — a fresh arrival awaiting their first charge, never sorted with the dead
+ *  (CONTEXT 'registro online pendiente').
+ *
+ *  #227 F1 (opus review, narrowed from `estado !== "vigente"`): that broader gate
+ *  meant ANY account-holder whose package had lapsed — vencido or sin_clases, not
+ *  just sin_paquete — counted as pendienteOnline too. Since the #223/#225 ordering
+ *  engine (lifecycle.ts) treats `fila.pendienteOnline` as group-0 actionable (ahead
+ *  of even a día-0 renewal), that bug promoted every lapsed account-holder to the
+ *  TOP of the directory — at RED, where all 28 members have accounts, the entire
+ *  dead roster outranked the live one. Spec #222 A4: a lapsed former buyer is plain
+ *  `vencido` (the client app already auto-nudges account-holders at the moment of
+ *  lapse — the same reason AÚN A TIEMPO excludes them); pendienteOnline is reserved
+ *  for the member who never bought anything at all. */
 export function esRegistroOnlinePendiente(
   invitacion: EstadoInvitacion,
   estado: EstadoCliente,
 ): boolean {
-  return invitacion === "cuenta_activa" && estado !== "vigente";
+  return invitacion === "cuenta_activa" && estado === "sin_paquete";
 }
 
 /** Primera compra: the member has never had a sale, regardless of door (#77). */
