@@ -6,28 +6,13 @@ import { useRouter } from "next/navigation";
 import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@gym/ui/forge/ui";
-import { RENOVACION_CLASES, RENOVACION_DIAS, type CuboRenovar } from "@gym/domain/lifecycle";
+import { CUBO_LABEL, CUBO_ORDEN, RENOVACION_CLASES, RENOVACION_DIAS, type CuboRenovar } from "@gym/domain/lifecycle";
 import type { ResumenMes } from "@gym/domain/types";
 import type { AsistenciaHoy } from "@gym/data/server/asistencia";
 import { pesos } from "@gym/format";
 import { markInAppNav } from "../../../../lib/nav";
 
 const SPARK_FLOOR = 0.06;
-
-/** Bucket display order + label, mirroring the /proto/e-ventana reference SHAPE
- *  (Connect Gym's observed hoy/mañana/2-3/4-5 días bands) plus the clases arm
- *  (#227/#228: the bucket the classes-bound axis lands in, so the breakdown always
- *  sums to the headline — story 6/7). Labels only borrow `RENOVACION_DIAS`/
- *  `RENOVACION_CLASES` for display text; the bucket ASSIGNMENT itself is computed
- *  server-side by `contarLifecycle` (no threshold lives in this component). */
-const CUBO_ORDEN: { key: CuboRenovar; label: string }[] = [
-  { key: "hoy", label: "HOY" },
-  { key: "manana", label: "MAÑANA" },
-  { key: "dosATres", label: "2–3 D" },
-  { key: "cuatroACinco", label: "4–5 D" },
-  { key: "seisOMas", label: `6–${RENOVACION_DIAS} D` },
-  { key: "clases", label: "CLASES" },
-];
 
 interface InicioScreenProps {
   resumen: ResumenMes;
@@ -202,12 +187,15 @@ export function InicioScreen({
         <QuickAction icon="user" label="NUEVO CLIENTE" sub="Registrar venta" onClick={() => router.push("/vender")} />
       </div>
 
-      {/* POR RENOVAR — the tile that replaces the old POR VENCER quick action
-          (#228). Count + day/clases buckets from the SAME contarLifecycle/
-          esPorRenovar predicate the directory's filter/count share, so the tile
-          and `/clientes?renovar=1` can never disagree. Zero count renders calm
-          "todo al día" copy and does not deep-link (spec story 18). */}
-      <div style={{ padding: "10px 16px 0" }}>
+      {/* MEMBRESÍAS — the tile that replaces the old POR VENCER quick action
+          (#228), under the section header the proto reference settled on (#229's
+          AÚN A TIEMPO joins here later). Count + day/clases buckets from the SAME
+          contarLifecycle/esPorRenovar predicate the directory's filter/count
+          share, so the tile and `/clientes?renovar=1` can never disagree. Zero
+          count renders calm "todo al día" copy and does not deep-link (spec
+          story 18). */}
+      <SectionHeader trailing={`${total} SOCIOS`}>MEMBRESÍAS</SectionHeader>
+      <div style={{ padding: "0 16px" }}>
         <RenovarTile
           total={porRenovar.total}
           cubos={porRenovar.cubos}
@@ -295,7 +283,13 @@ function QuickAction({
  *  SHAPE the /proto/e-ventana reference tile settled on (header row → bucket grid
  *  → CTA footer). Reference only: `total`/`cubos` arrive already computed
  *  server-side (contarLifecycle) — no threshold lives here. Count-only + buckets,
- *  no member names, so spec story 22's "cap past ~15 rows" concern doesn't apply. */
+ *  no member names, so spec story 22's "cap past ~15 rows" concern doesn't apply.
+ *
+ *  Color (#228 opus review F1 — BLOCKER): `--warning`/`--warning-soft`, the SAME
+ *  pair the proto reference used, NOT `--yellow`/`--gold` — on RED's live tokens
+ *  gold-on-surface is a 1.74:1 contrast ratio (illegible); `--warning` holds
+ *  7.5:1 on every brand module (forge/red/base all define it as an accessible
+ *  amber, `packages/brand/src/*\/tokens.ts`). */
 function RenovarTile({
   total,
   cubos,
@@ -305,7 +299,7 @@ function RenovarTile({
   cubos: Record<CuboRenovar, number>;
   onVerTodos: () => void;
 }) {
-  const accent = total > 0 ? "var(--gold)" : "var(--muted)";
+  const accent = total > 0 ? "var(--warning)" : "var(--muted)";
   return (
     <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
       <div
@@ -317,9 +311,7 @@ function RenovarTile({
           <Eyebrow color={accent}>POR RENOVAR</Eyebrow>
           <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>
             {total > 0
-              ? `Vencen en ${RENOVACION_DIAS} días o menos, o les queda${
-                  RENOVACION_CLASES === 1 ? "" : "n"
-                } ${RENOVACION_CLASES} clase${RENOVACION_CLASES === 1 ? "" : "s"}`
+              ? `Vencen en ${RENOVACION_DIAS} días o menos, o les queda ${RENOVACION_CLASES} clase o menos`
               : "Nadie vence pronto"}
           </div>
         </div>
@@ -337,7 +329,7 @@ function RenovarTile({
         <>
           <div style={{ padding: "12px 16px 14px" }}>
             <div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
-              {CUBO_ORDEN.map(({ key, label }) => {
+              {CUBO_ORDEN.map((key) => {
                 const n = cubos[key];
                 return (
                   <div
@@ -345,14 +337,14 @@ function RenovarTile({
                     className="flex flex-col items-center"
                     style={{
                       padding: "9px 2px",
-                      background: n > 0 ? "var(--yellow-soft)" : "var(--sunk)",
-                      border: `1px solid ${n > 0 ? "var(--yellow)" : "var(--line)"}`,
+                      background: n > 0 ? "var(--warning-soft)" : "var(--sunk)",
+                      border: `1px solid ${n > 0 ? "var(--warning)" : "var(--line)"}`,
                       gap: 3,
                     }}
                   >
                     <Tnum
                       className="font-extrabold"
-                      style={{ fontSize: 17, lineHeight: 1, color: n > 0 ? "var(--gold)" : "var(--muted-soft)" }}
+                      style={{ fontSize: 17, lineHeight: 1, color: n > 0 ? "var(--warning)" : "var(--muted-soft)" }}
                     >
                       {n}
                     </Tnum>
@@ -360,7 +352,7 @@ function RenovarTile({
                       className="uppercase font-bold"
                       style={{ fontSize: 8, letterSpacing: 0.6, color: "var(--muted)", whiteSpace: "nowrap" }}
                     >
-                      {label}
+                      {CUBO_LABEL[key]}
                     </span>
                   </div>
                 );
@@ -383,7 +375,7 @@ function RenovarTile({
               cursor: "pointer",
             }}
           >
-            Ver los {total} en el directorio
+            {total === 1 ? "Ver el 1 en el directorio" : `Ver los ${total} en el directorio`}
             <Icon name="arrow" size={13} color="var(--fg)" />
           </button>
         </>

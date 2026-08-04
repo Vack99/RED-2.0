@@ -3,13 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import {
-  contarLifecycle,
-  esPorRenovar,
-  type CuboRenovar,
-  type FilaLifecycle,
-  type FilaRosterLifecycle,
-} from "@gym/domain/lifecycle";
+import { contarLifecycle, derivarFilaLifecycle, type CuboRenovar, type FilaLifecycle } from "@gym/domain/lifecycle";
 import type { ResumenRoster } from "@gym/domain/types";
 import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
@@ -263,39 +257,23 @@ export const getRosterResumen = cache(
 
     const clientes = clientesData ?? [];
 
-    // Re-shape each already-derived row into the lifecycle engine's per-row input —
-    // mirrors clientes-vm.ts's aFilaLifecycle (#227): only the fields contarLifecycle
-    // actually reads (estado, tile, dias, fila.esPaseSuelto/clases/pendienteOnline)
-    // are real facts; this read has no vence-as-Date/tieneCuenta/visita facts to give
-    // the rest (unread here — see lifecycle.ts's own AÚN A TIEMPO/ausente callers,
-    // #228's next slice), so they are inert placeholders, never fabricated inputs to
-    // a decision this function doesn't make.
+    // Re-shape each already-derived row into the lifecycle engine's per-row input via
+    // the shared `derivarFilaLifecycle` constructor (#228 opus review F4) — the SAME
+    // one `clientes-vm.ts`'s aFilaLifecycle (#227) calls, so this read and the
+    // directory can never hand-roll two diverging approximations of eje/diasDesdeFin/
+    // urgencia for the same row (a hand-rolled copy here previously set them to
+    // placeholder values that violated the engine's own invariants).
     const filas: FilaLifecycle[] = clientes.map((c) => {
       const derivado = derivarCliente(c, hoy, 0, paseSuelto);
       const esPaseSueltoRow = c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre);
       const pendienteOnline = esRegistroOnlinePendiente(estadoInvitacion(c), derivado.estado);
-      const fila: FilaRosterLifecycle = {
-        vence: null,
+      return derivarFilaLifecycle({
+        estado: derivado.estado,
+        dias: derivado.diasRest,
         clases: derivado.clasesRest,
         esPaseSuelto: esPaseSueltoRow,
-        tieneCuenta: false,
         pendienteOnline,
-        ultimaVisitaConsumida: null,
-        ultimaVisita: null,
-        alta: new Date(0),
-      };
-      return {
-        fila,
-        estado: derivado.estado,
-        eje: null,
-        dias: derivado.diasRest,
-        diasDesdeFin: null,
-        tile: esPorRenovar(derivado.estado, derivado.diasRest, derivado.clasesRest, esPaseSueltoRow)
-          ? "por_renovar"
-          : null,
-        urgencia: "ok",
-        ausente: false,
-      };
+      });
     });
 
     const { vigentes, total, porRenovar, pendienteOnline: nuevosOnline } = contarLifecycle(filas);

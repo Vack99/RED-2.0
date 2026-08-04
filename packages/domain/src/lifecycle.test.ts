@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   contarLifecycle,
+  derivarFilaLifecycle,
   derivarLifecycle,
   esPaseSuelto,
   esPorRenovar,
@@ -606,5 +607,93 @@ describe("lifecycle engine — forge-shaped mix (finite packs, ilimitado, drop-i
 
   it("flags Hector — paid up, vigente, but 24 días unseen — as ausente", () => {
     expect(derivarLifecycle(hectorAusenteVigente, HOY).ausente).toBe(true);
+  });
+});
+
+describe("derivarFilaLifecycle — the shared thin-input constructor (#228 opus review F4)", () => {
+  it("a vencido row gets a non-null diasDesdeFin — the invariant ordenarLifecycle's diasDesdeVencido asserts", () => {
+    const f = derivarFilaLifecycle({
+      estado: "vencido",
+      dias: -7,
+      clases: 8,
+      esPaseSuelto: false,
+      pendienteOnline: false,
+    });
+    expect(f.eje).toBe("fecha");
+    expect(f.diasDesdeFin).toBe(7);
+    expect(f.urgencia).toBe("ok"); // vencido floors to ok — nothing left to run out of
+    // Never throws: ordenarLifecycle would call this row's diasDesdeVencido accessor.
+    expect(() => ordenarLifecycle([f])).not.toThrow();
+  });
+
+  it("a sin_paquete row folds eje/dias/diasDesdeFin to null — never mis-read as clases-bound", () => {
+    const f = derivarFilaLifecycle({
+      estado: "sin_paquete",
+      dias: 0, // derivarCliente's raw value for a package-less row, never dereferenced
+      clases: 0,
+      esPaseSuelto: false,
+      pendienteOnline: true,
+    });
+    expect(f.eje).toBeNull();
+    expect(f.dias).toBeNull();
+    expect(f.diasDesdeFin).toBeNull();
+    expect(f.tile).toBeNull();
+    expect(f.urgencia).toBe("ok");
+  });
+
+  it("a sin_clases row binds the clases eje with an honestly-null diasDesdeFin (no consuming-visit anchor in this input)", () => {
+    const f = derivarFilaLifecycle({
+      estado: "sin_clases",
+      dias: 12,
+      clases: 0,
+      esPaseSuelto: false,
+      pendienteOnline: false,
+    });
+    expect(f.eje).toBe("clases");
+    expect(f.diasDesdeFin).toBeNull(); // never fabricated as 0
+    expect(f.tile).toBe("por_renovar"); // sin_clases always clears the clases arm
+  });
+
+  it("blinds a one-off pass's spent clases from urgencia — mirrors derivarLifecycle's own blind", () => {
+    const f = derivarFilaLifecycle({
+      estado: "vigente",
+      dias: 20,
+      clases: 0, // spent — its normal end state, exempt via esPaseSuelto
+      esPaseSuelto: true,
+      pendienteOnline: false,
+    });
+    expect(f.urgencia).toBe("ok"); // días=20 is nowhere near urgente; clases=0 must not drag it down
+  });
+
+  it("agrees with derivarLifecycle on eje/diasDesdeFin/urgencia for the SAME vencido facts", () => {
+    // tile is deliberately NOT compared here: the full engine's fixture (via `fila`)
+    // carries no app account and lands within the 1-15-día recovery window, so it
+    // resolves AÚN A TIEMPO — a tile this thin constructor structurally never
+    // produces (no tieneCuenta/ultimaVisitaConsumida in its input, by design).
+    const viaFullEngine = derivarLifecycle(fila({ vence: haceDias(7), clases: 8 }), HOY);
+    const viaThinConstructor = derivarFilaLifecycle({
+      estado: viaFullEngine.estado,
+      dias: viaFullEngine.dias!,
+      clases: 8,
+      esPaseSuelto: false,
+      pendienteOnline: false,
+    });
+    expect(viaThinConstructor.eje).toBe(viaFullEngine.eje);
+    expect(viaThinConstructor.diasDesdeFin).toBe(viaFullEngine.diasDesdeFin);
+    expect(viaThinConstructor.urgencia).toBe(viaFullEngine.urgencia);
+  });
+
+  it("agrees with derivarLifecycle on eje/tile for the SAME por-renovar-by-días facts", () => {
+    const viaFullEngine = derivarLifecycle(fila({ vence: enDias(5), clases: 8 }), HOY);
+    const viaThinConstructor = derivarFilaLifecycle({
+      estado: viaFullEngine.estado,
+      dias: viaFullEngine.dias!,
+      clases: 8,
+      esPaseSuelto: false,
+      pendienteOnline: false,
+    });
+    expect(viaThinConstructor.eje).toBe(viaFullEngine.eje);
+    expect(viaThinConstructor.tile).toBe(viaFullEngine.tile);
+    expect(viaThinConstructor.urgencia).toBe(viaFullEngine.urgencia);
   });
 });

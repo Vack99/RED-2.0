@@ -90,9 +90,12 @@ export default function Loading() {
         </div>
       </div>
 
-      {/* POR RENOVAR tile (#228) — header row + 6-cell bucket grid + CTA footer,
-          mirroring inicio.tsx's RenovarTile shape. */}
-      <div style={{ padding: "10px 16px 0" }}>
+      {/* MEMBRESÍAS — the POR RENOVAR tile's section header (#228 opus review F10),
+          then the tile itself: header row + 6-cell bucket grid + CTA footer,
+          mirroring inicio.tsx's RenovarTile shape. `total` isn't known yet, so the
+          trailing "N SOCIOS" is a skeleton too. */}
+      <SectionHeader trailing={<Skeleton width={70} height={10.5} />}>MEMBRESÍAS</SectionHeader>
+      <div style={{ padding: "0 16px" }}>
         <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
           <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
             <Skeleton width={15} height={15} />
@@ -105,7 +108,7 @@ export default function Loading() {
           <div style={{ padding: "12px 16px 14px" }}>
             <div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
               {[0, 1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} height={42} />
+                <Skeleton key={i} height={50} />
               ))}
             </div>
           </div>

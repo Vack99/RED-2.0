@@ -670,10 +670,26 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       email: null,
       invitacion_enviada_at: null,
     },
+    {
+      // #228 opus review F5: a spent one-off pass (0 clases, its NORMAL end state
+      // after one visit) — esPaseSuelto exempts the CLASES axis entirely, so this
+      // must stay OUT of porRenovar's clases bucket and stay vigente (never
+      // sin_clases), even though clases_restantes reads 0 exactly like
+      // renovar-sin-clases above.
+      id: "pase-suelto-gastado",
+      gym_id: "g-1",
+      paquete_nombre: "Clase Individual",
+      clases_restantes: 0,
+      vence: toIsoDay(addDays(HOY, 20)), // still inside its own validity window
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
   ];
 
   const PAQUETES_CATALOG = [
     { id: "p1", gym_id: "g-1", nombre: "8 clases", clases: 8, vigencia_tipo: "dias", vigencia_dias: 30, precio: 800, popular: false, orden: 1 },
+    { id: "p2", gym_id: "g-1", nombre: "Clase Individual", clases: 1, vigencia_tipo: "dias", vigencia_dias: 30, precio: 150, popular: false, orden: 2 },
   ];
 
   it("buckets sum exactly to the headline and exclude vencido/sin_paquete/out-of-window rows", async () => {
@@ -687,7 +703,9 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
 
     const resumen = await getRosterResumen(fake.client);
 
-    expect(resumen.porRenovar.total).toBe(4); // hoy + manana + 2 clases-bound
+    // hoy + manana + 2 clases-bound — pase-suelto-gastado's spent clases (also 0,
+    // like renovar-sin-clases) do NOT add a 3rd clases-bucket row (#228 F5).
+    expect(resumen.porRenovar.total).toBe(4);
     expect(resumen.porRenovar.cubos).toEqual({
       hoy: 1,
       manana: 1,
@@ -702,6 +720,13 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
     // sin_paquete rows have no live package, so esPorRenovar is false — a
     // pendienteOnline fresh arrival is never double-counted into POR RENOVAR.
     expect(resumen.nuevosOnline).toBe(1);
+
+    // #228 opus review F5 — pase-suelto blinding: a spent one-off pass (0 clases,
+    // inside its own días window) is exempt from the CLASES axis entirely, so it
+    // stays VIGENTE (never sin_clases) and OUT of porRenovar, unlike
+    // renovar-sin-clases (same 0 clases, but a real membership package).
+    expect(resumen.vigentes).toBe(5); // hoy + manana + clases-bound + lejos + pase-suelto-gastado
+    expect(resumen.total).toBe(8);
   });
 });
 

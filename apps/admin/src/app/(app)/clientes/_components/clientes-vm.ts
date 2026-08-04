@@ -4,30 +4,23 @@
 // live here or in the component; every fact below is a direct call into
 // `@gym/domain/lifecycle` or `@gym/domain/rules`.
 //
-// Why this file builds its own `FilaLifecycle` instead of calling
-// `derivarLifecycle`: that function's input (`FilaRosterLifecycle`) also
+// Why this file builds its `FilaLifecycle` via `derivarFilaLifecycle` instead
+// of `derivarLifecycle`: that function's input (`FilaRosterLifecycle`) also
 // carries `tieneCuenta`/`ultimaVisitaConsumida`/`ultimaVisita`/`alta` — facts
 // `getClientesRoster` does not fetch yet (#222 sequences the ausente badge +
-// clases clock behind a new RPC, landing AFTER epic #203). Every field this
-// module's ordering/counts actually READ (verified against `ordenarLifecycle`
-// and `contarLifecycle`'s bodies in lifecycle.ts: `estado`, `tile`,
-// `diasDesdeFin`, `urgencia`, `dias`, `fila.pendienteOnline`,
-// `fila.esPaseSuelto`, `fila.clases`) is populated from REAL, already-derived
-// roster facts (`ClienteRosterDTO`). The remaining `FilaRosterLifecycle`
-// fields (`vence`, `tieneCuenta`, `ultimaVisitaConsumida`, `ultimaVisita`,
-// `alta`) are structurally required but never dereferenced by either
-// function — inert placeholders, not fabricated facts fed to a decision. The
-// `aunATiempo` tile is therefore never assigned here either (it needs
-// `tieneCuenta`) — CLIENTES doesn't render it; that tile is INICIO's/#228's,
-// once the RPC lands.
+// clases clock behind a new RPC, landing AFTER epic #203). `derivarFilaLifecycle`
+// (#228 opus review F4) is the ONE shared constructor for exactly this
+// thinner input — INICIO's `getRosterResumen` (packages/data) is its other
+// caller, so this vm and that read can never hand-roll two diverging
+// approximations of the same row again. The `aunATiempo` tile is never
+// assigned by that constructor (it needs `tieneCuenta`) — CLIENTES doesn't
+// render it; that tile is INICIO's/#229's, once the RPC lands.
 
 import {
-  esPorRenovar,
-  nivelUrgenciaLifecycle,
+  derivarFilaLifecycle,
   ordenarLifecycle,
   type ConteosLifecycle,
   type FilaLifecycle,
-  type FilaRosterLifecycle,
   contarLifecycle,
 } from "@gym/domain/lifecycle";
 import { urgenciaCliente } from "@gym/domain/rules";
@@ -87,32 +80,17 @@ function saldoParaUrgencia(c: ClienteRosterDTO): Saldo {
   return { clases: c.esPaseSuelto ? "ilimitado" : c.clasesRest, dias: c.diasRest };
 }
 
-/** Map one already-derived roster row to the engine's per-row input. The
- *  `fila.*` facts beyond `pendienteOnline`/`esPaseSuelto`/`clases` are never
- *  read by `ordenarLifecycle`/`contarLifecycle` (see file header) — see
- *  comment above for why they're inert here rather than fetched. */
+/** Map one already-derived roster row to the engine's per-row input, via the
+ *  shared `derivarFilaLifecycle` constructor (#228 F4) — no second hand-rolled
+ *  copy of eje/diasDesdeFin/urgencia here. */
 function aFilaLifecycle(c: ClienteRosterDTO): FilaLifecycle {
-  const fila: FilaRosterLifecycle = {
-    vence: null, // unread by ordering/counts; a real Date needs a fetch #227 doesn't add
+  return derivarFilaLifecycle({
+    estado: c.estado,
+    dias: c.diasRest,
     clases: c.clasesRest,
     esPaseSuelto: c.esPaseSuelto,
-    tieneCuenta: false, // unread by ordering/counts; aunATiempo needs it, not rendered here (F4)
     pendienteOnline: c.pendienteOnline,
-    ultimaVisitaConsumida: null, // unread by ordering/counts (clases-eje diasDesdeFin only)
-    ultimaVisita: null, // unread by ordering/counts (feeds only the ausente badge, #228)
-    alta: new Date(0), // unread by ordering/counts (feeds only the ausente badge, #228)
-  };
-  const eje = c.estado === "vigente" ? null : c.estado === "vencido" ? "fecha" : "clases";
-  return {
-    fila,
-    estado: c.estado,
-    eje,
-    dias: c.diasRest,
-    diasDesdeFin: c.estado === "vencido" ? -c.diasRest : null,
-    tile: esPorRenovar(c.estado, c.diasRest, c.clasesRest, c.esPaseSuelto) ? "por_renovar" : null,
-    urgencia: nivelUrgenciaLifecycle(saldoParaUrgencia(c), c.estado),
-    ausente: false, // not surfaced by CLIENTES (#227) — INICIO's badge, lands with #228's RPC
-  };
+  });
 }
 
 /** The screen's one entry point into the lifecycle engine: order (ruled),

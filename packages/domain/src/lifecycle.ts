@@ -367,6 +367,77 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
   return { fila, estado, eje, dias, diasDesdeFin, tile, urgencia, ausente };
 }
 
+/** Build a FULLY-CONSISTENT `FilaLifecycle` from an already-derived roster row's
+ *  estado/días/clases — for callers that have run a row through `derivarCliente`
+ *  (packages/data) but do NOT have the richer `FilaRosterLifecycle` input
+ *  `derivarLifecycle` needs (`vence` as a Date, `tieneCuenta`, visit facts — the
+ *  RPC #222 sequences after epic #203). Two call sites need exactly this shape
+ *  today — `getRosterResumen` (INICIO's POR RENOVAR tile, #228) and the CLIENTES
+ *  view-model (`clientes-vm.ts`, #227) — and #228's opus review (finding 4) caught
+ *  a hand-rolled copy setting `eje`/`diasDesdeFin`/`urgencia` to placeholder values
+ *  that VIOLATE this engine's own invariants (`ordenarLifecycle`'s
+ *  `diasDesdeVencido` asserts a vencido row's `diasDesdeFin` is never null). This
+ *  is the ONE constructor both call sites use instead, so neither can drift from
+ *  the other or from `derivarLifecycle`'s own derivation.
+ *
+ *  `eje`/`diasDesdeFin` mirror `derivarLifecycle`'s exact derivation (FECHA WINS,
+ *  `diasDesdeFin = -dias` on vencido) minus the clases-arm anchor (no
+ *  `ultimaVisitaConsumida` in this input, so a sin_clases row's `diasDesdeFin`
+ *  stays honestly null rather than a fabricated 0 — never null-silently-out-of-
+ *  range). `urgencia` reuses the SAME pase-suelto-blind `nivelUrgenciaLifecycle`
+ *  call `derivarLifecycle` makes. `tile` only ever resolves to "por_renovar" or
+ *  null — AÚN A TIEMPO needs `tieneCuenta`/`ultimaVisitaConsumida`, absent here;
+ *  neither call site renders that tile from this shape. `ausente` is always
+ *  false for the same reason (no visit facts to compute it from) — matching both
+ *  callers' prior behavior. */
+export function derivarFilaLifecycle(input: {
+  estado: EstadoPaquete;
+  /** Raw días from `derivarCliente` — 0 for a sin_paquete row (that function never
+   *  returns null), never dereferenced when `estado === "sin_paquete"` (esPorRenovar/
+   *  nivelUrgenciaLifecycle both short-circuit on that estado before touching it). */
+  dias: number;
+  clases: Clases;
+  esPaseSuelto: boolean;
+  pendienteOnline: boolean;
+}): FilaLifecycle {
+  const { estado, dias, clases, esPaseSuelto, pendienteOnline } = input;
+
+  // Mirrors derivarLifecycle's own eje ternary, widened by one arm: that function
+  // only ever reaches its ternary once `fila.vence !== null` has ruled out
+  // sin_paquete (its early return sets eje null directly) — this constructor's
+  // `estado` input can BE sin_paquete, so the widened form folds that case to
+  // null explicitly instead of mis-reading it as "clases" (the bug F4 caught).
+  const eje: Eje | null =
+    estado === "vencido" ? "fecha" : estado === "sin_clases" ? "clases" : null;
+  const diasDesdeFin = eje === "fecha" ? -dias : null;
+
+  // A one-off pass's spent clases are inert for urgencia (same blind
+  // derivarLifecycle applies) — "ilimitado" so only días can drive it.
+  const saldo: Saldo = { clases: esPaseSuelto ? "ilimitado" : clases, dias };
+
+  const fila: FilaRosterLifecycle = {
+    vence: null, // unread by ordenarLifecycle/contarLifecycle — see their bodies
+    clases,
+    esPaseSuelto,
+    tieneCuenta: false,
+    pendienteOnline,
+    ultimaVisitaConsumida: null,
+    ultimaVisita: null,
+    alta: new Date(0),
+  };
+
+  return {
+    fila,
+    estado,
+    eje,
+    dias: estado === "sin_paquete" ? null : dias, // mirrors derivarLifecycle's early return
+    diasDesdeFin,
+    tile: esPorRenovar(estado, dias, clases, esPaseSuelto) ? "por_renovar" : null,
+    urgencia: nivelUrgenciaLifecycle(saldo, estado),
+    ausente: false,
+  };
+}
+
 // ── Ordering (the ruled ordering, #222): actionable → current → expired
 //    (most-recently-expired first). Three keys over ONE flat list — no
 //    sections, no fold (#181 D1: the vendors with no declared "gone" lever
@@ -431,6 +502,31 @@ function cuboDias(d: number): CuboRenovar {
   if (d <= 5) return "cuatroACinco";
   return "seisOMas";
 }
+
+/** Display labels for POR RENOVAR's buckets, keyed by the SAME `CuboRenovar`
+ *  union `cuboDias` assigns into — an exhaustive `Record`, so adding a bucket
+ *  member fails THIS compile (a missing key) instead of silently vanishing
+ *  from a consumer's hand-rolled array that has no such exhaustiveness check
+ *  (#228 opus review F2/F3: INICIO's tile had hardcoded "2–3 D"/"4–5 D" in
+ *  TSX, restating `cuboDias`'s boundaries with no compiler tie back to them —
+ *  retuning the engine would silently make the labels lie). The day-bucket
+ *  labels are worded off `RENOVACION_DIAS` directly, so retuning that
+ *  constant retunes the "6–N D" label with it. */
+export const CUBO_LABEL: Record<CuboRenovar, string> = {
+  hoy: "HOY",
+  manana: "MAÑANA",
+  dosATres: "2–3 D",
+  cuatroACinco: "4–5 D",
+  seisOMas: `6–${RENOVACION_DIAS} D`,
+  clases: "CLASES",
+};
+
+/** Render order for the POR RENOVAR bucket grid — chronological day buckets,
+ *  clases last. Mechanically derived from `CUBO_LABEL`'s own key order (object
+ *  key iteration is insertion order for non-numeric string keys) rather than a
+ *  second hand-maintained array, so there is exactly ONE place to edit when a
+ *  bucket is added. */
+export const CUBO_ORDEN: readonly CuboRenovar[] = Object.keys(CUBO_LABEL) as CuboRenovar[];
 
 /** The roster-level counts both CLIENTES and INICIO share. POR RENOVAR's
  *  `cubos` always sum to `total`: every row lands in EXACTLY one bucket —
