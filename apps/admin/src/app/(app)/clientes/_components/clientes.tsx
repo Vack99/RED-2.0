@@ -7,14 +7,16 @@ import { Icon } from "@gym/ui/forge/icon";
 import { AppBar, Avatar, Badge, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useFlip } from "@gym/ui/forge/use-flip";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
-import { esPorRenovar, nivelUrgenciaLifecycle } from "@gym/domain/lifecycle";
-import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
 import { foldDiacritics } from "@gym/format";
 import { markInAppNav } from "../../../../lib/nav";
+import { derivarVistaRoster, type FilaRoster } from "./clientes-vm";
 
-type Sort = "dias" | "nombre" | "asist";
+/** `null` = the engine's ruled order (default). Picking a named sort
+ *  overrides it; re-picking the ACTIVE one clears back to `null` — same
+ *  single-active-button UX as today, plus the ruled-order "off" state. */
+type Sort = "dias" | "nombre" | "asist" | null;
 
 /** The numeric classes a client has left ("ilimitado" → no ceiling). */
 function clasesNum(c: ClienteRosterDTO): number {
@@ -32,50 +34,32 @@ function urgencyColor(nivel: NivelUrgencia) {
 export function ClientesScreen({
   clientes,
   initialOnline = false,
+  initialRenovar = false,
 }: {
   clientes: ClienteRosterDTO[];
   /** Deep-link from the dashboard "Nuevos registros online" tile — opens the
    *  roster with the "Registrados online" filter already applied. */
   initialOnline?: boolean;
+  /** Deep-link from INICIO's POR RENOVAR tile (#228) — opens the roster with
+   *  the "Por renovar" filter already applied. */
+  initialRenovar?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
-  const [showFilters, setShowFilters] = React.useState(initialOnline);
-  const [renovar, setRenovar] = React.useState(false);
+  const [showFilters, setShowFilters] = React.useState(initialOnline || initialRenovar);
+  const [renovar, setRenovar] = React.useState(initialRenovar);
   const [online, setOnline] = React.useState(initialOnline);
   const [diasMax, setDiasMax] = React.useState<number | null>(null);
   const [clasesMax, setClasesMax] = React.useState<number | null>(null);
-  const [sort, setSort] = React.useState<Sort>("dias");
+  const [sort, setSort] = React.useState<Sort>(null);
 
-  const withU = React.useMemo(
-    () =>
-      clientes.map((c) => {
-        const saldo = { clases: c.clasesRest, dias: c.diasRest };
-        return {
-          c,
-          // #225: nivel is the FLOORED level (nivelUrgenciaLifecycle), floored on
-          // BOTH vencido AND sin_paquete (F3, via c.estado) — an expired OR
-          // package-less row is never "crítico" (nothing left to run out of, and
-          // new business must never read as churn). vinculante still comes from
-          // the raw urgenciaCliente, whose dimension logic is unchanged.
-          u: {
-            nivel: nivelUrgenciaLifecycle(saldo, c.estado),
-            vinculante: urgenciaCliente(saldo).vinculante,
-          },
-          // #225 F4: the SAME single-row POR RENOVAR predicate the tile/pase de
-          // lista use — was `nivel ∈ {critico, urgente}` (días≤7 OR clases≤3), a
-          // second live meaning of "por renovar" vs. the engine's ≤10/≤1 gate.
-          renovar: esPorRenovar(c.estado, c.diasRest, c.clasesRest, c.esPaseSuelto),
-          // Folded once per client here (not per keystroke in the filter below) — the
-          // candidate side of the #224 diacritic fold.
-          nombrePlegado: foldDiacritics(c.nombre),
-        };
-      }),
-    [clientes],
-  );
-  const renovarCount = withU.filter((x) => x.renovar).length;
-  const onlineCount = withU.filter((x) => x.c.pendienteOnline).length;
-  const { vigentes } = resumirRoster(clientes.map((c) => c.estado));
+  // The ONE seam into the #223/#225 lifecycle engine (clientes-vm.ts) — `withU`
+  // arrives in the engine's RULED order, and `conteos` is the shared source for
+  // both the header ratio and the filter chips' counts (never an inline filter
+  // count, #227).
+  const { filas: withU, conteos } = React.useMemo(() => derivarVistaRoster(clientes), [clientes]);
+  const renovarCount = conteos.porRenovar.total;
+  const onlineCount = conteos.pendienteOnline;
 
   const list = React.useMemo(() => {
     let list = withU;
@@ -86,13 +70,18 @@ export function ClientesScreen({
     if (query) {
       // Diacritic-folded (#224): "chavez" must find "Chávez". Folding applies to both
       // the query and the candidate name (the candidate side is pre-folded once per
-      // client in `withU` above, not per keystroke here); the phone check stays a raw
-      // digit/string match (tel never carries diacritics) and the sort comparator
+      // client by derivarVistaRoster, not per keystroke here); the phone check stays a
+      // raw digit/string match (tel never carries diacritics) and the sort comparator
       // below is untouched.
       const q = foldDiacritics(query);
       list = list.filter((x) => x.nombrePlegado.includes(q) || !!x.c.tel?.includes(query));
     }
-    const sorters: Record<Sort, (a: typeof withU[0], b: typeof withU[0]) => number> = {
+    // Default = the engine's ruled order: `withU` already arrives sorted that way,
+    // and Array#filter is order-preserving, so an untouched `sort` (null) leaves it
+    // intact with zero extra work. A named sort REPLACES it; toggling the same
+    // button off (see the ORDEN buttons below) returns `sort` to null.
+    if (sort === null) return list;
+    const sorters: Record<Exclude<Sort, null>, (a: FilaRoster, b: FilaRoster) => number> = {
       dias: (a, b) => a.c.diasRest - b.c.diasRest,
       nombre: (a, b) => a.c.nombre.localeCompare(b.c.nombre),
       asist: (a, b) => b.c.asistEsteMes - a.c.asistEsteMes,
@@ -143,12 +132,14 @@ export function ClientesScreen({
 
       <div style={{ padding: "14px 22px 4px" }}>
         <H1 size={38}>CLIENTES</H1>
-        <div className="flex" style={{ gap: 14, marginTop: 8, fontSize: 12, color: "var(--muted)" }}>
-          <span><Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{clientes.length}</Tnum> total</span>
-          <span style={{ color: "var(--muted-soft)" }}>·</span>
-          <span><Tnum style={{ color: "var(--green)", fontWeight: 700 }}>{vigentes}</Tnum> vigentes</span>
-          <span style={{ color: "var(--muted-soft)" }}>·</span>
-          <span><Tnum style={{ color: "var(--gold)", fontWeight: 700 }}>{renovarCount}</Tnum> por renovar</span>
+        {/* A RATIO, not a partition (#227): `N con paquete vigente de M`, both numbers
+            from contarLifecycle — it can never disagree with the list below it the way
+            three summed counts could (the old header's exact failure mode). No `activos`
+            noun on a person: this names the PACKAGE's state. */}
+        <div className="flex items-baseline" style={{ gap: 6, marginTop: 9, fontSize: 12.5, color: "var(--muted)" }}>
+          <Tnum className="font-extrabold" style={{ fontSize: 16, color: "var(--green)", lineHeight: 1 }}>{conteos.vigentes}</Tnum>
+          <span>con paquete vigente de</span>
+          <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{conteos.total}</Tnum>
         </div>
       </div>
 
@@ -244,10 +235,13 @@ export function ClientesScreen({
         </div>
         <div className="flex items-center">
           <span style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1, marginRight: 8 }}>ORDEN</span>
+          {/* No button is active by default (ruled order). Tapping one applies that sort;
+              tapping the ACTIVE one again clears back to the ruled order (#227) — the
+              same single-active-button feel as today, plus the "off" state. */}
           {([{ k: "dias", l: "Días" }, { k: "nombre", l: "A→Z" }, { k: "asist", l: "Asist." }] as const).map((s, i) => (
             <button
               key={s.k}
-              onClick={() => setSort(s.k)}
+              onClick={() => setSort((cur) => (cur === s.k ? null : s.k))}
               className="forge-pressable"
               style={{ background: "transparent", border: "none", padding: "10px 8px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, marginLeft: i === 0 ? 0 : 8, transition: "color 150ms cubic-bezier(.32,.72,0,1)" }}
             >
@@ -266,11 +260,12 @@ export function ClientesScreen({
             <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>{renovar ? "Nadie en riesgo con estos filtros." : "Ajusta los filtros o agrega un cliente."}</div>
           </div>
         )}
-        {visible.map(({ c, u }) => {
-          const col = urgencyColor(u.nivel);
-          const showBar = u.nivel === "critico" || u.nivel === "urgente";
+        {visible.map((f) => {
+          const { c } = f;
+          const col = urgencyColor(f.urgencia);
+          const showBar = f.urgencia === "critico" || f.urgencia === "urgente";
           const clsLabel = c.clasesRestLabel;
-          const bindingIsDias = u.vinculante === "dias";
+          const bindingIsDias = f.vinculante === "dias";
           return (
             <div
               key={c.id}
@@ -316,7 +311,12 @@ export function ClientesScreen({
                   </div>
                 </div>
               </Link>
-              <div className="shrink-0" style={{ textAlign: "right", minWidth: 56, padding: "14px 22px 14px 0" }}>
+              <div className="shrink-0" style={{ textAlign: "right", minWidth: 84, padding: "14px 22px 14px 0" }}>
+                {/* The ESTADO column (#227): a fact about the PACKAGE, driven by the
+                    unified engine — never a verdict on the person. Shown on every row,
+                    including a pendienteOnline one below (a package fact still holds
+                    even when the numeral area becomes COBRAR). */}
+                <Badge state={c.estado} style={{ padding: "2px 6px", fontSize: 8, letterSpacing: 0.8, marginBottom: 6 }} />
                 {c.pendienteOnline ? (
                   // Online-pending rows have meaningless días/clases zeros; swap the
                   // numbers for a one-tap COBRAR deep-link to Vender (#77).
@@ -327,6 +327,16 @@ export function ClientesScreen({
                   >
                     COBRAR
                   </button>
+                ) : c.estado === "vencido" && f.diasDesdeVencido !== null ? (
+                  // VENCIDO (#227 AC): days-SINCE-expiry, always positive — never the raw
+                  // negative diasRest a vigente/sin_clases row uses below.
+                  <>
+                    <div className="flex items-baseline justify-end" style={{ gap: 3 }}>
+                      <Tnum className="font-extrabold" style={{ fontSize: 17, lineHeight: 1, color: col }}>{f.diasDesdeVencido}</Tnum>
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{f.diasDesdeVencido === 1 ? "día" : "días"}</span>
+                    </div>
+                    <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.3 }}>vencido</div>
+                  </>
                 ) : bindingIsDias ? (
                   <>
                     <div className="flex items-baseline justify-end" style={{ gap: 3 }}>
