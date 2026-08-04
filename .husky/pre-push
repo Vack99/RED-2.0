@@ -1,0 +1,29 @@
+# A `git push` deploys the Vercel apps but NEVER Supabase edge functions. The 2026-08-04
+# push shipped a rewritten send-email while live kept serving v6 — this guard makes that
+# drift impossible to repeat silently: a push whose range touches supabase/functions/**
+# stops until the deploy is done (or consciously deferred) and acknowledged.
+#
+#   deploy:      MCP deploy_edge_function, or
+#                npx -y supabase@latest functions deploy <slug> --project-ref hjppxawglmukfvsgmcog [--no-verify-jwt]
+#   acknowledge: EDGE_DEPLOY_OK=1 git push
+[ "$EDGE_DEPLOY_OK" = "1" ] && exit 0
+
+zero="0000000000000000000000000000000000000000"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue  # deleting a remote ref carries no code
+  if [ "$remote_sha" = "$zero" ]; then
+    range="origin/main..$local_sha"       # brand-new remote ref: compare against the integration tip
+  else
+    range="$remote_sha..$local_sha"
+  fi
+  slugs=$(git diff --name-only "$range" -- supabase/functions/ 2>/dev/null | cut -d/ -f3 | sort -u)
+  if [ -n "$slugs" ]; then
+    echo "✗ This push changes edge functions that 'git push' does NOT deploy:" >&2
+    for s in $slugs; do echo "    supabase/functions/$s" >&2; done
+    echo "  Deploy each to live first (MCP deploy_edge_function, or" >&2
+    echo "  npx -y supabase@latest functions deploy <slug> --project-ref hjppxawglmukfvsgmcog [--no-verify-jwt])," >&2
+    echo "  then acknowledge with: EDGE_DEPLOY_OK=1 git push" >&2
+    exit 1
+  fi
+done
+exit 0

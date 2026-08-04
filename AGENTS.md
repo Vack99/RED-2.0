@@ -25,6 +25,13 @@ with an argument (e.g. `husky --version`) — v9 treats the argument as the hook
 path and corrupts git's `core.hooksPath`. `pnpm install` (the `prepare` script)
 sets it correctly to `.husky/_`.
 
+The pre-push hook blocks any push whose range touches `supabase/functions/**`:
+a `git push` deploys the Vercel apps but **never** Supabase edge functions (live
+served a stale `send-email` v6 for this exact reason, 2026-08-04). Deploy the
+changed function first (MCP `deploy_edge_function`, or `npx -y supabase@latest
+functions deploy <slug> --project-ref hjppxawglmukfvsgmcog [--no-verify-jwt]`),
+then acknowledge with `EDGE_DEPLOY_OK=1 git push`.
+
 # Database RPC contract tests (the `test:denial` gate)
 
 The 34 `public` functions — **25 of them write rows** (`registrar_venta`, `reclamar_o_crear_cliente`,
