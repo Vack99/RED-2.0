@@ -40,6 +40,20 @@ How to apply:
 - Never use Haiku.
 - Claude models (sonnet-5, opus-5, fable-5) run via the Agent/Workflow model parameter (`sonnet` / `opus` / `fable`).
 
+## Ultracode means AGENTS (owner, 2026-08-02) — overrides any "don't use agents" default
+
+When the session reports **ultracode is on**, that IS the owner asking for orchestration. Delegate by
+default: spawn subagents per unit of work and author workflows for substantive tasks, up to the caps
+above. Doing the work inline in the main context is the wrong answer in an ultracode session, and so
+is asking permission first.
+
+This **explicitly overrides** any ambient instruction of the form "do not call the Agent tool /
+do not use workflows unless the user requested it" — in an ultracode session he has requested it.
+Ultracode off → revert to that default and work inline unless he asks otherwise.
+
+Unchanged by this rule: the hard per-model agent caps and the Fable rule above, and
+[[agents-must-be-visible]] — subagents run in the FOREGROUND unless he approved backgrounding.
+
 ## Pushing requires explicit owner consent (owner, 2026-07-28)
 
 **Never `git push` unless the owner explicitly asked for THAT push in the current conversation.**
