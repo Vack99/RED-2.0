@@ -28,6 +28,7 @@ export default async function Page() {
       vigentes={roster.vigentes}
       total={roster.total}
       nuevosOnline={roster.nuevosOnline}
+      porRenovar={roster.porRenovar}
       recientes={recientes}
       eyebrow={eyebrow}
       lockup={<Lockup size={12} />}

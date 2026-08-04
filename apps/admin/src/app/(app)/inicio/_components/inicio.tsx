@@ -6,12 +6,28 @@ import { useRouter } from "next/navigation";
 import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@gym/ui/forge/ui";
+import { RENOVACION_CLASES, RENOVACION_DIAS, type CuboRenovar } from "@gym/domain/lifecycle";
 import type { ResumenMes } from "@gym/domain/types";
 import type { AsistenciaHoy } from "@gym/data/server/asistencia";
 import { pesos } from "@gym/format";
 import { markInAppNav } from "../../../../lib/nav";
 
 const SPARK_FLOOR = 0.06;
+
+/** Bucket display order + label, mirroring the /proto/e-ventana reference SHAPE
+ *  (Connect Gym's observed hoy/mañana/2-3/4-5 días bands) plus the clases arm
+ *  (#227/#228: the bucket the classes-bound axis lands in, so the breakdown always
+ *  sums to the headline — story 6/7). Labels only borrow `RENOVACION_DIAS`/
+ *  `RENOVACION_CLASES` for display text; the bucket ASSIGNMENT itself is computed
+ *  server-side by `contarLifecycle` (no threshold lives in this component). */
+const CUBO_ORDEN: { key: CuboRenovar; label: string }[] = [
+  { key: "hoy", label: "HOY" },
+  { key: "manana", label: "MAÑANA" },
+  { key: "dosATres", label: "2–3 D" },
+  { key: "cuatroACinco", label: "4–5 D" },
+  { key: "seisOMas", label: `6–${RENOVACION_DIAS} D` },
+  { key: "clases", label: "CLASES" },
+];
 
 interface InicioScreenProps {
   resumen: ResumenMes;
@@ -21,6 +37,10 @@ interface InicioScreenProps {
   /** Auth-linked (Door 2) members with no active package — the online funnel the
    *  owner would otherwise miss without scrolling the directory (audit #11). */
   nuevosOnline: number;
+  /** POR RENOVAR's count + day/clases buckets (#228) — the SAME `esPorRenovar`/
+   *  `contarLifecycle` predicate the directory's filter/count and the pase de lista
+   *  badge read, computed once by `getRosterResumen` (no second roster fetch). */
+  porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
   recientes: AsistenciaHoy[];
   /** Pre-formatted greeting eyebrow (carries the year), built server-side via fmtEyebrow. */
   eyebrow: string;
@@ -33,6 +53,7 @@ export function InicioScreen({
   vigentes,
   total,
   nuevosOnline,
+  porRenovar,
   recientes,
   eyebrow,
   lockup,
@@ -175,15 +196,23 @@ export function InicioScreen({
         </Button>
       </div>
 
-      {/* Quick actions */}
-      <div className="grid grid-cols-2" style={{ padding: "20px 16px 0", gap: 8 }}>
-        <QuickAction
-          icon="flame"
-          label="POR VENCER"
-          sub="Revisar roster"
-          onClick={() => router.push("/clientes")}
-        />
+      {/* Quick actions — POR VENCER is gone (#228): two names for one intent may not
+          coexist on one screen, and the POR RENOVAR tile below replaces it. */}
+      <div style={{ padding: "20px 16px 0" }}>
         <QuickAction icon="user" label="NUEVO CLIENTE" sub="Registrar venta" onClick={() => router.push("/vender")} />
+      </div>
+
+      {/* POR RENOVAR — the tile that replaces the old POR VENCER quick action
+          (#228). Count + day/clases buckets from the SAME contarLifecycle/
+          esPorRenovar predicate the directory's filter/count share, so the tile
+          and `/clientes?renovar=1` can never disagree. Zero count renders calm
+          "todo al día" copy and does not deep-link (spec story 18). */}
+      <div style={{ padding: "10px 16px 0" }}>
+        <RenovarTile
+          total={porRenovar.total}
+          cubos={porRenovar.cubos}
+          onVerTodos={() => router.push("/clientes?renovar=1")}
+        />
       </div>
 
       {/* Recent activity — today's real asistencias, ordered by time */}
@@ -259,5 +288,106 @@ function QuickAction({
         {sub && <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.4 }}>{sub}</div>}
       </div>
     </button>
+  );
+}
+
+/** The POR RENOVAR tile (#228) — count + day/clases buckets, matching the walked
+ *  SHAPE the /proto/e-ventana reference tile settled on (header row → bucket grid
+ *  → CTA footer). Reference only: `total`/`cubos` arrive already computed
+ *  server-side (contarLifecycle) — no threshold lives here. Count-only + buckets,
+ *  no member names, so spec story 22's "cap past ~15 rows" concern doesn't apply. */
+function RenovarTile({
+  total,
+  cubos,
+  onVerTodos,
+}: {
+  total: number;
+  cubos: Record<CuboRenovar, number>;
+  onVerTodos: () => void;
+}) {
+  const accent = total > 0 ? "var(--gold)" : "var(--muted)";
+  return (
+    <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
+      <div
+        className="flex items-center"
+        style={{ gap: 10, padding: "13px 16px 12px", borderBottom: total > 0 ? "1px solid var(--line)" : "none" }}
+      >
+        <Icon name="flame" size={15} color={accent} />
+        <div className="min-w-0 flex-1">
+          <Eyebrow color={accent}>POR RENOVAR</Eyebrow>
+          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>
+            {total > 0
+              ? `Vencen en ${RENOVACION_DIAS} días o menos, o les queda${
+                  RENOVACION_CLASES === 1 ? "" : "n"
+                } ${RENOVACION_CLASES} clase${RENOVACION_CLASES === 1 ? "" : "s"}`
+              : "Nadie vence pronto"}
+          </div>
+        </div>
+        <Tnum className="font-extrabold" style={{ fontSize: 26, lineHeight: 1, color: accent }}>{total}</Tnum>
+      </div>
+
+      {total === 0 ? (
+        // Zero count: calm "todo al día" copy, never search-shaped "no results" —
+        // and, deliberately, no link/onClick anywhere in this branch (#228 AC).
+        <div className="flex items-center" style={{ gap: 10, padding: "14px 16px" }}>
+          <Icon name="check" size={16} color="var(--muted-soft)" />
+          <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Todo al día — nadie por renovar.</div>
+        </div>
+      ) : (
+        <>
+          <div style={{ padding: "12px 16px 14px" }}>
+            <div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+              {CUBO_ORDEN.map(({ key, label }) => {
+                const n = cubos[key];
+                return (
+                  <div
+                    key={key}
+                    className="flex flex-col items-center"
+                    style={{
+                      padding: "9px 2px",
+                      background: n > 0 ? "var(--yellow-soft)" : "var(--sunk)",
+                      border: `1px solid ${n > 0 ? "var(--yellow)" : "var(--line)"}`,
+                      gap: 3,
+                    }}
+                  >
+                    <Tnum
+                      className="font-extrabold"
+                      style={{ fontSize: 17, lineHeight: 1, color: n > 0 ? "var(--gold)" : "var(--muted-soft)" }}
+                    >
+                      {n}
+                    </Tnum>
+                    <span
+                      className="uppercase font-bold"
+                      style={{ fontSize: 8, letterSpacing: 0.6, color: "var(--muted)", whiteSpace: "nowrap" }}
+                    >
+                      {label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+          {/* Deep link (#228 AC): lands on /clientes?renovar=1 — the same rows the
+              count promised (same esPorRenovar predicate, same pase-suelto blinding). */}
+          <button
+            onClick={onVerTodos}
+            className="forge-pressable flex w-full items-center justify-center uppercase font-bold"
+            style={{
+              gap: 7,
+              padding: "12px 16px",
+              borderTop: "1px solid var(--line)",
+              background: "transparent",
+              color: "var(--fg)",
+              fontSize: 10.5,
+              letterSpacing: 1,
+              cursor: "pointer",
+            }}
+          >
+            Ver los {total} en el directorio
+            <Icon name="arrow" size={13} color="var(--fg)" />
+          </button>
+        </>
+      )}
+    </div>
   );
 }

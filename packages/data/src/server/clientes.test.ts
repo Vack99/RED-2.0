@@ -586,6 +586,126 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
 });
 
 /**
+ * #228: INICIO's POR RENOVAR tile reads `porRenovar` straight off this same read —
+ * no second roster fetch. The seam where these counts are COMPUTED (this function,
+ * via contarLifecycle) is where the sum invariant is proven: the day + clases
+ * buckets always sum to the headline, at a fixture that exercises every bucket AND
+ * the rows that must be EXCLUDED (vencido, sin_paquete/pendienteOnline, too-far
+ * vigente) so a fresh online arrival never also reads as a renewal risk.
+ */
+describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", () => {
+  const TZ = "America/Chihuahua";
+  const HOY = hoyEnZona(TZ);
+
+  const PORRENOVAR_CLIENTES = [
+    {
+      id: "renovar-hoy",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 8,
+      vence: toIsoDay(HOY), // dias === 0 → the "hoy" bucket
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "renovar-manana",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 8,
+      vence: toIsoDay(addDays(HOY, 1)), // the "manana" bucket
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "renovar-clases-bound",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 1, // clases-bound (<= RENOVACION_CLASES) even with days to spare
+      vence: toIsoDay(addDays(HOY, 18)), // outside every día bucket — only the clases arm
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "renovar-sin-clases",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 0, // sin_clases (days remain) — also clases-bound
+      vence: toIsoDay(addDays(HOY, 20)),
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "vencido-excluded",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 5,
+      vence: toIsoDay(addDays(HOY, -3)), // vencido — never POR RENOVAR (FECHA WINS)
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      id: "vigente-lejos",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 8,
+      vence: toIsoDay(addDays(HOY, 60)), // well outside RENOVACION_DIAS — not renewal-due
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
+    {
+      // A same-day online arrival with no package: pendienteOnline, never also
+      // POR RENOVAR — one person cannot get two verdicts on this screen (#228 AC).
+      id: "pendiente-online",
+      gym_id: "g-1",
+      paquete_nombre: null,
+      clases_restantes: null,
+      vence: null,
+      auth_user_id: "auth-online-1",
+      email: null,
+      invitacion_enviada_at: null,
+    },
+  ];
+
+  const PAQUETES_CATALOG = [
+    { id: "p1", gym_id: "g-1", nombre: "8 clases", clases: 8, vigencia_tipo: "dias", vigencia_dias: 30, precio: 800, popular: false, orden: 1 },
+  ];
+
+  it("buckets sum exactly to the headline and exclude vencido/sin_paquete/out-of-window rows", async () => {
+    const fake = makeReadFake({
+      clientes: PORRENOVAR_CLIENTES,
+      paquetes: PAQUETES_CATALOG,
+      gym_membership: [
+        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+      ],
+    });
+
+    const resumen = await getRosterResumen(fake.client);
+
+    expect(resumen.porRenovar.total).toBe(4); // hoy + manana + 2 clases-bound
+    expect(resumen.porRenovar.cubos).toEqual({
+      hoy: 1,
+      manana: 1,
+      dosATres: 0,
+      cuatroACinco: 0,
+      seisOMas: 0,
+      clases: 2,
+    });
+    const sumaCubos = Object.values(resumen.porRenovar.cubos).reduce((a, b) => a + b, 0);
+    expect(sumaCubos).toBe(resumen.porRenovar.total); // the sum invariant, at the seam that computes it
+
+    // sin_paquete rows have no live package, so esPorRenovar is false — a
+    // pendienteOnline fresh arrival is never double-counted into POR RENOVAR.
+    expect(resumen.nuevosOnline).toBe(1);
+  });
+});
+
+/**
  * C14: the clases gauge's `usadas` (attendedSincePurchase) must anchor at the venta
  * INSTANT, not just its gym-local calendar day. A check-in earlier the same day as a
  * renewal was already spent from the pre-renewal balance — counting it again against

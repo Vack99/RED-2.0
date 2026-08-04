@@ -3,6 +3,13 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
+import {
+  contarLifecycle,
+  esPorRenovar,
+  type CuboRenovar,
+  type FilaLifecycle,
+  type FilaRosterLifecycle,
+} from "@gym/domain/lifecycle";
 import type { ResumenRoster } from "@gym/domain/types";
 import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
@@ -212,21 +219,29 @@ export const getClientesRoster = cache(
 
 /** The roster headline counts plus `nuevosOnline` — the dashboard's "Nuevos
  *  registros online" tile: auth-linked (Door 2) members with no vigente package,
- *  the same population the roster filter chip surfaces (esRegistroOnlinePendiente). */
+ *  the same population the roster filter chip surfaces (esRegistroOnlinePendiente).
+ *  `porRenovar` (#228) is INICIO's POR RENOVAR tile: the SAME `esPorRenovar`/
+ *  `contarLifecycle` predicate the directory's filter/count and the pase de lista
+ *  badge read — never a second restatement — plus the day/clases bucket breakdown,
+ *  which `contarLifecycle` guarantees sums to `porRenovar.total` (every row lands in
+ *  exactly one bucket). */
 export interface RosterResumenDTO extends ResumenRoster {
   nuevosOnline: number;
+  porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
 }
 
-/** `vigentes`/`total` for the dashboard, derived-at-read (ADR-0002, #225). Reads the
- *  SAME predicate the directory header and the #223 lifecycle engine read — every row
- *  runs through `derivarCliente`/`derivarEstado` (the ONE estado source), never a
- *  hand-rolled `.gte()`/`.or()` restatement of the bands (the pre-#225 shape here
- *  drifted from derivarEstado the moment its own bands changed, exactly the "two live
- *  meanings of a band" bug this ticket exists to kill). `paseSuelto` is the small
- *  catalog leg esPaseSuelto needs (a roster row's `paquete_nombre` carries no grant),
- *  fetched via the error-surfacing getPaseSueltoNombres (#225 F5). Two selects, no
- *  `.order` on the roster leg, no per-row display columns beyond what estado needs —
- *  a fetch, not the full directory roster. */
+/** `vigentes`/`total`/`nuevosOnline`/`porRenovar` for the dashboard, derived-at-read
+ *  (ADR-0002, #225, #228). Every row runs through `derivarCliente`/`derivarEstado`
+ *  (the ONE estado source), then through the #223/#225 lifecycle engine's
+ *  `contarLifecycle` — the SAME counting function the directory/pase de lista share
+ *  — so vigentes/total/porRenovar can never disagree with those screens (never a
+ *  hand-rolled `.gte()`/`.or()` restatement of the bands, the pre-#225 shape's exact
+ *  "two live meanings of a band" bug). `paseSuelto` is the small catalog leg
+ *  esPaseSuelto needs (a roster row's `paquete_nombre` carries no grant), fetched via
+ *  the error-surfacing getPaseSueltoNombres (#225 F5). Two selects, no `.order` on
+ *  the roster leg, no per-row display columns beyond what estado/lifecycle need —
+ *  a fetch, not the full directory roster (no second roster fetch, #228's perf
+ *  budget). */
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
@@ -248,15 +263,44 @@ export const getRosterResumen = cache(
 
     const clientes = clientesData ?? [];
 
-    let vigentes = 0;
-    let nuevosOnline = 0;
-    for (const c of clientes) {
-      const estado = derivarCliente(c, hoy, 0, paseSuelto).estado;
-      if (estado === "vigente") vigentes += 1;
-      if (esRegistroOnlinePendiente(estadoInvitacion(c), estado)) nuevosOnline += 1;
-    }
+    // Re-shape each already-derived row into the lifecycle engine's per-row input —
+    // mirrors clientes-vm.ts's aFilaLifecycle (#227): only the fields contarLifecycle
+    // actually reads (estado, tile, dias, fila.esPaseSuelto/clases/pendienteOnline)
+    // are real facts; this read has no vence-as-Date/tieneCuenta/visita facts to give
+    // the rest (unread here — see lifecycle.ts's own AÚN A TIEMPO/ausente callers,
+    // #228's next slice), so they are inert placeholders, never fabricated inputs to
+    // a decision this function doesn't make.
+    const filas: FilaLifecycle[] = clientes.map((c) => {
+      const derivado = derivarCliente(c, hoy, 0, paseSuelto);
+      const esPaseSueltoRow = c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre);
+      const pendienteOnline = esRegistroOnlinePendiente(estadoInvitacion(c), derivado.estado);
+      const fila: FilaRosterLifecycle = {
+        vence: null,
+        clases: derivado.clasesRest,
+        esPaseSuelto: esPaseSueltoRow,
+        tieneCuenta: false,
+        pendienteOnline,
+        ultimaVisitaConsumida: null,
+        ultimaVisita: null,
+        alta: new Date(0),
+      };
+      return {
+        fila,
+        estado: derivado.estado,
+        eje: null,
+        dias: derivado.diasRest,
+        diasDesdeFin: null,
+        tile: esPorRenovar(derivado.estado, derivado.diasRest, derivado.clasesRest, esPaseSueltoRow)
+          ? "por_renovar"
+          : null,
+        urgencia: "ok",
+        ausente: false,
+      };
+    });
 
-    return { vigentes, total: clientes.length, nuevosOnline };
+    const { vigentes, total, porRenovar, pendienteOnline: nuevosOnline } = contarLifecycle(filas);
+
+    return { vigentes, total, nuevosOnline, porRenovar };
   },
 );
 

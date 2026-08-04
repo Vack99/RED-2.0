@@ -76,19 +76,43 @@ export default function Loading() {
         <Skeleton height={54} />
       </div>
 
-      {/* Quick actions — static labels, skeleton icon */}
-      <div className="grid grid-cols-2" style={{ padding: "20px 16px 0", gap: 8 }}>
-        {(["POR VENCER", "NUEVO CLIENTE"] as const).map((label, i) => (
-          <div key={label} className="flex flex-col border border-line bg-surface" style={{ padding: 16, gap: 14 }}>
-            <Skeleton width={22} height={22} />
-            <div>
-              <div className="font-extrabold" style={{ fontSize: 11.5, letterSpacing: 1.2 }}>{label}</div>
-              <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.4 }}>
-                {i === 0 ? "Revisar roster" : "Registrar venta"}
-              </div>
+      {/* Quick actions — POR VENCER is gone (#228), replaced by the POR RENOVAR
+          tile below; static label, skeleton icon */}
+      <div style={{ padding: "20px 16px 0" }}>
+        <div className="flex flex-col border border-line bg-surface" style={{ padding: 16, gap: 14 }}>
+          <Skeleton width={22} height={22} />
+          <div>
+            <div className="font-extrabold" style={{ fontSize: 11.5, letterSpacing: 1.2 }}>NUEVO CLIENTE</div>
+            <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.4 }}>
+              Registrar venta
             </div>
           </div>
-        ))}
+        </div>
+      </div>
+
+      {/* POR RENOVAR tile (#228) — header row + 6-cell bucket grid + CTA footer,
+          mirroring inicio.tsx's RenovarTile shape. */}
+      <div style={{ padding: "10px 16px 0" }}>
+        <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
+          <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
+            <Skeleton width={15} height={15} />
+            <div className="min-w-0 flex-1">
+              <Eyebrow>POR RENOVAR</Eyebrow>
+              <Skeleton width={150} height={10} style={{ marginTop: 5 }} />
+            </div>
+            <Skeleton width={30} height={26} />
+          </div>
+          <div style={{ padding: "12px 16px 14px" }}>
+            <div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+              {[0, 1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} height={42} />
+              ))}
+            </div>
+          </div>
+          <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
+            <Skeleton height={13} />
+          </div>
+        </div>
       </div>
 
       {/* Recent activity — ~3 rows */}
