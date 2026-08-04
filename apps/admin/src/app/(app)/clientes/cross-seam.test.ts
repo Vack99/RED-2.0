@@ -149,4 +149,26 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
     expect(conteos.porRenovar.total).toBe(resumen.porRenovar.total);
     expect(conteos.total).toBe(resumen.total);
   });
+
+  /**
+   * #229's own "same word, same number" guard: c-vencido (vence 5 días ago, no
+   * `auth_user_id`) is INICIO's AÚN A TIEMPO population — this proves the tile's
+   * count (`getRosterResumen.aunATiempo.total`) equals BOTH the directory
+   * view-model's shared count (`conteos.aunATiempo.total`, #228 F6's own guard,
+   * widened) AND the actual cardinality of the filtered row set
+   * (`filas.filter(f => f.aunATiempo)`) — the count and the rows a tap on the
+   * tile lands on can never disagree (spec story 19).
+   */
+  it("aunATiempo.total matches across both reads, and equals the filtered row set's own cardinality", async () => {
+    const resumen = await getRosterResumen(makeSharedFake(SHARED_CLIENTES));
+    const roster = await getClientesRoster(makeSharedFake(SHARED_CLIENTES));
+    const { filas, conteos } = derivarVistaRoster(roster);
+
+    expect(resumen.aunATiempo.total).toBe(1); // c-vencido — vencido 5 días, no app account
+    expect(conteos.aunATiempo.total).toBe(resumen.aunATiempo.total);
+
+    const filtered = filas.filter((f) => f.aunATiempo);
+    expect(filtered).toHaveLength(resumen.aunATiempo.total);
+    expect(filtered.map((f) => f.c.id)).toEqual(["c-vencido"]);
+  });
 });

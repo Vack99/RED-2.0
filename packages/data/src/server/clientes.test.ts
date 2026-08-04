@@ -551,6 +551,11 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
   const TZ = "America/Chihuahua";
   const HOY = hoyEnZona(TZ);
 
+  // #229: getRosterResumen now reads created_at (the alta floor for the ausente
+  // badge/AÚN A TIEMPO clock) — every row needs it or fechaEnZona throws on an
+  // undefined timestamp. A fixed far-past date keeps every row's `alta` well
+  // outside AUSENTE_DIAS/RECUPERACION_DIAS so it never perturbs this describe
+  // block's vigentes/total/nuevosOnline assertions.
   const RESUMEN_CLIENTES = [
     {
       id: "vigente-1",
@@ -561,6 +566,7 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "vigente-2-close",
@@ -571,6 +577,7 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "vencido-1",
@@ -581,6 +588,7 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "sin-paquete-1",
@@ -591,6 +599,7 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "pase-suelto-1",
@@ -601,6 +610,7 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
   ];
 
@@ -639,6 +649,11 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
   const TZ = "America/Chihuahua";
   const HOY = hoyEnZona(TZ);
 
+  // #229: getRosterResumen now reads created_at (the alta floor) — every row
+  // needs it or fechaEnZona throws on an undefined timestamp. A fixed far-past
+  // date keeps every row's `alta` well outside AUSENTE_DIAS/RECUPERACION_DIAS
+  // so it never perturbs this describe block's porRenovar/vigentes/total
+  // assertions.
   const PORRENOVAR_CLIENTES = [
     {
       id: "renovar-hoy",
@@ -649,6 +664,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "renovar-manana",
@@ -659,6 +675,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "renovar-clases-bound",
@@ -669,6 +686,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "renovar-sin-clases",
@@ -679,6 +697,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "vencido-excluded",
@@ -689,6 +708,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "vigente-lejos",
@@ -699,6 +719,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       // A same-day online arrival with no package: pendienteOnline, never also
@@ -711,6 +732,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: "auth-online-1",
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       // #228 opus review F5: a spent one-off pass (0 clases, its NORMAL end state
@@ -726,6 +748,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
   ];
 
@@ -769,6 +792,162 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
     // renovar-sin-clases (same 0 clases, but a real membership package).
     expect(resumen.vigentes).toBe(5); // hoy + manana + clases-bound + lejos + pase-suelto-gastado
     expect(resumen.total).toBe(8);
+  });
+});
+
+/**
+ * #229: `getClientesRoster` now calls the FULL lifecycle engine (`derivarLifecycle`,
+ * not the thin `derivarFilaLifecycle` #227/#228 used before this row carried
+ * `tieneCuenta`/the visit clocks) and stamps its real `tile`/`ausente`/`diasSinVenir`
+ * onto `ClienteRosterDTO`. `HOY`/relative offsets (not fixed calendar dates) keep this
+ * self-consistent regardless of when the suite runs — the same pattern the
+ * RESUMEN_CLIENTES/PORRENOVAR_CLIENTES fixtures above already use. `created_at` is
+ * pinned at noon UTC so the Chihuahua-local calendar day always matches the UTC one
+ * (no midnight-rollover drift across the -6h offset).
+ */
+describe("getClientesRoster — #229: tile/ausente/diasSinVenir via the FULL lifecycle engine", () => {
+  const TZ = "America/Chihuahua";
+  const HOY = hoyEnZona(TZ);
+
+  const CLIENTES_229 = [
+    {
+      id: "recuperable",
+      gym_id: "g-1",
+      nombre: "Recuperable Cliente",
+      tel: null,
+      paquete_nombre: "8 clases",
+      clases_restantes: 0,
+      vence: toIsoDay(addDays(HOY, -5)), // vencido 5 días — inside the 1-15 recovery window
+      auth_user_id: null, // no app account — required for the tile
+      email: null,
+      invitacion_enviada_at: null,
+      created_at: `${toIsoDay(addDays(HOY, -10))}T12:00:00Z`, // alta 10 días — under AUSENTE_DIAS
+    },
+    {
+      id: "con-cuenta",
+      gym_id: "g-1",
+      nombre: "Con Cuenta",
+      tel: null,
+      paquete_nombre: "8 clases",
+      clases_restantes: 0,
+      vence: toIsoDay(addDays(HOY, -5)), // same window as recuperable…
+      auth_user_id: "auth-1", // …but HAS an app account — the client app already nudges them
+      email: null,
+      invitacion_enviada_at: null,
+      created_at: `${toIsoDay(addDays(HOY, -10))}T12:00:00Z`,
+    },
+    {
+      id: "vigente-ausente",
+      gym_id: "g-1",
+      nombre: "Vigente Ausente",
+      tel: null,
+      paquete_nombre: "8 clases",
+      clases_restantes: 8,
+      vence: toIsoDay(addDays(HOY, 30)), // comfortably vigente — neither tile
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+      created_at: `${toIsoDay(addDays(HOY, -30))}T12:00:00Z`, // alta 30 días, never visited (bought, never came)
+    },
+  ];
+
+  const GYM_MEMBERSHIP = [
+    { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+  ];
+
+  it("stamps AÚN A TIEMPO tile membership, excluding the app-account holder", async () => {
+    const fake = makeReadFake({ clientes: CLIENTES_229, gym_membership: GYM_MEMBERSHIP });
+    const roster = await getClientesRoster(fake.client);
+
+    expect(roster.find((r) => r.id === "recuperable")!.tile).toBe("aun_a_tiempo");
+    expect(roster.find((r) => r.id === "con-cuenta")!.tile).toBeNull();
+    expect(roster.find((r) => r.id === "vigente-ausente")!.tile).toBeNull();
+  });
+
+  it("stamps the ausente badge fact + diasSinVenir, floored on alta when never visited (A9)", async () => {
+    const fake = makeReadFake({ clientes: CLIENTES_229, gym_membership: GYM_MEMBERSHIP });
+    const roster = await getClientesRoster(fake.client);
+
+    const ausente = roster.find((r) => r.id === "vigente-ausente")!;
+    expect(ausente.ausente).toBe(true);
+    expect(ausente.diasSinVenir).toBe(30);
+
+    const recuperable = roster.find((r) => r.id === "recuperable")!;
+    expect(recuperable.ausente).toBe(false); // alta only 10 días ago — under AUSENTE_DIAS
+    expect(recuperable.diasSinVenir).toBe(10);
+  });
+});
+
+/**
+ * #229: INICIO's AÚN A TIEMPO tile reads `aunATiempo` straight off this same read
+ * (getRosterResumen) — no second roster fetch, one new aggregate call. This is the
+ * seam where the count is COMPUTED (via contarLifecycle over the FULL engine's
+ * output), proving the account-holder exclusion holds at the read that actually
+ * powers the tile, not just at the pure engine layer (already covered by
+ * packages/domain/src/lifecycle.test.ts).
+ */
+describe("getRosterResumen — #229: aunATiempo from the SAME asistencias_ultima_visita_por_cliente aggregate (#226)", () => {
+  const TZ = "America/Chihuahua";
+  const HOY = hoyEnZona(TZ);
+
+  const CLIENTES_AUN_A_TIEMPO = [
+    {
+      id: "recuperable",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 0,
+      vence: toIsoDay(addDays(HOY, -5)),
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+      created_at: `${toIsoDay(addDays(HOY, -10))}T12:00:00Z`,
+    },
+    {
+      id: "con-cuenta",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 0,
+      vence: toIsoDay(addDays(HOY, -5)),
+      auth_user_id: "auth-1",
+      email: null,
+      invitacion_enviada_at: null,
+      created_at: `${toIsoDay(addDays(HOY, -10))}T12:00:00Z`,
+    },
+    {
+      id: "largo-muerto",
+      gym_id: "g-1",
+      paquete_nombre: "8 clases",
+      clases_restantes: 0,
+      vence: toIsoDay(addDays(HOY, -44)), // past día 16 — out of both tiles
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+      created_at: `${toIsoDay(addDays(HOY, -400))}T12:00:00Z`,
+    },
+  ];
+
+  const GYM_MEMBERSHIP = [
+    { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+  ];
+
+  it("counts aunATiempo via the ONE new aggregate, excluding the account holder and the long-dead", async () => {
+    const fake = makeReadFake({ clientes: CLIENTES_AUN_A_TIEMPO, gym_membership: GYM_MEMBERSHIP });
+    const resumen = await getRosterResumen(fake.client);
+
+    expect(resumen.aunATiempo.total).toBe(1); // recuperable only
+    expect(fake.rpcCalls).toContainEqual({
+      name: "asistencias_ultima_visita_por_cliente",
+      args: { p_gym_id: "g-1" },
+    });
+  });
+
+  it("throws on an asistencias_ultima_visita_por_cliente RPC error — never silently reads zero absence (#226 F4 precedent)", async () => {
+    const fake = makeReadFake({
+      clientes: CLIENTES_AUN_A_TIEMPO,
+      gym_membership: GYM_MEMBERSHIP,
+      rpcErrors: { asistencias_ultima_visita_por_cliente: { message: "boom" } },
+    });
+    await expect(getRosterResumen(fake.client)).rejects.toMatchObject({ message: "boom" });
   });
 });
 

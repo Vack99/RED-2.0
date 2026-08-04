@@ -91,11 +91,13 @@ export default function Loading() {
       </div>
 
       {/* MEMBRESÍAS — the POR RENOVAR tile's section header (#228 opus review F10),
-          then the tile itself: header row + 6-cell bucket grid + CTA footer,
-          mirroring inicio.tsx's RenovarTile shape. `total` isn't known yet, so the
+          then both tiles: POR RENOVAR (header row + 6-cell bucket grid + CTA
+          footer) and AÚN A TIEMPO (#229 — header row + CTA footer only, no grid:
+          the engine's aunATiempo count has no bucket breakdown to mirror), each
+          matching inicio.tsx's own tile shape. `total` isn't known yet, so the
           trailing "N SOCIOS" is a skeleton too. */}
       <SectionHeader trailing={<Skeleton width={70} height={10.5} />}>MEMBRESÍAS</SectionHeader>
-      <div style={{ padding: "0 16px" }}>
+      <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
           <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
             <Skeleton width={15} height={15} />
@@ -111,6 +113,19 @@ export default function Loading() {
                 <Skeleton key={i} height={50} />
               ))}
             </div>
+          </div>
+          <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
+            <Skeleton height={13} />
+          </div>
+        </div>
+        <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
+          <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
+            <Skeleton width={15} height={15} />
+            <div className="min-w-0 flex-1">
+              <Eyebrow>AÚN A TIEMPO</Eyebrow>
+              <Skeleton width={150} height={10} style={{ marginTop: 5 }} />
+            </div>
+            <Skeleton width={30} height={26} />
           </div>
           <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
             <Skeleton height={13} />

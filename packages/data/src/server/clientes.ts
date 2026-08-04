@@ -3,9 +3,9 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { contarLifecycle, derivarFilaLifecycle, type CuboRenovar, type FilaLifecycle } from "@gym/domain/lifecycle";
-import type { ResumenRoster } from "@gym/domain/types";
-import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
+import { contarLifecycle, derivarLifecycle, type CuboRenovar, type FilaLifecycle, type Tile } from "@gym/domain/lifecycle";
+import type { Clases, ResumenRoster } from "@gym/domain/types";
+import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -173,6 +173,19 @@ export interface ClienteRosterDTO extends ClienteDerivado {
    *  "never absent". Mirrors getClientesLite's altaIso (same column, same conversion);
    *  `created_at` rides the existing roster select — zero extra reads. */
   altaIso: string;
+  /** INICIO/CLIENTES tile membership (#229) — the FULL lifecycle engine's real
+   *  verdict (`derivarLifecycle`, not the thin `derivarFilaLifecycle` #227/#228 used
+   *  before this row carried `tieneCuenta`/the visit clocks): "por_renovar",
+   *  "aun_a_tiempo", or null. The directory's AÚN A TIEMPO filter/count reads this
+   *  directly — the SAME predicate INICIO's tile counts via `contarLifecycle`. */
+  tile: Tile;
+  /** The `{n}D SIN VENIR` badge's raw fact (#229) — computed unconditionally by the
+   *  engine (does not vanish at lapse, A9); the CONSUMER (clientes-vm.ts) applies the
+   *  paid-up gate before rendering it. */
+  ausente: boolean;
+  /** The badge's numeral — días since `ultimaVisita`, floored to `altaIso` when never
+   *  visited. Meaningless when `ausente` is false. */
+  diasSinVenir: number;
 }
 
 /** Full roster, derived-at-read with this month's attendance count per client. */
@@ -228,14 +241,40 @@ export const getClientesRoster = cache(
       const base = derivarCliente(c, hoy, counts[c.id] ?? 0, paseSuelto);
       const invitacion = derivarInvitacion(c, tz);
       const visitas = ultimas[c.id] ?? { ultimaVisita: null, ultimaVisitaConsumida: null };
+      const pendienteOnline = esRegistroOnlinePendiente(invitacion.estado, base.estado);
+      const esPaseSueltoRow = c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre);
+
+      // #229: the FULL engine, not the thin derivarFilaLifecycle — this row now
+      // carries every fact AÚN A TIEMPO's tile + the ausente badge need
+      // (tieneCuenta, both visit clocks, alta), so the tile/ausente/diasSinVenir
+      // stamped here are the SAME real verdict INICIO's getRosterResumen computes,
+      // never a second hand-rolled approximation.
+      const clasesBase: Clases = c.clases_restantes === null ? "ilimitado" : c.clases_restantes;
+      const { tile, ausente, diasSinVenir } = derivarLifecycle(
+        {
+          vence: c.vence ? parseDay(c.vence) : null,
+          clases: clasesBase,
+          esPaseSuelto: esPaseSueltoRow,
+          tieneCuenta: c.auth_user_id !== null,
+          pendienteOnline,
+          ultimaVisitaConsumida: visitas.ultimaVisitaConsumida ? parseDay(visitas.ultimaVisitaConsumida) : null,
+          ultimaVisita: visitas.ultimaVisita ? parseDay(visitas.ultimaVisita) : null,
+          alta: fechaEnZona(c.created_at, tz),
+        },
+        hoy,
+      );
+
       return {
         ...base,
         invitacion,
-        pendienteOnline: esRegistroOnlinePendiente(invitacion.estado, base.estado),
-        esPaseSuelto: c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre),
+        pendienteOnline,
+        esPaseSuelto: esPaseSueltoRow,
         ultimaVisita: visitas.ultimaVisita,
         ultimaVisitaConsumida: visitas.ultimaVisitaConsumida,
         altaIso: toIsoDay(fechaEnZona(c.created_at, tz)),
+        tile,
+        ausente,
+        diasSinVenir,
       };
     });
   },
@@ -252,20 +291,25 @@ export const getClientesRoster = cache(
 export interface RosterResumenDTO extends ResumenRoster {
   nuevosOnline: number;
   porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
+  /** INICIO's AÚN A TIEMPO tile (#229) — the SAME `contarLifecycle`/tile predicate
+   *  the directory's own AÚN A TIEMPO filter/count read, so the tile's count and
+   *  `/clientes?aunATiempo=1`'s row count can never disagree (spec story 19). */
+  aunATiempo: { total: number };
 }
 
-/** `vigentes`/`total`/`nuevosOnline`/`porRenovar` for the dashboard, derived-at-read
- *  (ADR-0002, #225, #228). Every row runs through `derivarCliente`/`derivarEstado`
- *  (the ONE estado source), then through the #223/#225 lifecycle engine's
- *  `contarLifecycle` — the SAME counting function the directory/pase de lista share
- *  — so vigentes/total/porRenovar can never disagree with those screens (never a
+/** `vigentes`/`total`/`nuevosOnline`/`porRenovar`/`aunATiempo` for the dashboard,
+ *  derived-at-read (ADR-0002, #225, #228, #229). Every row is built into the FULL
+ *  lifecycle engine's per-row input (`derivarLifecycle`, not the thin
+ *  `derivarFilaLifecycle` #228 used before this read carried the visit facts) and
+ *  counted via `contarLifecycle` — the SAME engine the directory/pase de lista
+ *  share — so none of these counts can ever disagree with those screens (never a
  *  hand-rolled `.gte()`/`.or()` restatement of the bands, the pre-#225 shape's exact
  *  "two live meanings of a band" bug). `paseSuelto` is the small catalog leg
  *  esPaseSuelto needs (a roster row's `paquete_nombre` carries no grant), fetched via
- *  the error-surfacing getPaseSueltoNombres (#225 F5). Two selects, no `.order` on
- *  the roster leg, no per-row display columns beyond what estado/lifecycle need —
- *  a fetch, not the full directory roster (no second roster fetch, #228's perf
- *  budget). */
+ *  the error-surfacing getPaseSueltoNombres (#225 F5). `asistencias_ultima_visita_
+ *  por_cliente` (#226) is the ONE new aggregate this read adds for #229 — a grouped
+ *  DB-side read run in parallel with the two legs above, never a per-row asistencias
+ *  pull and never a second roster fetch (#228's perf budget, held). */
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
@@ -273,42 +317,66 @@ export const getRosterResumen = cache(
     const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
 
-    const [{ data: clientesData }, paseSuelto] = await Promise.all([
+    const [{ data: clientesData }, paseSuelto, ultimasRes] = await Promise.all([
       supabase
         .from("clientes")
         // id/nombre/tel are unused by this read but ClienteFacts (derivarCliente's input
-        // shape) requires them — cheap columns, no extra round trip.
+        // shape) requires them — cheap columns, no extra round trip. created_at is #229's
+        // alta anchor (the ausente badge floor) — same column getClientesRoster reads.
         .select(
-          "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
+          "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id, created_at",
         )
         .eq("gym_id", gym.id),
       getPaseSueltoNombres(supabase),
+      // #229's ONE new aggregate — the SAME asistencias_ultima_visita_por_cliente RPC
+      // getClientesRoster already reads (#226): one grouped DB-side read, not a
+      // full-roster asistencias pull, run alongside the two legs above.
+      supabase.rpc("asistencias_ultima_visita_por_cliente", { p_gym_id: gym.id }),
     ]);
+
+    // Fail loud (#226 F4 precedent): a swallowed error here would silently read as
+    // "nobody in this gym has ever visited" — every row falls back to the alta floor
+    // and AÚN A TIEMPO / the ausente math would be built on a false absence.
+    if (ultimasRes.error) throw ultimasRes.error;
+
+    const ultimas: Record<string, { ultimaVisita: string | null; ultimaVisitaConsumida: string | null }> = {};
+    for (const r of ultimasRes.data ?? []) {
+      ultimas[r.cliente_id] = { ultimaVisita: r.ultima_visita, ultimaVisitaConsumida: r.ultima_visita_consumida };
+    }
 
     const clientes = clientesData ?? [];
 
-    // Re-shape each already-derived row into the lifecycle engine's per-row input via
-    // the shared `derivarFilaLifecycle` constructor (#228 opus review F4) — the SAME
-    // one `clientes-vm.ts`'s aFilaLifecycle (#227) calls, so this read and the
-    // directory can never hand-roll two diverging approximations of eje/diasDesdeFin/
-    // urgencia for the same row (a hand-rolled copy here previously set them to
-    // placeholder values that violated the engine's own invariants).
+    // Re-shape each already-derived row into the FULL lifecycle engine's per-row
+    // input (#229): this read now carries every fact AÚN A TIEMPO's tile needs
+    // (tieneCuenta, both visit clocks, alta) — the SAME facts getClientesRoster
+    // wires (#226), so `derivarLifecycle` is called directly instead of the thin
+    // `derivarFilaLifecycle` (#228), and `contarLifecycle`'s `aunATiempo.total` is
+    // finally real rather than the structural zero the old thin shape produced.
     const filas: FilaLifecycle[] = clientes.map((c) => {
       const derivado = derivarCliente(c, hoy, 0, paseSuelto);
       const esPaseSueltoRow = c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre);
       const pendienteOnline = esRegistroOnlinePendiente(estadoInvitacion(c), derivado.estado);
-      return derivarFilaLifecycle({
-        estado: derivado.estado,
-        dias: derivado.diasRest,
-        clases: derivado.clasesRest,
-        esPaseSuelto: esPaseSueltoRow,
-        pendienteOnline,
-      });
+      const visitas = ultimas[c.id] ?? { ultimaVisita: null, ultimaVisitaConsumida: null };
+      const clasesBase: Clases = c.clases_restantes === null ? "ilimitado" : c.clases_restantes;
+
+      return derivarLifecycle(
+        {
+          vence: c.vence ? parseDay(c.vence) : null,
+          clases: clasesBase,
+          esPaseSuelto: esPaseSueltoRow,
+          tieneCuenta: c.auth_user_id !== null,
+          pendienteOnline,
+          ultimaVisitaConsumida: visitas.ultimaVisitaConsumida ? parseDay(visitas.ultimaVisitaConsumida) : null,
+          ultimaVisita: visitas.ultimaVisita ? parseDay(visitas.ultimaVisita) : null,
+          alta: fechaEnZona(c.created_at, tz),
+        },
+        hoy,
+      );
     });
 
-    const { vigentes, total, porRenovar, pendienteOnline: nuevosOnline } = contarLifecycle(filas);
+    const { vigentes, total, porRenovar, aunATiempo, pendienteOnline: nuevosOnline } = contarLifecycle(filas);
 
-    return { vigentes, total, nuevosOnline, porRenovar };
+    return { vigentes, total, nuevosOnline, porRenovar, aunATiempo };
   },
 );
 

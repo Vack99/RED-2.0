@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { CountUp } from "@gym/ui/forge/count-up";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { Avatar, Button, Card, Eyebrow, H1, SectionHeader, Tnum } from "@gym/ui/forge/ui";
-import { CUBO_LABEL, CUBO_ORDEN, RENOVACION_CLASES, RENOVACION_DIAS, type CuboRenovar } from "@gym/domain/lifecycle";
+import { CUBO_LABEL, CUBO_ORDEN, RECUPERACION_DIAS, RENOVACION_CLASES, RENOVACION_DIAS, type CuboRenovar } from "@gym/domain/lifecycle";
 import type { ResumenMes } from "@gym/domain/types";
 import type { AsistenciaHoy } from "@gym/data/server/asistencia";
 import { pesos } from "@gym/format";
@@ -26,6 +26,12 @@ interface InicioScreenProps {
    *  `contarLifecycle` predicate the directory's filter/count and the pase de lista
    *  badge read, computed once by `getRosterResumen` (no second roster fetch). */
   porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
+  /** AÚN A TIEMPO's count (#229) — the SAME tile-membership predicate the
+   *  directory's own AÚN A TIEMPO filter/count read (`contarLifecycle`), computed
+   *  in the SAME `getRosterResumen` read as `porRenovar` above (no second roster
+   *  fetch, no second aggregate — #226's `asistencias_ultima_visita_por_cliente`
+   *  is the ONE new call this tile costs). */
+  aunATiempo: { total: number };
   recientes: AsistenciaHoy[];
   /** Pre-formatted greeting eyebrow (carries the year), built server-side via fmtEyebrow. */
   eyebrow: string;
@@ -39,6 +45,7 @@ export function InicioScreen({
   total,
   nuevosOnline,
   porRenovar,
+  aunATiempo,
   recientes,
   eyebrow,
   lockup,
@@ -195,11 +202,15 @@ export function InicioScreen({
           count renders calm "todo al día" copy and does not deep-link (spec
           story 18). */}
       <SectionHeader trailing={`${total} SOCIOS`}>MEMBRESÍAS</SectionHeader>
-      <div style={{ padding: "0 16px" }}>
+      <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}>
         <RenovarTile
           total={porRenovar.total}
           cubos={porRenovar.cubos}
           onVerTodos={() => router.push("/clientes?renovar=1")}
+        />
+        <AunATiempoTile
+          total={aunATiempo.total}
+          onVerTodos={() => router.push("/clientes?aunATiempo=1")}
         />
       </div>
 
@@ -379,6 +390,75 @@ function RenovarTile({
             <Icon name="arrow" size={13} color="var(--fg)" />
           </button>
         </>
+      )}
+    </div>
+  );
+}
+
+/** The AÚN A TIEMPO tile (#229) — packages that ENDED 1-{RECUPERACION_DIAS} días
+ *  ago, clocked from expiry, excluding one-off passes and members with an app
+ *  account (the client app already nudges those at the moment of lapse, #222
+ *  owner ruling 1). `total` arrives already computed server-side
+ *  (`contarLifecycle`'s `aunATiempo.total`) — no threshold lives here.
+ *
+ *  Count-only, no bucket grid: unlike POR RENOVAR (a día/clases TWO-arm
+ *  predicate whose breakdown must sum to its headline, #228 stories 6/7), the
+ *  engine's `ConteosLifecycle.aunATiempo` is a single population with no
+ *  sub-arms to break down (`{ total: number }`, `packages/domain/src/lifecycle.ts`)
+ *  — this tile does not invent one.
+ *
+ *  Color (mirrors #228 opus review F1): `--warning`/`--warning-soft`, NEVER
+ *  RED's `--gold` (1.74:1 contrast, proven unusable).
+ *
+ *  Zero count renders calm "todo al día" copy and does NOT deep-link (spec
+ *  story 18) — same idiom as RenovarTile's own zero state. */
+function AunATiempoTile({ total, onVerTodos }: { total: number; onVerTodos: () => void }) {
+  const accent = total > 0 ? "var(--warning)" : "var(--muted)";
+  return (
+    <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
+      <div
+        className="flex items-center"
+        style={{ gap: 10, padding: "13px 16px 12px", borderBottom: total > 0 ? "1px solid var(--line)" : "none" }}
+      >
+        <Icon name="clock" size={15} color={accent} />
+        <div className="min-w-0 flex-1">
+          <Eyebrow color={accent}>AÚN A TIEMPO</Eyebrow>
+          <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 3, lineHeight: 1.4 }}>
+            {total > 0
+              ? `Vencieron hace 1 a ${RECUPERACION_DIAS} días — sin cuenta en la app`
+              : "Nadie por recuperar"}
+          </div>
+        </div>
+        <Tnum className="font-extrabold" style={{ fontSize: 26, lineHeight: 1, color: accent }}>{total}</Tnum>
+      </div>
+
+      {total === 0 ? (
+        // Zero count: calm "todo al día" copy, never search-shaped "no results" —
+        // and, deliberately, no link/onClick anywhere in this branch (spec story 18).
+        <div className="flex items-center" style={{ gap: 10, padding: "14px 16px" }}>
+          <Icon name="check" size={16} color="var(--muted-soft)" />
+          <div style={{ fontSize: 11.5, color: "var(--muted)" }}>Todo al día — nadie por recuperar.</div>
+        </div>
+      ) : (
+        // Deep link: lands on /clientes?aunATiempo=1 — the same rows the count
+        // promised (same tile predicate, story 19: same word, same number).
+        <button
+          onClick={onVerTodos}
+          className="forge-pressable flex w-full items-center justify-center uppercase font-bold"
+          style={{
+            gap: 7,
+            padding: "12px 16px",
+            borderTop: "1px solid var(--line)",
+            background: "transparent",
+            color: "var(--fg)",
+            fontSize: 10.5,
+            letterSpacing: 1,
+            cursor: "pointer",
+          }}
+        >
+          {total === 1 ? "Ver el 1 en el directorio" : `Ver los ${total} en el directorio`}
+          <Icon name="arrow" size={13} color="var(--fg)" />
+        </button>
       )}
     </div>
   );

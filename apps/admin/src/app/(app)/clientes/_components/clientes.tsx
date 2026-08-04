@@ -35,6 +35,7 @@ export function ClientesScreen({
   clientes,
   initialOnline = false,
   initialRenovar = false,
+  initialAunATiempo = false,
 }: {
   clientes: ClienteRosterDTO[];
   /** Deep-link from the dashboard "Nuevos registros online" tile — opens the
@@ -43,12 +44,15 @@ export function ClientesScreen({
   /** Deep-link from INICIO's POR RENOVAR tile (#228) — opens the roster with
    *  the "Por renovar" filter already applied. */
   initialRenovar?: boolean;
+  /** Deep-link from INICIO's AÚN A TIEMPO tile (#229) — same mechanism. */
+  initialAunATiempo?: boolean;
 }) {
   const router = useRouter();
   const [query, setQuery] = React.useState("");
-  const [showFilters, setShowFilters] = React.useState(initialOnline || initialRenovar);
+  const [showFilters, setShowFilters] = React.useState(initialOnline || initialRenovar || initialAunATiempo);
   const [renovar, setRenovar] = React.useState(initialRenovar);
   const [online, setOnline] = React.useState(initialOnline);
+  const [aunATiempo, setAunATiempo] = React.useState(initialAunATiempo);
   const [diasMax, setDiasMax] = React.useState<number | null>(null);
   const [clasesMax, setClasesMax] = React.useState<number | null>(null);
   const [sort, setSort] = React.useState<Sort>(null);
@@ -60,11 +64,13 @@ export function ClientesScreen({
   const { filas: withU, conteos } = React.useMemo(() => derivarVistaRoster(clientes), [clientes]);
   const renovarCount = conteos.porRenovar.total;
   const onlineCount = conteos.pendienteOnline;
+  const aunATiempoCount = conteos.aunATiempo.total;
 
   const list = React.useMemo(() => {
     let list = withU;
     if (renovar) list = list.filter((x) => x.renovar);
     if (online) list = list.filter((x) => x.c.pendienteOnline);
+    if (aunATiempo) list = list.filter((x) => x.aunATiempo);
     if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
@@ -87,12 +93,12 @@ export function ClientesScreen({
       asist: (a, b) => b.c.asistEsteMes - a.c.asistEsteMes,
     };
     return list.toSorted(sorters[sort]);
-  }, [withU, renovar, online, diasMax, clasesMax, query, sort]);
+  }, [withU, renovar, online, aunATiempo, diasMax, clasesMax, query, sort]);
 
   const activeCount =
-    (renovar ? 1 : 0) + (online ? 1 : 0) + (diasMax != null ? 1 : 0) + (clasesMax != null ? 1 : 0);
+    (renovar ? 1 : 0) + (online ? 1 : 0) + (aunATiempo ? 1 : 0) + (diasMax != null ? 1 : 0) + (clasesMax != null ? 1 : 0);
   const anyFilter = activeCount > 0 || !!query;
-  const clearAll = () => { setRenovar(false); setOnline(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
+  const clearAll = () => { setRenovar(false); setOnline(false); setAunATiempo(false); setDiasMax(null); setClasesMax(null); setQuery(""); };
 
   // Windowed initial paint (useRevealedWindow): the server + first hydration paint only the
   // opening window, then a mount effect reveals the full list below the fold. Filtering/
@@ -111,7 +117,7 @@ export function ClientesScreen({
   // capturing the newly-mounted rows' rects. Those rows have no "before" rect, so
   // they mount without a spurious slide; the initially-windowed rows keep their
   // exact positions (delta 0), so the reveal animates nothing.
-  const flipRow = useFlip([sort, renovar, online, diasMax, clasesMax, query, showFilters, revealAll]);
+  const flipRow = useFlip([sort, renovar, online, aunATiempo, diasMax, clasesMax, query, showFilters, revealAll]);
 
   return (
     <div>
@@ -217,6 +223,22 @@ export function ClientesScreen({
                 <Tnum className="font-extrabold" style={{ fontSize: 22, lineHeight: 1, color: online ? "var(--green)" : "var(--fg)" }}>{onlineCount}</Tnum>
               </button>
             </div>
+            <div style={{ padding: "10px 16px 0" }}>
+              <button
+                onClick={() => setAunATiempo((v) => !v)}
+                className="flex w-full items-center text-left"
+                style={{ gap: 12, padding: "11px 13px", cursor: "pointer", background: aunATiempo ? "var(--warning-soft)" : "var(--surface)", border: `1px solid ${aunATiempo ? "var(--warning)" : "var(--line)"}` }}
+              >
+                <div className="flex shrink-0 items-center justify-center" style={{ width: 30, height: 30, background: aunATiempo ? "var(--warning)" : "transparent", border: aunATiempo ? "none" : "1px solid var(--line)" }}>
+                  <Icon name="clock" size={15} color={aunATiempo ? "var(--canvas)" : "var(--warning)"} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="uppercase font-extrabold" style={{ fontSize: 13, letterSpacing: 0.5, color: "var(--fg)" }}>Aún a tiempo</div>
+                  <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 1 }}>Vencieron hace poco, sin cuenta en la app</div>
+                </div>
+                <Tnum className="font-extrabold" style={{ fontSize: 22, lineHeight: 1, color: aunATiempo ? "var(--warning)" : "var(--fg)" }}>{aunATiempoCount}</Tnum>
+              </button>
+            </div>
             <FacetRow label="Días" value={diasMax} onChange={setDiasMax} options={[{ v: null, l: "Todos" }, { v: 14, l: "≤14" }, { v: 7, l: "≤7" }, { v: 3, l: "≤3" }]} />
             <FacetRow label="Clases" value={clasesMax} onChange={setClasesMax} options={[{ v: null, l: "Todas" }, { v: 5, l: "≤5" }, { v: 3, l: "≤3" }, { v: 1, l: "≤1" }]} />
           </div>
@@ -308,6 +330,18 @@ export function ClientesScreen({
                     >
                       {c.invitacion.badge}
                     </Badge>
+                    {/* {n}D SIN VENIR (#229): quiet, never a tier/count/sort key — `f.ausente`
+                        already carries the paid-up gate (clientes-vm.ts), so this component
+                        makes no threshold decision of its own. */}
+                    {f.ausente && (
+                      <span
+                        className="inline-flex items-center uppercase font-bold"
+                        style={{ gap: 4, padding: "2px 6px", border: "1px solid var(--line-soft)", color: "var(--silver-dim)", fontSize: 8.5, letterSpacing: 0.9 }}
+                      >
+                        <Icon name="clock" size={9} color="var(--silver-dim)" />
+                        <Tnum>{f.diasSinVenir}</Tnum>D SIN VENIR
+                      </span>
+                    )}
                   </div>
                 </div>
               </Link>

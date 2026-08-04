@@ -202,6 +202,13 @@ export interface FilaLifecycle {
    *  consumers (urgenciaCliente's raw callers) at this floored number. */
   urgencia: NivelUrgencia;
   ausente: boolean;
+  /** The `{n}D SIN VENIR` badge's numeral (#229) — whole days since the same
+   *  anchor `ausente` floors on (`ultimaVisita`, or `alta` when never visited).
+   *  Always a real number (`alta` is a required, non-null fact), so this is
+   *  never null even when `ausente` is false — consumers that gate the badge's
+   *  VISIBILITY (paid-up members only, #222 story 11) read `ausente` first;
+   *  this is only the digit, not a second policy decision. */
+  diasSinVenir: number;
 }
 
 /** The counts both CLIENTES and INICIO share — the single home for "how many
@@ -308,6 +315,17 @@ function derivarTile(fila: FilaRosterLifecycle, dias: number, estado: EstadoPaqu
   return null;
 }
 
+/** The badge's anchor days (#229): whole days since `ultimaVisita`, floored to
+ *  `alta` when the client has never visited ("bought, never came" — a fresh
+ *  alta correctly reads a small/zero number, never a fabricated "always
+ *  absent"). The SAME anchor `calcAusente` thresholds against — one
+ *  computation, so the badge's digit and its visibility boolean can never
+ *  disagree about which day they're counting from. */
+function calcDiasSinVenir(fila: FilaRosterLifecycle, hoy: Date): number {
+  if (fila.ultimaVisita !== null) return diasDesde(fila.ultimaVisita, hoy);
+  return diasDesde(fila.alta, hoy);
+}
+
 /** Badge floors (S9/A9): computed UNCONDITIONALLY — never gated on estado,
  *  so the fact does not vanish the day a package lapses. A null
  *  `ultimaVisita` ("bought, never came") floors on `alta` instead of hiding
@@ -315,8 +333,7 @@ function derivarTile(fila: FilaRosterLifecycle, dias: number, estado: EstadoPaqu
  *  Consumers decide whether to SURFACE this only for paid-up members
  *  (#222) — the engine always computes the fact. */
 function calcAusente(fila: FilaRosterLifecycle, hoy: Date): boolean {
-  if (fila.ultimaVisita !== null) return diasDesde(fila.ultimaVisita, hoy) >= AUSENTE_DIAS;
-  return diasDesde(fila.alta, hoy) >= AUSENTE_DIAS;
+  return calcDiasSinVenir(fila, hoy) >= AUSENTE_DIAS;
 }
 
 /** The lifecycle engine's per-row half: given one roster row and `hoy`,
@@ -324,6 +341,7 @@ function calcAusente(fila: FilaRosterLifecycle, hoy: Date): boolean {
  *  no stored state (ADR-0002). */
 export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLifecycle {
   const ausente = calcAusente(fila, hoy);
+  const diasSinVenir = calcDiasSinVenir(fila, hoy);
 
   if (fila.vence === null) {
     // sin_paquete: nothing to be urgent about — there is no package.
@@ -336,6 +354,7 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
       tile: null,
       urgencia: "ok",
       ausente,
+      diasSinVenir,
     };
   }
 
@@ -364,21 +383,23 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
     dias,
   });
 
-  return { fila, estado, eje, dias, diasDesdeFin, tile, urgencia, ausente };
+  return { fila, estado, eje, dias, diasDesdeFin, tile, urgencia, ausente, diasSinVenir };
 }
 
 /** Build a FULLY-CONSISTENT `FilaLifecycle` from an already-derived roster row's
- *  estado/días/clases — for callers that have run a row through `derivarCliente`
- *  (packages/data) but do NOT have the richer `FilaRosterLifecycle` input
- *  `derivarLifecycle` needs (`vence` as a Date, `tieneCuenta`, visit facts — the
- *  RPC #222 sequences after epic #203). Two call sites need exactly this shape
- *  today — `getRosterResumen` (INICIO's POR RENOVAR tile, #228) and the CLIENTES
- *  view-model (`clientes-vm.ts`, #227) — and #228's opus review (finding 4) caught
- *  a hand-rolled copy setting `eje`/`diasDesdeFin`/`urgencia` to placeholder values
- *  that VIOLATE this engine's own invariants (`ordenarLifecycle`'s
- *  `diasDesdeVencido` asserts a vencido row's `diasDesdeFin` is never null). This
- *  is the ONE constructor both call sites use instead, so neither can drift from
- *  the other or from `derivarLifecycle`'s own derivation.
+ *  estado/días/clases, for a caller that has run a row through `derivarCliente`
+ *  (packages/data) but does NOT have the richer `FilaRosterLifecycle` input
+ *  `derivarLifecycle` needs (`vence` as a Date, `tieneCuenta`, visit facts).
+ *  `getRosterResumen` and the CLIENTES view-model (`clientes-vm.ts`) used this for
+ *  exactly that reason through #228 — until #229 wired the #226 visit-facts
+ *  aggregate into both reads, at which point both callers graduated to calling
+ *  `derivarLifecycle` directly (the full engine) and stamping its real
+ *  `tile`/`ausente`/`diasSinVenir` onto their DTOs instead. This constructor stays
+ *  exported (a future caller with only the thinner shape has the same "don't
+ *  hand-roll eje/diasDesdeFin/urgencia" need #228's opus review caught — finding
+ *  4: a hand-rolled copy had set them to placeholder values that VIOLATE this
+ *  engine's own invariants, `ordenarLifecycle`'s `diasDesdeVencido` asserts a
+ *  vencido row's `diasDesdeFin` is never null).
  *
  *  `eje`/`diasDesdeFin` mirror `derivarLifecycle`'s exact derivation (FECHA WINS,
  *  `diasDesdeFin = -dias` on vencido) minus the clases-arm anchor (no
@@ -386,10 +407,9 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
  *  stays honestly null rather than a fabricated 0 — never null-silently-out-of-
  *  range). `urgencia` reuses the SAME pase-suelto-blind `nivelUrgenciaLifecycle`
  *  call `derivarLifecycle` makes. `tile` only ever resolves to "por_renovar" or
- *  null — AÚN A TIEMPO needs `tieneCuenta`/`ultimaVisitaConsumida`, absent here;
- *  neither call site renders that tile from this shape. `ausente` is always
- *  false for the same reason (no visit facts to compute it from) — matching both
- *  callers' prior behavior. */
+ *  null — AÚN A TIEMPO needs `tieneCuenta`/`ultimaVisitaConsumida`, absent here.
+ *  `ausente` is always false and `diasSinVenir` always 0 for the same reason (no
+ *  visit facts to compute either from). */
 export function derivarFilaLifecycle(input: {
   estado: EstadoPaquete;
   /** Raw días from `derivarCliente` — 0 for a sin_paquete row (that function never
@@ -435,6 +455,7 @@ export function derivarFilaLifecycle(input: {
     tile: esPorRenovar(estado, dias, clases, esPaseSuelto) ? "por_renovar" : null,
     urgencia: nivelUrgenciaLifecycle(saldo, estado),
     ausente: false,
+    diasSinVenir: 0,
   };
 }
 

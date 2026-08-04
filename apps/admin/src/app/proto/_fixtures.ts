@@ -21,10 +21,14 @@ import { derivarEstado } from "@gym/domain/rules";
 import type { Clases } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
 
-/** ClienteRosterDTO plus the two attendance-recency facts the lifecycle
- *  doctrine needs but the roster DTO doesn't ship today (#183 signal
- *  inventory: last-visit is one query away, not yet wired to the roster). */
-export interface RosterClient extends ClienteRosterDTO {
+/** ClienteRosterDTO plus this fixture's own pre-existing attendance-recency
+ *  shape (#183 signal inventory, predating #229's real `diasSinVenir`).
+ *  `diasSinVenir` is `Omit`-and-redeclared: the real DTO's version (#229) is
+ *  never null (it floors on alta) — this throwaway prototype's is nullable
+ *  ("never attended" — its own, older modeling, unread by the real engine).
+ *  No /proto variant reads the real DTO's `tile`/`ausente`/`diasSinVenir` —
+ *  this file is deleted in the implementation change (#222). */
+export interface RosterClient extends Omit<ClienteRosterDTO, "diasSinVenir"> {
   /** Whole days since the last visit, or null if never attended. */
   diasSinVenir: number | null;
   /** ISO ("YYYY-MM-DD") date of the last visit, or null if never attended. */
@@ -136,6 +140,11 @@ function build(seed: Seed): RosterClient {
     // #226 F5: same placeholder rationale — an arbitrary "joined a while ago" anchor, unread by
     // every /proto variant.
     altaIso: isoDay(addDays(HOY, -180)),
+    // #229: the real engine's tile/ausente facts — unread by every /proto variant (this
+    // fixture models its own `ausente`/tile via the proto's own lifecycle.ts, off the
+    // `diasSinVenir`/`ultimaVisita` fields above), so these are harmless placeholders.
+    tile: null,
+    ausente: false,
   };
 }
 

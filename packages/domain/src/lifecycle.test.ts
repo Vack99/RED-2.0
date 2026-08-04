@@ -339,6 +339,30 @@ describe("derivarLifecycle — la insignia ausente: pisos, no fugas (S9/A9)", ()
   });
 });
 
+describe("derivarLifecycle — diasSinVenir (#229): the {n}D SIN VENIR numeral", () => {
+  it("is the whole days since ultimaVisita when the client has visited", () => {
+    const r = derivarLifecycle(fila({ ultimaVisita: haceDias(9) }), HOY);
+    expect(r.diasSinVenir).toBe(9);
+  });
+
+  it("floors on alta (never null-blind) when the client has never visited", () => {
+    const r = derivarLifecycle(
+      fila({ vence: enDias(10), clases: 8, ultimaVisita: null, alta: haceDias(20) }),
+      HOY,
+    );
+    expect(r.diasSinVenir).toBe(20);
+  });
+
+  it("is the SAME anchor calcAusente thresholds against — ausente is exactly diasSinVenir >= AUSENTE_DIAS", () => {
+    const under = derivarLifecycle(fila({ ultimaVisita: haceDias(14) }), HOY);
+    const over = derivarLifecycle(fila({ ultimaVisita: haceDias(15) }), HOY);
+    expect(under.diasSinVenir).toBe(14);
+    expect(under.ausente).toBe(false);
+    expect(over.diasSinVenir).toBe(15);
+    expect(over.ausente).toBe(true);
+  });
+});
+
 describe("derivarLifecycle — urgencia integration (#223 finding 3)", () => {
   it("a VENCIDO row's urgencia is ok regardless of how long ago it expired", () => {
     expect(derivarLifecycle(fila({ vence: haceDias(1), clases: 8 }), HOY).urgencia).toBe("ok");
@@ -639,6 +663,8 @@ describe("derivarFilaLifecycle — the shared thin-input constructor (#228 opus 
     expect(f.diasDesdeFin).toBeNull();
     expect(f.tile).toBeNull();
     expect(f.urgencia).toBe("ok");
+    expect(f.ausente).toBe(false);
+    expect(f.diasSinVenir).toBe(0); // no visit facts in this thin input — never fabricated
   });
 
   it("a sin_clases row binds the clases eje with an honestly-null diasDesdeFin (no consuming-visit anchor in this input)", () => {

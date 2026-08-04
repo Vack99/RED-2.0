@@ -1,20 +1,19 @@
 // The CLIENTES view-model (#227): the ONE place this screen touches the
 // #223/#225 lifecycle engine. `clientes.tsx` renders this output only — no
-// thresholds, no day/class comparisons, no re-derived "por renovar"/urgencia
-// live here or in the component; every fact below is a direct call into
-// `@gym/domain/lifecycle` or `@gym/domain/rules`.
+// thresholds, no day/class comparisons, no re-derived "por renovar"/urgencia/
+// "aún a tiempo"/ausente live here or in the component; every fact below is a
+// direct call into `@gym/domain/lifecycle` or `@gym/domain/rules`, or a
+// straight pass-through of a fact `getClientesRoster` already stamped onto
+// the DTO (#229).
 //
-// Why this file builds its `FilaLifecycle` via `derivarFilaLifecycle` instead
-// of `derivarLifecycle`: that function's input (`FilaRosterLifecycle`) also
-// carries `tieneCuenta`/`ultimaVisitaConsumida`/`ultimaVisita`/`alta` — facts
-// `getClientesRoster` does not fetch yet (#222 sequences the ausente badge +
-// clases clock behind a new RPC, landing AFTER epic #203). `derivarFilaLifecycle`
-// (#228 opus review F4) is the ONE shared constructor for exactly this
-// thinner input — INICIO's `getRosterResumen` (packages/data) is its other
-// caller, so this vm and that read can never hand-roll two diverging
-// approximations of the same row again. The `aunATiempo` tile is never
-// assigned by that constructor (it needs `tieneCuenta`) — CLIENTES doesn't
-// render it; that tile is INICIO's/#229's, once the RPC lands.
+// #229: `getClientesRoster` now fetches every fact `derivarLifecycle` (the
+// FULL engine) needs — `tieneCuenta`, both visit clocks, alta (#226's
+// aggregate) — and stamps the real `tile`/`ausente`/`diasSinVenir` onto
+// `ClienteRosterDTO` itself. This vm still calls the thin `derivarFilaLifecycle`
+// for eje/diasDesdeFin/urgencia (those never depended on the richer facts), then
+// carries the DTO's real `tile`/`ausente` over the thin constructor's own
+// structural placeholders (`tile` restricted to por_renovar/null, `ausente`
+// hardcoded false) — never a second hand-rolled AÚN A TIEMPO/ausente guess.
 
 import {
   derivarFilaLifecycle,
@@ -44,6 +43,18 @@ export interface FilaRoster {
   /** The SAME single-row POR RENOVAR predicate the tile/pase de lista use
    *  (`esPorRenovar`) — never a second `nivel ∈ {critico,urgente}` restatement. */
   renovar: boolean;
+  /** The SAME AÚN A TIEMPO tile membership INICIO's tile counts (#229) — the
+   *  directory's own filter/count on this population. */
+  aunATiempo: boolean;
+  /** The `{n}D SIN VENIR` badge's ready-to-render decision (#229): the engine's
+   *  `ausente` fact, gated to paid-up members — `vigente`/`sin_clases` (the
+   *  package is still current), OR the exact AÚN A TIEMPO population (a lapsed
+   *  member 1-15 días past expiry still shows the fact, per A9 — it does not
+   *  vanish at lapse). Never true for `sin_paquete`/`pendienteOnline` (nothing
+   *  paid) or a plain long-dead `vencido` row outside the recovery window. */
+  ausente: boolean;
+  /** The badge's numeral — meaningless when `ausente` is false. */
+  diasSinVenir: number;
   /** Days since the package expired — the VENCIDO row's primary numeral
    *  (always positive; null while the package hasn't lapsed by date). */
   diasDesdeVencido: number | null;
@@ -52,15 +63,14 @@ export interface FilaRoster {
 }
 
 /** The header ratio's `vigentes`/`total` + the filter chips' `porRenovar`/
- *  `pendienteOnline` counts — ONE shared source (`contarLifecycle`), never
- *  an inline `.filter(...).length` restatement. `aunATiempo` is DROPPED
- *  (#227 F4, compiler-enforced, not comment-enforced): this vm hardcodes
- *  every row's `tieneCuenta` to `false` (see `aFilaLifecycle` below), so
- *  `contarLifecycle`'s `aunATiempo.total` is structurally always 0 here —
- *  a fake zero a future INICIO tile (#228) could reach for by accident once
- *  the real RPC lands. Narrowing the TYPE keeps that read a compile error
- *  instead of a silent wrong number. */
-export type ConteosRoster = Omit<ConteosLifecycle, "aunATiempo">;
+ *  `pendienteOnline`/`aunATiempo` counts — ONE shared source
+ *  (`contarLifecycle`), never an inline `.filter(...).length` restatement.
+ *  Real as of #229: `getClientesRoster` now stamps the real `tile` (including
+ *  "aun_a_tiempo") onto every DTO, so `aFilaLifecycle` carries it through
+ *  instead of the thin constructor's structural "always por_renovar/null" —
+ *  `contarLifecycle`'s `aunATiempo.total` is no longer a fake zero here (the
+ *  #227 F4 Omit that guarded against that fake zero is gone with it). */
+export type ConteosRoster = ConteosLifecycle;
 
 export interface RosterVista {
   /** Ruled order (`ordenarLifecycle`). */
@@ -80,17 +90,25 @@ function saldoParaUrgencia(c: ClienteRosterDTO): Saldo {
   return { clases: c.esPaseSuelto ? "ilimitado" : c.clasesRest, dias: c.diasRest };
 }
 
-/** Map one already-derived roster row to the engine's per-row input, via the
- *  shared `derivarFilaLifecycle` constructor (#228 F4) — no second hand-rolled
- *  copy of eje/diasDesdeFin/urgencia here. */
+/** Map one already-derived roster row to the engine's per-row input. The thin
+ *  `derivarFilaLifecycle` constructor (#228 F4) still supplies eje/diasDesdeFin/
+ *  urgencia AND `tile` for the por_renovar/null cases — its `esPorRenovar` call
+ *  takes the exact same (estado, dias, clases, esPaseSuelto) the DTO's own
+ *  `tile` was derived from, so the two can never disagree there. Only the ONE
+ *  value that thin ctor structurally cannot produce — "aun_a_tiempo" (it has no
+ *  `tieneCuenta`/visit clocks) — is taken from the DTO's real stamped tile
+ *  (#229, `getClientesRoster` ran this SAME row through the FULL engine). This
+ *  widens what the thin ctor could produce; it never overrides/contradicts it. */
 function aFilaLifecycle(c: ClienteRosterDTO): FilaLifecycle {
-  return derivarFilaLifecycle({
+  const base = derivarFilaLifecycle({
     estado: c.estado,
     dias: c.diasRest,
     clases: c.clasesRest,
     esPaseSuelto: c.esPaseSuelto,
     pendienteOnline: c.pendienteOnline,
   });
+  const tile = c.tile === "aun_a_tiempo" ? c.tile : base.tile;
+  return { ...base, tile, ausente: c.ausente, diasSinVenir: c.diasSinVenir };
 }
 
 /** The screen's one entry point into the lifecycle engine: order (ruled),
@@ -105,10 +123,8 @@ export function derivarVistaRoster(clientes: ClienteRosterDTO[]): RosterVista {
     return f;
   });
 
-  // #227 F4: build the narrowed shape explicitly rather than casting — drops
-  // `aunATiempo`, which this vm cannot honestly compute (see ConteosRoster).
-  const { vigentes, total, porRenovar, pendienteOnline } = contarLifecycle(filasEngine);
-  const conteos: ConteosRoster = { vigentes, total, porRenovar, pendienteOnline };
+  // #229: aunATiempo is real now (see ConteosRoster) — no narrowed rebuild needed.
+  const conteos: ConteosRoster = contarLifecycle(filasEngine);
 
   // #227 F8: `porFila` is keyed by FilaLifecycle object identity, which holds
   // today (`ordenarLifecycle` reorders the array via `toSorted`, never
@@ -119,11 +135,21 @@ export function derivarVistaRoster(clientes: ClienteRosterDTO[]): RosterVista {
     .map((f) => {
       const c = porFila.get(f);
       if (!c) return null;
+      const aunATiempo = f.tile === "aun_a_tiempo";
+      // The badge's paid-up gate (#222 story 11 / #229): vigente/sin_clases (the
+      // package is still current), OR the exact AÚN A TIEMPO population — a
+      // lapsed member 1-15 días past expiry still shows the absence fact (A9,
+      // it does not vanish at lapse). Never sin_paquete/pendienteOnline (nothing
+      // paid) and never a plain long-dead vencido row outside that window.
+      const paidUp = c.estado === "vigente" || c.estado === "sin_clases";
       return {
         c,
         urgencia: f.urgencia,
         vinculante: urgenciaCliente(saldoParaUrgencia(c)).vinculante,
         renovar: f.tile === "por_renovar",
+        aunATiempo,
+        ausente: c.ausente && (paidUp || aunATiempo),
+        diasSinVenir: c.diasSinVenir,
         diasDesdeVencido: f.diasDesdeFin,
         nombrePlegado: foldDiacritics(c.nombre),
       };

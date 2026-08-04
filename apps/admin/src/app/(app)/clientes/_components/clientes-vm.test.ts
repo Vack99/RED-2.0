@@ -23,12 +23,16 @@ const BASE: ClienteRosterDTO = {
   invitacion: { estado: "sin_email", badge: "Sin email" },
   pendienteOnline: false,
   esPaseSuelto: false,
-  // #226: the two last-visit facts + altaIso, unused by these wiring-only ordering tests
-  // (clientes-vm.ts doesn't read them yet — that's #229's job) but required by the current
-  // ClienteRosterDTO shape.
+  // #226: the two last-visit facts + altaIso, required by the ClienteRosterDTO shape.
   ultimaVisita: null,
   ultimaVisitaConsumida: null,
   altaIso: "2026-01-01",
+  // #229: tile/ausente/diasSinVenir — getClientesRoster's real stamped facts. BASE is a
+  // comfortably-vigente row outside every tile with no absence, so `null`/`false`/`0`;
+  // individual tests override these alongside `estado`/`diasRest` when they need to.
+  tile: null,
+  ausente: false,
+  diasSinVenir: 0,
 };
 
 function mk(id: string, overrides: Partial<ClienteRosterDTO>): ClienteRosterDTO {
@@ -151,5 +155,71 @@ describe("derivarVistaRoster — conteos (header ratio + filter chips)", () => {
     expect(conteos.total).toBe(4);
     expect(conteos.porRenovar.total).toBe(1);
     expect(conteos.pendienteOnline).toBe(1);
+  });
+
+  it("#229: aunATiempo.total is REAL now (no longer the structural zero the Omit guarded against)", () => {
+    const recuperable = mk("r", { estado: "vencido", diasRest: -5, clasesRest: 0, clasesRestLabel: "0", tile: "aun_a_tiempo" });
+    const vigente = mk("v", { estado: "vigente", diasRest: 20 });
+    const { conteos } = derivarVistaRoster([recuperable, vigente]);
+    expect(conteos.aunATiempo.total).toBe(1);
+  });
+});
+
+describe("derivarVistaRoster — #229: AÚN A TIEMPO filter flag + the {n}D SIN VENIR badge gate", () => {
+  it("aunATiempo mirrors the DTO's real stamped tile", () => {
+    const recuperable = mk("r", { estado: "vencido", diasRest: -5, clasesRest: 0, clasesRestLabel: "0", tile: "aun_a_tiempo" });
+    const { filas } = derivarVistaRoster([recuperable]);
+    expect(filas[0]?.aunATiempo).toBe(true);
+    expect(filas[0]?.renovar).toBe(false); // never both — one verdict per row
+  });
+
+  it("shows the badge for a paid-up (vigente) row when the engine's ausente fact is true", () => {
+    const c = mk("v", { estado: "vigente", diasRest: 20, ausente: true, diasSinVenir: 24 });
+    const { filas } = derivarVistaRoster([c]);
+    expect(filas[0]?.ausente).toBe(true);
+    expect(filas[0]?.diasSinVenir).toBe(24);
+  });
+
+  it("shows the badge for a lapsed member INSIDE the AÚN A TIEMPO window (A9: does not vanish at lapse)", () => {
+    const c = mk("r", {
+      estado: "vencido",
+      diasRest: -5,
+      clasesRest: 0,
+      clasesRestLabel: "0",
+      tile: "aun_a_tiempo",
+      ausente: true,
+      diasSinVenir: 30,
+    });
+    const { filas } = derivarVistaRoster([c]);
+    expect(filas[0]?.ausente).toBe(true);
+  });
+
+  it("hides the badge for a plain long-dead vencido row OUTSIDE the recovery window, even if the engine's ausente fact is true", () => {
+    const c = mk("x", {
+      estado: "vencido",
+      diasRest: -200,
+      clasesRest: 0,
+      clasesRestLabel: "0",
+      tile: null,
+      ausente: true,
+      diasSinVenir: 200,
+    });
+    const { filas } = derivarVistaRoster([c]);
+    expect(filas[0]?.ausente).toBe(false); // "the dead" — never paid-up, never the recovery population
+  });
+
+  it("hides the badge for a sin_paquete/pendienteOnline row, even if the engine's ausente fact is true", () => {
+    const c = mk("o", {
+      estado: "sin_paquete",
+      diasRest: 0,
+      clasesRest: 0,
+      clasesRestLabel: "0",
+      pendienteOnline: true,
+      invitacion: { estado: "cuenta_activa", badge: "Cuenta activa" },
+      ausente: true,
+      diasSinVenir: 20,
+    });
+    const { filas } = derivarVistaRoster([c]);
+    expect(filas[0]?.ausente).toBe(false); // nothing paid — never "paid-up"
   });
 });
