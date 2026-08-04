@@ -22,6 +22,32 @@
 --                                  fixture is seeded one minute in the past — the boundary is
 --                                  `starts_at <= now()`, an absolute instant, never a gym-local date.
 --
+-- THE OPERATOR PATH (#237, slice 2 of #235). `reservar_clase` gained a nullable second argument naming a
+-- target cliente: NULL is the member self path above (every vector already written stays untouched, and
+-- THAT is the assertion that the one-argument call is byte-for-byte unchanged), NOT NULL is an operator
+-- booking a member who phoned in. The whole design claim is that the two paths converge below identity,
+-- so every member vector above is RE-ASSERTED with a staff caller and a named target:
+--   * operator books a member  — the WRITTEN row carries the SESSION's gym, the TARGET's id, 'reservada',
+--                                is_walk_in = false (a phone booking IS a reserva, #235) and consumio =
+--                                true; the target's balance drops by EXACTLY one and the OPERATOR's own
+--                                balance does not move at all (the decrement targets the resolved member,
+--                                never the caller). The targets carry NO auth_user_id — the members this
+--                                feature exists for are the ones who never signed up for the site.
+--   * op: ilimitado exempt / zero-balance / expired / full / duplicate / row-reuse / started
+--                              — the same seven refusals and reuses, same messages, same atomicity. No
+--                                staff override of cupo, balance or expiry (#235 ruling): an operator
+--                                blocked is an operator who sells first.
+--   * DENIAL: non-staff naming a target — a plain member of the gym is refused with 'No autorizado',
+--                                INCLUDING when they name their own cliente id. There is no
+--                                self-exception; the member's door is the one-argument call. The message
+--                                itself is asserted, because "it raised" would also be true of the
+--                                duplicate guard.
+--   * DENIAL: staff of ANOTHER gym — is_staff_of is asked about the SESSION's gym, never the caller's.
+--   * DENIAL: target of ANOTHER gym — the gym-pinned lookup finds nothing → 'Cliente no encontrado'.
+--     The last three run against s_deny, a session with free seats that nobody has booked, so the ONLY
+--     thing that can refuse them is the identity gate — and if the gate were missing they would SUCCEED.
+--   (anon holds no EXECUTE on either signature: reservation_rls_denial.sql owns that vector.)
+--
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row. BEGIN/ROLLBACK, so
 -- it touches no row permanently. Zero hardcoded prod UUIDs (gyms/users/clientes seeded transaction-local).
 --
@@ -52,6 +78,14 @@ declare
   s_open uuid; s_full uuid; s_started uuid;
   d_cli  uuid;
   i int;
+  -- ── #237 operator path ──
+  op      uuid := gen_random_uuid();   -- STAFF of forge — the acting operator
+  staff_b uuid := gen_random_uuid();   -- STAFF of a DIFFERENT gym — the cross-gym denial actor
+  gym_b   uuid := gen_random_uuid();
+  c_op    uuid;                        -- the operator's OWN cliente (their balance must never move)
+  c_b     uuid;                        -- a cliente of gym B — the cross-tenant target denial
+  t_fin uuid; t_ilim uuid; t_zero uuid; t_exp uuid; t_full uuid; t_start uuid; t_reuse uuid; t_deny uuid;
+  s_deny uuid;                         -- an EMPTY future session: only the identity gate can refuse there
 begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
@@ -100,6 +134,68 @@ begin
     insert into public.reservation (gym_id, class_session_id, member_id, status)
       values (v_gym, s_full, d_cli, 'reservada');
   end loop;
+
+  -- ── #237 operator-path fixtures ────────────────────────────────────────────────
+  -- A second gym exists so "staff of another gym" and "target of another gym" are two DISTINCT vectors:
+  -- the first fails half (a) of the gate, the second fails half (b), and a body that dropped either half
+  -- would still pass the other's assertion.
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_b, 'rc-staff-target-gym-2', 'RC Staff Target Gym 2', 'America/Mexico_City', 'red');
+
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', op,      'authenticated', 'authenticated', 'rc-op@test.local'),
+    ('00000000-0000-0000-0000-000000000000', staff_b, 'authenticated', 'authenticated', 'rc-staff-b@test.local');
+
+  insert into public.gym_membership (user_id, gym_id, role) values
+    (op, v_gym, 'operator'), (staff_b, gym_b, 'operator');
+
+  -- The operator is ALSO a cliente who trains — so "the operator's own balance never moved" is a real
+  -- assertion (a body that decremented the CALLER instead of the target would fail it) and not a vacuous
+  -- one against a person with no balance at all.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC operator', '0000000201', 5, v_today + 20, '8 clases', v_gym, op) returning id into c_op;
+
+  -- The TARGETS carry NO auth_user_id on purpose: this feature exists for the members who will not use
+  -- the booking site, so the operator path must resolve them by (id, gym) alone — never through a user.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target finite', '0000000202', 5, v_today + 20, '8 clases', v_gym) returning id into t_fin;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target ilim', '0000000203', null, v_today + 20, 'Ilimitado', v_gym) returning id into t_ilim;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target zero', '0000000204', 0, v_today + 20, '8 clases', v_gym) returning id into t_zero;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target exp', '0000000205', 5, v_today - 1, '8 clases', v_gym) returning id into t_exp;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target full', '0000000206', 5, v_today + 20, '8 clases', v_gym) returning id into t_full;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target started', '0000000207', 5, v_today + 20, '8 clases', v_gym) returning id into t_start;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target reuse', '0000000208', 5, v_today + 20, '8 clases', v_gym) returning id into t_reuse;
+  -- t_deny is booked by NOBODY and blocked by NOTHING: vigente, 5 classes, and the denial session has 20
+  -- free seats. If the identity gate went missing, every denial vector below would SUCCEED, and the row
+  -- count + balance assertions would catch it even if the message assertion did not.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC target deny', '0000000209', 5, v_today + 20, '8 clases', v_gym) returning id into t_deny;
+
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC gym-B cliente', '0000000210', 5, v_today + 20, '8 clases', gym_b) returning id into c_b;
+
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_deny;
+
+  perform set_config('t.op',      op::text,      true);
+  perform set_config('t.staff_b', staff_b::text, true);
+  perform set_config('t.c_op',    c_op::text,    true);
+  perform set_config('t.c_b',     c_b::text,     true);
+  perform set_config('t.t_fin',   t_fin::text,   true);
+  perform set_config('t.t_ilim',  t_ilim::text,  true);
+  perform set_config('t.t_zero',  t_zero::text,  true);
+  perform set_config('t.t_exp',   t_exp::text,   true);
+  perform set_config('t.t_full',  t_full::text,  true);
+  perform set_config('t.t_start', t_start::text, true);
+  perform set_config('t.t_reuse', t_reuse::text, true);
+  perform set_config('t.t_deny',  t_deny::text,  true);
+  perform set_config('t.s_deny',  s_deny::text,  true);
 
   perform set_config('t.gym',    v_gym::text,   true);
   perform set_config('t.m_fin',  m_fin::text,   true);
@@ -326,6 +422,275 @@ begin
   if v_n <> 0 then raise exception 'RULE FAIL(started): % reservation rows created on a rejected booking', v_n; end if;
 end $$;
 reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- #237 OPERATOR PATH — everything from here down passes a TARGET as the second argument.
+-- ════════════════════════════════════════════════════════════════════════════════
+-- The operator books a member who phoned in: the WRITTEN row is the contract, so every column the insert
+-- sets is read back. The operator's own balance is asserted too — a body that decremented the CALLER
+-- instead of the resolved target would satisfy every other assertion in this block.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open uuid := current_setting('t.s_open', true)::uuid;
+  t_fin  uuid := current_setting('t.t_fin', true)::uuid;
+  c_op   uuid := current_setting('t.c_op', true)::uuid;
+  v_ret int; v_clases int; v_res uuid; v_n int; r record; raised boolean;
+begin
+  select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_open, t_fin);
+  if v_res is null then raise exception 'RULE FAIL(op book): no reservation returned'; end if;
+  if v_ret <> 4 then raise exception 'RULE FAIL(op book): RPC returned clases %, expected 4', v_ret; end if;
+
+  -- The written row, column by column: the SESSION's gym (never the caller's), the TARGET (never the
+  -- operator), reservada, and is_walk_in = false — a phone booking IS a reserva (#235), so it must be
+  -- indistinguishable from one the member made for themselves. consumio = true is what makes the later
+  -- operator cancel refund exactly one class.
+  select gym_id, member_id, status, is_walk_in, consumio into r
+    from public.reservation where id = v_res;
+  if r.gym_id     is distinct from current_setting('t.gym', true)::uuid then raise exception 'RULE FAIL(op book): reservation.gym_id % — not the session gym', r.gym_id; end if;
+  if r.member_id  is distinct from t_fin       then raise exception 'RULE FAIL(op book): reservation.member_id % — not the target', r.member_id; end if;
+  if r.status     is distinct from 'reservada' then raise exception 'RULE FAIL(op book): status %', r.status; end if;
+  if r.is_walk_in is distinct from false       then raise exception 'RULE FAIL(op book): is_walk_in % — an operator booking is a RESERVA, not a walk-in', r.is_walk_in; end if;
+  if r.consumio   is distinct from true        then raise exception 'RULE FAIL(op book): consumio % (expected true)', r.consumio; end if;
+
+  -- The TARGET's balance moved by exactly one; the OPERATOR's did not move at all.
+  select clases_restantes into v_clases from public.clientes where id = t_fin;
+  if v_clases <> 4 then raise exception 'RULE FAIL(op book): target stored clases %, expected 4', v_clases; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_op;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op book): the OPERATOR''s own balance moved to % — the decrement hit the caller, not the target', v_clases; end if;
+
+  -- duplicate, on the operator path: the same (target, session) again raises; no second consume.
+  raised := false;
+  begin perform public.reservar_clase(s_open, t_fin); exception when others then raised := true; end;
+  if not raised then raise exception 'RULE FAIL(op dup): second operator booking of the same session did not raise'; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_fin;
+  if v_clases <> 4 then raise exception 'RULE FAIL(op dup): target balance moved to % on rejected duplicate', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = t_fin and class_session_id = s_open;
+  if v_n <> 1 then raise exception 'RULE FAIL(op dup): expected 1 row for the target, got %', v_n; end if;
+end $$;
+reset role;
+
+-- ── op: ilimitado target is exempt — books with the NULL balance untouched and consumio = false ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open uuid := current_setting('t.s_open', true)::uuid;
+  t_ilim uuid := current_setting('t.t_ilim', true)::uuid;
+  v_ret int; v_clases int; v_res uuid; v_consumio boolean;
+begin
+  select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_open, t_ilim);
+  if v_res is null then raise exception 'RULE FAIL(op ilim): no reservation returned'; end if;
+  if v_ret is not null then raise exception 'RULE FAIL(op ilim): RPC returned clases % (expected NULL)', v_ret; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_ilim;
+  if v_clases is not null then raise exception 'RULE FAIL(op ilim): stored clases % (expected NULL, never decremented)', v_clases; end if;
+  select consumio into v_consumio from public.reservation where id = v_res;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(op ilim): consumio % (expected false — nothing was spent, so a cancel must refund nothing)', v_consumio; end if;
+end $$;
+reset role;
+
+-- ── op: the four refusals, with their messages — NO staff override of balance, expiry, cupo or time ──
+-- Each target is valid in every other respect, so the named message is the only thing that can be raised;
+-- asserting it (not merely "it raised") is what proves the operator path took the SHARED guard rather
+-- than a forked one. All four are atomic: no row, no balance movement.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open    uuid := current_setting('t.s_open', true)::uuid;
+  s_full    uuid := current_setting('t.s_full', true)::uuid;
+  s_started uuid := current_setting('t.s_started', true)::uuid;
+  t_zero  uuid := current_setting('t.t_zero', true)::uuid;
+  t_exp   uuid := current_setting('t.t_exp', true)::uuid;
+  t_full  uuid := current_setting('t.t_full', true)::uuid;
+  t_start uuid := current_setting('t.t_start', true)::uuid;
+  v_clases int; v_n int; v_msg text;
+begin
+  -- zero balance
+  v_msg := null;
+  begin perform public.reservar_clase(s_open, t_zero); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Sin clases disponibles%' then raise exception 'RULE FAIL(op zero): got % (expected Sin clases disponibles)', v_msg; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_zero;
+  if v_clases <> 0 then raise exception 'RULE FAIL(op zero): balance moved to %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = t_zero;
+  if v_n <> 0 then raise exception 'RULE FAIL(op zero): % rows created on a rejected booking', v_n; end if;
+
+  -- expired package
+  v_msg := null;
+  begin perform public.reservar_clase(s_open, t_exp); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Paquete vencido%' then raise exception 'RULE FAIL(op exp): got % (expected Paquete vencido)', v_msg; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_exp;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op exp): balance moved to %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = t_exp;
+  if v_n <> 0 then raise exception 'RULE FAIL(op exp): % rows created on a rejected booking', v_n; end if;
+
+  -- full class — cupo is not an operator's to override
+  v_msg := null;
+  begin perform public.reservar_clase(s_full, t_full); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Clase llena%' then raise exception 'RULE FAIL(op full): got % (expected Clase llena)', v_msg; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_full;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op full): balance moved to %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = t_full;
+  if v_n <> 0 then raise exception 'RULE FAIL(op full): % rows created on a rejected booking', v_n; end if;
+
+  -- class already started — an operator cannot create a booking in the past either
+  v_msg := null;
+  begin perform public.reservar_clase(s_started, t_start); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'La clase ya comenz%' then raise exception 'RULE FAIL(op started): got % (expected La clase ya comenzó)', v_msg; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_start;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op started): balance moved to %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = t_start;
+  if v_n <> 0 then raise exception 'RULE FAIL(op started): % rows created on a rejected booking', v_n; end if;
+end $$;
+reset role;
+
+-- ── op: row-reuse — a member who changes their mind is not a dead end on the operator path either ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open  uuid := current_setting('t.s_open', true)::uuid;
+  t_reuse uuid := current_setting('t.t_reuse', true)::uuid;
+  v_clases int;
+begin
+  perform public.reservar_clase(s_open, t_reuse);
+  select clases_restantes into v_clases from public.clientes where id = t_reuse;
+  if v_clases <> 4 then raise exception 'SETUP FAIL(op rebook): first operator booking left clases %, expected 4', v_clases; end if;
+end $$;
+reset role;
+
+-- Flip that booking to cancelada AS THE PRIVILEGED (migration) role, leaving is_walk_in + checked_at
+-- DIRTY exactly as the member-path fixture above does — the reuse arm's four-column reset must be proved
+-- on this path too, or an operator re-book could hand pasar_lista_sesion a walk-in row that REFUNDS.
+update public.reservation
+   set status = 'cancelada', cancelled_at = now(), is_walk_in = true, checked_at = now()
+ where member_id = current_setting('t.t_reuse', true)::uuid
+   and class_session_id = current_setting('t.s_open', true)::uuid;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_open  uuid := current_setting('t.s_open', true)::uuid;
+  t_reuse uuid := current_setting('t.t_reuse', true)::uuid;
+  v_ret int; v_n int; v_clases int; r record;
+begin
+  select clases_restantes into v_ret from public.reservar_clase(s_open, t_reuse);
+  if v_ret <> 3 then raise exception 'RULE FAIL(op rebook): expected clases 3 after re-book, got %', v_ret; end if;
+  select count(*) into v_n from public.reservation where member_id = t_reuse and class_session_id = s_open;
+  if v_n <> 1 then raise exception 'RULE FAIL(op rebook): expected 1 row total (reused), got %', v_n; end if;
+
+  select status, is_walk_in, cancelled_at, checked_at, consumio into r
+    from public.reservation where member_id = t_reuse and class_session_id = s_open;
+  if r.status       is distinct from 'reservada' then raise exception 'RULE FAIL(op rebook): reused row status = %', r.status; end if;
+  if r.is_walk_in   is distinct from false       then raise exception 'RULE FAIL(op rebook): stale is_walk_in survived the reuse (%)', r.is_walk_in; end if;
+  if r.cancelled_at is not null                  then raise exception 'RULE FAIL(op rebook): cancelled_at not cleared (%)', r.cancelled_at; end if;
+  if r.checked_at   is not null                  then raise exception 'RULE FAIL(op rebook): checked_at not cleared (%)', r.checked_at; end if;
+  if r.consumio     is distinct from true        then raise exception 'RULE FAIL(op rebook): consumio % (expected true)', r.consumio; end if;
+
+  select clases_restantes into v_clases from public.clientes where id = t_reuse;
+  if v_clases <> 3 then raise exception 'RULE FAIL(op rebook): stored clases % after re-book, expected 3', v_clases; end if;
+end $$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- #237 DENIALS — the new argument is not a privilege hole
+-- ════════════════════════════════════════════════════════════════════════════════
+-- All three land on s_deny (20 free seats, nobody booked) against t_deny (vigente, 5 classes) or c_b, so
+-- NOTHING but the identity gate can refuse them: were the gate missing, each of these would SUCCEED.
+-- The messages are asserted because they name WHICH half of the gate fired.
+
+-- ── a plain MEMBER of the gym naming a target — including naming THEMSELVES ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_fin', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  c_fin  uuid := current_setting('t.c_fin', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.reservar_clase(s_deny, t_deny); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'DENIAL FAIL(non-staff): a plain member booked another member — got % (expected No autorizado)', v_msg;
+  end if;
+
+  -- NO SELF-EXCEPTION (#237): naming your own cliente id on the two-argument call is still a staff act.
+  -- The member's door is reservar_clase(session) with one argument, and it still works — every member
+  -- vector at the top of this file proves it.
+  v_msg := null;
+  begin perform public.reservar_clase(s_deny, c_fin); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'DENIAL FAIL(self-target): a member used the operator argument on themselves — got % (expected No autorizado)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- ── STAFF OF ANOTHER GYM: is_staff_of is asked about the SESSION's gym, never the caller's ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_b', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.reservar_clase(s_deny, t_deny); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'DENIAL FAIL(cross-gym staff): gym B staff booked into gym A — got % (expected No autorizado)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- ── A TARGET OF ANOTHER GYM: the caller IS legitimately staff, but the cliente is not theirs ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  c_b    uuid := current_setting('t.c_b', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.reservar_clase(s_deny, c_b); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Cliente no encontrado%' then
+    raise exception 'DENIAL FAIL(cross-gym target): a gym-B cliente was bookable into a gym-A class — got % (expected Cliente no encontrado)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- The denial state is read back AS THE PRIVILEGED ROLE: under RLS neither denied caller can see the rows
+-- they failed to write, so "0 rows" measured as them would be vacuously true.
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  c_b    uuid := current_setting('t.c_b', true)::uuid;
+  c_fin  uuid := current_setting('t.c_fin', true)::uuid;
+  v_n int; v_clases int;
+begin
+  select count(*) into v_n from public.reservation where class_session_id = s_deny;
+  if v_n <> 0 then raise exception 'DENIAL FAIL: % reservation row(s) landed on the denial session', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_deny;
+  if v_clases <> 5 then raise exception 'DENIAL FAIL: the denied target''s balance moved to %', v_clases; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_b;
+  if v_clases <> 5 then raise exception 'DENIAL FAIL: the gym-B cliente''s balance moved to %', v_clases; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_fin;
+  if v_clases <> 3 then raise exception 'DENIAL FAIL: the self-targeting member''s balance moved to %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = c_b;
+  if v_n <> 0 then raise exception 'DENIAL FAIL: % reservation row(s) written for the gym-B cliente', v_n; end if;
+end $$;
 
 select 'reservar_clase rules: OK' as result;
 rollback;

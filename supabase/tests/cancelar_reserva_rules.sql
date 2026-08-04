@@ -15,6 +15,28 @@
 --                                    refunded a second time (the guarded flip closes the race).
 --   * no-reservation blocked       — cancelling a session the member never booked raises.
 --
+-- THE OPERATOR PATH (#237, slice 2 of #235). `cancelar_reserva` gained the same nullable target argument
+-- `reservar_clase` did, and it is NOT optional: charging happens at booking, so an operator who taps the
+-- wrong name has spent a class the member cannot get back from the admin app (the roster's present-toggle
+-- would mark them ATTENDED, not cancel them). This is undo for a money-touching action. NULL is the member
+-- self path above — every vector already written stays untouched, and THAT is the assertion that the
+-- one-argument call is byte-for-byte unchanged.
+--   * operator cancel refunds EXACTLY what the booking spent — an operator-made finite booking (consumed
+--                                    one) refunds one and the row goes cancelada with cancelled_at
+--                                    stamped and consumio left standing as the historical fact; the
+--                                    OPERATOR's own balance never moves.
+--   * op double-cancel              — the guarded flip closes the race on this path too: the second
+--                                    cancel raises and the balance is refunded exactly ONCE.
+--   * op re-book after cancel       — reactivates the SAME unique row (one row total) and consumes again.
+--   * op ilimitado cancel           — spent nothing, refunds nothing; the NULL is never touched.
+--   * op cancel after start refused — attendance history cannot be rewritten after the fact by an
+--                                    operator either; the row stays reservada and the balance untouched.
+--   * DENIALS (all four halves of the gate, and each one would SUCCEED were the gate missing — the denial
+--     target holds a live consumio=true booking, so a leak shows up as a flipped row AND a minted class):
+--     a plain member naming a target; that same member naming THEMSELVES (no self-exception); staff of
+--     ANOTHER gym; a target cliente of another gym ('Cliente no encontrado').
+--   (anon holds no EXECUTE on either signature: reservation_rls_denial.sql owns that vector.)
+--
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row. BEGIN/ROLLBACK, so
 -- it touches no row permanently. Zero hardcoded prod UUIDs (gyms/users/clientes seeded transaction-local).
 --
@@ -36,6 +58,16 @@ declare
   m_flip uuid := gen_random_uuid();
   c_fin  uuid; c_ilim uuid; c_past uuid; c_flip uuid;
   s_open uuid; s_unbooked uuid; s_started uuid;
+  -- ── #237 operator path ──
+  op      uuid := gen_random_uuid();   -- STAFF of forge — the acting operator
+  staff_b uuid := gen_random_uuid();   -- STAFF of a DIFFERENT gym
+  gym_b   uuid := gen_random_uuid();
+  c_op    uuid;                        -- the operator's OWN cliente (their balance must never move)
+  c_b     uuid;                        -- a cliente of gym B — the cross-tenant target denial
+  t_fin uuid; t_ilim uuid; t_start uuid; t_deny uuid;
+  s_op  uuid;                          -- the operator path's OWN future session, so the member vectors'
+                                       -- contar_reservas_activas assertions on s_open stay exactly as
+                                       -- they were — the member path is not rewritten to make room
 begin
   select id into v_gym from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
@@ -76,6 +108,56 @@ begin
   -- no direct write; this stands in for a booking made before the class began).
   insert into public.reservation (gym_id, class_session_id, member_id, status)
     values (v_gym, s_started, c_past, 'reservada');
+
+  -- ── #237 operator-path fixtures ────────────────────────────────────────────────
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
+    values (gym_b, 'cx-staff-target-gym-2', 'CX Staff Target Gym 2', 'America/Mexico_City', 'red');
+
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', op,      'authenticated', 'authenticated', 'cx-op@test.local'),
+    ('00000000-0000-0000-0000-000000000000', staff_b, 'authenticated', 'authenticated', 'cx-staff-b@test.local');
+
+  insert into public.gym_membership (user_id, gym_id, role) values
+    (op, v_gym, 'operator'), (staff_b, gym_b, 'operator');
+
+  -- The operator trains here too, so "the refund went to the member, not the operator" is a real assertion.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('CX operator', '0000000201', 5, current_date + 20, '8 clases', v_gym, op) returning id into c_op;
+
+  -- Targets carry NO auth_user_id: the phone-in member who never signed up for the booking site.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('CX target finite', '0000000202', 5, current_date + 20, '8 clases', v_gym) returning id into t_fin;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('CX target ilim', '0000000203', null, current_date + 20, 'Ilimitado', v_gym) returning id into t_ilim;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('CX target started', '0000000204', 5, current_date + 20, '8 clases', v_gym) returning id into t_start;
+  -- The DENIAL target: 4 classes and a live booking that CONSUMED one. Every denied cancel below would,
+  -- if it leaked, flip this row to cancelada AND mint a class back — so the leak is visible in two places.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('CX target deny', '0000000205', 4, current_date + 20, '8 clases', v_gym) returning id into t_deny;
+
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('CX gym-B cliente', '0000000206', 5, current_date + 20, '8 clases', gym_b) returning id into c_b;
+
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_future, 60, 20) returning id into s_op;
+
+  -- t_start's booking predates the class starting; t_deny's is the denial bait. Both seeded privileged
+  -- with consumio = true, the state reservar_clase leaves behind for a finite booking.
+  insert into public.reservation (gym_id, class_session_id, member_id, status, consumio)
+    values (v_gym, s_started, t_start, 'reservada', true);
+  insert into public.reservation (gym_id, class_session_id, member_id, status, consumio)
+    values (v_gym, s_op, t_deny, 'reservada', true);
+
+  perform set_config('t.s_op',    s_op::text,    true);
+  perform set_config('t.op',      op::text,      true);
+  perform set_config('t.staff_b', staff_b::text, true);
+  perform set_config('t.c_op',    c_op::text,    true);
+  perform set_config('t.c_b',     c_b::text,     true);
+  perform set_config('t.t_fin',   t_fin::text,   true);
+  perform set_config('t.t_ilim',  t_ilim::text,  true);
+  perform set_config('t.t_start', t_start::text, true);
+  perform set_config('t.t_deny',  t_deny::text,  true);
 
   perform set_config('t.gym',        v_gym::text,      true);
   perform set_config('t.m_fin',      m_fin::text,      true);
@@ -247,6 +329,201 @@ begin
   if v_status <> 'cancelada' then raise exception 'RULE FAIL(flip): row status % (expected cancelada)', v_status; end if;
 end $$;
 reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- #237 OPERATOR PATH — the undo for a money-touching action
+-- ════════════════════════════════════════════════════════════════════════════════
+-- Booked by the operator, cancelled by the operator: the class comes back to the MEMBER who was charged,
+-- exactly once, and the operator's own balance never moves. Everything runs on s_op, the operator path's
+-- own session, so the member vectors' active-count assertions on s_open are untouched.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_op  uuid := current_setting('t.s_op', true)::uuid;
+  t_fin uuid := current_setting('t.t_fin', true)::uuid;
+  c_op  uuid := current_setting('t.c_op', true)::uuid;
+  v_ret int; v_clases int; v_n int; r record; raised boolean;
+begin
+  -- book on behalf of the target: 5 → 4, consumio true (that flag is what the refund is gated on)
+  perform public.reservar_clase(s_op, t_fin);
+  select clases_restantes into v_clases from public.clientes where id = t_fin;
+  if v_clases <> 4 then raise exception 'SETUP FAIL(op refund): operator booking left clases %, expected 4', v_clases; end if;
+
+  -- cancel on behalf of the target: refund EXACTLY what the booking spent — one class, back to the member
+  select clases_restantes into v_ret from public.cancelar_reserva(s_op, t_fin);
+  if v_ret <> 5 then raise exception 'RULE FAIL(op refund): RPC returned clases %, expected 5', v_ret; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_fin;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op refund): stored clases %, expected refunded 5', v_clases; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_op;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op refund): the OPERATOR''s own balance moved to % — the refund credited the caller, not the member', v_clases; end if;
+
+  select status, cancelled_at, consumio into r
+    from public.reservation where member_id = t_fin and class_session_id = s_op;
+  if r.status       is distinct from 'cancelada' then raise exception 'RULE FAIL(op refund): row status % (expected cancelada)', r.status; end if;
+  if r.cancelled_at is null                      then raise exception 'RULE FAIL(op refund): cancelled_at not stamped'; end if;
+  -- consumio stays the HISTORICAL fact on the cancelled row; the refund fired precisely because it was true.
+  if r.consumio     is distinct from true        then raise exception 'RULE FAIL(op refund): row consumio % (expected true)', r.consumio; end if;
+
+  -- double-cancel on the operator path: the guarded flip means the second one raises and the class is
+  -- refunded exactly ONCE — two operators racing the same mis-tap cannot mint two classes.
+  raised := false;
+  begin perform public.cancelar_reserva(s_op, t_fin); exception when others then raised := true; end;
+  if not raised then raise exception 'RULE FAIL(op double): second operator cancel did not raise'; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_fin;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op double): balance moved to % on a rejected double-cancel', v_clases; end if;
+
+  -- re-book after the cancel reuses the SAME unique row and consumes again (5 → 4, one row total)
+  perform public.reservar_clase(s_op, t_fin);
+  select clases_restantes into v_clases from public.clientes where id = t_fin;
+  if v_clases <> 4 then raise exception 'RULE FAIL(op rebook): expected clases 4 after re-book, got %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = t_fin and class_session_id = s_op;
+  if v_n <> 1 then raise exception 'RULE FAIL(op rebook): expected 1 row total (reused), got %', v_n; end if;
+end $$;
+reset role;
+
+-- ── op: an ilimitado booking spent nothing, so the operator cancel refunds nothing ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_op   uuid := current_setting('t.s_op', true)::uuid;
+  t_ilim uuid := current_setting('t.t_ilim', true)::uuid;
+  v_ret int; v_clases int; v_status text;
+begin
+  perform public.reservar_clase(s_op, t_ilim);
+  select clases_restantes into v_ret from public.cancelar_reserva(s_op, t_ilim);
+  if v_ret is not null then raise exception 'RULE FAIL(op ilim): RPC returned clases % (expected NULL)', v_ret; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_ilim;
+  if v_clases is not null then raise exception 'RULE FAIL(op ilim): stored clases % (expected NULL, never refunded)', v_clases; end if;
+  select status into v_status from public.reservation where member_id = t_ilim and class_session_id = s_op;
+  if v_status <> 'cancelada' then raise exception 'RULE FAIL(op ilim): row status % (expected cancelada)', v_status; end if;
+end $$;
+reset role;
+
+-- ── op: once the class has started the operator cancel is refused too — atomic ──
+-- Attendance history is not an operator's to rewrite after the fact: a still-reservada past booking is a
+-- no-show that must consume (ADR-0010 §5), and the before-start gate is SHARED, not forked per path.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_started uuid := current_setting('t.s_started', true)::uuid;
+  t_start   uuid := current_setting('t.t_start', true)::uuid;
+  v_clases int; v_status text; v_msg text;
+begin
+  v_msg := null;
+  begin perform public.cancelar_reserva(s_started, t_start); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'La clase ya comenz%' then
+    raise exception 'RULE FAIL(op started): got % (expected La clase ya comenzó)', v_msg;
+  end if;
+  select clases_restantes into v_clases from public.clientes where id = t_start;
+  if v_clases <> 5 then raise exception 'RULE FAIL(op started): balance moved to % on a rejected cancel', v_clases; end if;
+  select status into v_status from public.reservation where member_id = t_start and class_session_id = s_started;
+  if v_status <> 'reservada' then raise exception 'RULE FAIL(op started): row flipped to % (expected reservada)', v_status; end if;
+end $$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- #237 DENIALS — the new argument is not a privilege hole on the cancel side either
+-- ════════════════════════════════════════════════════════════════════════════════
+-- Each denied caller aims at a LIVE consumio=true booking, so a leak would flip a row AND mint a class.
+
+-- ── a plain MEMBER of the gym naming a target — including naming THEMSELVES ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_fin', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_op   uuid := current_setting('t.s_op', true)::uuid;
+  s_open uuid := current_setting('t.s_open', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  c_fin  uuid := current_setting('t.c_fin', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.cancelar_reserva(s_op, t_deny); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'DENIAL FAIL(non-staff): a plain member cancelled another member''s booking — got % (expected No autorizado)', v_msg;
+  end if;
+
+  -- NO SELF-EXCEPTION (#237): the member's door is the ONE-argument call, which still works — every
+  -- member vector at the top of this file proves it.
+  v_msg := null;
+  begin perform public.cancelar_reserva(s_open, c_fin); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'DENIAL FAIL(self-target): a member used the operator argument on themselves — got % (expected No autorizado)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- ── STAFF OF ANOTHER GYM: is_staff_of is asked about the SESSION's gym, never the caller's ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.staff_b', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_op   uuid := current_setting('t.s_op', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.cancelar_reserva(s_op, t_deny); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'DENIAL FAIL(cross-gym staff): gym B staff cancelled a gym A booking — got % (expected No autorizado)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- ── A TARGET OF ANOTHER GYM: the caller IS legitimately staff, but the cliente is not theirs ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_op uuid := current_setting('t.s_op', true)::uuid;
+  c_b  uuid := current_setting('t.c_b', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.cancelar_reserva(s_op, c_b); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Cliente no encontrado%' then
+    raise exception 'DENIAL FAIL(cross-gym target): a gym-B cliente resolved inside a gym-A cancel — got % (expected Cliente no encontrado)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- The denial state is read back AS THE PRIVILEGED ROLE: under RLS neither denied caller can see the rows
+-- they failed to touch, so "still reservada" measured as them would be vacuously true.
+do $$
+declare
+  s_op   uuid := current_setting('t.s_op', true)::uuid;
+  s_open uuid := current_setting('t.s_open', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  c_fin  uuid := current_setting('t.c_fin', true)::uuid;
+  c_b    uuid := current_setting('t.c_b', true)::uuid;
+  v_clases int; v_n int; v_status text; v_cancelled timestamptz;
+begin
+  select status, cancelled_at into v_status, v_cancelled
+    from public.reservation where member_id = t_deny and class_session_id = s_op;
+  if v_status is distinct from 'reservada' then raise exception 'DENIAL FAIL: the denial target''s booking flipped to %', v_status; end if;
+  if v_cancelled is not null then raise exception 'DENIAL FAIL: cancelled_at got stamped on a denied cancel'; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_deny;
+  if v_clases <> 4 then raise exception 'DENIAL FAIL: the denial target''s balance moved to % — a class was minted', v_clases; end if;
+
+  select status into v_status from public.reservation where member_id = c_fin and class_session_id = s_open;
+  if v_status is distinct from 'reservada' then raise exception 'DENIAL FAIL: the self-targeting member''s own booking flipped to %', v_status; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_fin;
+  if v_clases <> 4 then raise exception 'DENIAL FAIL: the self-targeting member''s balance moved to %', v_clases; end if;
+
+  select clases_restantes into v_clases from public.clientes where id = c_b;
+  if v_clases <> 5 then raise exception 'DENIAL FAIL: the gym-B cliente''s balance moved to %', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = c_b;
+  if v_n <> 0 then raise exception 'DENIAL FAIL: % reservation row(s) exist for the gym-B cliente', v_n; end if;
+end $$;
 
 select 'cancelar_reserva rules: OK' as result;
 rollback;

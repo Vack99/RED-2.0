@@ -6,13 +6,20 @@
 -- transaction-local, self-asserting (every check RAISEs; a clean run returns one 'OK' row).
 --
 -- Vectors proved:
---   1) anon: reads ZERO reservation rows; cannot EXECUTE reservar_clase or contar_reservas_activas.
+--   1) anon: reads ZERO reservation rows; cannot EXECUTE reservar_clase or contar_reservas_activas —
+--      neither the one-argument member call NOR the two-argument operator call (#237). The EXECUTE
+--      lockdown is re-issued after each drop-and-recreate, and a forgotten `revoke … from anon` would
+--      leave the booking surface public; this is the vector that notices.
 --   2) member_a1 (gym A): reads their OWN reservation only (not member_a2's, same gym); EVERY direct
 --      table write is denied — INSERT of any row (their own included: a free no-consume booking must be
 --      impossible), and UPDATE of their own row (no self-served asistida/checked_at, no cancelada→
---      reservada free re-book) affects 0. Member writes exist ONLY inside the booking RPCs.
+--      reservada free re-book) affects 0. Member writes exist ONLY inside the booking RPCs. #237: the
+--      new target argument is not a way around that either — naming a same-gym PEER is refused with
+--      'No autorizado' by the RPC body itself (it is SECURITY DEFINER, so RLS never runs for it).
 --   3) member_b (gym B only): reads 0 of gym A's reservations; direct update of gym A's row affects 0.
---   4) staff of gym A: reads the gym's whole reservation roster (both members).
+--   4) staff of gym A: reads the gym's whole reservation roster — still EXACTLY 2 rows, which is also
+--      what proves vector 2's refused booking wrote nothing (member_a1 cannot see the leak it would
+--      have caused; the operator can).
 --
 -- HOW TO RUN: node supabase/tests/run-denial-suite.mjs (SUPABASE_TARGET_REF override), or MCP execute_sql.
 
@@ -87,6 +94,7 @@ do $$
 declare
   n int;
   session_a uuid := current_setting('t.session_a', true)::uuid;
+  c_a1      uuid := current_setting('t.c_a1', true)::uuid;
   raised boolean;
 begin
   select count(*) into n from public.reservation;
@@ -99,6 +107,16 @@ begin
   raised := false;
   begin perform public.cancelar_reserva(session_a); exception when others then raised := true; end;
   if not raised then raise exception 'ANON DENIAL FAIL: anon executed cancelar_reserva'; end if;
+
+  -- #237: the two-argument OPERATOR signature is a NEW function object — the drop-and-recreate took the
+  -- old grants with it, so its lockdown had to be re-issued. anon must hold no EXECUTE on it either.
+  raised := false;
+  begin perform public.reservar_clase(session_a, c_a1); exception when others then raised := true; end;
+  if not raised then raise exception 'ANON DENIAL FAIL: anon executed reservar_clase with a target'; end if;
+
+  raised := false;
+  begin perform public.cancelar_reserva(session_a, c_a1); exception when others then raised := true; end;
+  if not raised then raise exception 'ANON DENIAL FAIL: anon executed cancelar_reserva with a target'; end if;
 
   raised := false;
   begin perform public.contar_reservas_activas(array[session_a]); exception when others then raised := true; end;
@@ -117,6 +135,7 @@ declare
   c_a1      uuid := current_setting('t.c_a1', true)::uuid;
   c_a2      uuid := current_setting('t.c_a2', true)::uuid;
   session_b uuid := current_setting('t.session_b', true)::uuid;
+  v_msg     text;
 begin
   -- reads their OWN reservation only — NOT member_a2's, though both are gym A.
   select count(*) into n from public.reservation;
@@ -147,6 +166,18 @@ begin
   update public.reservation set status = 'asistida', checked_at = now() where member_id = c_a1;
   get diagnostics n = row_count;
   if n <> 0 then raise exception 'MEMBER WRITE FAIL: member_a1 direct-updated % of their own reservation rows', n; end if;
+
+  -- #237: nor through the RPC's new target argument. member_a1 is a MEMBER of gym A, not staff, so
+  -- naming a same-gym peer is refused by the function body — the definer path where RLS never runs. The
+  -- refusal message is asserted, not merely "it raised": session_b is empty and member_a2 is vigente
+  -- with 5 classes, so nothing else in the body could have refused this, and a missing gate would have
+  -- BOOKED them. The row-level proof is the staff read at the bottom of this file — it still expects
+  -- exactly 2 reservations in gym A, and this leak would make it 3.
+  v_msg := null;
+  begin perform public.reservar_clase(session_b, c_a2); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'No autorizado%' then
+    raise exception 'MEMBER WRITE FAIL: member_a1 naming member_a2 as a target got % (expected No autorizado)', v_msg;
+  end if;
 end $$;
 reset role;
 
