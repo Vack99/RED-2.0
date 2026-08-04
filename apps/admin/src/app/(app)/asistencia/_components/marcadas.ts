@@ -16,7 +16,7 @@
  * in-flight action's optimistic and reconciled states consistent.
  */
 
-import { VENTANA_ARRIBO_PREVIA_MIN } from "@gym/domain/rules";
+import { enVentanaArribo, VENTANA_ARRIBO_PREVIA_MIN } from "@gym/domain/rules";
 
 /** The screen's context key for the class-less visit kind (ACCESO LIBRE). Never a
  *  session id — session ids are uuids, so the two can't collide. */
@@ -104,11 +104,17 @@ export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora:
 
 /**
  * clienteId → the session a LIBRE tap on that member would be ATTRIBUTED to today: their
- * nearest booking that is still `reservada` and not a walk-in. That pair of conditions is
- * the RPC's own candidate filter, and `|startsAt − ahora|` is its own tie-break, so the
- * RESERVA chip cannot name a class the tap would not land on. Members with only marked or
- * walk-in bookings get no entry — a tap on them refuses or charges, and a chip there would
- * promise attribution the server will not give.
+ * nearest booking that is still `reservada`, not a walk-in, and whose arrival window
+ * CONTAINS `ahora` (#179 — the chip promises attribution only where the server's own
+ * `ventana_arribo(...) @> now()` gate would grant it; outside the window there is no
+ * chip). `|startsAt − ahora|` is the tie-break among the survivors, matching the RPC's
+ * own ordering. Members with only marked, walk-in, or out-of-window bookings get no
+ * entry — a tap on them refuses or charges, and a chip there would promise attribution
+ * the server will not give.
+ *
+ * The window is a DIFFERENT job from the `sesionCercana` pill's ±90 note above: the pill
+ * PRESELECTS a context to open the screen on, this ATTRIBUTES a specific tap to a specific
+ * booking. They share a constant (their open edge), not a purpose.
  *
  * Resolved SERVER-side (page.tsx, beside `sesionCercana`) for the same reason: the metric
  * is measured against an absolute instant, which must not differ between the SSR and
@@ -116,12 +122,13 @@ export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora:
  * `server-only` and this is a "use client" module (same as `Visita` above).
  */
 export function reservaAtribuible(
-  sesiones: { id: string; startsAt: Date }[],
+  sesiones: { id: string; startsAt: Date; duracionMin: number }[],
   reservas: Record<string, { clienteId: string; status: string; isWalkIn: boolean }[]>,
   ahora: Date,
 ): Record<string, string> {
   const mejor: Record<string, { sessionId: string; dist: number }> = {};
   for (const s of sesiones) {
+    if (!enVentanaArribo(s.startsAt, s.duracionMin, ahora)) continue;
     const dist = Math.abs(s.startsAt.getTime() - ahora.getTime());
     for (const r of reservas[s.id] ?? []) {
       if (r.status !== "reservada" || r.isWalkIn) continue;

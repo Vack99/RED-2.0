@@ -483,6 +483,17 @@ export function ventanaArribo(startsAt: Date, duracionMin: number): { desde: Dat
 }
 
 /**
+ * Whether `ahora` sits inside a booking's arrival window — half-open `[desde, hasta)`,
+ * matching the SQL `tstzrange`'s default bounds. Twin of the SQL `public.ventana_arribo(...)
+ * @> now()` (the same migration, :481): the desk's RESERVA chip must render under exactly
+ * this predicate — outside the window, pre- or post-, there is no chip (#179).
+ */
+export function enVentanaArribo(startsAt: Date, duracionMin: number, ahora: Date): boolean {
+  const { desde, hasta } = ventanaArribo(startsAt, duracionMin);
+  return desde.getTime() <= ahora.getTime() && ahora.getTime() < hasta.getTime();
+}
+
+/**
  * Whether a booking reads as "no asistió": still `reservada` once its arrival window has
  * CLOSED. Derived at read, never stored (ruling 2026-07-29) — a mark supersedes it
  * instantly, and there is no sweep to race or repair. The window is half-open, so it is

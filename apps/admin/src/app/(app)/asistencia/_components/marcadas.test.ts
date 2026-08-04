@@ -103,9 +103,10 @@ describe("sesionCercana — the opening context", () => {
 
 describe("reservaAtribuible — what the RESERVA chip is allowed to promise", () => {
   const ahora = new Date("2026-07-29T18:00:00.000Z");
-  const sesion = (id: string, offsetMin: number) => ({
+  const sesion = (id: string, offsetMin: number, duracionMin = 60) => ({
     id,
     startsAt: new Date(ahora.getTime() + offsetMin * 60_000),
+    duracionMin,
   });
   const reserva = (clienteId: string, status = "reservada", isWalkIn = false) => ({
     clienteId,
@@ -144,5 +145,34 @@ describe("reservaAtribuible — what the RESERVA chip is allowed to promise", ()
   it("is empty for a gym with no schedule, and for a session nobody booked", () => {
     expect(reservaAtribuible([], {}, ahora)).toEqual({});
     expect(reservaAtribuible([sesion("s1", 20)], {}, ahora)).toEqual({});
+  });
+
+  it("pre-window: a booking that opens later today gets no chip yet (#179 — silence, not grey)", () => {
+    const mapa = reservaAtribuible([sesion("s1", 100)], { s1: [reserva("c1")] }, ahora);
+    expect(mapa).toEqual({});
+  });
+
+  it("lower edge inclusive — exactly 90 minutes early already attributes", () => {
+    const mapa = reservaAtribuible([sesion("s1", 90)], { s1: [reserva("c1")] }, ahora);
+    expect(mapa).toEqual({ c1: "s1" });
+  });
+
+  it("closed window: a 45-min class that started 61 minutes ago no longer attributes", () => {
+    const mapa = reservaAtribuible([sesion("s1", -61, 45)], { s1: [reserva("c1")] }, ahora);
+    expect(mapa).toEqual({});
+  });
+
+  it("upper edge exclusive — hasta === ahora already reads as closed", () => {
+    const mapa = reservaAtribuible([sesion("s1", -60, 45)], { s1: [reserva("c1")] }, ahora);
+    expect(mapa).toEqual({});
+  });
+
+  it("the window filter runs ahead of the min-|Δ| tie-break — an out-of-window booking never wins", () => {
+    const mapa = reservaAtribuible(
+      [sesion("cerca", 20), sesion("lejos", 100)],
+      { cerca: [reserva("c1")], lejos: [reserva("c1")] },
+      ahora,
+    );
+    expect(mapa).toEqual({ c1: "cerca" });
   });
 });
