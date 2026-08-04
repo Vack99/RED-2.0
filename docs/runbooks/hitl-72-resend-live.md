@@ -235,3 +235,14 @@ The system degrades gracefully by design; no single step here can brick a sale o
 - **Auth rate limit:** post-SMTP default is 30/hr; keep ≤ ~50/hr so an hourly burst cannot outrun Resend's free 100/day cap.
 - **Site URL:** `https://red.ibookit.lat` · **Redirect allow-list:** one `https://<client-host>/**` per gym.
 - **Migrations:** the six `20260708…` files, MCP `apply_migration`, then `generate_typescript_types` → `packages/data/src/database.types.ts`.
+
+---
+
+## Audit note — Redirect-URL allow-list verified host-scoped (2026-08-03, #206)
+
+Owner read the live dashboard (Authentication → URL Configuration); transcribed verbatim:
+
+- **Site URL:** `https://red.ibookit.lat`
+- **Redirect URLs (9):** `https://red-2-0-client.vercel.app` · `https://forge-red-2-0-client.vercel.app/**` · `http://localhost:3000/**` · `https://app.ibookit.lat/**` · `https://app.ibookit.lat` · `https://red.ibookit.lat/**` · `https://forge.ibookit.lat/**` · `https://red-demo.ibookit.lat/**` · `https://forge-demo.ibookit.lat/**`
+
+**Verdict: PASS.** No entry broader than one host — every `/**` is a path wildcard on a single hostname; no `*.ibookit.lat`. The send-email hook's brand-pinning trust model holds. Same-day cleanup: owner deleted the two `*.vercel.app` client entries and `http://localhost:3000/**`. **Live list is now 6 entries, all single-host `ibookit.lat`:** `app` (bare + `/**`), `red`, `forge`, `red-demo`, `forge-demo` (all `/**`). Local-dev auth against the LIVE project now fails `redirect_to not allowed` by design — local dev uses the local stack. Next audit: diff the dashboard against this 6-entry list.
