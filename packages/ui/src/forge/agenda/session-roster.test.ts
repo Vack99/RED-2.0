@@ -47,19 +47,22 @@ describe("copiaAgregar", () => {
 });
 
 /**
- * The operator's undo appears on booked-not-present rows only. Charging is at booking, so
- * this is the only affordance that gives a mis-tapped member their class back.
+ * The operator's undo appears on booked-not-present rows of a class that has not started.
+ * Charging is at booking, so this is the only affordance that gives a mis-tapped member their
+ * class back — and its visibility must track the RPC's OWN gate (`starts_at <= now()`), not
+ * the arrival window's close, or the button renders through a band where every tap fails.
  */
 describe("puedeCancelarReserva", () => {
-  it("shows on a reserva still awaiting its member", () => {
-    expect(puedeCancelarReserva({ present: false, noAsistio: false })).toBe(true);
+  it("shows on a reserva still awaiting its member, before the class starts", () => {
+    expect(puedeCancelarReserva({ present: false }, false)).toBe(true);
   });
 
   it("hides on a row already marked present — the present-toggle owns that removal", () => {
-    expect(puedeCancelarReserva({ present: true, noAsistio: false })).toBe(false);
+    expect(puedeCancelarReserva({ present: true }, false)).toBe(false);
   });
 
-  it("hides once the window has closed (noAsistió): the class started, and the RPC refuses", () => {
-    expect(puedeCancelarReserva({ present: false, noAsistio: true })).toBe(false);
+  it("hides from the start instant onward — the RPC refuses a cancel once the class began", () => {
+    expect(puedeCancelarReserva({ present: false }, true)).toBe(false);
+    expect(puedeCancelarReserva({ present: true }, true)).toBe(false);
   });
 });

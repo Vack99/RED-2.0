@@ -4,7 +4,6 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
-import { antesDeVentanaArribo } from "@gym/domain/rules";
 import type { AgendaResultado } from "@gym/data/server/agenda";
 import { DateStrip } from "@gym/ui/forge/agenda/date-strip";
 import { EditorSheet, type CoachOption, type EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
@@ -361,6 +360,10 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // ── Render ────────────────────────────────────────────────────────────────
   const navLabel = view === "dia" ? selectedDay.dateLabel : weekNavLabel;
   const navRel = view === "dia" ? selectedDay.navRel : weekNavRel;
+  // The sheet's two render-time clock reads (#238): the add button's verb, and whether the
+  // roster still offers a cancel. Both are COSMETIC — the tap handler re-reads the clock and
+  // the RPC is the enforcer either way — so nothing refreshes them (#231 owns the tick).
+  const ahora = new Date();
 
   return (
     <div>
@@ -522,7 +525,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
           candidates={glance.candidates}
           rosterLoading={glance.loading}
           rosterBusy={rosterBusy}
-          antesDeVentana={antesDeVentanaArribo(new Date(glance.card.startsAtIso), new Date())}
+          antesDeVentana={accionAgregar(glance.card.startsAtIso, ahora) === "reservar"}
+          claseIniciada={new Date(glance.card.startsAtIso).getTime() <= ahora.getTime()}
           onTogglePresent={runPase}
           onAddWalkIn={runAgregar}
           onCancelReserva={runCancelarReserva}

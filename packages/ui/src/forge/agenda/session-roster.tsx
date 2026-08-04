@@ -62,12 +62,18 @@ export function copiaAgregar(antesDeVentana: boolean): { boton: string; vacio: s
 
 /**
  * Whether a roster row gets the operator's cancel affordance: a reserva still awaiting its
- * member. A row already marked present does not — removing THAT is what the present-toggle
- * already does. Nor does a `noAsistio` row: its window has closed, which means the class
- * started, and the RPC refuses a cancel from then on (ADR-0010 §4) — no point offering it.
+ * member, on a class that has not started. A row already marked present does not — removing
+ * THAT is what the present-toggle already does.
+ *
+ * `claseIniciada` is `now >= startsAt`, and it is the RPC's OWN gate (ADR-0010 §4: once the
+ * class has begun a still-reservada booking is a no-show that must consume, not a refundable
+ * cancel). It is deliberately NOT `noAsistio`: that flips at the window's CLOSE — 15 min after
+ * the class ENDS — which for a 60-min class would leave a 75-minute band where the × renders
+ * and every tap comes back "La clase ya comenzó". The RPC stays the enforcer; hiding is
+ * cosmetic, so a render-stale value here is acceptable exactly as the label's is.
  */
-export function puedeCancelarReserva(row: Pick<RosterRow, "present" | "noAsistio">): boolean {
-  return !row.present && !row.noAsistio;
+export function puedeCancelarReserva(row: Pick<RosterRow, "present">, claseIniciada: boolean): boolean {
+  return !row.present && !claseIniciada;
 }
 
 export interface SessionRosterProps {
@@ -79,6 +85,8 @@ export interface SessionRosterProps {
   /** Tense (#238): is now EARLIER than the session's arrival window opens? Copy only — the
    *  parent re-derives it against a fresh clock inside `onAddWalkIn` to choose the write. */
   antesDeVentana: boolean;
+  /** `now >= startsAt` — the cancel RPC's own gate, so the × is not offered past it. */
+  claseIniciada: boolean;
   onToggle: (clienteId: string) => void;
   onAddWalkIn: (clienteId: string) => void;
   /** Remove a booked-not-present member's reserva (refunds the class). Omit for no affordance. */
@@ -91,6 +99,7 @@ export function SessionRoster({
   loading,
   busy,
   antesDeVentana,
+  claseIniciada,
   onToggle,
   onAddWalkIn,
   onCancelReserva,
@@ -127,6 +136,7 @@ export function SessionRoster({
                   key={r.clienteId}
                   row={r}
                   busy={busy.has(r.clienteId)}
+                  claseIniciada={claseIniciada}
                   onToggle={onToggle}
                   onCancelReserva={onCancelReserva}
                 />
@@ -202,15 +212,17 @@ export function SessionRoster({
 const RosterRowView = React.memo(function RosterRowView({
   row,
   busy,
+  claseIniciada,
   onToggle,
   onCancelReserva,
 }: {
   row: RosterRow;
   busy: boolean;
+  claseIniciada: boolean;
   onToggle: (clienteId: string) => void;
   onCancelReserva?: (clienteId: string) => void;
 }) {
-  const cancelable = onCancelReserva !== undefined && puedeCancelarReserva(row);
+  const cancelable = onCancelReserva !== undefined && puedeCancelarReserva(row, claseIniciada);
   return (
     <div
       onClick={() => !busy && onToggle(row.clienteId)}

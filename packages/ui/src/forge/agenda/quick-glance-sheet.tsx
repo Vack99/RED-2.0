@@ -65,6 +65,8 @@ export interface QuickGlanceSheetProps {
   /** #238 tense: is now earlier than this session's arrival window opens? Drives the add
    *  button's verb + the empty state only — the parent owns the write-path branch. */
   antesDeVentana?: boolean;
+  /** #238: `now >= startsAt`. Hides the roster's cancel × once the RPC would refuse it. */
+  claseIniciada?: boolean;
   onTogglePresent?: (clienteId: string) => void;
   onAddWalkIn?: (clienteId: string) => void;
   onCancelReserva?: (clienteId: string) => void;
@@ -88,6 +90,7 @@ export function QuickGlanceSheet({
   rosterLoading = false,
   rosterBusy,
   antesDeVentana = false,
+  claseIniciada = false,
   onTogglePresent,
   onAddWalkIn,
   onCancelReserva,
@@ -155,6 +158,7 @@ export function QuickGlanceSheet({
             loading={rosterLoading}
             busy={rosterBusy ?? EMPTY_BUSY}
             antesDeVentana={antesDeVentana}
+            claseIniciada={claseIniciada}
             onToggle={onTogglePresent}
             onAddWalkIn={onAddWalkIn}
             onCancelReserva={onCancelReserva}
