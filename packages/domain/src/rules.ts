@@ -118,7 +118,6 @@ export function derivarEstado(saldo: Saldo, esPaseSuelto = false): EstadoCliente
   return "vigente";
 }
 
-
 // Retention-urgency thresholds, tuned for 8/12-class, 20–30 day memberships.
 // The single home for "running out": the directory roster, its sort, and any
 // future ficha treatment consume urgenciaCliente, never re-coin these numbers.

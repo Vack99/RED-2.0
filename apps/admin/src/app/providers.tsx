@@ -14,7 +14,7 @@ import { ThemeProvider } from "next-themes";
  * cross-fade. With it off, a sun/moon toggle cross-fades EVERY token-colored
  * element that carries a color/background transition — the html/body backdrop
  * (globals.css) plus the chrome that opts in (TabBar pill + labels, and the
- * visible Badge / Avatar / Segmented / DayStrip cells). That is intentional:
+ * visible Badge / Avatar / DayStrip cells). That is intentional:
  * all of them share the 180–220ms cubic-bezier(.32,.72,0,1) curve, so the
  * theme swap reads as one coordinated cross-fade rather than a single surface.
  * The initial theme is set by next-themes' blocking inline script before first

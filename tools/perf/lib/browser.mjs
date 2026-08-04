@@ -32,11 +32,16 @@ export async function login(browser) {
   // NOT `.startsWith("sb-")` — stale since #209 (2026-08-02): a production build (which
   // this harness always measures, see servers.mjs's build()) names the cookie
   // `__Host-sb-auth-token`, prefix and all, so the OLD check silently false-failed every
-  // run past that commit even though the session cookie was genuinely present (verified
-  // by hand: Chromium accepts the `__Host-` + Secure cookie over plain http://localhost
-  // here). `@supabase/ssr` suffixes every variant of the name (default AND `__Host-`) with
-  // `-auth-token`, so that is the stable substring across both.
-  if (!cookies.some((c) => c.name.endsWith("-auth-token"))) {
+  // run past that commit even though the session cookie was genuinely present. Empirically
+  // (this harness, this machine) Chromium accepted the `__Host-` + Secure cookie written
+  // over plain http://localhost — narrower than a universal claim: `cookie-options.ts`
+  // documents the OPPOSITE as verified (Chrome/Safari rejecting `__Host-` over http, even
+  // on localhost, citing a still-open Chromium bug). Treat that file's claim as the one of
+  // record; this comment only reports what this run observed. Either way, the check below
+  // must not assume a single un-chunked cookie: `@supabase/ssr` chunks the value past
+  // ~3180 bytes into `<name>.0`, `<name>.1`, ... (see cookie-options.ts's chunker note), so
+  // `-auth-token` alone can sit mid-name rather than at the end.
+  if (!cookies.some((c) => /-auth-token(\.\d+)?$/.test(c.name))) {
     throw new Error("login produced no Supabase session cookie — is the perf user seeded?");
   }
 
