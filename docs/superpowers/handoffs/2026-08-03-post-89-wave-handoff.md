@@ -2,9 +2,71 @@
 
 **First two commands of the next session: `/ponytail` then `/caveman`.** Owner's instruction.
 
-**Ask the owner where to work before touching anything.** A second session was committing to `main`
-from worktrees all evening (#223/#224/#225, the VENTANA epic) and hit problems from the collision.
-The owner will name the worktree himself — do not create one unprompted.
+## WORK HERE
+
+```
+.claude/worktrees/post-89-followups        branch: post-89-followups        off main @ 0a9fead
+```
+
+**Do not work in the primary checkout.** A second session works `main` there (#223–#230, the VENTANA
+epic) and the two collided all evening. This worktree is yours; both `.env.local` files are already
+copied in, so `pnpm dev` works from it.
+
+Fast-forward it from `main` before you start (`git -C <worktree> merge --ff-only main`) — the other
+session keeps moving `main`. Merge back the same way when the owner says so. **Never push.**
+
+---
+
+## 0. READ THIS BEFORE RE-ANALYSING ANYTHING — a wrong conclusion was published and corrected
+
+An earlier pass in this session concluded **"forge is a pure open-gym, 99% ACCESO LIBRE, stop
+worrying about the split."** **That is WRONG.** The owner corrected it: every gym is class-only.
+Verified by a 4-agent investigation:
+
+- forge runs a **21-slot template schedule** (L–V 06/07/18/19 + Sáb 08:00, cupo 15), 126 sessions
+  materialised, **0 cancelled**, newest generated 09:03 on 2026-08-03. Every paquete is denominated
+  in clases (1/8/12/Ilimitado). **There is no open-gym SKU.**
+- The unlinked attendance had two causes, **neither operator error**: (1) the class-aware desk only
+  shipped 2026-07-28 (`1058911`), so 267 of 342 rows predate the class tab existing; (2) forge
+  **transcribes attendance in batches 1.5–2.5 h after class** (median inter-tap gap 5.2 s, 66 bursts
+  over 44 days), and `sesionCercana` (`marcadas.ts:78`) preselects a class only within ±90 min, so a
+  21:00 transcription of a 19:00 class falls back to LIBRE.
+- The clock predicted the outcome on **6 of 6** operating days. On 2026-08-03 the batch landed 10 min
+  from a class start and **all 17 rows came out class-linked — forge's first ever.**
+- **#136 is real but secondary**: it explains 24 historical rows and moves **0** of the 45 post-ship
+  misfiles.
+
+**Do NOT "fix" this by widening the ±90 preselect.** That was recommended and then retracted: it
+would silently mis-attribute genuine late walk-ins to a class, and it solves a problem the unmerged
+`worktree-reserva-manual-agenda` branch already removes — see §0.1.
+
+### 0.1 There is unmerged work that already rules on things you may be tempted to re-ask
+
+Branch **`worktree-reserva-manual-agenda`** (8 commits, worktree mounted, NOT merged). It holds
+`#235`–`#238` and already decides two questions raised today:
+
+- **Zero balance blocks a booking.**
+  `supabase/migrations/20260803140000_reserva_manual_staff_target.sql:154-157` —
+  `if v_clases is not null and v_clases <= 0 then raise exception 'Sin clases disponibles'`, with a
+  second guarded raise at `:207`. **Ilimitado is exempt by decision.** `reservar_clase` is now
+  staff-callable, so a staff-made booking obeys the same rule.
+- **The Agenda class sheet is the class-first surface.** "Agregar visita" fires the same pasar-lista
+  check-in, and `antesDeVentanaArribo(startsAt, ahora, previaMin = VENTANA_ARRIBO_PREVIA_MIN)` routes
+  a tap to *book* before the window opens and *check in* after. The commit body explicitly assigns
+  the clock to **#231** and the per-gym lead to **#234** — both filed today.
+
+**Still NOT covered by that branch:** `toggle_pase` / `pasar_lista_sesion` (the desk tap) have no
+zero-balance check at all — verified against live `pg_get_functiondef`. Their only refusal is
+`Paquete vencido` (`20260729120000:270` / `:552`), and `v_consumio := (v_clases > 0)` (`:272` / `:563`)
+just writes a free row. **So the app says no and the desk says yes.** That gap is real and unruled.
+
+### 0.2 Owner ruling taken 2026-08-03 — class over cupo
+
+Today's forge 19:00 recorded **17 attendances against a cupo of 15**; `pasar_lista_sesion` has no
+capacity check. **Ruling: let staff exceed capacity, and fix the READER instead** — stop staff marks
+from driving the member-facing state to LLENO, so RED members are never locked out of booking by a
+roster correction. A desk that refuses a member physically standing in the gym is worse than an
+over-count.
 
 ---
 
@@ -26,7 +88,36 @@ are still OPEN and must be closed by hand or by the push.
 
 ---
 
-## 2. The four unfinished jobs — the gate agent was killed mid-run
+## 1.5 The gate DID run — results, and three defects still unfixed
+
+**`test:denial`: 41/41 green on scratch `gyyujeguycxxoaqgdnjp`** (up from a 40 baseline; the new
+`class_session_delete_restrict.sql` suite is wired into `run-denial-suite.mjs:84`). Verified as real
+DDL, not a bare stamp — all three FKs read `confdeltype = 'r'`.
+
+**Filed:** #231 (desk has no clock) · #232 (tap discloses nothing, `hitl`) · #233 (charge-at-booking,
+`hitl`, supersedes #167 / absorbs #166) · #234 (90-min lead hard-coded). Lineage comments on #166/#167.
+Ruling recorded on #179.
+
+**An adversarial SQL review found 4 defects in the two SQL commits. The scariest was CLEAN:** the
+`mi_membresia` re-emit **did** preserve #219's `p_gym_id` tenant pin — verified line by line, not
+reverted. Still open:
+
+| id | defect | fix |
+|---|---|---|
+| **D1** | `#173`'s new rule counts VISITS but `clasesDenom = clasesRest + attendedSincePurchase` (`derive.ts:234`) is a CHARGE ledger. A member at 0 balance with valid `vence` taps through free (`consumio=false, perdonada=false`) and now counts → card reads **"13 de 13"** on a 12-class package. | **Gated on the desk zero-balance gap in §0.1.** If the desk starts refusing or confirming a 0-balance tap, there is no uncharged visit left to over-count and D1 dissolves. Decide that first. |
+| **D2** | `FichaAsistRow` (`derive.ts:279-283`) never gained `perdonada`; the doc comment at `:267-270` says the rows are filtered on it. Typechecks only because the raw PostgREST row is a structural superset. A future narrowing silently makes every pardoned row count again. | one line: add `perdonada: boolean;` |
+| **D3** | CASCADE→RESTRICT made an FK probe hot on `asistencias.class_session_id`, which is covered only by a **partial** index (`20260728120000:67-69`). That migration's own header says a partial index cannot serve a referential probe, and dismissed it because sessions "are never hard-deleted" — which this change disproves. Every `class_session` delete now seq-scans a table planned for 1–2 years of retention. | one line: `create index if not exists asistencias_class_session_id_idx on public.asistencias (class_session_id);` |
+| D4 | `RESTRICT` chosen where `NO ACTION` is strictly better (RESTRICT disables the deferred end-of-statement check). Low, latent. | leave unless it bites |
+
+Also noted, not filed: **#178 labels a probable class visit "ACCESO LIBRE"** (`cliente-detalle.tsx:454`,
+`{row.clase ?? "ACCESO LIBRE"}`). At forge 189 of 206 rows in the 30-day window render that literal
+and — per §0 — every one was a class. One-line copy amendment: render `—` for rows whose `origen IS
+NULL` (exactly what `export/rows.ts:122-127` already does). Needs `origen` on `FichaAsistencia`;
+bundle it with D2. **Not a push blocker.**
+
+---
+
+## 2. Other unfinished jobs
 
 The owner stopped the session for usage. These were its remaining tasks, in priority order.
 
