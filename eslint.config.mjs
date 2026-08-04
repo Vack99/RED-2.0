@@ -55,6 +55,13 @@ const eslintConfig = defineConfig([
     // not resolvable by the monorepo toolchain. Its pure core (correo.ts) + tests
     // stay linted; only this thin shell is ignored.
     "supabase/functions/**/index.ts",
+    // `supabase start`'s own scratch (#230): the local CLI vendors a minified
+    // edge-runtime bundle here to serve Function Hooks locally. Already
+    // git-ignored (supabase/.gitignore) as CLI-generated, not source — but eslint
+    // doesn't read .gitignore, so `pnpm lint` broke the moment anyone ran the
+    // local Supabase stack this repo's own conventions require (test:denial, the
+    // perf harness) and then linted without first tearing it down.
+    "supabase/.temp/**",
   ]),
 ]);
 

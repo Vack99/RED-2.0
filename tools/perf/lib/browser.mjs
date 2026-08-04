@@ -29,7 +29,14 @@ export async function login(browser) {
   const cookies = await context.cookies();
   await context.close();
 
-  if (!cookies.some((c) => c.name.startsWith("sb-"))) {
+  // NOT `.startsWith("sb-")` — stale since #209 (2026-08-02): a production build (which
+  // this harness always measures, see servers.mjs's build()) names the cookie
+  // `__Host-sb-auth-token`, prefix and all, so the OLD check silently false-failed every
+  // run past that commit even though the session cookie was genuinely present (verified
+  // by hand: Chromium accepts the `__Host-` + Secure cookie over plain http://localhost
+  // here). `@supabase/ssr` suffixes every variant of the name (default AND `__Host-`) with
+  // `-auth-token`, so that is the stable substring across both.
+  if (!cookies.some((c) => c.name.endsWith("-auth-token"))) {
     throw new Error("login produced no Supabase session cookie — is the perf user seeded?");
   }
 
