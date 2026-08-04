@@ -23,6 +23,10 @@ const BASE: ClienteRosterDTO = {
   invitacion: { estado: "sin_email", badge: "Sin email" },
   pendienteOnline: false,
   esPaseSuelto: false,
+  // #226: the two last-visit facts, unused by these wiring-only ordering tests (clientes-vm.ts
+  // doesn't read them yet — that's #229's job) but required by the current ClienteRosterDTO shape.
+  ultimaVisita: null,
+  ultimaVisitaConsumida: null,
 };
 
 function mk(id: string, overrides: Partial<ClienteRosterDTO>): ClienteRosterDTO {

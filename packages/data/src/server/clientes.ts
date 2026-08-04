@@ -160,6 +160,13 @@ export interface ClienteRosterDTO extends ClienteDerivado {
    *  with the pase-suelto exemption intact, instead of re-deriving it client-side
    *  from a raw `paquete_nombre` string match. */
   esPaseSuelto: boolean;
+  /** Last visit of ANY kind (gym-local "YYYY-MM-DD", or null for never-visited) — the
+   *  AUSENTE clock (#226). Sourced from asistencias_ultima_visita_por_cliente; never a
+   *  full asistencias row pull. */
+  ultimaVisita: string | null;
+  /** Last CONSUMING visit only (`consumio = true`) — the CLASES clock (#226/#222): a
+   *  walk-in ACCESO LIBRE visit must not reset it. Same source RPC as `ultimaVisita`. */
+  ultimaVisitaConsumida: string | null;
 }
 
 /** Full roster, derived-at-read with this month's attendance count per client. */
@@ -170,14 +177,14 @@ export const getClientesRoster = cache(
     const tz = gym.timezone;
     const hoy = hoyEnZona(tz);
 
-    // The roster genuinely needs every cliente row; the asistencias leg only feeds a
-    // per-cliente count, so that leg is a grouped DB-side count (asistencias_mes_por_cliente)
-    // instead of pulling the whole month's rows just to tally them in JS. `paseSuelto` is
-    // the small catalog leg estado needs (#225): a roster row stores only the sold
-    // package's display name, never its class GRANT, so esPaseSuelto (the
+    // The roster genuinely needs every cliente row; the asistencias legs are grouped
+    // DB-side aggregates (asistencias_mes_por_cliente for the count, asistencias_ultima_
+    // visita_por_cliente for the two last-visit facts, #226) — never a row pull tallied in
+    // JS. `paseSuelto` is the small catalog leg estado needs (#225): a roster row stores
+    // only the sold package's display name, never its class GRANT, so esPaseSuelto (the
     // membership-vs-drop-in predicate) has to resolve against the catalog — via the
     // error-surfacing getPaseSueltoNombres (#225 F5), not getPaquetes' best-effort [].
-    const [clientesRes, countsRes, paseSuelto] = await Promise.all([
+    const [clientesRes, countsRes, paseSuelto, ultimasRes] = await Promise.all([
       supabase
         .from("clientes")
         .select(
@@ -190,6 +197,7 @@ export const getClientesRoster = cache(
         p_desde: monthStartIso(hoy),
       }),
       getPaseSueltoNombres(supabase),
+      supabase.rpc("asistencias_ultima_visita_por_cliente", { p_gym_id: gym.id }),
     ]);
 
     const clientes = clientesRes.data;
@@ -198,14 +206,22 @@ export const getClientesRoster = cache(
     const counts: Record<string, number> = {};
     for (const r of countsRes.data ?? []) counts[r.cliente_id] = r.n;
 
+    const ultimas: Record<string, { ultimaVisita: string | null; ultimaVisitaConsumida: string | null }> = {};
+    for (const r of ultimasRes.data ?? []) {
+      ultimas[r.cliente_id] = { ultimaVisita: r.ultima_visita, ultimaVisitaConsumida: r.ultima_visita_consumida };
+    }
+
     return clientes.map((c) => {
       const base = derivarCliente(c, hoy, counts[c.id] ?? 0, paseSuelto);
       const invitacion = derivarInvitacion(c, tz);
+      const visitas = ultimas[c.id] ?? { ultimaVisita: null, ultimaVisitaConsumida: null };
       return {
         ...base,
         invitacion,
         pendienteOnline: esRegistroOnlinePendiente(invitacion.estado, base.estado),
         esPaseSuelto: c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre),
+        ultimaVisita: visitas.ultimaVisita,
+        ultimaVisitaConsumida: visitas.ultimaVisitaConsumida,
       };
     });
   },

@@ -361,8 +361,9 @@ describe("shapeFicha", () => {
   });
 
   it("resolves the {dias}/{precios}/{datos_pago} tokens from the derived diasRest + the extras arg", () => {
-    // vence 2026-06-16, hoy 2026-05-27 → diasRest 20 → fmtDias "20 días".
-    const body = "Vence en {dias}.\nPrecios:\n{precios}\nPago:\n{datos_pago}";
+    // vence 2026-06-16, hoy 2026-05-27 → diasRest 20 → fmtDias "vence en 20 días" (the token carries
+    // the whole verb phrase, #226 — the body embeds it directly, no "vence en" prefix of its own).
+    const body = "Tu paquete {dias}.\nPrecios:\n{precios}\nPago:\n{datos_pago}";
     const f = shapeFicha(
       clienteRow,
       [],
@@ -376,7 +377,7 @@ describe("shapeFicha", () => {
       { precios: "• 8 clases — $800", datos_pago: "Transferencia: BBVA" },
     );
     expect(f.mensajes[0].texto).toBe(
-      "Vence en 20 días.\nPrecios:\n• 8 clases — $800\nPago:\nTransferencia: BBVA",
+      "Tu paquete vence en 20 días.\nPrecios:\n• 8 clases — $800\nPago:\nTransferencia: BBVA",
     );
     // No leftover literal placeholders.
     expect(f.mensajes[0].texto).not.toContain("{dias}");
@@ -397,19 +398,21 @@ describe("shapeFicha", () => {
       clases_restantes: null,
       vence: null,
     };
-    const body = "Tu paquete vence en {dias} — ¿lo renovamos?";
+    // #226: the body no longer hardcodes "vence en" — {dias} carries the whole verb phrase, so a
+    // custom template embeds the token directly, same as the reseeded Renovación body.
+    const body = "Tu paquete {dias} — ¿lo renovamos?";
     const f = shapeFicha(noPaquete, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
     expect(f.cliente.estado).toBe("sin_paquete");
     expect(f.mensajes[0].texto).not.toContain("0 días"); // the fake countdown this closes
-    expect(f.mensajes[0].texto).toBe("Tu paquete vence en sin paquete activo — ¿lo renovamos?");
+    expect(f.mensajes[0].texto).toBe("Tu paquete sin paquete activo — ¿lo renovamos?");
   });
 
-  it("an expired client's {dias} renders the signed day count, never the old 'vencido' (#225 F1)", () => {
+  it("an expired client's {dias} renders the direction-aware verb phrase, never 'vencido' (#226, closes #225 F1's residual)", () => {
     const vencido: FichaClienteRow = { ...clienteRow, vence: "2026-05-20" }; // hoy 2026-05-27 → dias -7
-    const body = "Tu paquete vence en {dias} — ¿lo renovamos?";
+    const body = "Tu paquete {dias} — ¿lo renovamos?";
     const f = shapeFicha(vencido, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
     expect(f.cliente.estado).toBe("vencido");
-    expect(f.mensajes[0].texto).toBe("Tu paquete vence en -7 días — ¿lo renovamos?");
+    expect(f.mensajes[0].texto).toBe("Tu paquete venció hace 7 días — ¿lo renovamos?");
     expect(f.mensajes[0].texto).not.toContain("vence en vencido"); // the #188 S12 defect
   });
 

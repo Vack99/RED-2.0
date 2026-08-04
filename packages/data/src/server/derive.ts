@@ -467,12 +467,14 @@ export function shapeFicha(
     vence: cliente.venceDisplay,
     // sin_paquete (#225 F1): derivarCliente sets diasRest to 0 for a package-less
     // client (nothing to count down to) — feeding that straight into fmtDias would
-    // compose a FALSE "vence en 0 días" (a same-day expiry that isn't real) into the
-    // seeded Renovación body. Honest copy instead. The body's fixed "vence en
-    // {dias}" prefix has no grammatically clean substitution for "no package"
-    // either (same class of constraint as fmtDias' negative-días residual below) —
-    // a full fix needs the seeded plantillas.body text, migration-gated and out of
-    // scope here.
+    // compose a FALSE "vence hoy" (a same-day expiry that isn't real) into the
+    // Renovación body. Honest copy instead. #226 rewrote both the seed body (no
+    // longer a fixed "vence en {dias}" prefix — it embeds {dias} directly, so
+    // fmtDias' OWN negative-días residual #225 F1 documented is now closed there)
+    // and fmtDias itself (a direction-aware verb phrase); this sin_paquete guard is
+    // a SEPARATE, still-open gap — "no package at all" has no clean substitution
+    // either, and closing it is not #226's stated obligation (that ticket fixes
+    // negative-días direction, not the no-package case) — left as-is deliberately.
     dias: cliente.estado === "sin_paquete" ? "sin paquete activo" : fmtDias(cliente.diasRest),
     precios: extras.precios,
     datos_pago: extras.datos_pago,

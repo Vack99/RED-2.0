@@ -299,8 +299,9 @@ interface Rows {
    *  package can omit this. */
   paquetes?: Record<string, unknown>[];
   /** `.rpc(fnName, args)` responses, keyed by function name — ventas_count_por_cliente /
-   *  asistencias_mes_por_cliente resolve directly (no `.single()`), mirroring the DAL. */
-  rpc?: Record<string, { cliente_id: string; n: number }[]>;
+   *  asistencias_mes_por_cliente / asistencias_ultima_visita_por_cliente all resolve directly
+   *  (no `.single()`), mirroring the DAL. Row shape varies by function, so this is loose. */
+  rpc?: Record<string, Record<string, unknown>[]>;
 }
 
 function makeReadFake(rows: Rows) {
@@ -422,6 +423,14 @@ const OPERATOR_ROWS: Rows = {
     // from the RPC result (neither here) fall back to 0 in the DAL.
     ventas_count_por_cliente: [{ cliente_id: "cli-desk", n: 3 }],
     asistencias_mes_por_cliente: [],
+    // #226: cli-desk visited a class 2026-07-20 (a walk-in, consumio=false) and an
+    // ACCESO LIBRE visit 2026-07-22 (consumio=true) — ultimaVisita is the LATER of the
+    // two (any visit), ultimaVisitaConsumida is the earlier, CONSUMING one, proving the
+    // roster wires both facts through rather than collapsing to a single "last visit".
+    // cli-online is missing from the RPC result entirely → both facts fall back to null.
+    asistencias_ultima_visita_por_cliente: [
+      { cliente_id: "cli-desk", ultima_visita: "2026-07-22", ultima_visita_consumida: "2026-07-20" },
+    ],
   },
 };
 
@@ -449,11 +458,24 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(desk.invitacion.badge).toBe("Invitada 7 jul"); // gym-local send date
     expect(desk.pendienteOnline).toBe(false);
 
+    // #226: the roster carries BOTH last-visit facts from the aggregate RPC — the AUSENTE
+    // clock (any visit) and the CLASES clock (consuming visits only) — as distinct dates.
+    expect(desk.ultimaVisita).toBe("2026-07-22");
+    expect(desk.ultimaVisitaConsumida).toBe("2026-07-20");
+    // cli-online never visited — missing from the RPC result — falls back to null, not 0/undefined.
+    expect(online.ultimaVisita).toBeNull();
+    expect(online.ultimaVisitaConsumida).toBeNull();
+
     // Perf (Fix 2): this month's attendance count comes from a grouped RPC in
     // Promise.all, not a whole-month asistencias row pull counted in JS.
     expect(fake.rpcCalls).toContainEqual(
       expect.objectContaining({ name: "asistencias_mes_por_cliente", args: { p_gym_id: "g-1", p_desde: expect.any(String) } }),
     );
+    // #226: the last-visit aggregate is ONE extra call, not a per-row asistencias fetch.
+    expect(fake.rpcCalls).toContainEqual({
+      name: "asistencias_ultima_visita_por_cliente",
+      args: { p_gym_id: "g-1" },
+    });
   });
 
   it("getClientesLite carries email + invite badge for the picker, never claim_code", async () => {

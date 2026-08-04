@@ -34,8 +34,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // favorito/mi_membresia rules just above it — then revocacion_sesion_membresia (#218), which reuses
 // that two-membership shape to prove session revocation is global, then class_session_delete_restrict
 // (epic #203 slice 4 — attendance retention), a schema-layer sibling of asistencias_unicidad proving
-// the class_session/reservation FKs now REFUSE a delete instead of cascading it away, and finally
-// gym2_probe, the end-to-end second-gym capstone.
+// the class_session/reservation FKs now REFUSE a delete instead of cascading it away, then
+// asistencias_ultima_visita_rules (#226 — the last-consuming-visit aggregate's tenant scoping + the
+// consuming-visit/deleted_at/perdonada definition), and finally gym2_probe, the end-to-end second-gym
+// capstone.
 // Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
 // A future slice adds a vector to a file here — not a second harness. Two guards in the normal
 // `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
@@ -82,6 +84,7 @@ export const SUITE = [
   'dos_gimnasios_tenant_pin.sql',
   'revocacion_sesion_membresia.sql',
   'class_session_delete_restrict.sql',
+  'asistencias_ultima_visita_rules.sql',
   'gym2_probe.sql',
 ];
 

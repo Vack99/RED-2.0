@@ -355,7 +355,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
         {
           id: "t1",
           nombre: "Renovación",
-          body: "Quedan {clases}, vence en {dias}.\nPrecios:\n{precios}\nPago:\n{datos_pago}",
+          body: "Quedan {clases}, {dias}.\nPrecios:\n{precios}\nPago:\n{datos_pago}",
         },
       ],
     });

@@ -70,27 +70,32 @@ describe("fmtDatosPago", () => {
 });
 
 describe("fmtDias", () => {
-  it("formats a positive count as '{n} días'", () => {
-    expect(fmtDias(20)).toBe("20 días");
+  it("formats a count > 1 as 'vence en {n} días'", () => {
+    expect(fmtDias(20)).toBe("vence en 20 días");
   });
 
-  it("uses the singular for exactly one day", () => {
-    expect(fmtDias(1)).toBe("1 día");
+  it("uses 'vence mañana' for exactly one day", () => {
+    expect(fmtDias(1)).toBe("vence mañana");
   });
 
-  it("día 0 (the vence day itself) is a valid training day — never 'vencido' (#225)", () => {
-    // Pre-#225 this read "vencido", producing "Tu paquete vence en vencido" on the
-    // member's own vence day — the off-by-one #225 exists to close.
-    expect(fmtDias(0)).toBe("0 días");
+  it("día 0 (the vence day itself, a valid training day — C9) reads 'vence hoy', never vencido", () => {
+    // Pre-#226 this read "vencido" (or, after #225's residual fix, the signed "0 días") —
+    // the off-by-one #226's seed rewrite exists to close, since the seeded Renovación body
+    // now embeds {dias} directly instead of a fixed "vence en" prefix.
+    expect(fmtDias(0)).toBe("vence hoy");
   });
 
-  it("renders a negative count (genuinely expired) as the signed day count — never the old 'vencido' (#225 F1)", () => {
-    // "vencido" composed literal nonsense into the seeded body ("Tu paquete vence
-    // en vencido" — #188 S12). No token value can fully fix that fixed-prefix
-    // sentence without editing the seeded plantillas.body text (migration-gated,
-    // out of scope) — this is the documented least-broken residual.
-    expect(fmtDias(-1)).toBe("-1 día");
-    expect(fmtDias(-3)).toBe("-3 días");
+  it("uses 'venció ayer' for exactly one day expired", () => {
+    expect(fmtDias(-1)).toBe("venció ayer");
+  });
+
+  it("formats an expired count > 1 as 'venció hace {n} días' (correct direction — closes #225 F1's documented residual)", () => {
+    // #225 F1 left this as the signed "-3 días" deliberately, because the OLD seeded body
+    // ("Tu paquete vence en {dias}") had no grammatically correct substitution for a
+    // negative count without rewriting the migration-gated seed text. #226 rewrites that
+    // seed (packages/data/src/server/plantilla-ctx.ts's fmtDias now carries the whole verb
+    // phrase, and the body embeds {dias} directly), which is why this residual can close here.
+    expect(fmtDias(-3)).toBe("venció hace 3 días");
   });
 });
 

@@ -1370,6 +1370,14 @@ export type Database = {
           n: number
         }[]
       }
+      asistencias_ultima_visita_por_cliente: {
+        Args: { p_gym_id: string }
+        Returns: {
+          cliente_id: string
+          ultima_visita: string | null
+          ultima_visita_consumida: string | null
+        }[]
+      }
       cancel_class_session: {
         Args: { p_session_id: string }
         Returns: undefined

@@ -128,6 +128,11 @@ function build(seed: Seed): RosterClient {
     esPaseSuelto: false,
     diasSinVenir: seed.diasSinVenir,
     ultimaVisita: visita(seed.diasSinVenir),
+    // #226: the real ClienteRosterDTO grew a SECOND last-visit fact (the CLASES clock, consuming
+    // visits only) beside this fixture's own pre-existing `ultimaVisita` (the ausente clock this
+    // throwaway prototype already modeled). No /proto variant reads it — this file is deleted in
+    // the implementation change (#222) — so null for every row is a safe, honest placeholder.
+    ultimaVisitaConsumida: null,
   };
 }
 

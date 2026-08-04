@@ -18,24 +18,24 @@ export function renderMensajes(plantillas: PlantillaDTO[], ctx: PlantillaContext
   return plantillas.map((p) => ({ id: p.id, nombre: p.nombre, texto: renderPlantilla(p.body, ctx) }));
 }
 
-/** The {dias} token: days-to-expiry as a short es-MX display string. día 0 (the vence
- *  day itself) is a valid training day (ruling C9 / `estaVencido`) and must never read
- *  "vencido" — the off-by-one #225 exists to close ("Tu paquete vence en vencido" for
- *  every member on their vence day).
- *
- *  A genuinely NEGATIVE día count (expired) has no grammatically correct
- *  substitution here (#225 F1 residual): the seeded Renovación body is the fixed
- *  string "Tu paquete vence en {dias} — ¿lo renovamos?", and no value plugged into
- *  "{dias}" can turn "vence en" into "venció hace" from inside the token — that
- *  needs the seeded `plantillas.body` text itself, which is migration-gated (DDL
- *  seed data) and OUT OF SCOPE for this ticket. This renders the LEAST-BROKEN
- *  value instead — the signed day count ("-3 días") — never the old "vencido",
- *  which composed literal nonsense ("vence en vencido", the exact #188 S12 defect).
- *  Callers with a package-less client (estado sin_paquete, diasRest forced to 0)
- *  must NOT call this at all — see shapeFicha's ctx, which substitutes real copy
- *  instead of a fake day-0 countdown. */
+/** The {dias} token: a direction-aware VERB PHRASE, not a bare day count. #225 F1 left this as the
+ *  signed magnitude ("-3 días") deliberately, documenting it as the least-broken residual: the OLD
+ *  seeded Renovación body was the fixed string "Tu paquete vence en {dias} — ¿lo renovamos?", and no
+ *  value substituted for a bare {dias} can turn "vence en" into "venció hace" from inside the token —
+ *  that needs the seeded `plantillas.body` text itself, called out there as migration-gated and out of
+ *  scope for #225. #226 IS that migration (packages/data/src/server/clientes.ts's roster aggregate rides
+ *  the same batch as the plantilla reseed), so this closes the residual: the token now carries the WHOLE
+ *  verb phrase, and the seeded body embeds it directly — "Tu paquete {dias} — ¿lo renovamos?" — instead
+ *  of a fixed "vence en" prefix. día 0 (the vence day itself) is a valid training day (rules.ts
+ *  estaVencido / ruling C9) and reads "vence hoy", never "vencido" (#188 S12's "vence en vencido").
+ *  Callers with a package-less client (estado sin_paquete, diasRest forced to 0) must NOT call this at
+ *  all — see shapeFicha's ctx, which substitutes real copy instead of a fake day-0 countdown. */
 export function fmtDias(diasRest: number): string {
-  return `${diasRest} día${Math.abs(diasRest) === 1 ? "" : "s"}`;
+  if (diasRest > 1) return `vence en ${diasRest} días`;
+  if (diasRest === 1) return "vence mañana";
+  if (diasRest === 0) return "vence hoy";
+  if (diasRest === -1) return "venció ayer";
+  return `venció hace ${-diasRest} días`;
 }
 
 /** The {clases} token: classes-remaining as a short es-MX display string. Ilimitado
