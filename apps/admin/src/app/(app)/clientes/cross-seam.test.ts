@@ -38,6 +38,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       email: null,
       invitacion_enviada_at: null,
       auth_user_id: null,
+      created_at: "2026-01-01T00:00:00Z", // #226 F5: getClientesRoster now reads this for altaIso
     },
     {
       id: "c-lejos",
@@ -50,6 +51,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       email: null,
       invitacion_enviada_at: null,
       auth_user_id: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "c-vencido",
@@ -62,6 +64,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       email: null,
       invitacion_enviada_at: null,
       auth_user_id: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "c-clases",
@@ -74,6 +77,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       email: null,
       invitacion_enviada_at: null,
       auth_user_id: null,
+      created_at: "2026-01-01T00:00:00Z",
     },
     {
       id: "c-online",
@@ -86,6 +90,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       email: null,
       invitacion_enviada_at: null,
       auth_user_id: "auth-online-1",
+      created_at: "2026-01-01T00:00:00Z",
     },
   ];
 

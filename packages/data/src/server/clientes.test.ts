@@ -302,6 +302,9 @@ interface Rows {
    *  asistencias_mes_por_cliente / asistencias_ultima_visita_por_cliente all resolve directly
    *  (no `.single()`), mirroring the DAL. Row shape varies by function, so this is loose. */
   rpc?: Record<string, Record<string, unknown>[]>;
+  /** Forces a named `.rpc()` call to resolve `{ data: null, error }` instead of its `rpc` fixture
+   *  row (#226 F4) — proves an RPC failure surfaces as a THROW, never a silent "nobody visited". */
+  rpcErrors?: Record<string, unknown>;
 }
 
 function makeReadFake(rows: Rows) {
@@ -371,6 +374,10 @@ function makeReadFake(rows: Rows) {
       builder(table, (rows as Record<string, Record<string, unknown>[] | undefined>)[table] ?? []),
     rpc: (name: string, args: unknown) => {
       rpcCalls.push({ name, args });
+      if (rows.rpcErrors?.[name] !== undefined) {
+        const error = rows.rpcErrors[name];
+        return { then: (resolve: (v: { data: null; error: unknown }) => unknown) => resolve({ data: null, error }) };
+      }
       const data = rows.rpc?.[name] ?? [];
       return { then: (resolve: (v: { data: unknown; error: null }) => unknown) => resolve({ data, error: null }) };
     },
@@ -466,6 +473,11 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(online.ultimaVisita).toBeNull();
     expect(online.ultimaVisitaConsumida).toBeNull();
 
+    // #226 F5: altaIso is the badge's fallback anchor when ultimaVisita is null — same column/
+    // conversion as getClientesLite's altaIso, riding the existing select (zero extra reads).
+    expect(desk.altaIso).toBe("2026-06-15");
+    expect(online.altaIso).toBe("2026-05-01"); // 2026-05-02T05:00:00Z → 01 may in Chihuahua (UTC−6)
+
     // Perf (Fix 2): this month's attendance count comes from a grouped RPC in
     // Promise.all, not a whole-month asistencias row pull counted in JS.
     expect(fake.rpcCalls).toContainEqual(
@@ -476,6 +488,14 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
       name: "asistencias_ultima_visita_por_cliente",
       args: { p_gym_id: "g-1" },
     });
+  });
+
+  it("getClientesRoster throws on an asistencias_ultima_visita_por_cliente RPC error (#226 F4) — never silently reads the whole gym as ausente", async () => {
+    const fake = makeReadFake({
+      ...OPERATOR_ROWS,
+      rpcErrors: { asistencias_ultima_visita_por_cliente: { message: "boom" } },
+    });
+    await expect(getClientesRoster(fake.client)).rejects.toMatchObject({ message: "boom" });
   });
 
   it("getClientesLite carries email + invite badge for the picker, never claim_code", async () => {

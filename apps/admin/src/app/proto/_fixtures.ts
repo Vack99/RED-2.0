@@ -133,6 +133,9 @@ function build(seed: Seed): RosterClient {
     // throwaway prototype already modeled). No /proto variant reads it — this file is deleted in
     // the implementation change (#222) — so null for every row is a safe, honest placeholder.
     ultimaVisitaConsumida: null,
+    // #226 F5: same placeholder rationale — an arbitrary "joined a while ago" anchor, unread by
+    // every /proto variant.
+    altaIso: isoDay(addDays(HOY, -180)),
   };
 }
 

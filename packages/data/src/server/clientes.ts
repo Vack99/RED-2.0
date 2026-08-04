@@ -167,6 +167,12 @@ export interface ClienteRosterDTO extends ClienteDerivado {
   /** Last CONSUMING visit only (`consumio = true`) — the CLASES clock (#226/#222): a
    *  walk-in ACCESO LIBRE visit must not reset it. Same source RPC as `ultimaVisita`. */
   ultimaVisitaConsumida: string | null;
+  /** The client's alta day as a gym-tz "YYYY-MM-DD" (from created_at) — the badge's
+   *  SECOND input (#226 F5): when `ultimaVisita` is null (never attended), the ausente
+   *  clock has no visit to anchor on and falls back to alta instead of reading as
+   *  "never absent". Mirrors getClientesLite's altaIso (same column, same conversion);
+   *  `created_at` rides the existing roster select — zero extra reads. */
+  altaIso: string;
 }
 
 /** Full roster, derived-at-read with this month's attendance count per client. */
@@ -188,7 +194,7 @@ export const getClientesRoster = cache(
       supabase
         .from("clientes")
         .select(
-          "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
+          "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id, created_at",
         )
         .eq("gym_id", gym.id)
         .order("nombre"),
@@ -202,6 +208,13 @@ export const getClientesRoster = cache(
 
     const clientes = clientesRes.data;
     if (!clientes) return [];
+
+    // Fail loud (#226 F4), mirroring the getPaseSueltoNombres precedent (#225 F5): a swallowed error
+    // here (`?? []`) would silently read as "nobody in this gym has ever visited" — every row falls
+    // back to the alta floor and the whole roster looks ausente. asistencias_mes_por_cliente's
+    // countsRes is NOT given the same treatment because it predates this convention (pre-existing,
+    // out of #226's scope) — only the new leg this ticket adds is held to it.
+    if (ultimasRes.error) throw ultimasRes.error;
 
     const counts: Record<string, number> = {};
     for (const r of countsRes.data ?? []) counts[r.cliente_id] = r.n;
@@ -222,6 +235,7 @@ export const getClientesRoster = cache(
         esPaseSuelto: c.paquete_nombre !== null && paseSuelto.has(c.paquete_nombre),
         ultimaVisita: visitas.ultimaVisita,
         ultimaVisitaConsumida: visitas.ultimaVisitaConsumida,
+        altaIso: toIsoDay(fechaEnZona(c.created_at, tz)),
       };
     });
   },

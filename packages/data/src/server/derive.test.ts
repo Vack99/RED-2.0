@@ -404,7 +404,10 @@ describe("shapeFicha", () => {
     const f = shapeFicha(noPaquete, [], [], HOY, HOY_ISO, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
     expect(f.cliente.estado).toBe("sin_paquete");
     expect(f.mensajes[0].texto).not.toContain("0 días"); // the fake countdown this closes
-    expect(f.mensajes[0].texto).toBe("Tu paquete sin paquete activo — ¿lo renovamos?");
+    expect(f.mensajes[0].texto).not.toContain("vence en vencido"); // the #188 S12 defect
+    // #226 F8: a VERB phrase ("ya no está activo"), not the noun phrase "sin paquete activo" —
+    // the fixed "vence en" prefix is gone, so the substitution must read as a sentence on its own.
+    expect(f.mensajes[0].texto).toBe("Tu paquete ya no está activo — ¿lo renovamos?");
   });
 
   it("an expired client's {dias} renders the direction-aware verb phrase, never 'vencido' (#226, closes #225 F1's residual)", () => {

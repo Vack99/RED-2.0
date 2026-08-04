@@ -26,14 +26,17 @@ const TOKENS = [
 /** A coherent, urgency-flavored sample persona so every {token} resolves to
  *  believable es-MX data. María bought an 8-clase package and has 1 class left
  *  (por vencer) — so "clases", "paquete", "vence" and "dias" all read together.
- *  Fixed constant on purpose: this is an EXAMPLE, never live client data. */
+ *  Fixed constant on purpose: this is an EXAMPLE, never live client data.
+ *  `dias` is the WHOLE verb phrase (#226) — fmtDias never emits a bare count,
+ *  so a preview-only literal must match that shape or the sample renders
+ *  "Tu paquete 3 días —" instead of "Tu paquete vence en 3 días —". */
 function sampleCtx(negocio: string, brandName: string): PlantillaContext {
   return {
     nombre: "María",
     clases: "1 clase",
     paquete: "8 clases",
     vence: "30 may",
-    dias: "3 días",
+    dias: "vence en 3 días",
     precios: "• 8 clases — $800\n• Ilimitado — $1,200",
     datos_pago: "Transferencia BBVA\nCLABE 012 320 00…",
     negocio: negocio || brandName,

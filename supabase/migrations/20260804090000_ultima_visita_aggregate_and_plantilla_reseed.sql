@@ -1,7 +1,7 @@
 -- #226 (E · VENTANA epic #222; comment obligations 1+2) — the last-consuming-visit aggregate the
--- lifecycle engine needs (#223's clases clock + the {n}D SIN VENIR badge's ausente clock), the serving
--- index the two existing partial indexes cannot serve, and the two plantilla fixes #225's review picked
--- up to ride this migration batch.
+-- lifecycle engine needs (#223's clases clock + the {n}D SIN VENIR badge's ausente clock), a serving
+-- index whose leading columns none of the four existing asistencias indexes share (see section 1's
+-- comment), and the two plantilla fixes #225's review picked up to ride this migration batch.
 --
 -- Idempotent (create-index-if-not-exists, create-or-replace-function, guarded UPDATEs) and forward-only;
 -- safe out-of-order on live.
@@ -9,14 +9,17 @@
 -- ══════════════════════════════════════════════════════════════════════════════════
 -- 1. asistencias_gym_cliente_fecha_idx — the serving index.
 -- ══════════════════════════════════════════════════════════════════════════════════
--- The two existing per-cliente indexes are partial and MUTUALLY EXCLUSIVE by origen:
---   asistencias_sesion_cliente_activa_uq  (class_session_id, cliente_id) where … and class_session_id is not null  (20260728120000)
---   asistencias_cliente_fecha_libre_uq    (cliente_id, fecha)           where … and class_session_id is null       (20260728120000)
--- Neither can serve "per cliente, the max fecha across BOTH origins" — the query the RPC below runs.
--- This index is composite on (gym_id, cliente_id, fecha), partial on deleted_at is null ONLY (unconditional
--- on origen/consumio, unlike the two above): an index-ordered scan feeds the GROUP BY cliente_id directly
--- (no sort step), and the running max(fecha) / max(fecha) filter (where consumio) fall out of one forward
--- pass per group — the FILTER clause needs no index of its own, only the ORDER this one supplies.
+-- FOUR indexes already touch asistencias(cliente_id | gym_id, fecha); none is leading on
+-- (gym_id, cliente_id) together, which is what a per-GYM, per-CLIENTE grouped aggregate needs:
+--   asistencias_sesion_cliente_activa_uq  (class_session_id, cliente_id) where … class_session_id is not null (20260728120000) — keyed on SESSION, not gym; origen-partial.
+--   asistencias_cliente_fecha_libre_uq    (cliente_id, fecha)           where … class_session_id is null       (20260728120000) — origen-partial (libre only), and cliente-leading (no gym_id column at all) serves a POINT lookup for one member, not a per-gym GROUP BY across every member.
+--   asistencias_cliente_fecha_idx         (cliente_id, fecha)           where deleted_at is null                (20260530031218) — all-origins, but the SAME cliente-leading shape: fast for "this one member's history", not for scanning a whole gym's roster grouped by cliente.
+--   asistencias_gym_fecha_idx             (gym_id, fecha)               where deleted_at is null                (20260713180000) — gym-leading and all-origins, but has NO cliente_id column, so it cannot serve a GROUP BY cliente_id without a sort/hash on every matching row.
+-- This index is gym_id-then-cliente_id-then-fecha, partial on deleted_at is null: it is the first index
+-- whose LEADING columns match this RPC's exact access pattern (filter by gym_id, group by cliente_id).
+-- No EXPLAIN was run against a populated table for this migration — the composite-key rationale above is
+-- the justification, not a measured plan; a future perf pass should confirm the planner actually chooses it
+-- over a sequential scan or a sort on asistencias_gym_fecha_idx at whatever row count this table reaches.
 create index if not exists asistencias_gym_cliente_fecha_idx
   on public.asistencias (gym_id, cliente_id, fecha)
   where deleted_at is null;
@@ -32,24 +35,26 @@ create index if not exists asistencias_gym_cliente_fecha_idx
 --                               reset it — #222 "the clases arm's clock is the last CONSUMING visit").
 --
 -- deleted_at / perdonada discipline (read 20260728120000 + 20260729120000 first — perdonada's own column
--- comment is the primary source; 20260803120000_mi_membresia_visit_count.sql is the freshest precedent):
+-- comment is the primary source):
 --   * deleted_at is not null → an UNDONE toggle; excluded from BOTH facts, exactly like every existing
 --     asistencias aggregate (asistencias_mes_por_cliente, marcadas_por_gym, marcadas_presencia, and now
 --     mi_membresia's attended_since_purchase, #173).
 --   * perdonada = true means "this row is the SECOND RECORD of ONE arrival" — the 15-minute cooldown
---     pairing a door check-in with a class mark (or the reverse). `deleted_at is null and not perdonada`
---     is now the canonical VISIT predicate — asistencias_mes_por_cliente (20260729120000) and, as of
---     #173 (20260803120000_mi_membresia_visit_count.sql), mi_membresia's attended_since_purchase both
---     filter on it. This query adopts the same predicate for consistency, though for THIS query's shape
---     it is provably a no-op rather than a load-bearing filter: the cooldown only pairs SAME-fecha rows
---     (visita_reciente's whole predicate is "on this fecha"), so a perdonada row's pair always shares its
---     exact date — a perdonada row is therefore NEVER the sole row on its date, and a MAX(fecha) cannot
---     change whether it is included or excluded. (perdonada is a COUNT correction — its own column
---     comment says "aggregates that count VISITS must skip it" — a concern a MAX(fecha) never has.)
---   * `ultima_visita_consumida` needs no separate perdonada guard on top of the WHERE clause below: every
---     branch in pasar_lista_sesion/toggle_pase that stamps perdonada = true first sets v_consumio :=
---     false (the pardon always frees the class), so `consumio = true` already excludes every perdonada
---     row from this fact by construction — asserted directly in the denial suite below.
+--     pairing a door check-in with a class mark (or the reverse). `asistencias_mes_por_cliente` and
+--     mi_membresia's attended_since_purchase (#173) both additionally filter `not perdonada`, because
+--     THEY count visits and a pardoned row must not double-bill one arrival as two. This query does
+--     NOT add that filter to the `ultima_visita` (ausente) arm, DELIBERATELY: the ORPHANED PARDON is a
+--     real, documented, accepted edge (20260728121000:39-45, reprised at 20260729120000:753-756) — the
+--     mark that PARDONED a row can be independently UNDONE later (its own toggle-off, unrelated to this
+--     row), leaving the pardoned row perdonada=true FOREVER (the stamp is never revisited) as the ONLY
+--     surviving active row on that fecha. Filtering `not perdonada` here would then drop that date
+--     entirely from `ultima_visita` — the member genuinely trained that day, and a `{n}D SIN VENIR`
+--     badge would read them absent. `deleted_at is null` is the ONLY filter both arms need for AUSENTE:
+--     a real, undeleted visit always counts toward "did they come in", regardless of any pardon stamp.
+--   * `ultima_visita_consumida` needs no perdonada filter either, for the opposite reason: every branch
+--     in pasar_lista_sesion/toggle_pase that stamps perdonada = true first sets v_consumio := false (the
+--     pardon always frees the class), so `consumio = true` (the FILTER clause below) already excludes
+--     every perdonada row from this fact by construction — asserted directly in the denial suite below.
 --
 -- Tenant discipline (#203 "no auth-derived gym roulette" — see is_staff_of / staff_gym in
 -- 20260702161010 + 20260713190200): p_gym_id is a PARAMETER, never resolved from the caller's JWT or
@@ -73,7 +78,7 @@ as $$
     max(fecha) as ultima_visita,
     max(fecha) filter (where consumio) as ultima_visita_consumida
   from public.asistencias
-  where gym_id = p_gym_id and deleted_at is null and not perdonada
+  where gym_id = p_gym_id and deleted_at is null
   group by cliente_id;
 $$;
 
