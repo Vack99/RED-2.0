@@ -306,8 +306,14 @@ export const getClienteFicha = cache(
           .from("asistencias")
           // `class_session_id` is the visit's CONTEXT (#89): the ficha's toggle owns the
           // ACCESO LIBRE row alone, so the read has to say which rows are class visits or
-          // the checked state would describe a row the toggle cannot undo.
-          .select("fecha, hora, consumio, class_session_id")
+          // the checked state would describe a row the toggle cannot undo. The nested
+          // embed (#178) names WHICH class, so two visits on one day are told apart by
+          // the class + its hour instead of by `hora` — the arrival stamp, which reads
+          // the same 23:11 for two marks 17 seconds apart. A many-to-one FK embed on the
+          // select that is already here: no extra round trip, no new column, no migration.
+          .select(
+            "fecha, hora, consumio, class_session_id, class_session(starts_at, is_special, special_name, class_type(name))",
+          )
           .eq("cliente_id", id)
           .is("deleted_at", null)
           .gte("fecha", ventanaIso)

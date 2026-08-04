@@ -10,6 +10,7 @@ import {
   esPrimeraCompra,
   esRegistroOnlinePendiente,
   estadoInvitacion,
+  etiquetaClase,
   gaugeFill,
   shapeFicha,
   type ClienteFacts,
@@ -178,6 +179,16 @@ describe("shapeFicha", () => {
     vence: "2026-06-16",
     created_at: "2026-04-10T18:00:00Z",
   };
+  // The class embed the asistencias read carries (#178). 01:45Z = 19:45 Chihuahua (-6).
+  const sesion = (
+    over: Partial<NonNullable<FichaAsistRow["class_session"]>> = {},
+  ): FichaAsistRow["class_session"] => ({
+    starts_at: "2026-05-28T01:45:00Z",
+    is_special: false,
+    special_name: null,
+    class_type: { name: "METCON" },
+    ...over,
+  });
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
     fecha: "2026-05-20T18:00:00Z",
     paquete_nombre: "8 clases",
@@ -191,9 +202,9 @@ describe("shapeFicha", () => {
 
   it("excludes today from historial and reports presentHoy/horaHoy", () => {
     const asist: FichaAsistRow[] = [
-      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, class_session_id: null }, // today
-      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, class_session_id: null },
-      { fecha: "2026-05-20", hora: null, consumio: true, class_session_id: null }, // back-entry, no time
+      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, class_session_id: null, class_session: null }, // today
+      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, class_session_id: null, class_session: null },
+      { fecha: "2026-05-20", hora: null, consumio: true, class_session_id: null, class_session: null }, // back-entry, no time
     ];
     const f = shapeFicha(clienteRow, asist, [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.presentHoy).toBe(true);
@@ -211,7 +222,7 @@ describe("shapeFicha", () => {
     // "marked" would make the next tap insert a second, consuming libre row (H1).
     const f = shapeFicha(
       clienteRow,
-      [{ fecha: HOY_ISO, hora: "18:05:00", consumio: true, class_session_id: "s9" }],
+      [{ fecha: HOY_ISO, hora: "18:05:00", consumio: true, class_session_id: "s9", class_session: sesion() }],
       [],
       HOY,
       HOY_ISO,
@@ -222,7 +233,7 @@ describe("shapeFicha", () => {
     );
     expect(f.presentHoy).toBe(false);
     expect(f.horaHoy).toBeNull();
-    expect(f.clasesHoy).toEqual([{ hora: "18:05" }]);
+    expect(f.clasesHoy).toEqual([{ hora: "18:05", clase: "METCON 19:45" }]);
     expect(f.historial).toHaveLength(0); // today is never in historial, either context
     // The leaf renders ONE HOY row per entry here and counts
     // `historial + (presentHoy ? 1 : 0) + clasesHoy` — so a class-only day must yield
@@ -235,8 +246,8 @@ describe("shapeFicha", () => {
     const f = shapeFicha(
       clienteRow,
       [
-        { fecha: HOY_ISO, hora: "07:30:00", consumio: true, class_session_id: null },
-        { fecha: HOY_ISO, hora: null, consumio: false, class_session_id: "s9" },
+        { fecha: HOY_ISO, hora: "07:30:00", consumio: true, class_session_id: null, class_session: null },
+        { fecha: HOY_ISO, hora: null, consumio: false, class_session_id: "s9", class_session: sesion() },
       ],
       [],
       HOY,
@@ -248,9 +259,64 @@ describe("shapeFicha", () => {
     );
     expect(f.presentHoy).toBe(true);
     expect(f.horaHoy).toBe("07:30");
-    expect(f.clasesHoy).toEqual([{ hora: null }]); // untimed row keeps a null hora
+    // Untimed row keeps a null ARRIVAL hora; the label still carries the class hour.
+    expect(f.clasesHoy).toEqual([{ hora: null, clase: "METCON 19:45" }]);
     // Two visits today ⇒ two HOY rows in the leaf, and a count of two.
     expect(f.historial.length + (f.presentHoy ? 1 : 0) + f.clasesHoy.length).toBe(2);
+  });
+
+  it("labels the WHOLE 30-day window, not just today (#178)", () => {
+    // Two class visits on one PAST day: one row each, told apart by the class label —
+    // `hora` (the arrival stamp) is seconds apart and cannot do it.
+    const f = shapeFicha(
+      clienteRow,
+      [
+        { fecha: "2026-05-25", hora: "23:11:04", consumio: true, class_session_id: "s1", class_session: sesion() },
+        {
+          fecha: "2026-05-25",
+          hora: "23:11:21",
+          consumio: true,
+          class_session_id: "s2",
+          class_session: sesion({ starts_at: "2026-05-25T13:00:00Z", class_type: { name: "YOGA" } }),
+        },
+        { fecha: "2026-05-24", hora: "08:15:00", consumio: true, class_session_id: null, class_session: null },
+      ],
+      [],
+      HOY,
+      HOY_ISO,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      0,
+    );
+    expect(f.historial).toHaveLength(3);
+    expect(f.historial[0]).toEqual({ dDisplay: "lun 25", hora: "23:11", today: false, clase: "METCON 19:45" });
+    expect(f.historial[1].clase).toBe("YOGA 07:00");
+    // ACCESO LIBRE carries no class — the leaf labels it (one home for that copy).
+    expect(f.historial[2].clase).toBeNull();
+  });
+
+  describe("etiquetaClase", () => {
+    it("names the class and its OWN scheduled hour, gym-local", () => {
+      expect(etiquetaClase(sesion(), TZ_FORGE)).toBe("METCON 19:45");
+      // Bogotá (GMT-5, the format suite's control zone) — the hour is the GYM's, not UTC's.
+      expect(etiquetaClase(sesion(), "America/Bogota")).toBe("METCON 20:45");
+    });
+
+    it("a clase especial reads its own name", () => {
+      expect(etiquetaClase(sesion({ is_special: true, special_name: "Noche de Fuerza" }), TZ_FORGE)).toBe(
+        "Noche de Fuerza 19:45",
+      );
+    });
+
+    it("falls back to the class type when the especial was saved with a blank name", () => {
+      expect(etiquetaClase(sesion({ is_special: true, special_name: "  " }), TZ_FORGE)).toBe("METCON 19:45");
+    });
+
+    it("falls back to a bare 'Clase' when the session did not resolve — never ACCESO LIBRE", () => {
+      expect(etiquetaClase(null, TZ_FORGE)).toBe("Clase");
+      expect(etiquetaClase(sesion({ class_type: null }), TZ_FORGE)).toBe("Clase 19:45");
+    });
   });
 
   it("maps pagos with pesos + metodo label and reads the active package", () => {

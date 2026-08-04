@@ -6,7 +6,7 @@
 import { esPorRenovar } from "@gym/domain/lifecycle";
 import { derivarEstado, diasRestantes, estaVencido, forfeit } from "@gym/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@gym/domain/types";
-import { DOW, fechaEnZona, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
+import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, parseDay, pesos } from "@gym/format";
 
 import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
@@ -243,6 +243,12 @@ export interface FichaAsistencia {
   dDisplay: string;
   hora: string | null;
   today: boolean;
+  /** The CLASS this visit belongs to — "METCON 19:45" (name + the class's own hour,
+   *  #178) — or null for an ACCESO LIBRE visit, which the leaf labels (it also has to
+   *  label the libre row it holds in local state after a toggle, so that copy lives
+   *  there, once). `hora` above stays the ARRIVAL stamp and keeps its own column: two
+   *  visits 17 seconds apart both read 23:11 there, and only this tells them apart. */
+  clase: string | null;
 }
 export interface FichaPago {
   fechaDisplay: string;
@@ -264,6 +270,27 @@ export interface FichaAsistRow {
   consumio: boolean;
   /** The visit's CONTEXT (#89): a class, or null for ACCESO LIBRE. */
   class_session_id: string | null;
+  /** The class itself, embedded on the same read (#178) — null on an ACCESO LIBRE row.
+   *  Deliberately NOT filtered on `cancelled_at`: cancelling a session afterwards does
+   *  not un-attend it, and dropping the embed would blank a real visit's label. */
+  class_session: {
+    starts_at: string;
+    is_special: boolean;
+    special_name: string | null;
+    class_type: { name: string } | null;
+  } | null;
+}
+
+/** A class visit's label: the class NAME plus the class's own scheduled HOUR, gym-local
+ *  ("METCON 19:45") — the two facts that tell two class visits on one day apart. Name
+ *  ladder, mirroring the agenda's `topTag`: a clase especial's own name, else the
+ *  catalog class_type name, else the bare "Clase" (a session the read could not
+ *  resolve, or an especial saved with a blank name — the row IS a class visit, so
+ *  calling it ACCESO LIBRE would be a lie). */
+export function etiquetaClase(s: FichaAsistRow["class_session"], tz: string): string {
+  if (!s) return "Clase";
+  const nombre = (s.is_special && s.special_name?.trim()) || s.class_type?.name || "Clase";
+  return `${nombre} ${horaEnZona(new Date(s.starts_at), tz)}`;
 }
 /** A venta row reduced to what the ficha's pagos list + saldo gauges need. */
 export interface FichaVentaRow {
@@ -304,11 +331,11 @@ export interface FichaDerivada {
    *  2-arg toggle writes and undoes. A class visit never sets this (#89). */
   presentHoy: boolean;
   horaHoy: string | null;
-  /** Today's CLASS visits, one entry per visit (`hora` = "HH:MM", or null for an untimed
-   *  row). INFORMATION ONLY: the ficha can neither mark nor undo a class visit — the
-   *  Agenda roster owns those — but it must both STAMP them above the toggle and COUNT
-   *  them in the historial, so the leaf gets the hora rather than a pre-joined label. */
-  clasesHoy: { hora: string | null }[];
+  /** Today's CLASS visits, one entry per visit (`hora` = the ARRIVAL "HH:MM", or null for
+   *  an untimed row; `clase` = the visit label, see FichaAsistencia). INFORMATION ONLY:
+   *  the ficha can neither mark nor undo a class visit — the Agenda roster owns those —
+   *  but it must both STAMP them above the toggle and COUNT them in the historial. */
+  clasesHoy: { hora: string | null; clase: string }[];
   historial: FichaAsistencia[];
   pagos: FichaPago[];
   ventasCount: number;
@@ -365,6 +392,7 @@ export function shapeFicha(
         dDisplay: `${DOW[d.getDay()].toLowerCase()} ${d.getDate()}`,
         hora: a.hora ? a.hora.slice(0, 5) : null,
         today: false,
+        clase: a.class_session_id === null ? null : etiquetaClase(a.class_session, tz),
       };
     });
   // The ficha's toggle is the 2-arg (ACCESO LIBRE) one, so its checked state keys on the
@@ -379,7 +407,7 @@ export function shapeFicha(
   const horaHoy = libreHoy?.hora?.slice(0, 5) ?? null;
   const clasesHoy = hoyRows
     .filter((a) => a.class_session_id !== null)
-    .map((a) => ({ hora: a.hora ? a.hora.slice(0, 5) : null }));
+    .map((a) => ({ hora: a.hora ? a.hora.slice(0, 5) : null, clase: etiquetaClase(a.class_session, tz) }));
 
   const pagos: FichaPago[] = ventas.map((v) => ({
     fechaDisplay: fmtShort(fechaEnZona(v.fecha, tz)),
