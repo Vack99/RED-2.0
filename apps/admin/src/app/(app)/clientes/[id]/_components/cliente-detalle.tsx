@@ -16,6 +16,7 @@ import {
   SectionHeader,
   Tnum,
 } from "@gym/ui/forge/ui";
+import { nivelUrgenciaLifecycle } from "@gym/domain/lifecycle";
 import type { ClienteFichaDTO } from "@gym/data/server/clientes";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
@@ -43,6 +44,12 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   // here: the libre visit the toggle owns + every class visit (#89).
   const asistCount = ficha.historial.length + (present ? 1 : 0) + ficha.clasesHoy.length;
   const cuentaActiva = ficha.invitacion.estado === "cuenta_activa";
+  // #225: reads the #223 engine's FLOORED urgencia (nivelUrgenciaLifecycle) instead of
+  // the ficha's own copied `diasRest <= 5` threshold engine (DELETED) — a vencido
+  // package no longer paints its días/vence accent as urgent (nothing left to run out
+  // of), and the threshold now lives in exactly one place (rules.ts's urgenciaCliente).
+  const urgente =
+    nivelUrgenciaLifecycle({ clases: c.clasesRest, dias: c.diasRest }) !== "ok";
   const compraLabel = ficha.primeraCompra ? "COBRAR PRIMERA COMPRA" : "RENOVAR";
   const irAVender = () => router.push(`/vender?cliente=${c.id}`);
 
@@ -334,14 +341,14 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             </div>
             <div className="flex-1">
               <Eyebrow style={{ fontSize: 10 }}>DÍAS RESTANTES</Eyebrow>
-              <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4, color: c.diasRest <= 5 ? "var(--yellow)" : "var(--fg)" }}>{c.diasRest}</Tnum>
+              <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4, color: urgente ? "var(--yellow)" : "var(--fg)" }}>{c.diasRest}</Tnum>
               {ficha.diasGauge && (
                 <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
-                  <div style={{ width: "100%", height: "100%", background: c.diasRest <= 5 ? "var(--yellow)" : "var(--green)", transform: `scaleX(${ficha.diasGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
+                  <div style={{ width: "100%", height: "100%", background: urgente ? "var(--yellow)" : "var(--green)", transform: `scaleX(${ficha.diasGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
                 </div>
               )}
               <div className="uppercase" style={{ marginTop: ficha.diasGauge ? 6 : 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
-                Vence <Tnum style={{ color: c.diasRest <= 5 ? "var(--gold)" : "var(--fg)", fontWeight: 700 }}>{c.venceDisplay.toUpperCase()}</Tnum>
+                Vence <Tnum style={{ color: urgente ? "var(--gold)" : "var(--fg)", fontWeight: 700 }}>{c.venceDisplay.toUpperCase()}</Tnum>
               </div>
             </div>
           </div>

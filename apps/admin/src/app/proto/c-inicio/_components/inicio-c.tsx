@@ -47,7 +47,7 @@ export function InicioC({ clientes, n }: { clientes: RosterClient[]; n: number }
   const directorio = (q?: string) =>
     `/proto/c-inicio/directorio?n=${n}${q ? `&q=${encodeURIComponent(q)}` : ""}`;
 
-  const { vigentes, totalActivos } = resumirRoster(clientes.map((c) => c.estado));
+  const { vigentes, total } = resumirRoster(clientes.map((c) => c.estado));
 
   // ── The queue. Two arms, both scoped to people who still HAVE a package —
   //    #181 C4: "days since expiry" and "days since visit" are two different
@@ -256,7 +256,7 @@ export function InicioC({ clientes, n }: { clientes: RosterClient[]; n: number }
           <Eyebrow>VIGENTES</Eyebrow>
           <div className="flex items-baseline" style={{ gap: 4, marginTop: 4 }}>
             <Tnum className="font-extrabold" style={{ fontSize: 28, lineHeight: 1 }}>{vigentes}</Tnum>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {totalActivos}</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {total}</span>
           </div>
         </Card>
         <Card style={{ padding: "14px 16px" }}>

@@ -82,40 +82,44 @@ describe("estaVencido — the single 'expired by date' boundary (ruling C9)", ()
   });
 });
 
-describe("derivarEstado", () => {
-  it("is activo with classes and time to spare", () => {
-    expect(derivarEstado({ clases: 8, dias: 20 })).toBe("activo");
-    expect(derivarEstado({ clases: "ilimitado", dias: 20 })).toBe("activo");
-    expect(derivarEstado({ clases: 3, dias: 20 })).toBe("activo"); // just above the 2-class threshold
-    expect(derivarEstado({ clases: 8, dias: 6 })).toBe("activo"); // just above the 5-day threshold
+describe("derivarEstado — the #223/#225 engine's estado predicate (fecha wins, A2)", () => {
+  it("is vigente with classes and time to spare — the old por_vencer/activo split is retired", () => {
+    expect(derivarEstado({ clases: 8, dias: 20 })).toBe("vigente");
+    expect(derivarEstado({ clases: "ilimitado", dias: 20 })).toBe("vigente");
+    expect(derivarEstado({ clases: 8, dias: 5 })).toBe("vigente"); // was "por_vencer" pre-#225
+    expect(derivarEstado({ clases: 2, dias: 20 })).toBe("vigente"); // was "por_vencer" pre-#225
   });
-  it("is por_vencer at <= 5 days left", () => {
-    expect(derivarEstado({ clases: 8, dias: 5 })).toBe("por_vencer");
-    expect(derivarEstado({ clases: "ilimitado", dias: 3 })).toBe("por_vencer");
-  });
-  it("is por_vencer at <= 2 classes left", () => {
-    expect(derivarEstado({ clases: 2, dias: 20 })).toBe("por_vencer");
-  });
-  it("is sin_clases when out of classes", () => {
+  it("is sin_clases when out of classes with days remaining", () => {
     expect(derivarEstado({ clases: 0, dias: 20 })).toBe("sin_clases");
   });
-  it("keeps the vence day (dias === 0) valid — por_vencer, not sin_clases (ruling C9)", () => {
-    expect(derivarEstado({ clases: 5, dias: 0 })).toBe("por_vencer");
+  it("keeps the vence day (dias === 0) valid — vigente, not vencido (ruling C9)", () => {
+    expect(derivarEstado({ clases: 5, dias: 0 })).toBe("vigente");
   });
-  it("is sin_clases once expired (dias < 0)", () => {
-    expect(derivarEstado({ clases: 5, dias: -1 })).toBe("sin_clases");
-    expect(derivarEstado({ clases: 5, dias: -2 })).toBe("sin_clases");
+  it("is vencido once expired (dias < 0), even with classes left — FECHA WINS (A2)", () => {
+    expect(derivarEstado({ clases: 5, dias: -1 })).toBe("vencido");
+    expect(derivarEstado({ clases: 5, dias: -2 })).toBe("vencido");
+  });
+  it("is vencido, never sin_clases, when BOTH the date and the classes are exhausted (A2)", () => {
+    // #223/#225's headline fix: forfeit() zeroes clases at read for every expired
+    // finite pack, so this pairing is the norm, not the edge case — fecha must win.
+    expect(derivarEstado({ clases: 0, dias: -1 })).toBe("vencido");
+  });
+  it("esPaseSuelto exempts the classes axis: a spent one-off pass with days left is vigente, not sin_clases", () => {
+    expect(derivarEstado({ clases: 0, dias: 20 }, true)).toBe("vigente");
+  });
+  it("esPaseSuelto does NOT exempt the fecha axis: an expired drop-in is still vencido", () => {
+    expect(derivarEstado({ clases: 0, dias: -1 }, true)).toBe("vencido");
   });
 });
 
 describe("resumirRoster", () => {
   it("is all-zero for an empty roster", () => {
-    expect(resumirRoster([])).toEqual({ vigentes: 0, totalActivos: 0 });
+    expect(resumirRoster([])).toEqual({ vigentes: 0, total: 0 });
   });
-  it("counts vigentes (activo) and totalActivos (not sin_clases)", () => {
-    expect(resumirRoster(["activo", "activo", "por_vencer", "sin_clases"])).toEqual({
+  it("counts vigentes (estado === vigente); total is the whole roster, not a narrower 'activos' subset", () => {
+    expect(resumirRoster(["vigente", "vigente", "vencido", "sin_clases", "sin_paquete"])).toEqual({
       vigentes: 2,
-      totalActivos: 3,
+      total: 5,
     });
   });
 });

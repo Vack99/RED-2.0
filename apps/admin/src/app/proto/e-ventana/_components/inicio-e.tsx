@@ -44,7 +44,7 @@ export function InicioE({ clientes, n }: { clientes: RosterClient[]; n: number }
   const dir = (f?: "renovar" | "aTiempo") =>
     `/proto/e-ventana?n=${n}${f ? `&f=${f === "aTiempo" ? "atiempo" : f}` : ""}`;
 
-  const { vigentes, totalActivos } = resumirRoster(clientes.map((c) => c.estado));
+  const { vigentes, total } = resumirRoster(clientes.map((c) => c.estado));
 
   // ── Tile 1 ──
   const renovar = filas.filter((f) => f.renovar);
@@ -139,7 +139,7 @@ export function InicioE({ clientes, n }: { clientes: RosterClient[]; n: number }
             <Tnum className="font-extrabold" style={{ fontSize: 28, lineHeight: 1 }}>
               {vigentes}
             </Tnum>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {totalActivos}</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {total}</span>
           </div>
         </Card>
         <Card style={{ padding: "14px 16px" }}>

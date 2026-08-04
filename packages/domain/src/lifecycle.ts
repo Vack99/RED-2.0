@@ -56,8 +56,8 @@
 //    still unable to train today and must not be stranded behind it.
 // ──────────────────────────────────────────────────────────────
 
-import { diasRestantes, estaVencido, urgenciaCliente } from "./rules";
-import type { Clases, NivelUrgencia, Saldo } from "./types";
+import { derivarEstado, diasRestantes, estaVencido, urgenciaCliente } from "./rules";
+import type { Clases, EstadoCliente, NivelUrgencia, Saldo } from "./types";
 
 /** The pre-expiry window ("por renovar"). Owner ruling 2026-08-02: 10 días —
  *  ERGONOMIC, chosen for legibility, NOT a measured value (#185 Q4 measured
@@ -83,8 +83,10 @@ export type Eje = "fecha" | "clases";
 /** A package's derived lifecycle — never a verdict on the PERSON (no
  *  Activo/Inactivo anywhere in this engine). `sin_paquete` covers both a
  *  same-day sign-up and a pendienteOnline row: there is no package to be
- *  vigente/vencido/sin_clases ABOUT. */
-export type EstadoPaquete = "vigente" | "vencido" | "sin_clases" | "sin_paquete";
+ *  vigente/vencido/sin_clases ABOUT. Literally `EstadoCliente` (types.ts) — the
+ *  #225 unification made that the ONE estado type; this alias keeps this file's
+ *  internal vocabulary (a package's state, not a "cliente" field) readable. */
+export type EstadoPaquete = EstadoCliente;
 
 /** INICIO's two bounded tiles. null past day 16, or when nothing binds. */
 export type Tile = "por_renovar" | "aun_a_tiempo" | null;
@@ -281,13 +283,12 @@ export function derivarLifecycle(fila: FilaRosterLifecycle, hoy: Date): FilaLife
   }
 
   const dias = diasRestantes(fila.vence, hoy);
-  const vencioFecha = estaVencido(dias);
-  // A one-off pass reading 0 clases is its NORMAL end state after one visit,
-  // not a lapse — see file header. It never trips SIN CLASES.
-  const sinClases = !fila.esPaseSuelto && clasesNum(fila.clases) <= 0;
-
-  // FECHA WINS (A2) — unconditional, no tie-break: see file header.
-  const estado: EstadoPaquete = vencioFecha ? "vencido" : sinClases ? "sin_clases" : "vigente";
+  // FECHA WINS (A2), the pase-suelto classes exemption, and the vigente/vencido/
+  // sin_clases partition are ALL derivarEstado's job (rules.ts) — the single
+  // predicate both this engine and every #225 consumer (derivarCliente, the
+  // resumen, the export) read, never a second inline restatement (#223 finding,
+  // closed by #225).
+  const estado: EstadoPaquete = derivarEstado({ clases: fila.clases, dias }, fila.esPaseSuelto);
   const eje: Eje | null = estado === "vigente" ? null : estado === "vencido" ? "fecha" : "clases";
 
   const diasDesdeFin: number | null =

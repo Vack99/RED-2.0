@@ -94,42 +94,44 @@ export function estaVencido(dias: number): boolean {
 }
 
 /**
- * Derive a client's lifecycle state from what's left (ADR-0002 — never
- * stored). Replaces the stored `estado` field and the three conflicting
- * threshold checks scattered across the mock screens.
- *  - sin_clases: expired (dias < 0) OR out of classes (clases <= 0)
- *  - por_vencer: <= 5 days left OR <= 2 classes left (not ilimitado)
- *  - activo: otherwise
- * The vence day (dias === 0) is a valid training day (ruling C9), so it lands
- * in por_vencer, not sin_clases.
+ * Derive a PACKAGE's lifecycle state from what's left (ADR-0002 — never stored).
+ * The single home for estado — `lifecycle.ts`'s `derivarLifecycle` (the #223 engine)
+ * calls this exact function rather than re-deriving its own copy, so a Saldo-only
+ * caller (this one) and a full-roster caller (the engine) can never disagree (#225).
+ *  - vencido: expired (dias < 0) — FECHA WINS (A2) unconditionally, even when
+ *    classes also read 0 (a lapsed finite pack is forfeited to 0 at read).
+ *  - sin_clases: not expired, but out of classes (clases <= 0) — reserved for
+ *    class-empty WITH days remaining. `esPaseSuelto` (a spent one-off pass, its
+ *    NORMAL end state after one visit) is exempt from this check entirely: the
+ *    classes axis is inert for a drop-in, so it never trips sin_clases.
+ *  - vigente: otherwise.
+ * The vence day (dias === 0) is a valid training day (ruling C9), so it is never
+ * vencido. `por_vencer`/`activo` (the old <=5-day/<=2-class split) are RETIRED —
+ * that signal now lives in urgenciaCliente/nivelUrgenciaLifecycle and the POR
+ * RENOVAR tile (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts), never in estado.
  */
-export function derivarEstado(saldo: Saldo): EstadoCliente {
-  const expirado = estaVencido(saldo.dias);
-  const sinClases = saldo.clases !== "ilimitado" && saldo.clases <= 0;
-  if (expirado || sinClases) return "sin_clases";
+export function derivarEstado(saldo: Saldo, esPaseSuelto = false): EstadoCliente {
+  if (estaVencido(saldo.dias)) return "vencido";
 
-  const pocosDias = saldo.dias <= 5;
-  const pocasClases = saldo.clases !== "ilimitado" && saldo.clases <= 2;
-  if (pocosDias || pocasClases) return "por_vencer";
+  const sinClases = !esPaseSuelto && saldo.clases !== "ilimitado" && saldo.clases <= 0;
+  if (sinClases) return "sin_clases";
 
-  return "activo";
+  return "vigente";
 }
 
 /**
- * Summarize a roster of derived estados into the two counts the dashboard +
- * directory headline (ADR-0002). The single home for "who counts as a vigente /
- * as an active member": `vigentes` are fully-active packages (estado "activo");
- * `totalActivos` are everyone who still counts as a member (estado !== "sin_clases")
- * — the "/ N" denominator. Screens call this, never an inline `.filter(...).length`.
+ * Summarize a roster of derived estados into the counts the dashboard + directory
+ * headline share (ADR-0002, #225). The single home for "who counts as vigente":
+ * `vigentes` is `estado === "vigente"`; `total` is the whole roster — the "/ N"
+ * denominator (never a narrower "not sin_clases" subset — no "activos" applied to
+ * a person). Screens call this, never an inline `.filter(...).length`.
  */
 export function resumirRoster(estados: EstadoCliente[]): ResumenRoster {
   let vigentes = 0;
-  let totalActivos = 0;
   for (const estado of estados) {
-    if (estado === "activo") vigentes += 1;
-    if (estado !== "sin_clases") totalActivos += 1;
+    if (estado === "vigente") vigentes += 1;
   }
-  return { vigentes, totalActivos };
+  return { vigentes, total: estados.length };
 }
 
 // Retention-urgency thresholds, tuned for 8/12-class, 20–30 day memberships.

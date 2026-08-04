@@ -78,8 +78,14 @@ describe("fmtDias", () => {
     expect(fmtDias(1)).toBe("1 día");
   });
 
-  it("reports a non-positive count as vencido (expired / no package)", () => {
-    expect(fmtDias(0)).toBe("vencido");
+  it("día 0 (the vence day itself) is a valid training day — never 'vencido' (#225)", () => {
+    // Pre-#225 this read "vencido", producing "Tu paquete vence en vencido" on the
+    // member's own vence day — the off-by-one #225 exists to close.
+    expect(fmtDias(0)).toBe("0 días");
+  });
+
+  it("reports a negative count (genuinely expired) as vencido", () => {
+    expect(fmtDias(-1)).toBe("vencido");
     expect(fmtDias(-3)).toBe("vencido");
   });
 });

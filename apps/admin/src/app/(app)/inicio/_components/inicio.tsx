@@ -16,7 +16,8 @@ const SPARK_FLOOR = 0.06;
 interface InicioScreenProps {
   resumen: ResumenMes;
   vigentes: number;
-  totalActivos: number;
+  /** The whole roster — the "/ N" denominator (#225: never a narrower "activos" subset). */
+  total: number;
   /** Auth-linked (Door 2) members with no active package — the online funnel the
    *  owner would otherwise miss without scrolling the directory (audit #11). */
   nuevosOnline: number;
@@ -30,7 +31,7 @@ interface InicioScreenProps {
 export function InicioScreen({
   resumen,
   vigentes,
-  totalActivos,
+  total,
   nuevosOnline,
   recientes,
   eyebrow,
@@ -134,7 +135,7 @@ export function InicioScreen({
           <Eyebrow>VIGENTES</Eyebrow>
           <div className="flex items-baseline" style={{ gap: 4, marginTop: 4 }}>
             <Tnum className="font-extrabold" style={{ fontSize: 28, lineHeight: 1 }}>{vigentes}</Tnum>
-            <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {totalActivos}</span>
+            <span style={{ fontSize: 12, color: "var(--muted)" }}>/ {total}</span>
           </div>
         </Card>
         <Card style={{ padding: "14px 16px" }}>

@@ -18,10 +18,13 @@ export function renderMensajes(plantillas: PlantillaDTO[], ctx: PlantillaContext
   return plantillas.map((p) => ({ id: p.id, nombre: p.nombre, texto: renderPlantilla(p.body, ctx) }));
 }
 
-/** The {dias} token: days-to-expiry as a short es-MX display string. A non-positive
- *  count (expired, or no package → 0) reads "vencido" rather than "0 días"/"-3 días". */
+/** The {dias} token: days-to-expiry as a short es-MX display string. día 0 (the vence
+ *  day itself) is a valid training day (ruling C9 / `estaVencido`) and must never read
+ *  "vencido" — the off-by-one #225 exists to close ("Tu paquete vence en vencido" for
+ *  every member on their vence day). Only NEGATIVE días (genuinely expired, or no
+ *  package → 0) read "vencido"; a positive/zero count reads "{n} día(s)". */
 export function fmtDias(diasRest: number): string {
-  if (diasRest <= 0) return "vencido";
+  if (diasRest < 0) return "vencido";
   return `${diasRest} día${diasRest === 1 ? "" : "s"}`;
 }
 

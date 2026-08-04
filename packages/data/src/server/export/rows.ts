@@ -6,8 +6,9 @@
 // fully unit-tested in rows.test.ts.
 //
 // Estado / urgencia are NEVER re-derived here: they come from the read-side
-// derivation (derivarCliente / urgenciaCliente, ADR-0002), the single home for
-// "how a client is doing". Money columns are emitted as raw numbers (summable in
+// derivation (derivarCliente / nivelUrgenciaLifecycle, ADR-0002, #225), the single
+// home for "how a PACKAGE is doing" — never a verdict on the person. Money columns
+// are emitted as raw numbers (summable in
 // Excel — PRD US#7); the workbook applies the peso number format to `money` cols.
 // Dates are shaped to TEXT here (no Excel timezone footguns): ledger dates that
 // span years are ISO (isoDay), near-future / recurring dates are day-month (fmtShort).
@@ -15,7 +16,7 @@
 import { derivarCliente } from "../derive";
 import type { ClienteFacts } from "../derive";
 import { fechaEnZona, fmtShort, isoDay, parseDay } from "@gym/format";
-import { urgenciaCliente } from "@gym/domain/rules";
+import { esPaseSuelto, nivelUrgenciaLifecycle } from "@gym/domain/lifecycle";
 import type { CorteMes, EstadoCliente, NivelUrgencia } from "@gym/domain/types";
 
 // ── The contract — RespaldoData (DAL → shaper) + RespaldoRows (shaper → workbook) ──
@@ -94,10 +95,15 @@ export interface RespaldoRows {
 
 // ── Display label maps (no central map exists in the repo — see build-spec §3) ──
 
+// #225: the label set names a PACKAGE's state, never a verdict on a person — no
+// Activo/Inactivo on a human anywhere in the export. Updated once, deliberately,
+// to the #223/#225 engine's four-way estado (vigente/vencido/sin_clases/sin_paquete);
+// the Excel column header stays "Estado" (a stable contract), only the cell values change.
 const ESTADO_LABEL: Record<EstadoCliente, string> = {
-  activo: "Activo",
-  por_vencer: "Por vencer",
+  vigente: "Vigente",
+  vencido: "Vencido",
   sin_clases: "Sin clases",
+  sin_paquete: "Sin paquete",
 };
 
 const URGENCIA_LABEL: Record<NivelUrgencia, string> = {
@@ -193,11 +199,16 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
     "Urgencia",
     "Alta",
   ];
+  // The membership-vs-drop-in fact (#225): a roster row's `paquete_nombre` carries
+  // no grant, so esPaseSuelto resolves against the catalog gather already supplies.
+  const paseSuelto = new Set(data.paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
   const rows = data.clientes.map((c) => {
     // REUSE the read-side derivation — never re-derive estado/urgencia (ADR-0002).
-    // asistEsteMes is omitted from this sheet, so pass 0 (build-spec §0).
-    const d = derivarCliente(c, data.generadoHoy, 0);
-    const u = urgenciaCliente({ clases: d.clasesRest, dias: d.diasRest });
+    // asistEsteMes is omitted from this sheet, so pass 0 (build-spec §0). Urgencia is
+    // the FLOORED level (#225 finding 1): a vencido package is never "Crítico" — there
+    // is nothing left to run out of.
+    const d = derivarCliente(c, data.generadoHoy, 0, paseSuelto);
+    const u = nivelUrgenciaLifecycle({ clases: d.clasesRest, dias: d.diasRest });
     return [
       c.nombre,
       c.tel ?? EM_DASH,
@@ -207,7 +218,7 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
       clasesLabel(d.clasesRest),
       d.venceDisplay,
       ESTADO_LABEL[d.estado],
-      URGENCIA_LABEL[u.nivel],
+      URGENCIA_LABEL[u],
       isoDay(fechaEnZona(c.alta, data.tz)),
     ];
   });

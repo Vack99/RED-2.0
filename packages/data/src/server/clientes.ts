@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
+import { esPaseSuelto } from "@gym/domain/lifecycle";
 import type { ResumenRoster } from "@gym/domain/types";
 import { addDays, fechaEnZona, hoyEnZona, iniciales, isTelValido, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
@@ -161,8 +162,11 @@ export const getClientesRoster = cache(
 
     // The roster genuinely needs every cliente row; the asistencias leg only feeds a
     // per-cliente count, so that leg is a grouped DB-side count (asistencias_mes_por_cliente)
-    // instead of pulling the whole month's rows just to tally them in JS.
-    const [clientesRes, countsRes] = await Promise.all([
+    // instead of pulling the whole month's rows just to tally them in JS. `paquetes` is
+    // the small catalog leg estado needs (#225): a roster row stores only the sold
+    // package's display name, never its class GRANT, so esPaseSuelto (the
+    // membership-vs-drop-in predicate) has to resolve against the catalog.
+    const [clientesRes, countsRes, paquetes] = await Promise.all([
       supabase
         .from("clientes")
         .select(
@@ -174,6 +178,7 @@ export const getClientesRoster = cache(
         p_gym_id: gym.id,
         p_desde: monthStartIso(hoy),
       }),
+      getPaquetes(supabase, tz),
     ]);
 
     const clientes = clientesRes.data;
@@ -181,9 +186,10 @@ export const getClientesRoster = cache(
 
     const counts: Record<string, number> = {};
     for (const r of countsRes.data ?? []) counts[r.cliente_id] = r.n;
+    const paseSuelto = new Set(paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
 
     return clientes.map((c) => {
-      const base = derivarCliente(c, hoy, counts[c.id] ?? 0);
+      const base = derivarCliente(c, hoy, counts[c.id] ?? 0, paseSuelto);
       const invitacion = derivarInvitacion(c, tz);
       return {
         ...base,
@@ -194,77 +200,53 @@ export const getClientesRoster = cache(
   },
 );
 
-/** The two roster headline counts (vigentes / totalActivos) for the dashboard,
- *  derived-at-read (ADR-0002). The full getClientesRoster is for the directory —
- *  it needs every cliente + asistEsteMes, so it fires a whole-month asistencias
- *  query. The dashboard never needs the client rows themselves for vigentes/
- *  totalActivos (two count-only queries, no `.order`) — only nuevosOnline still
- *  reads rows, and only the auth-linked subset (see getRosterResumen below). */
 /** The roster headline counts plus `nuevosOnline` — the dashboard's "Nuevos
- *  registros online" tile: auth-linked (Door 2) members with no active package,
+ *  registros online" tile: auth-linked (Door 2) members with no vigente package,
  *  the same population the roster filter chip surfaces (esRegistroOnlinePendiente). */
 export interface RosterResumenDTO extends ResumenRoster {
   nuevosOnline: number;
 }
 
-/** `vigentes`/`totalActivos` restated as raw-column predicates (no client row fetch — see
- *  getRosterResumen). Both derive from derivarCliente + derivarEstado (derive.ts / domain
- *  rules.ts); this comment is the proof the two stay in lockstep with that pure logic, so a
- *  change there must be re-derived here too:
- *   - forfeit() only ever zeroes `clasesRest` when `diasRest < 0`, and derivarEstado already
- *     forces "sin_clases" whenever `diasRest < 0` regardless of clases — so forfeit never
- *     changes which estado a client lands in, and the predicates below can read the STORED
- *     `clases_restantes` directly.
- *   - totalActivos (estado !== "sin_clases"): tienePaquete AND diasRest >= 0 AND
- *     (clases_restantes IS NULL OR clases_restantes > 0). diasRest >= 0 ⟺ vence >= hoy.
- *   - vigentes (estado === "activo"): tienePaquete AND diasRest > 5 AND
- *     (clases_restantes IS NULL OR clases_restantes > 2). diasRest > 5 ⟺ vence >= hoy + 6d
- *     (both sides are whole-day midnights, so the comparison is exact — no fractional day). */
+/** `vigentes`/`total` for the dashboard, derived-at-read (ADR-0002, #225). Reads the
+ *  SAME predicate the directory header and the #223 lifecycle engine read — every row
+ *  runs through `derivarCliente`/`derivarEstado` (the ONE estado source), never a
+ *  hand-rolled `.gte()`/`.or()` restatement of the bands (the pre-#225 shape here
+ *  drifted from derivarEstado the moment its own bands changed, exactly the "two live
+ *  meanings of a band" bug this ticket exists to kill). `paquetes` is the small
+ *  catalog leg esPaseSuelto needs (a roster row's `paquete_nombre` carries no grant).
+ *  Two selects, no `.order` on the roster leg, no per-row display columns beyond what
+ *  estado needs — a fetch, not the full directory roster. */
 export const getRosterResumen = cache(
   async (client?: SupabaseServer): Promise<RosterResumenDTO> => {
     const supabase = client ?? (await createClient());
     const gym = await getOperatorGym(supabase);
-    const hoy = hoyEnZona(gym.timezone);
-    const hoyIso = toIsoDay(hoy);
-    const vigenteDesdeIso = toIsoDay(addDays(hoy, 6));
+    const tz = gym.timezone;
+    const hoy = hoyEnZona(tz);
 
-    const [totalActivosRes, vigentesRes, onlineRes] = await Promise.all([
+    const [{ data: clientesData }, paquetes] = await Promise.all([
       supabase
         .from("clientes")
-        .select("id", { count: "exact", head: true })
-        .eq("gym_id", gym.id)
-        .not("paquete_nombre", "is", null)
-        .gte("vence", hoyIso)
-        .or("clases_restantes.is.null,clases_restantes.gt.0"),
-      supabase
-        .from("clientes")
-        .select("id", { count: "exact", head: true })
-        .eq("gym_id", gym.id)
-        .not("paquete_nombre", "is", null)
-        .gte("vence", vigenteDesdeIso)
-        .or("clases_restantes.is.null,clases_restantes.gt.2"),
-      // nuevosOnline needs the full derivation (estadoInvitacion + derivarCliente), but only
-      // over auth-linked rows — esRegistroOnlinePendiente is false for every other row, so
-      // scoping the fetch to `auth_user_id is not null` drops the rest of the 500-cliente
-      // roster without changing the count.
-      supabase
-        .from("clientes")
+        // id/nombre/tel are unused by this read but ClienteFacts (derivarCliente's input
+        // shape) requires them — cheap columns, no extra round trip.
         .select(
           "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id",
         )
-        .eq("gym_id", gym.id)
-        .not("auth_user_id", "is", null),
+        .eq("gym_id", gym.id),
+      getPaquetes(supabase, tz),
     ]);
 
-    const nuevosOnline = (onlineRes.data ?? []).filter((c) =>
-      esRegistroOnlinePendiente(estadoInvitacion(c), derivarCliente(c, hoy, 0).estado),
-    ).length;
+    const clientes = clientesData ?? [];
+    const paseSuelto = new Set(paquetes.filter((p) => esPaseSuelto(p.clases)).map((p) => p.nombre));
 
-    return {
-      vigentes: vigentesRes.count ?? 0,
-      totalActivos: totalActivosRes.count ?? 0,
-      nuevosOnline,
-    };
+    let vigentes = 0;
+    let nuevosOnline = 0;
+    for (const c of clientes) {
+      const estado = derivarCliente(c, hoy, 0, paseSuelto).estado;
+      if (estado === "vigente") vigentes += 1;
+      if (esRegistroOnlinePendiente(estadoInvitacion(c), estado)) nuevosOnline += 1;
+    }
+
+    return { vigentes, total: clientes.length, nuevosOnline };
   },
 );
 

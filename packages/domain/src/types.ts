@@ -11,8 +11,18 @@
 /** A class count. Ilimitado packages have no numeric limit. */
 export type Clases = number | "ilimitado";
 
-/** A client's lifecycle state — DERIVED, never stored (ADR-0002). */
-export type EstadoCliente = "activo" | "por_vencer" | "sin_clases";
+/** A package's lifecycle state — DERIVED, never stored (ADR-0002), and NEVER a verdict
+ *  on the person (no activo/inactivo on a human — #225). Single source: `derivarEstado`
+ *  (rules.ts) computes this from a Saldo + the membership-vs-drop-in fact; `lifecycle.ts`'s
+ *  `derivarLifecycle` (the #223 engine, richer FilaRosterLifecycle input) calls the SAME
+ *  function — its `EstadoPaquete` is this exact type, not a parallel one. FECHA WINS (A2):
+ *  `vencido` is set unconditionally once the date has lapsed, even if classes also read 0 —
+ *  `sin_clases` is reserved for class-empty WITH days remaining. `sin_paquete` covers "no
+ *  package at all" (a same-day sign-up or a pendienteOnline row) — there is nothing to be
+ *  vigente/vencido/sin_clases ABOUT. Replaces the old activo/por_vencer/sin_clases split:
+ *  por_vencer was a threshold restatement now owned by urgenciaCliente/nivelUrgenciaLifecycle
+ *  and the POR RENOVAR tile (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts), never estado. */
+export type EstadoCliente = "vigente" | "vencido" | "sin_clases" | "sin_paquete";
 
 /** Retention urgency level — DERIVED from saldo. Finer-grained than
  *  EstadoCliente's por_vencer; drives the directory's "por renovar" model. */
@@ -27,13 +37,16 @@ export interface Urgencia {
 }
 
 /** Roster lifecycle summary — counts derived from each cliente's estado (ADR-0002).
- *  The single shape the dashboard + directory consume so "who counts as vigente /
- *  as an active member" lives in one home (resumirRoster), never an inline filter. */
+ *  The single shape the dashboard + directory consume so "who counts as vigente"
+ *  lives in one home (resumirRoster), never an inline filter. Mirrors lifecycle.ts's
+ *  ConteosLifecycle.vigentes/.total exactly (#225) — never "activos" applied to a
+ *  person, and the denominator is the WHOLE roster, not a narrower "not sin_clases"
+ *  subset (the old totalActivos, retired). */
 export interface ResumenRoster {
-  /** Clientes whose package is fully active (estado === "activo"). */
+  /** Clientes whose package is vigente (estado === "vigente"). */
   vigentes: number;
-  /** Clientes who still count as members (estado !== "sin_clases") — the "/ N" denominator. */
-  totalActivos: number;
+  /** The whole roster — the header ratio's "de N" denominator. */
+  total: number;
 }
 
 /** Payment method. Every sale collects at COBRAR — there is no "por pagar"

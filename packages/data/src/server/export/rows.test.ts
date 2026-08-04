@@ -142,38 +142,66 @@ describe("buildRespaldoRows — money columns are raw NUMBERS + money indices", 
   });
 });
 
-describe("buildRespaldoRows — estado labels (reused derivation)", () => {
-  it('"Activo" for a healthy package', () => {
+describe("buildRespaldoRows — estado labels (#225: vigente/vencido/sin_clases/sin_paquete)", () => {
+  it('"Vigente" for a healthy package — including a few-days-left row (the retired por_vencer split)', () => {
     const r = buildRespaldoRows(
       data({ clientes: [cliente({ vence: "2026-07-01", clases_restantes: 10 })] }),
     );
-    expect(r.clientes.rows[0][7]).toBe("Activo");
-  });
+    expect(r.clientes.rows[0][7]).toBe("Vigente");
 
-  it('"Por vencer" when few days remain', () => {
-    const r = buildRespaldoRows(
+    const rClose = buildRespaldoRows(
       data({ clientes: [cliente({ vence: "2026-05-31", clases_restantes: 8 })] }),
     );
-    expect(r.clientes.rows[0][7]).toBe("Por vencer");
+    expect(rClose.clientes.rows[0][7]).toBe("Vigente"); // was "Por vencer" pre-#225
   });
 
-  it('"Sin clases" when the package is expired', () => {
+  it('"Vencido" when the package is expired — never "Sin clases" (FECHA WINS, A2)', () => {
     const r = buildRespaldoRows(
       data({ clientes: [cliente({ vence: "2026-05-20", clases_restantes: 5 })] }),
+    );
+    expect(r.clientes.rows[0][7]).toBe("Vencido"); // was mislabeled "Sin clases" pre-#225
+  });
+
+  it('"Sin clases" when out of classes with days remaining', () => {
+    const r = buildRespaldoRows(
+      data({ clientes: [cliente({ vence: "2026-07-01", clases_restantes: 0 })] }),
     );
     expect(r.clientes.rows[0][7]).toBe("Sin clases");
   });
+
+  it('"Sin paquete" for a client with no package at all — never "Activo"/"Inactivo" on a person', () => {
+    const r = buildRespaldoRows(
+      data({ clientes: [cliente({ paquete_nombre: null, vence: null, clases_restantes: null })] }),
+    );
+    expect(r.clientes.rows[0][7]).toBe("Sin paquete");
+  });
+
+  it("no person-verdict word (Activo/Inactivo) appears anywhere in the Estado column", () => {
+    const r = buildRespaldoRows(
+      data({
+        clientes: [
+          cliente({ id: "c1", vence: "2026-07-01", clases_restantes: 10 }),
+          cliente({ id: "c2", vence: "2026-05-20", clases_restantes: 5 }),
+          cliente({ id: "c3", vence: "2026-07-01", clases_restantes: 0 }),
+          cliente({ id: "c4", paquete_nombre: null, vence: null, clases_restantes: null }),
+        ],
+      }),
+    );
+    const estados = r.clientes.rows.map((row) => row[7]);
+    expect(estados).not.toContain("Activo");
+    expect(estados).not.toContain("Inactivo");
+  });
 });
 
-describe("buildRespaldoRows — urgencia labels (reused derivation)", () => {
-  it('"Crítico" when the package is expired (días <= 3)', () => {
+describe("buildRespaldoRows — urgencia labels (#225: floored — a vencido package is never crítico)", () => {
+  it('"OK" when the package is expired — the urgencia FLOOR, not "Crítico" (#225 finding 1)', () => {
     const r = buildRespaldoRows(
       data({ clientes: [cliente({ vence: "2026-05-20", clases_restantes: 5 })] }),
     );
-    expect(r.clientes.rows[0][8]).toBe("Crítico");
+    expect(r.clientes.rows[0][8]).toBe("OK"); // was "Crítico" pre-#225 (the floor)
   });
 
-  it('"Urgente" when 4 days remain', () => {
+  it('"Urgente" when 4 days remain (not expired — the floor does not apply)', () => {
     const r = buildRespaldoRows(
       data({ clientes: [cliente({ vence: "2026-05-31", clases_restantes: 8 })] }),
     );
@@ -431,7 +459,7 @@ describe("buildRespaldoRows — full Clientes row (every column)", () => {
       "8 clases",
       "8 clases",
       "1 jul",
-      "Activo",
+      "Vigente",
       "OK",
       "2026-01-15",
     ]);

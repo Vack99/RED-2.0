@@ -294,6 +294,10 @@ interface Rows {
   /** getOperatorGyms reads this with an embedded `gym(...)` FK join — one round trip,
    *  so each membership row carries its gym pre-joined rather than a second table. */
   gym_membership?: Record<string, unknown>[];
+  /** The package catalog getPaquetes reads (#225: getRosterResumen/getClientesRoster
+   *  need it for esPaseSuelto). Empty by default — every fixture without a drop-in
+   *  package can omit this. */
+  paquetes?: Record<string, unknown>[];
   /** `.rpc(fnName, args)` responses, keyed by function name — ventas_count_por_cliente /
    *  asistencias_mes_por_cliente resolve directly (no `.single()`), mirroring the DAL. */
   rpc?: Record<string, { cliente_id: string; n: number }[]>;
@@ -487,26 +491,27 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
 });
 
 /**
- * Fix 3 (perf): vigentes/totalActivos used to come from fetching every cliente row and
- * running each through derivarCliente/derivarEstado in JS. They now come from two
- * count-only PostgREST queries whose filters restate that same estado logic directly on
- * the stored columns (see the derivation comment above getRosterResumen in clientes.ts).
- * This fixture exercises the estado boundary the filters must reproduce EXACTLY:
- *  - activo (vigente): far-future vence, plenty of clases.
- *  - por_vencer (counts toward totalActivos, NOT vigentes): vence 3 days out.
- *  - sin_clases via expiry (counts toward neither): vence in the past.
- *  - sin_clases via no package (counts toward neither): paquete_nombre null.
- * `makeReadFake`'s `.not()`/`.gte()`/`.or()` REALLY filter these rows (see its docstring),
- * so a wrong predicate in clientes.ts would show up here as a wrong count, not just a
- * recorded call.
+ * #225: vigentes/total now come from fetching every cliente row and running each
+ * through derivarCliente/derivarEstado — the SAME predicate the #223 lifecycle
+ * engine and the directory header read, never a parallel `.gte()`/`.or()` restatement
+ * of the bands (the pre-#225 shape drifted from derivarEstado the moment its bands
+ * changed — the exact "two live meanings of a band" bug this ticket kills). This
+ * fixture exercises the estado boundary + the pase-suelto exemption:
+ *  - vigente-1: far-future vence, plenty of clases.
+ *  - vigente-2-close: vence 3 days out, few clases — pre-#225 this was "por_vencer"
+ *    and excluded from vigentes; that split is retired, so it counts now too.
+ *  - vencido-1: vence in the past — FECHA WINS (A2), never "sin_clases".
+ *  - sin-paquete-1: no package at all — distinct from sin_clases (#225).
+ *  - pase-suelto-1: a spent one-off pass (0 clases, days remaining) — esPaseSuelto
+ *    exempts the classes axis, so it's vigente, not sin_clases.
  */
-describe("getRosterResumen — vigentes/totalActivos from count-only queries (Fix 3)", () => {
+describe("getRosterResumen — vigentes/total from the shared lifecycle-engine predicate (#225)", () => {
   const TZ = "America/Chihuahua";
   const HOY = hoyEnZona(TZ);
 
   const RESUMEN_CLIENTES = [
     {
-      id: "activo-1",
+      id: "vigente-1",
       gym_id: "g-1",
       paquete_nombre: "Ilimitado",
       clases_restantes: null, // ilimitado — never excluded by the clases leg
@@ -516,21 +521,21 @@ describe("getRosterResumen — vigentes/totalActivos from count-only queries (Fi
       invitacion_enviada_at: null,
     },
     {
-      id: "por-vencer-1",
+      id: "vigente-2-close",
       gym_id: "g-1",
       paquete_nombre: "8 clases",
       clases_restantes: 5,
-      vence: toIsoDay(addDays(HOY, 3)), // <= 5 días → por_vencer, not activo
+      vence: toIsoDay(addDays(HOY, 3)), // was "por_vencer" pre-#225 — now counts as vigente
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
     },
     {
-      id: "expirado-1",
+      id: "vencido-1",
       gym_id: "g-1",
       paquete_nombre: "8 clases",
       clases_restantes: 5,
-      vence: toIsoDay(addDays(HOY, -10)), // dias < 0 → sin_clases
+      vence: toIsoDay(addDays(HOY, -10)), // dias < 0 → vencido, never sin_clases (A2)
       auth_user_id: null,
       email: null,
       invitacion_enviada_at: null,
@@ -545,11 +550,28 @@ describe("getRosterResumen — vigentes/totalActivos from count-only queries (Fi
       email: null,
       invitacion_enviada_at: null,
     },
+    {
+      id: "pase-suelto-1",
+      gym_id: "g-1",
+      paquete_nombre: "1 clase",
+      clases_restantes: 0, // spent — its NORMAL end state after one visit
+      vence: toIsoDay(addDays(HOY, 20)), // still inside its own validity window
+      auth_user_id: null,
+      email: null,
+      invitacion_enviada_at: null,
+    },
   ];
 
-  it("vigentes counts only the fully-active row; totalActivos also counts por_vencer", async () => {
+  const PAQUETES_CATALOG = [
+    { id: "p1", gym_id: "g-1", nombre: "Ilimitado", clases: null, vigencia_tipo: "mes", vigencia_dias: null, precio: 1200, popular: false, orden: 1 },
+    { id: "p2", gym_id: "g-1", nombre: "8 clases", clases: 8, vigencia_tipo: "dias", vigencia_dias: 30, precio: 800, popular: false, orden: 2 },
+    { id: "p3", gym_id: "g-1", nombre: "1 clase", clases: 1, vigencia_tipo: "dias", vigencia_dias: 30, precio: 150, popular: false, orden: 3 },
+  ];
+
+  it("vigentes counts every not-vencido, not-out-of-classes row — the por_vencer split is retired (#225)", async () => {
     const fake = makeReadFake({
       clientes: RESUMEN_CLIENTES,
+      paquetes: PAQUETES_CATALOG,
       gym_membership: [
         { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
       ],
@@ -557,8 +579,8 @@ describe("getRosterResumen — vigentes/totalActivos from count-only queries (Fi
 
     const resumen = await getRosterResumen(fake.client);
 
-    expect(resumen.vigentes).toBe(1); // activo-1 only
-    expect(resumen.totalActivos).toBe(2); // activo-1 + por-vencer-1
+    expect(resumen.vigentes).toBe(3); // vigente-1 + vigente-2-close + pase-suelto-1
+    expect(resumen.total).toBe(5); // the whole roster — never "totalActivos" (#225)
     expect(resumen.nuevosOnline).toBe(0); // no auth-linked rows in this fixture
   });
 });

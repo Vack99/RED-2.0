@@ -26,7 +26,7 @@ export default async function Page() {
     <InicioScreen
       resumen={resumen}
       vigentes={roster.vigentes}
-      totalActivos={roster.totalActivos}
+      total={roster.total}
       nuevosOnline={roster.nuevosOnline}
       recientes={recientes}
       eyebrow={eyebrow}

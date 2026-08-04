@@ -7,6 +7,7 @@ import { Icon } from "@gym/ui/forge/icon";
 import { AppBar, Avatar, Badge, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useFlip } from "@gym/ui/forge/use-flip";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
+import { nivelUrgenciaLifecycle } from "@gym/domain/lifecycle";
 import { resumirRoster, urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
@@ -48,13 +49,19 @@ export function ClientesScreen({
 
   const withU = React.useMemo(
     () =>
-      clientes.map((c) => ({
-        c,
-        u: urgenciaCliente({ clases: c.clasesRest, dias: c.diasRest }),
-        // Folded once per client here (not per keystroke in the filter below) — the
-        // candidate side of the #224 diacritic fold.
-        nombrePlegado: foldDiacritics(c.nombre),
-      })),
+      clientes.map((c) => {
+        const saldo = { clases: c.clasesRest, dias: c.diasRest };
+        return {
+          c,
+          // #225: nivel is the FLOORED level (nivelUrgenciaLifecycle) — an expired
+          // package is never "crítico" (nothing left to run out of); vinculante still
+          // comes from the raw urgenciaCliente, whose dimension logic is unchanged.
+          u: { nivel: nivelUrgenciaLifecycle(saldo), vinculante: urgenciaCliente(saldo).vinculante },
+          // Folded once per client here (not per keystroke in the filter below) — the
+          // candidate side of the #224 diacritic fold.
+          nombrePlegado: foldDiacritics(c.nombre),
+        };
+      }),
     [clientes],
   );
   const renovarCount = withU.filter((x) => x.u.nivel === "critico" || x.u.nivel === "urgente").length;

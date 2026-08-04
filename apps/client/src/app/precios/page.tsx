@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 
+import { esPaseSuelto } from "@gym/domain/lifecycle";
 import { pesos } from "@gym/format";
 import {
   getCoachesPublicos,
@@ -22,10 +23,12 @@ export const metadata: Metadata = {
 
 /** The mock's tiered CTA (three distinct labels, not a popular/other binary): a single-session drop-in
  *  invites a reservation, the popular plan is the hero action, everything else is a plan choice. Keyed on
- *  the grant model (clases) + popular, so it stays right as the operator's catalog changes. */
+ *  the grant model (clases) + popular, so it stays right as the operator's catalog changes. `esPaseSuelto`
+ *  is the ONE membership-vs-drop-in predicate (@gym/domain/lifecycle, #222/#225) — this used to re-coin
+ *  its own `clases === 1` check. */
 function ctaLabel(plan: PlanPublicoDTO): string {
   if (plan.popular) return "Empezar ahora";
-  if (plan.clases === 1) return "Reservar clase";
+  if (esPaseSuelto(plan.clases)) return "Reservar clase";
   return "Elegir este plan";
 }
 

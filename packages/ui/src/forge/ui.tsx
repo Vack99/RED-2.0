@@ -105,13 +105,19 @@ export function Card({
   );
 }
 
+// #225: matches @gym/domain's EstadoCliente (vigente/vencido/sin_clases/sin_paquete)
+// exactly — the dead "por_vencer" state (never a real estado value once #225's engine
+// unification retired the old activo/por_vencer/sin_clases split) is DELETED, not kept
+// dark. "activo" is renamed "vigente" for the same reason (its label already read
+// "VIGENTE" — the key was the drift, not the label).
 type BadgeState =
-  | "activo" | "por_vencer" | "sin_clases" | "critico" | "success" | "info";
+  | "vigente" | "vencido" | "sin_clases" | "sin_paquete" | "critico" | "success" | "info";
 
 const BADGE_MAP: Record<BadgeState, { bg: string; fg: string; label?: string }> = {
-  activo: { bg: "var(--green-soft)", fg: "var(--green)", label: "VIGENTE" },
-  por_vencer: { bg: "var(--yellow-soft)", fg: "var(--gold)", label: "POR VENCER" },
+  vigente: { bg: "var(--green-soft)", fg: "var(--green)", label: "VIGENTE" },
+  vencido: { bg: "var(--red-soft)", fg: "var(--red)", label: "VENCIDO" },
   sin_clases: { bg: "var(--red-soft)", fg: "var(--red)", label: "SIN CLASES" },
+  sin_paquete: { bg: "color-mix(in srgb, var(--silver) 8%, transparent)", fg: "var(--silver)", label: "SIN PAQUETE" },
   critico: { bg: "var(--red-soft)", fg: "var(--red)", label: "CRÍTICO" },
   success: { bg: "var(--green-soft)", fg: "var(--green)" },
   info: { bg: "color-mix(in srgb, var(--silver) 8%, transparent)", fg: "var(--silver)" },

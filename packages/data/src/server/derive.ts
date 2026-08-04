@@ -3,6 +3,7 @@
 // inicial at read. No I/O, no Supabase — unit-tested in derive.test.ts. The DAL
 // fetches rows and the attendance counts, then maps each through here.
 
+import { RENOVACION_CLASES, RENOVACION_DIAS } from "@gym/domain/lifecycle";
 import { derivarEstado, diasRestantes, estaVencido, forfeit } from "@gym/domain/rules";
 import type { Clases, EstadoCliente, PlantillaContext } from "@gym/domain/types";
 import { DOW, fechaEnZona, firstName, fmtShort, iniciales, parseDay, pesos } from "@gym/format";
@@ -33,22 +34,36 @@ export interface ClienteDerivado {
   asistEsteMes: number;
 }
 
+/** Package names the gym's catalog grants exactly 1 class (the membership-vs-drop-in
+ *  predicate, `esPaseSuelto` in `@gym/domain/lifecycle`) — matched against a roster
+ *  row's `paquete_nombre`, since `clientes` stores only the sold package's display
+ *  name, never its catalog grant (that lives on `paquetes`, keyed by name). Callers
+ *  build this once per read from `getPaquetes` (packages/data/server/paquetes.ts) via
+ *  `esPaseSuelto(p.clases)`; omitted callers (e.g. the pase de lista, which has no
+ *  catalog fetch of its own) get the conservative default — every package reads as a
+ *  membership, matching pre-#225 behavior for that screen. */
+const NINGUN_PASE_SUELTO: ReadonlySet<string> = new Set();
+
 export function derivarCliente(
   c: ClienteFacts,
   hoy: Date,
   asistEsteMes: number,
+  paseSueltoNombres: ReadonlySet<string> = NINGUN_PASE_SUELTO,
 ): ClienteDerivado {
   const tienePaquete = !!c.paquete_nombre && c.vence !== null;
   const venceDate = c.vence ? parseDay(c.vence) : null;
   const diasRest = venceDate ? diasRestantes(venceDate, hoy) : 0;
+  const esPaseSuelto = c.paquete_nombre !== null && paseSueltoNombres.has(c.paquete_nombre);
 
   const clasesBase: Clases = c.clases_restantes === null ? "ilimitado" : c.clases_restantes;
   // forfeit at read (brief Q2): an expired package shows 0 classes; ilimitado untouched.
   const clasesRest: Clases = tienePaquete ? forfeit(clasesBase, diasRest) : 0;
 
+  // sin_paquete (#225): distinct from sin_clases — there is no package to be
+  // vigente/vencido/sin_clases ABOUT (a same-day sign-up or a pendienteOnline row).
   const estado: EstadoCliente = tienePaquete
-    ? derivarEstado({ clases: clasesRest, dias: diasRest })
-    : "sin_clases";
+    ? derivarEstado({ clases: clasesRest, dias: diasRest }, esPaseSuelto)
+    : "sin_paquete";
 
   return {
     id: c.id,
@@ -73,16 +88,21 @@ export interface PaseClienteDTO {
   /** Remaining-classes label, e.g. "Ilimitado", "5 clases", "Sin paquete". */
   clasesLabel: string;
   diasRest: number;
-  /** Active package expiring soon. Derived through derivarEstado (ADR-0002), so it
-   *  tracks por_vencer's BOTH dimensions (días <= 5 OR clases <= 2) — never a
-   *  hand-inlined day threshold that silently drops the clases dimension. */
+  /** Active package due for renewal. The SAME POR RENOVAR gate the #223/#225
+   *  engine's tile uses (días <= RENOVACION_DIAS OR clases <= RENOVACION_CLASES,
+   *  gated on the package still being live) — never a hand-inlined day threshold,
+   *  and never the retired por_vencer estado value. The pase de lista has no
+   *  package-catalog fetch of its own, so this omits the esPaseSuelto exemption
+   *  (a spent one-off pass reads porVencer via its clases arm here, same as a
+   *  membership) — an accepted, documented gap for this screen only. */
   porVencer: boolean;
 }
 
 /**
  * The pase de lista's slim per-client projection. Derives through derivarCliente
- * so `porVencer` is exactly derivarEstado's `por_vencer`; the pase shares the
- * directory's single definition of "expiring" instead of re-coining a `<= 5`.
+ * so `porVencer` reads the SAME POR RENOVAR gate the roster/INICIO tile use
+ * (RENOVACION_DIAS/RENOVACION_CLASES, @gym/domain/lifecycle) — the pase shares the
+ * one definition of "due for renewal" instead of re-coining a `<= 5`.
  */
 export function derivarPaseCliente(c: ClienteFacts, hoy: Date): PaseClienteDTO {
   const d = derivarCliente(c, hoy, 0);
@@ -91,6 +111,12 @@ export function derivarPaseCliente(c: ClienteFacts, hoy: Date): PaseClienteDTO {
     : c.clases_restantes === null
       ? "Ilimitado"
       : `${c.clases_restantes} clase${c.clases_restantes === 1 ? "" : "s"}`;
+  const clasesNum = c.clases_restantes === null ? Infinity : c.clases_restantes;
+  // Mirrors lifecycle.ts's derivarTile POR RENOVAR gate: only a still-live package
+  // (vigente or sin_clases — never vencido/sin_paquete) can be "due".
+  const porVencer =
+    (d.estado === "vigente" || d.estado === "sin_clases") &&
+    (d.diasRest <= RENOVACION_DIAS || clasesNum <= RENOVACION_CLASES);
   return {
     id: d.id,
     nombre: d.nombre,
@@ -98,7 +124,7 @@ export function derivarPaseCliente(c: ClienteFacts, hoy: Date): PaseClienteDTO {
     paquete: d.paquete,
     clasesLabel,
     diasRest: d.diasRest,
-    porVencer: d.estado === "por_vencer",
+    porVencer,
   };
 }
 
@@ -158,13 +184,15 @@ export function derivarInvitacion(f: InvitacionFacts, tz: string): InvitacionDer
 
 /** Tile/filter population — a "registro online pendiente": an auth-linked member
  *  (Door 2 self-registrant) with no active package. Reuses the existing derived
- *  `estado` (sin_clases = package-less/expired), NOT a second 'active package'
- *  rule (CONTEXT 'registro online pendiente'). */
+ *  `estado` (#225: any NON-vigente state — vencido/sin_clases/sin_paquete all mean
+ *  "nothing to sell against as EXISTENTE"; pre-#225 this read only the old broad
+ *  "sin_clases", which conflated all three), NOT a second 'active package' rule
+ *  (CONTEXT 'registro online pendiente'). */
 export function esRegistroOnlinePendiente(
   invitacion: EstadoInvitacion,
   estado: EstadoCliente,
 ): boolean {
-  return invitacion === "cuenta_activa" && estado === "sin_clases";
+  return invitacion === "cuenta_activa" && estado !== "vigente";
 }
 
 /** Primera compra: the member has never had a sale, regardless of door (#77). */

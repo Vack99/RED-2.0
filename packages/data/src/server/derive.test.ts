@@ -42,9 +42,9 @@ function facts(over: Partial<ClienteFacts> = {}): ClienteFacts {
 }
 
 describe("derivarCliente", () => {
-  it("is activo with classes and time to spare", () => {
+  it("is vigente with classes and time to spare", () => {
     const d = derivarCliente(facts(), HOY, 3);
-    expect(d.estado).toBe("activo");
+    expect(d.estado).toBe("vigente");
     expect(d.diasRest).toBe(20);
     expect(d.clasesRest).toBe(5);
     expect(d.clasesRestLabel).toBe("5");
@@ -53,31 +53,29 @@ describe("derivarCliente", () => {
     expect(d.asistEsteMes).toBe(3);
   });
 
-  it("is por_vencer at <= 5 days left", () => {
-    const d = derivarCliente(facts({ vence: "2026-05-30" }), HOY, 0);
-    expect(d.diasRest).toBe(3);
-    expect(d.estado).toBe("por_vencer");
+  it("is vigente at few days/classes left — the old por_vencer split is retired (#225)", () => {
+    // 3 días left: pre-#225 this was "por_vencer" (<= 5 days). That threshold now lives
+    // in urgenciaCliente/the POR RENOVAR tile, never in estado.
+    expect(derivarCliente(facts({ vence: "2026-05-30" }), HOY, 0).estado).toBe("vigente");
+    // 2 clases left: pre-#225 this was "por_vencer" (<= 2 clases) too.
+    expect(derivarCliente(facts({ clases_restantes: 2, vence: "2026-06-20" }), HOY, 0).estado).toBe(
+      "vigente",
+    );
   });
 
-  it("is por_vencer at <= 2 classes left", () => {
-    const d = derivarCliente(facts({ clases_restantes: 2, vence: "2026-06-20" }), HOY, 0);
-    expect(d.estado).toBe("por_vencer");
-    expect(d.clasesRest).toBe(2);
-  });
-
-  it("is sin_clases when out of classes", () => {
+  it("is sin_clases when out of classes with days remaining", () => {
     const d = derivarCliente(facts({ clases_restantes: 0, vence: "2026-06-20" }), HOY, 0);
     expect(d.estado).toBe("sin_clases");
   });
 
-  it("forfeits remaining classes once expired (read-time)", () => {
+  it("forfeits remaining classes once expired (read-time) and is vencido, never sin_clases — FECHA WINS (A2)", () => {
     const d = derivarCliente(facts({ clases_restantes: 5, vence: "2026-05-25" }), HOY, 0);
     expect(d.diasRest).toBe(-2);
     expect(d.clasesRest).toBe(0); // forfeited
-    expect(d.estado).toBe("sin_clases");
+    expect(d.estado).toBe("vencido");
   });
 
-  it("keeps ilimitado active", () => {
+  it("keeps ilimitado vigente", () => {
     const d = derivarCliente(
       facts({ clases_restantes: null, paquete_nombre: "Ilimitado", vence: "2026-06-30" }),
       HOY,
@@ -85,7 +83,7 @@ describe("derivarCliente", () => {
     );
     expect(d.clasesRest).toBe("ilimitado");
     expect(d.clasesRestLabel).toBe("∞");
-    expect(d.estado).toBe("activo");
+    expect(d.estado).toBe("vigente");
   });
 
   it("never forfeits ilimitado but still expires by date", () => {
@@ -95,34 +93,44 @@ describe("derivarCliente", () => {
       0,
     );
     expect(d.clasesRest).toBe("ilimitado");
-    expect(d.estado).toBe("sin_clases"); // expired
+    expect(d.estado).toBe("vencido"); // expired
   });
 
-  it("handles a client with no package", () => {
+  it("handles a client with no package — sin_paquete, distinct from sin_clases (#225)", () => {
     const d = derivarCliente(
       facts({ paquete_nombre: null, clases_restantes: null, vence: null }),
       HOY,
       0,
     );
-    expect(d.estado).toBe("sin_clases");
+    expect(d.estado).toBe("sin_paquete");
     expect(d.clasesRest).toBe(0);
     expect(d.diasRest).toBe(0);
     expect(d.venceDisplay).toBe("—");
     expect(d.paquete).toBe("Sin paquete");
   });
+
+  it("esPaseSuelto exempts a spent one-off pass from sin_clases (matches the catalog, not the balance)", () => {
+    const paseSuelto = new Set(["1 clase"]);
+    const d = derivarCliente(
+      facts({ paquete_nombre: "1 clase", clases_restantes: 0, vence: "2026-06-20" }),
+      HOY,
+      0,
+      paseSuelto,
+    );
+    expect(d.estado).toBe("vigente");
+  });
 });
 
 describe("derivarPaseCliente", () => {
-  it("flags porVencer on the CLASES dimension even with days to spare (the lossy-pase bug)", () => {
-    // 1 class left, 24 days left: por_vencer fires on clases <= 2. The old inline
-    // `diasRest > 0 && diasRest <= 5` dropped this case and showed no warning.
+  it("flags porVencer on the CLASES dimension (<= RENOVACION_CLASES) even with days to spare", () => {
+    // 1 class left, 24 days left: POR RENOVAR's clases arm fires at <= RENOVACION_CLASES (1).
     const p = derivarPaseCliente(facts({ clases_restantes: 1, vence: "2026-06-20" }), HOY);
     expect(p.diasRest).toBe(24);
     expect(p.porVencer).toBe(true);
     expect(p.clasesLabel).toBe("1 clase");
   });
 
-  it("flags porVencer on the DÍAS dimension", () => {
+  it("flags porVencer on the DÍAS dimension (<= RENOVACION_DIAS)", () => {
     const p = derivarPaseCliente(facts({ clases_restantes: 8, vence: "2026-05-30" }), HOY);
     expect(p.diasRest).toBe(3);
     expect(p.porVencer).toBe(true);
@@ -134,7 +142,7 @@ describe("derivarPaseCliente", () => {
     expect(p.clasesLabel).toBe("8 clases");
   });
 
-  it("is not porVencer once expired (sin_clases, not por_vencer)", () => {
+  it("is not porVencer once expired (estado vencido — never a POR RENOVAR candidate)", () => {
     const p = derivarPaseCliente(facts({ clases_restantes: 5, vence: "2026-05-25" }), HOY);
     expect(p.porVencer).toBe(false);
   });
@@ -283,7 +291,7 @@ describe("shapeFicha", () => {
     expect(f.mensajes).toEqual([
       { id: "t1", nombre: "Recordatorio", texto: "Hola Andrea, te quedan 5 clases de tu 8 clases (vence 16 jun). — FORGE GYM" },
     ]);
-    expect(f.cliente.estado).toBe("activo");
+    expect(f.cliente.estado).toBe("vigente");
   });
 
   it("resolves the {dias}/{precios}/{datos_pago} tokens from the derived diasRest + the extras arg", () => {
@@ -611,13 +619,14 @@ describe("derivarInvitacion — badge copy (es-MX)", () => {
 });
 
 describe("esRegistroOnlinePendiente — tile/filter population", () => {
-  it("is true only for an auth-linked member with no active package", () => {
+  it("is true for an auth-linked member with no vigente package — any non-vigente estado (#225)", () => {
     expect(esRegistroOnlinePendiente("cuenta_activa", "sin_clases")).toBe(true);
+    expect(esRegistroOnlinePendiente("cuenta_activa", "vencido")).toBe(true); // a lapsed online registrant
+    expect(esRegistroOnlinePendiente("cuenta_activa", "sin_paquete")).toBe(true); // same-day online sign-up
   });
 
-  it("is false for an auth-linked member who has an active package", () => {
-    expect(esRegistroOnlinePendiente("cuenta_activa", "activo")).toBe(false);
-    expect(esRegistroOnlinePendiente("cuenta_activa", "por_vencer")).toBe(false);
+  it("is false for an auth-linked member who has a vigente package", () => {
+    expect(esRegistroOnlinePendiente("cuenta_activa", "vigente")).toBe(false);
   });
 
   it("is false for a package-less desk/legacy client with no account", () => {
