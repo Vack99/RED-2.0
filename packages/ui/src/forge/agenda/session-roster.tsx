@@ -78,7 +78,7 @@ export function SessionRoster({ rows, candidates, loading, busy, onToggle, onAdd
           <div style={{ marginTop: 10 }}>
             {rows.length === 0 ? (
               <div style={{ padding: "16px 2px", fontSize: 12.5, color: "var(--muted)" }}>
-                Nadie reservó todavía · agrega un walk-in
+                Nadie reservó todavía · agrega una visita
               </div>
             ) : (
               rows.map((r) => (
@@ -143,7 +143,7 @@ export function SessionRoster({ rows, candidates, loading, busy, onToggle, onAdd
               }}
             >
               <Icon name="plus" size={15} color="var(--gold)" />
-              Agregar walk-in
+              Agregar visita
             </button>
           )}
         </>
@@ -184,7 +184,7 @@ const RosterRowView = React.memo(function RosterRowView({
           <span className="uppercase font-semibold" style={{ fontSize: 13.5, letterSpacing: 0.3, color: "var(--fg)" }}>{row.nombre}</span>
           {row.isWalkIn && (
             <span className="uppercase" style={{ fontSize: 8.5, fontWeight: 800, letterSpacing: 0.8, color: "var(--gold)", border: "1px solid var(--yellow-edge)", padding: "1px 4px" }}>
-              Walk-in
+              Sin reserva
             </span>
           )}
         </div>
