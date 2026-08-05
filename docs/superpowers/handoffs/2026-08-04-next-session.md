@@ -34,17 +34,26 @@ Three things in there that will otherwise be rediscovered the hard way:
 
 ## Pending work — this map and this session
 
-**Shipped locally, unpushed, issues still OPEN** (GitHub has not seen the commits):
-`#179` `9b4c151` · `#178` `0bd81ae` · `#173` `cfc66ad` · CASCADE `bdbb630` · `#177` `0125365`
+**2026-08-04 update: the whole table below is DONE**, on branch `post-89-followups` (unmerged to
+main). The first wave (`#179` `9b4c151` · `#178` `0bd81ae` · `#173` `cfc66ad` · CASCADE `bdbb630` ·
+`#177` `0125365`) was pushed + deployed; #173/#177/#179 CLOSED, #178 open awaiting the owner walk.
 
-| id | what | blocked by | size |
-|---|---|---|---|
-| **desk 0-balance gap** | `toggle_pase` / `pasar_lista_sesion` have no zero-balance check — only `Paquete vencido` (`20260729120000:270`/`:552`). `reservar_clase` **does** raise `Sin clases disponibles`. **App says no, desk says yes.** Unruled — the one thing #237 did not close. | owner ruling | small |
-| **D1** | plan-card counts VISITS against a CHARGE denominator (`derive.ts:234`) → "13 de 13" on a 12-class package | ↑ dissolves it | — |
-| **D2** | `FichaAsistRow` (`derive.ts:279`) missing `perdonada`; typechecks by accident | — | 1 line |
-| **D3** | `asistencias.class_session_id` has only a *partial* index; RESTRICT made the FK probe hot | — | 1 line |
-| **#178 copy** | renders `ACCESO LIBRE` for `origen IS NULL` rows — 189 of 206 forge rows, all actually classes. Render `—` (as `export/rows.ts:122-127` does). Needs `origen` on `FichaAsistencia` — bundle with D2 | — | small |
-| **capacity reader** | forge's 19:00 recorded **17/15**. **Ruled: let staff exceed, fix the READER** — stop staff marks driving member-facing LLENO, so RED members aren't locked out | — | small |
+| id | what happened | commit |
+|---|---|---|
+| **desk 0-balance gap** | **Ruled (owner, 2026-08-04): hard refuse + sale bridge** — same as #235's Agenda ruling (`2026-08-03-235-HANDOFF.md:49`, found by search, NOT re-invented). Gate at the 2 charge sites only (`Sin clases disponibles`, verbatim #237 wording); Ilimitado + pardon/booked arms exempt. VENDER banner → `/vender?cliente=` on refusal, predicate duplicated from unmerged `session-vm.ts` by design. | `94e87e8` |
+| **D1** | dissolved going forward by the gate (no new silent free rows). Historical `consumio=false, perdonada=false` rows still count in the gauge — residual, accepted, not worth a slice. | — |
+| **D2 + #178 copy** | `perdonada` + `origen` typed through; label = clase / `ACCESO LIBRE` only when `origen='libre'` / `—` when origen NULL | `99cbc8e` |
+| **D3** | plain index on `asistencias(class_session_id)` | `9371aeb` |
+| **capacity reader** | REAL BUG confirmed: `contar_reservas_activas` counts walk-ins → staff marks could show members LLENO. New member-only sibling RPC `contar_reservas_activas_miembro` (`is_walk_in=false`); staff/roster count untouched. | `9371aeb` |
+
+**Gates on the branch:** hook green every commit (final: 89 files / 1256 tests) · `test:denial`
+**42/42 green** on scratch (4 migrations applied + stamped there, incl. #226's
+`20260804090000` which rode the ff). Scratch also carries unmerged #235's `20260803140000` —
+residue from that session, harmless.
+
+**Left:** owner walks (#178 ficha; desk refuse+VENDER banner on a 0-balance member) →
+`/code-review` on the branch diff → merge `post-89-followups` → main → #235 merge decision → push
+(owner-gated). D4 (`NO ACTION` vs `RESTRICT`) stays wontfix-unless-bitten.
 
 **Filed 2026-08-03, untouched:** `#231` desk has no clock (owns the tick for the desk *and* Agenda) ·
 `#232` tap discloses nothing (`hitl`) · `#233` charge-at-booking (`hitl`, **supersedes #167, absorbs
