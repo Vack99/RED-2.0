@@ -43,7 +43,11 @@ export type CrearVentaResult =
  * PRE-sale render. `revalidatePath` on a Server Function additionally causes previously-visited pages to
  * refresh next time they're navigated to (not just a `router.refresh()` of the CURRENT route, which
  * `/vender` is not `/clientes`), so the roster this sale (or its auto-invite) just changed is fresh
- * whichever way the operator gets back to it.
+ * whichever way the operator gets back to it. `/inicio`'s tiles (getRosterResumen) read the SAME
+ * roster-level facts (POR RENOVAR / AÚN A TIEMPO counts, the online-pending tile), so it needs the
+ * same revalidation (opus review F3) — today's "refresh all previously visited pages" behavior is
+ * documented TEMPORARY, so `/inicio` would otherwise silently regress to the #184 staleness once that
+ * narrows to just the named path.
  */
 export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> {
   let result: VentaResult;
@@ -54,13 +58,15 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
     if (e instanceof EmailEnUsoError) return { ok: false, mensaje: e.message };
     throw e;
   }
-  revalidatePath("/clientes");
   const [invite, reciboEmail] = await Promise.all([
     resolverInvitacion(result),
     // The auto receipt email (#99) — EVERY sale with an email on hand, new and renewal alike.
     // The twin's palette follows the request's brand (#103): card and email body agree.
     enviarReciboDeVenta(result, { palette: ticketPalette((await resolveBrand()).id) }),
   ]);
+  // Kept next to the return (opus review nit): these read order-dependent mid-body.
+  revalidatePath("/clientes");
+  revalidatePath("/inicio");
   return { ok: true, recibo: { ...result, invite, reciboEmail } };
 }
 

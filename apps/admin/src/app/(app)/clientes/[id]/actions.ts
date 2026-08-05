@@ -18,27 +18,36 @@ export type ActualizarClienteActionResult =
  *  in sync via local state (or its own `router.refresh()` on the cross-attribution branch); the roster's
  *  "{n}D SIN VENIR" badge and Asist. count are a SEPARATE route (`/clientes`), so `revalidatePath` here
  *  (#184/#241) is what keeps THAT page from replaying its pre-mark render on browser back — a plain
- *  `router.refresh()` only ever refreshes the route it's called from, never a sibling one. An RPC
- *  refusal arrives as `{ ok: false, message }` (typed result, NOT a throw — prod Next.js masks thrown
- *  action messages) so the ficha can toast the reason; nothing to revalidate on that branch. */
+ *  `router.refresh()` only ever refreshes the route it's called from, never a sibling one. `/inicio`'s
+ *  tiles and `/asistencia`'s own roster (`getClientesParaPase`) read the same visit facts, so both get
+ *  the same treatment (opus review F3) rather than relying on the currently-blanket-but-documented-
+ *  TEMPORARY "refresh every previously visited page" behavior. An RPC refusal arrives as
+ *  `{ ok: false, message }` (typed result, NOT a throw — prod Next.js masks thrown action messages) so
+ *  the ficha can toast the reason; nothing to revalidate on that branch. */
 export async function togglePaseAction(raw: unknown): Promise<TogglePaseOutcome> {
   const res = await togglePase(raw);
-  if (res.ok) revalidatePath("/clientes");
+  if (res.ok) {
+    revalidatePath("/clientes");
+    revalidatePath("/inicio");
+    revalidatePath("/asistencia");
+  }
   return res;
 }
 
 /** Edit a client's identity (nombre + tel + optional email backfill) from the ficha. Thin write seam
  *  over the DAL; the client refreshes ITS OWN route after a successful save (matches togglePaseAction),
- *  but the roster (`/clientes`) can only be freshened from here, the write's own action — a browser-back
- *  to it otherwise replays the pre-edit name/tel/invite badge (#184/#241; same fix as togglePaseAction /
- *  crearVentaAction). The result carries the auto-invite outcome (design §3 — issue #71) so the sheet
- *  can toast it. The DAL's EmailEnUsoError (clientes_email_gym_uq collision) is mapped to a typed
- *  non-throwing result so the sheet toasts the actionable Spanish reason instead of the generic failure
- *  (same discipline as vender's crearVentaAction). */
+ *  but the roster (`/clientes`) and `/inicio`'s tiles can only be freshened from here, the write's own
+ *  action — a browser-back to either otherwise replays the pre-edit name/tel/invite badge (#184/#241;
+ *  same fix as togglePaseAction / crearVentaAction). The result carries the auto-invite outcome
+ *  (design §3 — issue #71) so the sheet can toast it. The DAL's EmailEnUsoError
+ *  (clientes_email_gym_uq collision) is mapped to a typed non-throwing result so the sheet toasts the
+ *  actionable Spanish reason instead of the generic failure (same discipline as vender's
+ *  crearVentaAction). */
 export async function actualizarClienteAction(raw: unknown): Promise<ActualizarClienteActionResult> {
   try {
     const { invite } = await actualizarCliente(raw);
     revalidatePath("/clientes");
+    revalidatePath("/inicio");
     return { ok: true, invite };
   } catch (e) {
     if (e instanceof EmailEnUsoError) return { ok: false, mensaje: e.message };
@@ -50,9 +59,13 @@ export async function actualizarClienteAction(raw: unknown): Promise<ActualizarC
  *  SAME claim code via the same best-effort rail the sale path uses. Thin write seam over the DAL; the
  *  caller refreshes ITS OWN route on success so the badge's 'Invitada {fecha}' picks up the fresh
  *  invitacion_enviada_at (matches actualizarClienteAction / togglePaseAction) — `revalidatePath` here
- *  additionally keeps the roster's OWN invite badge from replaying stale on browser back (#184/#241). */
+ *  additionally keeps the roster's and `/inicio`'s OWN invite badge/tiles from replaying stale on
+ *  browser back (#184/#241). */
 export async function reenviarInvitacionAction(clienteId: string): Promise<EnvioResult> {
   const res = await reenviarInvitacion(clienteId);
-  if (res.ok) revalidatePath("/clientes");
+  if (res.ok) {
+    revalidatePath("/clientes");
+    revalidatePath("/inicio");
+  }
   return res;
 }
