@@ -444,13 +444,21 @@ begin
 
   select clases_restantes into v_ret from public.clientes where id = c_walk;
   if v_ret <> 4 then raise exception 'RULE FAIL(walkfull): stored clases % after booking, expected 4', v_ret; end if;
+end $$;
+reset role;
 
-  -- The four walk-in rows are untouched by this booking — still asistida/is_walk_in=true.
+-- The four walk-in rows are untouched by the booking — still asistida/is_walk_in=true. Counted AFTER
+-- reset role: member RLS shows a member only their own reservations, so under `authenticated` the four
+-- walk-ins (other clientes) are invisible and the count reads 0 regardless of the data.
+do $$
+declare
+  s_walkfull uuid := current_setting('t.s_walkfull', true)::uuid;
+  v_n int;
+begin
   select count(*) into v_n from public.reservation
     where class_session_id = s_walkfull and is_walk_in = true and status = 'asistida';
   if v_n <> 4 then raise exception 'RULE FAIL(walkfull): expected 4 untouched walk-in rows, found %', v_n; end if;
 end $$;
-reset role;
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- started-class block (#165) — a class that has already begun cannot be booked; atomic
