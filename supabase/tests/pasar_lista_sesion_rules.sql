@@ -17,6 +17,15 @@
 --                                                   (5->4), asistencia consumio=true, hora stamped (session today).
 --   * walk-in untoggle is symmetric               — reverts reservation to cancelada and refunds exactly one (finite).
 --   * hora-today-only                             — hora stamped only when the session's date is gym-today.
+--   * #237 zero-balance gate (owner ruling         — the walk-in arm HARD-REFUSES a finite member at 0 classes:
+--     2026-08-04, 20260804120000)                    'Sin clases disponibles', the SAME message reservar_clase
+--                                                   raises on the member path. No staff override, no
+--                                                   warn-and-proceed; nothing is written. The gate sits in the
+--                                                   ELSE of the cooldown if/else (restructured vs
+--                                                   20260729120000 so the pardon decides FIRST): a 0-balance
+--                                                   member INSIDE a cooldown pardon is still admitted — that
+--                                                   visit's sibling row already paid — proved by the vector
+--                                                   right after it.
 --   * cooldown, clase → libre (#89)               — a member marked in an Agenda class (consume 5->4) is then tapped
 --                                                   at the FRONT DESK minutes later. No refusal any more: a SECOND
 --                                                   row is written — a real ACCESO LIBRE visit, origen='libre' —
@@ -88,6 +97,8 @@ declare
   c_beyond uuid;                        -- front-desk row backdated past the window (vector 6)
   c_dos    uuid;                        -- two different classes in one day (vector 7)
   c_orph   uuid;                        -- the pardoning class mark is undone (vector 8)
+  c_zero   uuid;                        -- #237: 0-balance walk-in, no pardon in play (vector 9)
+  c_zeropard uuid;                      -- #237: 0-balance walk-in INSIDE a cooldown pardon (vector 10)
   s_id     uuid; s2_id uuid;
 begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
@@ -129,6 +140,14 @@ begin
     values ('PL dos clases', '0000000006', 5, v_today + 20, '8 clases', v_gym) returning id into c_dos;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('PL pardon huerfano', '0000000007', 5, v_today + 20, '8 clases', v_gym) returning id into c_orph;
+  -- #237 (owner ruling 2026-08-04): c_zero never has any prior row, so its walk-in class mark meets no
+  -- cooldown pardon and must be refused outright. c_zeropard starts at 1 — the desk charges it to 0
+  -- first, and its class mark minutes later must still be admitted (pardoned), because that visit's
+  -- sibling row already paid.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL cero balance', '0000000008', 0, v_today + 20, '8 clases', v_gym) returning id into c_zero;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL cero perdon', '0000000009', 1, v_today + 20, '8 clases', v_gym) returning id into c_zeropard;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'PL Metcon') returning id into v_ct;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
@@ -150,6 +169,8 @@ begin
   perform set_config('t.c_beyond', c_beyond::text,  true);
   perform set_config('t.c_dos',    c_dos::text,     true);
   perform set_config('t.c_orph',   c_orph::text,    true);
+  perform set_config('t.c_zero',     c_zero::text,     true);
+  perform set_config('t.c_zeropard', c_zeropard::text, true);
   perform set_config('t.s_id',     s_id::text,      true);
   perform set_config('t.s2_id',    s2_id::text,     true);
 end $$;
@@ -618,6 +639,78 @@ begin
   -- …and the recovery row is a CLEAN visit: it charged, so it is not a pardoned duplicate and the count
   -- gets its visit back — the same two taps recover both the money and the number.
   if v_perdonada is distinct from false then raise exception 'RULE FAIL(huerfano 4): the re-charged row kept a perdonada stamp (%)', v_perdonada; end if;
+end $$;
+
+-- ── (9) #237 ZERO-BALANCE GATE: the walk-in arm HARD-REFUSES, no pardon in play ──────────────
+-- Owner ruling 2026-08-04, mirrors #235's member-facing ruling: a finite member at 0 classes with no
+-- recent row of the OTHER kind gets 'Sin clases disponibles' — the SAME message reservar_clase raises
+-- — and NOTHING is written: no asistencia, no walk-in reservation, balance untouched.
+do $$
+declare
+  s_id   uuid := current_setting('t.s_id', true)::uuid;
+  c_zero uuid := current_setting('t.c_zero', true)::uuid;
+  v_present boolean; v_clases int; v_raised boolean; v_n int;
+begin
+  select clases_restantes into v_clases from public.clientes where id = c_zero;
+  if v_clases <> 0 then raise exception 'SEED FAIL(v9): expected 0, got %', v_clases; end if;
+
+  v_raised := false;
+  begin
+    perform public.pasar_lista_sesion(s_id, c_zero);
+  exception when others then
+    v_raised := true;
+    if sqlerrm not like 'Sin clases disponibles%' then raise exception 'RULE FAIL(v9): wrong raise for a zero-balance class mark: %', sqlerrm; end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(v9): a ZERO-BALANCE member was admitted into a class (the #237 hole)'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_zero;
+  if v_clases <> 0 then raise exception 'RULE FAIL(v9): the refused mark moved the balance to % (expected untouched 0)', v_clases; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_zero and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(v9): the refused mark wrote % attendance rows (expected 0)', v_n; end if;
+  select count(*) into v_n from public.reservation where member_id = c_zero and class_session_id = s_id;
+  if v_n <> 0 then raise exception 'RULE FAIL(v9): the refused mark minted % reservation row(s) (expected 0)', v_n; end if;
+end $$;
+
+-- ── (10) #237 GATE vs the COOLDOWN PARDON: a 0-balance member INSIDE a pardon is still admitted ──
+-- The reason the gate had to be RESTRUCTURED (not just dropped in) in this function's walk-in arm: the
+-- cooldown pardon must decide FIRST. c_zeropard starts at 1; the desk charges it to 0 (1->0, an ordinary
+-- walk-in libre tap with no pardon in play yet), and the class mark that follows minutes later is the
+-- SECOND record of that one arrival — its sibling row already paid, so it must be pardoned for free, not
+-- hard-refused for having a 0 balance. Present, consumio=false, perdonada=true, balance stays 0, and the
+-- attendance row IS written (the gate never fires in the pardon's arm).
+do $$
+declare
+  s2_id      uuid := current_setting('t.s2_id', true)::uuid;
+  c_zeropard uuid := current_setting('t.c_zeropard', true)::uuid;
+  v_fecha    date := current_setting('t.today', true)::date;
+  v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_perdonada boolean;
+  v_status text; v_walk boolean;
+begin
+  -- Arrange: the front-desk libre tap charges 1 -> 0 (no recent row of the OTHER kind exists yet).
+  select present into v_present from public.toggle_pase(c_zeropard, v_fecha);
+  if v_present is not true then raise exception 'SEED FAIL(v10): front-desk toggle ON failed'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_zeropard;
+  if v_clases <> 0 then raise exception 'SEED FAIL(v10): expected the desk charge to drive the balance to 0, got %', v_clases; end if;
+  select consumio, origen into v_consumio, v_origen from public.asistencias
+   where cliente_id = c_zeropard and fecha = v_fecha and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from true then raise exception 'SEED FAIL(v10): desk row consumio % (expected true — it paid)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'SEED FAIL(v10): desk row origen % (expected libre)', v_origen; end if;
+
+  -- Act: the class mark, minutes later (the whole suite runs in one frozen instant), on a member now
+  -- at balance 0. Must be ADMITTED — the #237 gate must not fire inside the cooldown's pardon arm.
+  select present into v_present from public.pasar_lista_sesion(s2_id, c_zeropard);
+  if v_present is not true then raise exception 'RULE FAIL(v10): a 0-balance member INSIDE a cooldown pardon was refused (the gate fired ahead of the pardon)'; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_zeropard;
+  if v_clases <> 0 then raise exception 'RULE FAIL(v10): the pardoned class mark moved the balance to % (expected untouched 0)', v_clases; end if;
+
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada from public.asistencias
+    where cliente_id = c_zeropard and class_session_id = s2_id and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v10): class row consumio % (expected false — pardoned)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(v10): class row origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(v10): the pardoned class row was NOT stamped perdonada (%) — the arrival would count twice', v_perdonada; end if;
+
+  select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_zeropard and class_session_id = s2_id;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(v10): reservation status % (expected asistida)', v_status; end if;
+  if v_walk is not true then raise exception 'RULE FAIL(v10): is_walk_in not true'; end if;
 end $$;
 
 reset role;

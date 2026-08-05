@@ -9,8 +9,13 @@
 --                                             (4->5). Ilimitado (clases_restantes NULL) ON/OFF never touches
 --                                             the NULL. The `v_active_consumio and v_clases is not null` guard.
 --   * gym_id stamped from the cliente's gym  — the new asistencia is born tenant-scoped, never null (slice #20).
---   * no-negative-balance                    — a finite cliente at 0 marked present writes consumio=false and
---                                             does NOT decrement below zero (the guarded `> 0` decrement).
+--   * #237 zero-balance gate (owner ruling    — a finite cliente at 0 is HARD-REFUSED at the desk libre tap:
+--     2026-08-04, 20260804120000)               'Sin clases disponibles', the SAME message reservar_clase raises
+--                                             on the member path. No staff override, no warn-and-proceed;
+--                                             nothing is written and the balance never moves. Replaces the old
+--                                             admit-for-free behaviour this vector used to assert — the
+--                                             cooldown-pardon arms (v5, v7 below) and ilimitado are UNTOUCHED,
+--                                             because those visits are already paid.
 --   * hora-stamp-today-only                  — hora stamped only when p_fecha is the gym's today (server tz),
 --                                             null for a back-entry.
 --   * C9 vigencia (inclusive)                — a WALK-IN mark on an expired package (vence < p_fecha) raises
@@ -351,25 +356,32 @@ begin
   if v_present is not true then raise exception 'RULE FAIL(b): ilimitado ON not present'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_ilim;
   if v_clases is not null then raise exception 'RULE FAIL(b): ilimitado ON should stay null, got %', v_clases; end if;
+  -- (d) ilimitado is EXEMPT from the #237 zero-balance gate (v_clases IS NULL never satisfies the
+  -- `<= 0` check below) — admitted, and never charged (consumio=false, as always).
+  select consumio into v_present from public.asistencias
+   where cliente_id = c_ilim and fecha = v_today and deleted_at is null order by created_at desc limit 1;
+  if v_present is distinct from false then raise exception 'RULE FAIL(d): ilimitado row consumio % (expected false)', v_present; end if;
   select present, clases_restantes into v_present, v_saldo from public.toggle_pase(c_ilim, v_today);
   if v_present is not false then raise exception 'RULE FAIL(b): ilimitado OFF not absent'; end if;
   if v_saldo is not null then raise exception 'RULE FAIL(b): ilimitado OFF returned clases_restantes % (expected NULL)', v_saldo; end if;
   select clases_restantes into v_clases from public.clientes where id = c_ilim;
   if v_clases is not null then raise exception 'RULE FAIL(b): ilimitado OFF should stay null (no phantom refund), got %', v_clases; end if;
 
-  -- ── no-negative-balance: a finite cliente at 0 marks present but never decrements below zero ──
-  select present into v_present from public.toggle_pase(c_zero, v_today);
-  if v_present is not true then raise exception 'RULE FAIL(neg): zero ON not present'; end if;
+  -- ── (a) #237 zero-balance gate: a finite cliente at 0 is HARD-REFUSED, not admitted for free ──
+  -- Owner ruling 2026-08-04, mirrors #235's member-facing ruling: 'Sin clases disponibles', the SAME
+  -- message reservar_clase raises. No staff override, no warn-and-proceed — nothing is written.
+  v_raised := false;
+  begin
+    perform public.toggle_pase(c_zero, v_today);
+  exception when others then
+    v_raised := true;
+    if sqlerrm not like 'Sin clases disponibles%' then raise exception 'RULE FAIL(a): wrong raise for a zero-balance desk tap: %', sqlerrm; end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(a): a ZERO-BALANCE member was admitted at the desk (the #237 hole)'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_zero;
-  if v_clases <> 0 then raise exception 'RULE FAIL(neg): zero-balance ON drove clases to % (expected 0, never negative)', v_clases; end if;
-  select consumio, origen into v_present, v_origen from public.asistencias
-   where cliente_id = c_zero and fecha = v_today and deleted_at is null order by created_at desc limit 1;
-  if v_present is distinct from false then raise exception 'RULE FAIL(neg): zero-balance row consumio % (expected false)', v_present; end if;
-  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(neg): zero-balance row origen % (expected libre)', v_origen; end if;
-  -- toggle OFF must refund NOTHING (nothing was consumed) — balance stays 0.
-  perform public.toggle_pase(c_zero, v_today);
-  select clases_restantes into v_clases from public.clientes where id = c_zero;
-  if v_clases <> 0 then raise exception 'RULE FAIL(neg): zero-balance OFF phantom-refunded to % (expected 0)', v_clases; end if;
+  if v_clases <> 0 then raise exception 'RULE FAIL(a): the refused tap moved the balance to % (expected untouched 0)', v_clases; end if;
+  select count(*) into v_clases from public.asistencias where cliente_id = c_zero and deleted_at is null;
+  if v_clases <> 0 then raise exception 'RULE FAIL(a): the refused tap wrote % attendance rows (expected 0)', v_clases; end if;
 
   -- ── hora-stamp-today-only ───────────────────────────────────────────────────────
   select present, hora into v_present, v_hora from public.toggle_pase(c_finite, v_today);

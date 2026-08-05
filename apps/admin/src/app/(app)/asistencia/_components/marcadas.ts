@@ -138,3 +138,41 @@ export function reservaAtribuible(
   }
   return Object.fromEntries(Object.entries(mejor).map(([id, m]) => [id, m.sessionId]));
 }
+
+/**
+ * The only two refusals a SALE fixes at the desk (owner ruling 2026-08-04, #237). Exact match,
+ * because these strings are OURS: `raise exception` literals in toggle_pase's and
+ * pasar_lista_sesion's own zero-balance/vigencia gates (20260804120000, and 20260729120000's C9
+ * gate), and the DAL hands the raise through verbatim (togglePase's `res.message`). Every other
+ * refusal — 'Ya marcada en la clase de HH:MM', 'Cliente no encontrado' — is a fact a sale does not
+ * touch, so it must not be offered here.
+ *
+ * Duplicated, not imported, from the unmerged reserva-manual-agenda branch's
+ * apps/admin/.../agenda/_components/session-vm.ts (owner 2026-08-04): that file belongs to a
+ * branch this worktree must not touch, and this is the whole predicate at two call sites — cheaper
+ * than a cross-worktree coupling.
+ */
+const BLOQUEOS_VENDIBLES = ["Sin clases disponibles", "Paquete vencido"];
+
+export function esBloqueoVendible(error: string): boolean {
+  return BLOQUEOS_VENDIBLES.includes(error);
+}
+
+/** A refused tap's bridge to the sale that unblocks it: who, and where to send the operator. */
+export interface VentaSugerida {
+  nombre: string;
+  href: string;
+}
+
+/**
+ * The blocked tap's bridge to the sale (#237) — `null` renders nothing. Both conditions gate: the
+ * refusal must be one a sale fixes, and the caller must still be able to NAME the member. The href
+ * is the existing #77 deep link, which lands on Vender with that member already selected.
+ */
+export function sugerenciaVenta(
+  error: string,
+  cliente: { id: string; nombre: string } | undefined,
+): VentaSugerida | null {
+  if (!cliente || !esBloqueoVendible(error)) return null;
+  return { nombre: cliente.nombre, href: `/vender?cliente=${cliente.id}` };
+}

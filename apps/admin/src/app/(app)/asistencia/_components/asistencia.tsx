@@ -1,7 +1,9 @@
 "use client";
 
 import * as React from "react";
+import type { Route } from "next";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Icon } from "@gym/ui/forge/icon";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
@@ -13,7 +15,7 @@ import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
 import { marcadasDeMesAction, togglePaseAction, visitasDelDiaAction } from "../actions";
-import { ctxDe, LIBRE, personasEn, setVisita, visitaDe, type Visita } from "./marcadas";
+import { ctxDe, LIBRE, personasEn, setVisita, sugerenciaVenta, visitaDe, type Visita, type VentaSugerida } from "./marcadas";
 
 // The day strip reaches this many days back from today, each rendering a has-marks dot.
 // getMarcadas' INITIAL window (in @gym/data's asistencia.ts) is sized to cover exactly this
@@ -83,6 +85,10 @@ export function AsistenciaScreen({
   ctxInicial: string;
 }) {
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
+  // Imperative nav for the #237 sale bridge below: its href carries a dynamic `?cliente=`
+  // query Next's typed routes cannot type as a Link literal (matches clientes.tsx/cliente-detalle.tsx's
+  // own router.push for this identical #77 deep link).
+  const router = useRouter();
 
   // Two states, split by purpose:
   //  • `presencia` — per-day COUNTS across the window, driving the strip/calendar dots.
@@ -264,6 +270,12 @@ export function AsistenciaScreen({
   // already-applied optimistic flip stands instead of racing.
   const inFlight = React.useRef<Set<string>>(new Set());
 
+  // The sale bridge (#237, owner ruling 2026-08-04): a hard-refused tap ('Sin clases disponibles'
+  // / 'Paquete vencido') names the member and offers VENDER instead of leaving the operator to
+  // re-search them. PERSISTENT — it survives the warning toast's own dismissal — and cleared at
+  // the start of the NEXT tap, so it never lingers over an unrelated member's row.
+  const [ventaSugerida, setVentaSugerida] = React.useState<VentaSugerida | null>(null);
+
   // The tap: mark the member in the selected day's selected context, or — the same gesture
   // — undo that visit (Wodify's "click again to undo a sign-in"). At most one visit per
   // (member, context), so the undo is exactly per-visit. A past day rides the identical
@@ -273,6 +285,9 @@ export function AsistenciaScreen({
       const key = `${selIso}:${c.id}`;
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
+      // This tap supersedes any earlier sale bridge — clear it now so a banner for a
+      // PREVIOUS member never survives onto this one, win or lose.
+      setVentaSugerida(null);
 
       // Flip optimistically on this tick so the bounce, tint, avatar fill and the one
       // number move instantly; the server result reconciles below. Read current state from
@@ -299,6 +314,9 @@ export function AsistenciaScreen({
           // Roll the optimistic flip back (restoring the undone visit's hora) and say WHY.
           aplicar(ctxSel, !willBePresent, previa?.hora ?? null);
           forgeToast({ tone: "warning", title: "No se pudo registrar", body: res.message });
+          // #237: a zero-balance or lapsed-vigencia refusal gets a persistent sale bridge
+          // alongside the toast — an operator's easiest recovery is the sale, not a re-search.
+          setVentaSugerida(sugerenciaVenta(res.message, c));
           return;
         }
         // Reconcile against the authoritative result. The context the visit LANDED in is
@@ -467,6 +485,30 @@ export function AsistenciaScreen({
           </div>
         </div>
       </div>
+
+      {/* The sale bridge (#237): a hard-refused tap ('Sin clases disponibles' / 'Paquete
+          vencido') names the member and offers the fix — persistent until the next tap,
+          not tied to the toast's own timeout. */}
+      {ventaSugerida && (
+        <div
+          className="flex items-center justify-between"
+          style={{ gap: 8, padding: "10px 22px", background: "var(--yellow-soft)", borderBottom: "1px solid var(--yellow-edge)" }}
+        >
+          <span className="uppercase" style={{ fontSize: 12, fontWeight: 700 }}>
+            {ventaSugerida.nombre} necesita un paquete
+          </span>
+          <button
+            // Its href carries a dynamic `?cliente=` query — `as Route` is Next's own marker for
+            // an intentional route Next's static typegen cannot verify (matches apps/client's
+            // public-header.tsx idiom).
+            onClick={() => router.push(ventaSugerida.href as Route)}
+            className="forge-pressable shrink-0 uppercase font-extrabold"
+            style={{ padding: "7px 14px", background: "var(--yellow)", color: "var(--ink)", fontSize: 11, letterSpacing: 0.8, cursor: "pointer", border: "none" }}
+          >
+            Vender
+          </button>
+        </div>
+      )}
 
       {/* Search is a FILTER over the list, never the path to it. */}
       <div className="flex items-stretch" style={{ padding: "12px 16px 4px", gap: 8 }}>

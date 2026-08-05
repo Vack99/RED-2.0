@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 
-import { ctxDe, LIBRE, personasEn, reservaAtribuible, sesionCercana, setVisita, visitaDe, type Visita } from "./marcadas";
+import {
+  ctxDe,
+  esBloqueoVendible,
+  LIBRE,
+  personasEn,
+  reservaAtribuible,
+  sesionCercana,
+  setVisita,
+  sugerenciaVenta,
+  visitaDe,
+  type Visita,
+} from "./marcadas";
 
 const visita = (clienteId: string, sessionId: string | null, hora: string | null): Visita => ({
   clienteId,
@@ -174,5 +185,59 @@ describe("reservaAtribuible — what the RESERVA chip is allowed to promise", ()
       ahora,
     );
     expect(mapa).toEqual({ c1: "cerca" });
+  });
+});
+
+/**
+ * Which refusals a SALE fixes at the desk (#237, owner ruling 2026-08-04). The strings are our
+ * own `raise exception` literals (toggle_pase / pasar_lista_sesion, 20260804120000), so exact
+ * match is the contract — the negative cases matter as much as the positive ones: offering VENDER
+ * on a refusal a package cannot fix would send the operator to charge a member for nothing.
+ */
+describe("esBloqueoVendible", () => {
+  it("catches both sellable walls — an empty balance and a lapsed vigencia", () => {
+    expect(esBloqueoVendible("Sin clases disponibles")).toBe(true);
+    expect(esBloqueoVendible("Paquete vencido")).toBe(true);
+  });
+
+  it.each(["Ya marcada en la clase de 18:00", "Cliente no encontrado", "No autenticado"])(
+    "refuses '%s' — no paquete on earth changes that fact",
+    (error) => {
+      expect(esBloqueoVendible(error)).toBe(false);
+    },
+  );
+
+  it("is exact, never fuzzy: an empty string and a near-miss are both no", () => {
+    expect(esBloqueoVendible("")).toBe(false);
+    expect(esBloqueoVendible("paquete vencido")).toBe(false);
+  });
+});
+
+/**
+ * The blocked tap's bridge to the sale (#237) — and this IS the banner's visibility: `null`
+ * renders nothing. Both halves must hold, because each failure mode is its own bug: a
+ * non-sellable refusal would offer VENDER against a fact no sale fixes, and an unnamed member
+ * would offer an anonymous one.
+ */
+describe("sugerenciaVenta", () => {
+  const MARISA = { id: "c1", nombre: "Marisa Rangel" };
+
+  it("names the blocked member and deep-links the sale that unblocks them (#77)", () => {
+    expect(sugerenciaVenta("Sin clases disponibles", MARISA)).toEqual({
+      nombre: "Marisa Rangel",
+      href: "/vender?cliente=c1",
+    });
+  });
+
+  it("bridges an expired package the same way — one wall, one answer", () => {
+    expect(sugerenciaVenta("Paquete vencido", MARISA)?.href).toBe("/vender?cliente=c1");
+  });
+
+  it("stays silent on a refusal a sale cannot fix", () => {
+    expect(sugerenciaVenta("Ya marcada en la clase de 18:00", MARISA)).toBeNull();
+  });
+
+  it("stays silent when the caller can no longer name the member", () => {
+    expect(sugerenciaVenta("Paquete vencido", undefined)).toBeNull();
   });
 });
