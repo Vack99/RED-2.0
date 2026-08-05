@@ -252,12 +252,18 @@ export function ClientesScreen({
         </div>
         <div className="flex items-center">
           <span style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1, marginRight: 8 }}>ORDEN</span>
-          {/* No button is active by default (ruled order). Tapping one applies that sort;
-              tapping the ACTIVE one again clears back to the ruled order (#227) — the
-              same single-active-button feel as today, plus the "off" state. */}
-          {([{ k: "dias", l: "Días" }, { k: "nombre", l: "A→Z" }, { k: "asist", l: "Asist." }] as const).map((s, i) => (
+          {/* A leading "Prioridad" chip NAMES the ruled order (actionable → current →
+              expired) instead of leaving the default state unlabeled (#241): it lights
+              up exactly when `sort` is null, the same single-active-button idiom the
+              other three chips already use. Tapping it (from any named sort) clears
+              back to `null` via the SAME toggle below — `s.k` is simply `null` here,
+              so `cur === s.k` is the existing "tap active → clear" branch, never a
+              second code path. Tapping one applies that sort; tapping the ACTIVE one
+              again clears back to the ruled order (#227) — the same single-active-button
+              feel as today, plus the "off" state. */}
+          {([{ k: null, l: "Prioridad" }, { k: "dias", l: "Días" }, { k: "nombre", l: "A→Z" }, { k: "asist", l: "Asist." }] as const).map((s, i) => (
             <button
-              key={s.k}
+              key={s.l}
               onClick={() => setSort((cur) => (cur === s.k ? null : s.k))}
               className="forge-pressable"
               style={{ background: "transparent", border: "none", padding: "10px 8px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, marginLeft: i === 0 ? 0 : 8, transition: "color 150ms cubic-bezier(.32,.72,0,1)" }}

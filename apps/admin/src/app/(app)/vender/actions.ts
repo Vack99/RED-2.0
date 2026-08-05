@@ -1,5 +1,7 @@
 "use server";
 
+import { revalidatePath } from "next/cache";
+
 import { getOperatorGym } from "@gym/data/server/gym";
 import { enviarInvitacion } from "@gym/data/server/invitaciones";
 import { createClient } from "@gym/data/server/supabase";
@@ -34,8 +36,14 @@ export type CrearVentaResult =
  * The DAL's `DuplicadoError` (D2) is mapped to a typed non-throwing result so the component renders the
  * duplicate dialog instead of the generic failure toast. All other errors propagate to the toast path.
  *
- * No cache invalidation is needed: every (app) page reads through the cookie-bound Supabase server client,
- * which forces dynamic rendering, so a write is reflected on the next read automatically.
+ * (app) pages read through the cookie-bound Supabase server client, which forces dynamic rendering —
+ * a write IS reflected the next time `/clientes` itself is freshly requested. But Next reuses the
+ * Client Cache on browser back/forward regardless of that dynamic-render staleTime (#184/#241): a sale
+ * made here, followed by "back" to a roster tab visited earlier in the session, replayed the roster's
+ * PRE-sale render. `revalidatePath` on a Server Function additionally causes previously-visited pages to
+ * refresh next time they're navigated to (not just a `router.refresh()` of the CURRENT route, which
+ * `/vender` is not `/clientes`), so the roster this sale (or its auto-invite) just changed is fresh
+ * whichever way the operator gets back to it.
  */
 export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> {
   let result: VentaResult;
@@ -46,6 +54,7 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
     if (e instanceof EmailEnUsoError) return { ok: false, mensaje: e.message };
     throw e;
   }
+  revalidatePath("/clientes");
   const [invite, reciboEmail] = await Promise.all([
     resolverInvitacion(result),
     // The auto receipt email (#99) — EVERY sale with an email on hand, new and renewal alike.
