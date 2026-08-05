@@ -19,10 +19,18 @@ function etiquetaSesion(s: SesionAgendaDTO): string {
 }
 
 export default async function Page() {
-  const { timezone: tz } = await getOperatorGym();
+  // getOperatorGym() rides in the SAME round trip as the roster/marcadas legs, not before
+  // them (perf #242): getClientesParaPase/getMarcadas each resolve the gym themselves via
+  // the identical memoized client (createClient is cache()'d per request), so
+  // resolveOperatorGyms' own cache() bucket collapses all three calls into ONE
+  // gym_membership query — hoisting the await here just removed a sequential stage that
+  // cost a full round trip for nothing.
+  const [{ timezone: tz }, clientes, marcadas] = await Promise.all([
+    getOperatorGym(),
+    getClientesParaPase(),
+    getMarcadas(),
+  ]);
   const hoyIso = hoyIsoEnZona(tz);
-
-  const [clientes, marcadas] = await Promise.all([getClientesParaPase(), getMarcadas()]);
 
   // The schedule is an ENHANCEMENT of the desk, never its precondition: a gym with no
   // maintained schedule renders ACCESO LIBRE + the full roster by design, so a failing
