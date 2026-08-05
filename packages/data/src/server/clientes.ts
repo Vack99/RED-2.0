@@ -443,10 +443,12 @@ export const getClienteFicha = cache(
           // the checked state would describe a row the toggle cannot undo. The nested
           // embed (#178) names WHICH class, so two visits on one day are told apart by
           // the class + its hour instead of by `hora` — the arrival stamp, which reads
-          // the same 23:11 for two marks 17 seconds apart. A many-to-one FK embed on the
-          // select that is already here: no extra round trip, no new column, no migration.
+          // the same 23:11 for two marks 17 seconds apart. `origen` is the visit's stated
+          // PROVENANCE (#178): null on a pre-#89 row, which the historial must render "—",
+          // never assert ACCESO LIBRE for. A many-to-one FK embed + one existing column on
+          // the select that is already here: no extra round trip, no migration.
           .select(
-            "fecha, hora, consumio, perdonada, class_session_id, class_session(starts_at, is_special, special_name, class_type(name))",
+            "fecha, hora, consumio, perdonada, class_session_id, origen, class_session(starts_at, is_special, special_name, class_type(name))",
           )
           .eq("cliente_id", id)
           .is("deleted_at", null)

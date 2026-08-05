@@ -255,11 +255,16 @@ export interface FichaAsistencia {
   hora: string | null;
   today: boolean;
   /** The CLASS this visit belongs to — "METCON 19:45" (name + the class's own hour,
-   *  #178) — or null for an ACCESO LIBRE visit, which the leaf labels (it also has to
+   *  #178) — or null for a class-less visit, which the leaf labels (it also has to
    *  label the libre row it holds in local state after a toggle, so that copy lives
    *  there, once). `hora` above stays the ARRIVAL stamp and keeps its own column: two
    *  visits 17 seconds apart both read 23:11 there, and only this tells them apart. */
   clase: string | null;
+  /** The visit's stated PROVENANCE (#89) for the `clase === null` case — 'libre' is a
+   *  real ACCESO LIBRE visit; null means the row predates #89 and never stamped one, so
+   *  the leaf must render "—", never assert ACCESO LIBRE for a visit that may well have
+   *  been an unrecorded class (#178: at forge, 189 of 206 pre-#89 class-less rows were). */
+  origen: string | null;
 }
 export interface FichaPago {
   fechaDisplay: string;
@@ -280,8 +285,16 @@ export interface FichaAsistRow {
   fecha: string;
   hora: string | null;
   consumio: boolean;
+  /** Marks the second record of one cooldown-paired arrival (#173) — never a real second
+   *  visit. Excluded from `attendedSincePurchase` (`deleted_at is null and not perdonada`,
+   *  see the class doc above); carried on the type because that filter runs on these rows. */
+  perdonada: boolean;
   /** The visit's CONTEXT (#89): a class, or null for ACCESO LIBRE. */
   class_session_id: string | null;
+  /** The visit's stated PROVENANCE (#89): 'libre' | 'clase' | null (row predates #89 —
+   *  provenance unknown, #178). Threaded through to `FichaAsistencia.origen` so the ficha's
+   *  historial never asserts ACCESO LIBRE for a class-less row it cannot actually attest. */
+  origen: string | null;
   /** The class itself, embedded on the same read (#178) — null on an ACCESO LIBRE row.
    *  Deliberately NOT filtered on `cancelled_at`: cancelling a session afterwards does
    *  not un-attend it, and dropping the embed would blank a real visit's label. */
@@ -405,6 +418,7 @@ export function shapeFicha(
         hora: a.hora ? a.hora.slice(0, 5) : null,
         today: false,
         clase: a.class_session_id === null ? null : etiquetaClase(a.class_session, tz),
+        origen: a.origen,
       };
     });
   // The ficha's toggle is the 2-arg (ACCESO LIBRE) one, so its checked state keys on the

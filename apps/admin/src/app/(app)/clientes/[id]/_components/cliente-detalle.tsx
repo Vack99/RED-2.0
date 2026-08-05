@@ -180,11 +180,13 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   // LIBRE row the toggle owns, plus one per class visit — never collapsed, so two classes
   // on one day are two rows. The class rows are server truth the ficha cannot toggle, but
   // they must still appear, or `asistCount` would count visits the list never shows.
-  // `clase` is the server-derived label (etiquetaClase); null = ACCESO LIBRE, which today's
-  // toggle-owned row is too — that copy lives at the ONE render site below.
-  const histRows: { dDisplay: string; hora: string | null; today: boolean; clase: string | null }[] = [
-    ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true, clase: null }] : []),
-    ...ficha.clasesHoy.map((v) => ({ dDisplay: "HOY", hora: v.hora, today: true, clase: v.clase })),
+  // `clase` is the server-derived label (etiquetaClase); null + `origen === "libre"` = ACCESO
+  // LIBRE, which today's toggle-owned row is too — that copy lives at the ONE render site below.
+  // A pre-#89 historial row has `origen: null` (provenance unknown, #178) and must NOT read as
+  // ACCESO LIBRE — the toggle-owned "HOY" row IS always a real libre visit, so it hardcodes it.
+  const histRows: { dDisplay: string; hora: string | null; today: boolean; clase: string | null; origen: string | null }[] = [
+    ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true, clase: null, origen: "libre" }] : []),
+    ...ficha.clasesHoy.map((v) => ({ dDisplay: "HOY", hora: v.hora, today: true, clase: v.clase, origen: null })),
     ...ficha.historial,
   ];
 
@@ -451,7 +453,11 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
           >
             <span style={{ width: 6, height: 6, borderRadius: 999, background: row.today ? "var(--green)" : "var(--yellow)" }} />
             <Tnum className="uppercase" style={{ fontWeight: row.today ? 800 : 600, fontSize: 13, color: row.today ? "var(--green)" : "var(--fg)", letterSpacing: 0.4 }}>{row.dDisplay}</Tnum>
-            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>{row.clase ?? "ACCESO LIBRE"}</span>
+            {/* A pre-#89 row (`origen` null) has UNKNOWN context — may well have been an
+                unrecorded class (#178) — so it reads "—", never a false ACCESO LIBRE. */}
+            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>
+              {row.clase ?? (row.origen === "libre" ? "ACCESO LIBRE" : "—")}
+            </span>
             <Tnum style={{ fontSize: 12, color: row.today ? "var(--green)" : "var(--muted)" }}>{row.hora ?? "—"}</Tnum>
           </div>
         ))}

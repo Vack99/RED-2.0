@@ -202,9 +202,9 @@ describe("shapeFicha", () => {
 
   it("excludes today from historial and reports presentHoy/horaHoy", () => {
     const asist: FichaAsistRow[] = [
-      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, class_session_id: null, class_session: null }, // today
-      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, class_session_id: null, class_session: null },
-      { fecha: "2026-05-20", hora: null, consumio: true, class_session_id: null, class_session: null }, // back-entry, no time
+      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null }, // today
+      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
+      { fecha: "2026-05-20", hora: null, consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null }, // back-entry, no time
     ];
     const f = shapeFicha(clienteRow, asist, [], HOY, HOY_ISO, TZ_FORGE, [], "FORGE", 0);
     expect(f.presentHoy).toBe(true);
@@ -222,7 +222,7 @@ describe("shapeFicha", () => {
     // "marked" would make the next tap insert a second, consuming libre row (H1).
     const f = shapeFicha(
       clienteRow,
-      [{ fecha: HOY_ISO, hora: "18:05:00", consumio: true, class_session_id: "s9", class_session: sesion() }],
+      [{ fecha: HOY_ISO, hora: "18:05:00", consumio: true, perdonada: false, class_session_id: "s9", origen: "clase", class_session: sesion() }],
       [],
       HOY,
       HOY_ISO,
@@ -246,8 +246,8 @@ describe("shapeFicha", () => {
     const f = shapeFicha(
       clienteRow,
       [
-        { fecha: HOY_ISO, hora: "07:30:00", consumio: true, class_session_id: null, class_session: null },
-        { fecha: HOY_ISO, hora: null, consumio: false, class_session_id: "s9", class_session: sesion() },
+        { fecha: HOY_ISO, hora: "07:30:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
+        { fecha: HOY_ISO, hora: null, consumio: false, perdonada: false, class_session_id: "s9", origen: "clase", class_session: sesion() },
       ],
       [],
       HOY,
@@ -271,15 +271,17 @@ describe("shapeFicha", () => {
     const f = shapeFicha(
       clienteRow,
       [
-        { fecha: "2026-05-25", hora: "23:11:04", consumio: true, class_session_id: "s1", class_session: sesion() },
+        { fecha: "2026-05-25", hora: "23:11:04", consumio: true, perdonada: false, class_session_id: "s1", origen: "clase", class_session: sesion() },
         {
           fecha: "2026-05-25",
           hora: "23:11:21",
           consumio: true,
+          perdonada: false,
           class_session_id: "s2",
+          origen: "clase",
           class_session: sesion({ starts_at: "2026-05-25T13:00:00Z", class_type: { name: "YOGA" } }),
         },
-        { fecha: "2026-05-24", hora: "08:15:00", consumio: true, class_session_id: null, class_session: null },
+        { fecha: "2026-05-24", hora: "08:15:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
       ],
       [],
       HOY,
@@ -290,10 +292,37 @@ describe("shapeFicha", () => {
       0,
     );
     expect(f.historial).toHaveLength(3);
-    expect(f.historial[0]).toEqual({ dDisplay: "lun 25", hora: "23:11", today: false, clase: "METCON 19:45" });
+    expect(f.historial[0]).toEqual({ dDisplay: "lun 25", hora: "23:11", today: false, clase: "METCON 19:45", origen: "clase" });
     expect(f.historial[1].clase).toBe("YOGA 07:00");
     // ACCESO LIBRE carries no class — the leaf labels it (one home for that copy).
     expect(f.historial[2].clase).toBeNull();
+  });
+
+  // The leaf's label fallback (cliente-detalle.tsx): `row.clase ?? (row.origen === "libre" ?
+  // "ACCESO LIBRE" : "—")`. shapeFicha doesn't render that copy, but it owns the `origen`
+  // plumbing the leaf depends on — these three cases are the ones that copy branches on.
+  it("carries `origen` through the historial row for the leaf's label fallback (#178)", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [
+        // 1. A class visit — `clase` is set, so the leaf never even looks at `origen`.
+        { fecha: "2026-05-25", hora: "18:05:00", consumio: true, perdonada: false, class_session_id: "s1", origen: "clase", class_session: sesion() },
+        // 2. A real ACCESO LIBRE visit (post-#89) — `clase` null, `origen` 'libre'.
+        { fecha: "2026-05-24", hora: "08:00:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
+        // 3. A pre-#89 row — `clase` null, `origen` null (provenance unknown, never ACCESO LIBRE).
+        { fecha: "2026-05-23", hora: "09:00:00", consumio: true, perdonada: false, class_session_id: null, origen: null, class_session: null },
+      ],
+      [],
+      HOY,
+      HOY_ISO,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      0,
+    );
+    expect(f.historial[0].clase).toBe("METCON 19:45");
+    expect(f.historial[1]).toMatchObject({ clase: null, origen: "libre" });
+    expect(f.historial[2]).toMatchObject({ clase: null, origen: null });
   });
 
   describe("etiquetaClase", () => {
