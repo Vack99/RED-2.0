@@ -1508,6 +1508,7 @@ export type Database = {
           clases_restantes: number
           hora: string
           present: boolean
+          resultado: string | null
           session_id: string
         }[]
       }
@@ -1592,6 +1593,7 @@ export type Database = {
           clases_restantes: number
           hora: string
           present: boolean
+          resultado: string | null
           session_id: string
         }[]
       }

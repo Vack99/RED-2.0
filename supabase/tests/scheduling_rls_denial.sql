@@ -224,7 +224,10 @@ begin
   select count(*) into n from public.schedule_template;       if n <> 1 then raise exception 'STAFF FAIL: operator_a sees % schedule_template rows', n; end if;
   select count(*) into n from public.schedule_template_coach; if n <> 1 then raise exception 'STAFF FAIL: operator_a sees % schedule_template_coach rows', n; end if;
 
-  new_session := public.create_class_session(ct_a, '2026-07-07 19:00:00-06', 60, 20);
+  -- FUTURE, not a fixed 2026-07-07 instant: since #245 (20260804150000 §4) cancel_class_session is
+  -- BEFORE-START ONLY, so the session this vector cancels below must not have begun. A wall-clock
+  -- literal was always going to age into the past; `now() + 2 days` cannot.
+  new_session := public.create_class_session(ct_a, now() + interval '2 days', 60, 20);
   if new_session is null then raise exception 'STAFF FAIL: create_class_session returned null'; end if;
   select count(*) into n from public.class_session where gym_id = gym_a;
   if n <> 2 then raise exception 'STAFF FAIL: after RPC operator_a sees % class_session rows (expected 2)', n; end if;
@@ -232,6 +235,8 @@ begin
   -- cancel_class_session success path + WRITTEN ROW (#80 AC6): the RPC's only running-suite call sites
   -- were denials (operator_b, member_a), so its `cancelled_at` write had zero coverage. Cancel the row
   -- just minted (an UPDATE, so it does not perturb the exact-count reads above) and assert the stamp.
+  -- The release half of that RPC lives in cancel_class_session_release.sql; this stays the schedule-
+  -- side stamp vector.
   perform public.cancel_class_session(new_session);
   select cancelled_at into v_cancelled from public.class_session where id = new_session;
   if v_cancelled is null then raise exception 'STAFF FAIL: cancel_class_session did not stamp cancelled_at'; end if;

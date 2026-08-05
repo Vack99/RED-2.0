@@ -15,7 +15,7 @@ import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
 import { marcadasDeMesAction, togglePaseAction, visitasDelDiaAction } from "../actions";
-import { ctxDe, LIBRE, personasEn, setVisita, sugerenciaVenta, visitaDe, type Visita, type VentaSugerida } from "./marcadas";
+import { ctxDe, LIBRE, personasEn, reciboResultado, setVisita, sugerenciaVenta, visitaDe, type Visita, type VentaSugerida } from "./marcadas";
 
 // The day strip reaches this many days back from today, each rendering a has-marks dot.
 // getMarcadas' INITIAL window (in @gym/data's asistencia.ts) is sized to cover exactly this
@@ -342,9 +342,12 @@ export function AsistenciaScreen({
         }
         if (res.present) {
           const horaClase = ctxLanded !== ctxSel ? sesiones.find((s) => s.id === ctxLanded)?.hora : undefined;
+          // The capture receipt (#233/#246 story 6): the outcome word leads, prominent and
+          // uppercase (#232 ruling) — the name/CLASE-hora info that was already here joins
+          // it in the body, unchanged.
           forgeToast({
             tone: "success",
-            title: "Asistencia registrada",
+            title: reciboResultado(res.resultado) ?? "Asistencia registrada",
             body: horaClase
               ? `${firstName(c.nombre)} · CLASE ${horaClase}`
               : `${firstName(c.nombre)}${res.hora ? " · " + res.hora : ""}`,

@@ -4,6 +4,7 @@ import {
   ctxDe,
   LIBRE,
   personasEn,
+  reciboResultado,
   reservaAtribuible,
   sesionCercana,
   setVisita,
@@ -72,6 +73,32 @@ describe("setVisita — the one state model, every day", () => {
     const otra = visita("c9", null, "06:00");
     const next = setVisita([otra], LIBRE, "c1", true, "07:10");
     expect(next[0]).toBe(otra);
+  });
+});
+
+/**
+ * The desk's capture-receipt word (#233/#246, #232 ruling) — the exact uppercase word the
+ * operator reads aloud at the counter. Exact strings, because they are the ruled vocabulary.
+ */
+describe("reciboResultado — the capture-receipt word per settlement outcome", () => {
+  it("'descontada' — a finite credit was charged", () => {
+    expect(reciboResultado("descontada")).toBe("DESCONTADA");
+  });
+
+  it("'gratis' — ilimitado or a cooldown pardon, admitted with no charge", () => {
+    expect(reciboResultado("gratis")).toBe("GRATIS");
+  });
+
+  it("'reserva' — an existing booking's hold was captured", () => {
+    expect(reciboResultado("reserva")).toBe("RESERVA");
+  });
+
+  it("null — every toggle-OFF/un-mark settles nothing, so there is no word", () => {
+    expect(reciboResultado(null)).toBeNull();
+  });
+
+  it("an unrecognized value is treated like null, not echoed", () => {
+    expect(reciboResultado("algo-inesperado")).toBeNull();
   });
 });
 

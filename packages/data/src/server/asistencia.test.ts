@@ -250,15 +250,29 @@ describe("togglePase — typed outcome (injected fake)", () => {
     expect(res).toEqual({ ok: false, message: "No se pudo registrar la asistencia" });
   });
 
-  it("maps a successful ACCESO LIBRE toggle to { ok: true, present, hora, sessionId: null, clasesRestantes }", async () => {
+  it("maps a successful ACCESO LIBRE toggle to { ok: true, present, hora, sessionId: null, clasesRestantes, resultado }", async () => {
     const { client } = makeFake(
       {},
-      { rpc: { data: { present: true, hora: "07:30", session_id: null, clases_restantes: 4 } } },
+      {
+        rpc: {
+          data: { present: true, hora: "07:30", session_id: null, clases_restantes: 4, resultado: "descontada" },
+        },
+      },
     );
 
     const res = await togglePase(input, client);
 
-    expect(res).toEqual({ ok: true, present: true, hora: "07:30", sessionId: null, clasesRestantes: 4 });
+    // toStrictEqual (not toEqual): the RPC's shape gained `resultado` (#233/#246) and a
+    // fixture that omits it would still pass toEqual (undefined keys are ignored), silently
+    // uncovering the passthrough this test exists to guard.
+    expect(res).toStrictEqual({
+      ok: true,
+      present: true,
+      hora: "07:30",
+      sessionId: null,
+      clasesRestantes: 4,
+      resultado: "descontada",
+    });
   });
 
   it("surfaces the ATTRIBUTED session when the RPC lands a LIBRE tap on the member's booking", async () => {
@@ -267,12 +281,24 @@ describe("togglePase — typed outcome (injected fake)", () => {
     // reach the caller, or the desk would show the mark in the wrong place.
     const { client } = makeFake(
       {},
-      { rpc: { data: { present: true, hora: "18:02", session_id: "ses-9", clases_restantes: null } } },
+      {
+        rpc: {
+          data: { present: true, hora: "18:02", session_id: "ses-9", clases_restantes: null, resultado: "reserva" },
+        },
+      },
     );
 
     const res = await togglePase(input, client);
 
-    expect(res).toEqual({ ok: true, present: true, hora: "18:02", sessionId: "ses-9", clasesRestantes: null });
+    // toStrictEqual — see the note on the previous test.
+    expect(res).toStrictEqual({
+      ok: true,
+      present: true,
+      hora: "18:02",
+      sessionId: "ses-9",
+      clasesRestantes: null,
+      resultado: "reserva",
+    });
   });
 
   it("omits p_session_id entirely for an ACCESO LIBRE mark", async () => {

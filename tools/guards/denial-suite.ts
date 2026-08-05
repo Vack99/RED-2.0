@@ -68,13 +68,46 @@ const DROP = /drop\s+function\s+(?:if\s+exists\s+)?(?:public\.)?([a-z0-9_]+)/gi;
 // A body "writes" if it INSERTs/DELETEs/MERGEs or UPDATEs. The UPDATE arm tolerates an optional
 // `[as] alias` between table and `set` so `update t x set …` isn't misread as a non-writer — the one
 // silent-exemption path that would let a writer classify as a reader and slip the coverage guard.
-// A future RPC that writes only transitively (a `perform` of another writer, no direct DML) classifies
-// as a reader and is BARRED from the map by the no-pure-reader test; widen this or list it then.
+// TRANSITIVE writers count too (see propagateWrites): an RPC whose body has no direct DML but calls
+// one that does is still a write path, and #136 made that shape load-bearing rather than theoretical.
 const WRITES = /\b(?:insert\s+into|delete\s+from|merge\s+into)\b/i;
 const WRITES_UPDATE = /\bupdate\b\s+\S+(?:\s+(?:as\s+)?\S+)?\s+set\b/i;
 
 function bodyWrites(body: string): boolean {
   return WRITES.test(body) || WRITES_UPDATE.test(body);
+}
+
+/**
+ * Close the writer set over CALLS, to a fixpoint.
+ *
+ * #136 split the materialization rule into one shared core (`materialize_week_for_gym`, direct DML)
+ * behind two callers that hold none: `ensure_week_materialized` — a write RPC since #42, and in this
+ * map since #80 — became a thin wrapper, and `cron_materialize_horizon` writes the whole fleet's
+ * sessions without a single `insert` of its own. Judged on direct DML alone, both would classify as
+ * pure readers: the first would be EJECTED from rpc-coverage.json by the no-pure-reader test and the
+ * second BARRED from entering it, which is the coverage guard congratulating itself for exempting the
+ * two functions that write the most rows. Extracting a shared core is normal refactoring; it must not
+ * silently dissolve a coverage obligation.
+ *
+ * Direction of error is deliberate: this only ever ADDS obligations (a false positive costs one map
+ * line), never removes one. Matching is the same `\bname\s*\(` call-site test `suiteInvokes` uses, so
+ * it sees `public.fn(…)` and bare `fn(…)` alike; string literals are not stripped, so a body that
+ * merely NAMES a writer inside a `raise` message would over-report — no such body exists today.
+ */
+function propagateWrites(bodies: Map<string, string>, writes: Map<string, boolean>): void {
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [name, body] of bodies) {
+      if (writes.get(name)) continue;
+      for (const [callee, calleeWrites] of writes) {
+        if (callee === name || !calleeWrites) continue;
+        if (!new RegExp(`\\b${callee}\\s*\\(`, "i").test(body)) continue;
+        writes.set(name, true);
+        changed = true;
+        break;
+      }
+    }
+  }
 }
 
 /**
@@ -85,11 +118,12 @@ function bodyWrites(body: string): boolean {
  * dropped and recreated with a new signature, so a set-difference of creates-minus-drops would
  * wrongly report it absent.
  *
- * `writes` is DERIVED from the final definition's body, never declared: that is what makes the
- * coverage guard un-dodgeable. There is no hand-maintained "this one doesn't write" flag to flip.
+ * `writes` is DERIVED from the final definition's body — and then closed over calls by
+ * `propagateWrites` — never declared: that is what makes the coverage guard un-dodgeable. There is
+ * no hand-maintained "this one doesn't write" flag to flip.
  *
- * Verified against the live catalog (`pg_proc` where `pronamespace = 'public'`): exactly 34
- * functions, 25 writers, 9 pure readers — same names, no drift.
+ * Verified against the live catalog (`pg_proc` where `pronamespace = 'public'`) at the time of #80:
+ * exactly 34 functions, 25 writers, 9 pure readers — same names, no drift.
  */
 export function readRpcFunctions(): RpcFunction[] {
   const present = new Map<string, string>(); // name -> final body
@@ -111,7 +145,10 @@ export function readRpcFunctions(): RpcFunction[] {
     }
   }
 
-  return [...present]
-    .map(([name, body]) => ({ name, writes: bodyWrites(body) }))
+  const writes = new Map([...present].map(([name, body]) => [name, bodyWrites(body)] as const));
+  propagateWrites(present, writes);
+
+  return [...present.keys()]
+    .map((name) => ({ name, writes: writes.get(name) ?? false }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

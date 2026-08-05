@@ -14,7 +14,7 @@ import {
   ratioOcupacion,
 } from "@gym/domain/rules";
 import type { EstadoSesion } from "@gym/domain/types";
-import { addDays, fechaEnZona, iniciales, inicioSemana, instanteEnZona, parseDay, sameDay, semanaLunSab, toIsoDay } from "@gym/format";
+import { addDays, fechaEnZona, hoyEnZona, iniciales, inicioSemana, instanteEnZona, parseDay, sameDay, semanaLunSab, toIsoDay } from "@gym/format";
 
 import { requireOperator } from "./_auth";
 import { getClientesParaPase, type PaseClienteDTO } from "./clientes";
@@ -195,7 +195,17 @@ function ratioAgregada(dtos: SesionAgendaDTO[]): number {
   return ratioOcupacion(capacidad, activos);
 }
 
-async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date): Promise<void> {
+/** #244 guard 3 (weakness 9): staff can ask the Agenda to VIEW any week via `?d=` — including a
+ *  past week (the history-browsing flow is legitimate) or one decades out — but materialization
+ *  WRITES permanent rows (ADR-0010: cancel is the only undo, there is no delete). So the write is
+ *  clamped to [this week's Monday, +1 year] in the gym's own tz, independent of what week the
+ *  caller asked to view. Out of range: this returns without calling the RPC at all, and the read
+ *  below still runs — an unmaterialized week just comes back with whatever sessions already exist
+ *  (none, for a week nobody ever staffed; the true historical rows, for one that was). */
+async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, tz: string): Promise<void> {
+  const lunesActual = inicioSemana(hoyEnZona(tz));
+  const horizonte = new Date(lunesActual.getFullYear() + 1, lunesActual.getMonth(), lunesActual.getDate());
+  if (lunes.getTime() < lunesActual.getTime() || lunes.getTime() > horizonte.getTime()) return;
   await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes) });
 }
 
@@ -210,7 +220,7 @@ export const getAgendaDia = cache(
 
     const dia = parseDay(fechaIso);
     const lunes = inicioSemana(dia);
-    await ensureSemanaMaterializada(supabase, lunes);
+    await ensureSemanaMaterializada(supabase, lunes, tz);
 
     const low = instanteEnZona(dia, "00:00", tz);
     const high = instanteEnZona(addDays(dia, 1), "00:00", tz);
@@ -235,7 +245,7 @@ export const getAgendaSemana = cache(
 
     const dia = parseDay(fechaIso);
     const lunes = inicioSemana(dia);
-    await ensureSemanaMaterializada(supabase, lunes);
+    await ensureSemanaMaterializada(supabase, lunes, tz);
 
     const low = instanteEnZona(lunes, "00:00", tz);
     const high = instanteEnZona(addDays(lunes, 6), "00:00", tz);
@@ -538,6 +548,9 @@ export async function pasarListaSesion(
     hora: string | null;
     sessionId: string | null;
     clasesRestantes: number | null;
+    /** The settlement outcome (#233/#246): 'descontada' | 'gratis' | 'reserva' | null
+     *  (every toggle-OFF/un-mark). Mirrors togglePase's TogglePaseResult field. */
+    resultado: string | null;
   }>
 > {
   const parsed = pasarListaSesionSchema.safeParse(raw);
@@ -556,6 +569,7 @@ export async function pasarListaSesion(
       hora: data.hora,
       sessionId: data.session_id,
       clasesRestantes: data.clases_restantes,
+      resultado: data.resultado,
     };
   });
 }

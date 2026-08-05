@@ -13,6 +13,13 @@
 --      starts_at (the ADR-0010 holiday move), re-running ensure_week_materialized for that week creates
 --      0 new sessions — the materialization guard is immutable (schedule_template_week), so vacating
 --      the old (template_id, starts_at) instant must not regenerate the original slot.
+--   6) #244 guard 4 — duplicate-template guard: re-creating an ACTIVE (gym, class_type, weekday,
+--      start_time) through create_recurring_schedule is refused (the FULL friendly message, naming
+--      the weekday and time; zero new rows, atomically); a different start_time still succeeds; a
+--      direct INSERT of the exact duplicate hits the unique index itself (unique_violation); an
+--      INACTIVE duplicate of the same slot is allowed (the index is partial, active rows only); and a
+--      call whose collision lands on a NON-FIRST weekday still names the colliding day and still
+--      rolls back the weekday that had already inserted (the partial-write shape).
 --
 -- HOW TO RUN: node supabase/tests/run-denial-suite.mjs (SUPABASE_TARGET_REF override), or the MCP execute_sql.
 
@@ -64,6 +71,10 @@ declare
   edited_dur int;
   edited_cap int;
   tmpl uuid;
+  raised boolean;              -- #244 guard 4
+  msg text;
+  tmpl_count_before int;
+  session_count_before int;
 begin
   select timezone into tz from public.gym where id = gym_a;
   today := (now() at time zone tz)::date;
@@ -126,6 +137,90 @@ begin
   if added <> 0 then raise exception 'MAT FAIL: re-materializing after a session move resurrected % session(s) at the vacated slot', added; end if;
   select count(*) into n from public.class_session where gym_id = gym_a and template_id is not null;
   if n <> 4 then raise exception 'MAT FAIL: total sessions drifted to % after the move + re-materialize (expected 4)', n; end if;
+
+  -- (6) #244 guard 4 — duplicate-template guard. After (4)/(5) above, gym_a's earliest template
+  -- (weekday 0, from the original array[0, 2]) is ACTIVE at (ct_a, Lunes, 20:00) — re-creating that
+  -- EXACT slot through create_recurring_schedule must be refused, atomically, with zero new rows.
+  select count(*) into tmpl_count_before from public.schedule_template where gym_id = gym_a;
+  select count(*) into session_count_before from public.class_session where gym_id = gym_a;
+
+  raised := false;
+  begin
+    perform public.create_recurring_schedule(ct_a, array[0], '20:00'::time, 45, 24, array[coach_a]);
+  exception when others then
+    raised := true;
+    msg := sqlerrm;
+  end;
+  if not raised then raise exception 'MAT FAIL(dup guard): re-creating the active (ct_a, Lunes, 20:00) schedule did not raise'; end if;
+  -- The FULL sentence, not a prefix. The refusal's whole job is telling the operator WHICH schedule
+  -- already exists, and `like 'Ya existe un horario activo%'` passes just as happily on a message whose
+  -- weekday and time interpolations are empty, swapped, or off by one — the exact half that is
+  -- computed (`weekday + 1` into a Spanish array, `to_char(start_time,'HH24:MI')`) rather than typed.
+  -- This fixture is known exactly: weekday 0 at 20:00, which is Lunes.
+  if msg is distinct from 'Ya existe un horario activo para esta clase el Lunes a las 20:00' then
+    raise exception 'MAT FAIL(dup guard): wrong message for a duplicate schedule: %', msg;
+  end if;
+  -- Zero new rows: an uncaught exception aborts the WHOLE RPC call (one transaction), not just the
+  -- colliding weekday — so a single-weekday collision here still leaves the template/session counts
+  -- exactly where they were.
+  select count(*) into n from public.schedule_template where gym_id = gym_a;
+  if n <> tmpl_count_before then raise exception 'MAT FAIL(dup guard): template count drifted to % (expected % unchanged)', n, tmpl_count_before; end if;
+  select count(*) into n from public.class_session where gym_id = gym_a;
+  if n <> session_count_before then raise exception 'MAT FAIL(dup guard): session count drifted to % (expected % unchanged)', n, session_count_before; end if;
+
+  -- A DIFFERENT time is not a duplicate (the dedup key includes start_time) — succeeds normally.
+  perform public.create_recurring_schedule(ct_a, array[0], '06:00'::time, 45, 24, array[coach_a], 1);
+  select count(*) into n from public.schedule_template where gym_id = gym_a;
+  if n <> tmpl_count_before + 1 then raise exception 'MAT FAIL(dup guard): a different-time schedule did not create a new template (count %, expected %)', n, tmpl_count_before + 1; end if;
+
+  -- Direct INSERT of the exact same duplicate slot hits the unique index itself (not the RPC's catch).
+  raised := false;
+  begin
+    insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
+      values (gym_a, ct_a, 0, '20:00', 45, 24);
+  exception when unique_violation then raised := true;
+  end;
+  if not raised then raise exception 'MAT FAIL(dup guard): a direct duplicate INSERT did not raise unique_violation'; end if;
+
+  -- An INACTIVE duplicate of the exact same slot is allowed — the partial index only covers is_active
+  -- rows, so a retired schedule never blocks its own replacement.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active)
+    values (gym_a, ct_a, 0, '20:00', 45, 24, false);
+  select count(*) into n from public.schedule_template
+    where gym_id = gym_a and class_type_id = ct_a and weekday = 0 and start_time = '20:00' and is_active = false;
+  if n <> 1 then raise exception 'MAT FAIL(dup guard): the inactive duplicate template was not inserted'; end if;
+
+  -- ── The collision on a NON-FIRST weekday: the partial-write shape ──────────────────────────────
+  -- Every vector above collides on array[0] — the first element — so the loop raises before it has
+  -- inserted anything, and "zero new rows" is true for free. The interesting case is a multi-weekday
+  -- call whose collision comes SECOND: Jueves (weekday 3, 20:00) is free and inserts, then Lunes
+  -- collides. Two claims are under test at once and neither is provable from the first-element case:
+  --   * the message names the ACTUALLY colliding weekday (Lunes), not the first one it tried (Jueves)
+  --     — the raise interpolates the loop variable, which a refactor to the array's head would break;
+  --   * the Jueves template that DID insert is rolled back with the raise. `create_recurring_schedule`
+  --     is one transaction, and a half-created recurring schedule is the worst outcome available:
+  --     future weeks would materialize a weekday the operator was told had failed.
+  select count(*) into tmpl_count_before from public.schedule_template where gym_id = gym_a;
+  raised := false;
+  begin
+    perform public.create_recurring_schedule(ct_a, array[3, 0], '20:00'::time, 45, 24, array[coach_a], 1);
+  exception when others then
+    raised := true;
+    msg := sqlerrm;
+  end;
+  if not raised then raise exception 'MAT FAIL(dup guard, partial): a call colliding on its SECOND weekday did not raise'; end if;
+  if msg is distinct from 'Ya existe un horario activo para esta clase el Lunes a las 20:00' then
+    raise exception 'MAT FAIL(dup guard, partial): the message names the wrong weekday — expected the colliding Lunes, got: %', msg;
+  end if;
+  select count(*) into n from public.schedule_template where gym_id = gym_a;
+  if n is distinct from tmpl_count_before then
+    raise exception 'MAT FAIL(dup guard, partial): template count % (expected % unchanged) — the non-colliding weekday survived a refused call', n, tmpl_count_before;
+  end if;
+  select count(*) into n from public.schedule_template
+    where gym_id = gym_a and class_type_id = ct_a and weekday = 3;
+  if n is distinct from 0 then
+    raise exception 'MAT FAIL(dup guard, partial): % Jueves template(s) survived (expected 0 — the whole call rolls back)', n;
+  end if;
 end $$;
 reset role;
 

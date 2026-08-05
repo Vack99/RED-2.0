@@ -39,6 +39,28 @@ export function ctxDe(v: Visita): string {
   return v.sessionId ?? LIBRE;
 }
 
+/**
+ * The desk's capture-receipt word (#233/#246 story 6, #232 ruling) — the exact uppercase
+ * word the operator reads aloud to the member at the counter. Maps the settlement RPC's
+ * `resultado` 1:1: 'descontada' (a finite credit was charged) → DESCONTADA, 'gratis'
+ * (ilimitado or a cooldown pardon) → GRATIS, 'reserva' (an existing booking's hold was
+ * captured) → RESERVA. `null` — every toggle-OFF/un-mark, and any other value this pure
+ * function has never seen — settles nothing, so there is no word to show; the toast keeps
+ * its prior generic title.
+ */
+export function reciboResultado(resultado: string | null): string | null {
+  switch (resultado) {
+    case "descontada":
+      return "DESCONTADA";
+    case "gratis":
+      return "GRATIS";
+    case "reserva":
+      return "RESERVA";
+    default:
+      return null;
+  }
+}
+
 /** A member's visit in ONE context, if they have one. Slice 1's toggle discipline
  *  (and the DB's partial unique indexes) allow at most one, so this is the visit. */
 export function visitaDe(visitas: Visita[], ctx: string, clienteId: string): Visita | undefined {

@@ -14,9 +14,16 @@
 --                                                   pase consumed nothing; the booking consume is #58's cancel).
 --   * walk-in parity                              — a finite member with NO reservation: pase creates an
 --                                                   is_walk_in/asistida reservation AND consumes exactly one
---                                                   (5->4), asistencia consumio=true, hora stamped (session today).
+--                                                   (5->4), asistencia consumio=true, hora = the session's own
+--                                                   start time (18:00 gym-local, not the tap's hour).
 --   * walk-in untoggle is symmetric               — reverts reservation to cancelada and refunds exactly one (finite).
---   * hora-today-only                             — hora stamped only when the session's date is gym-today.
+--   * hora comes from the SESSION (#166/#245)     — 20260804150000: the visit stamp is the class's OWN start
+--                                                   time in the gym's timezone, the exact pair of `fecha`,
+--                                                   which has always been the session's own gym-local date.
+--                                                   It replaces the old "now() if the session is today, else
+--                                                   NULL" rule, which recorded the data-entry hour (or, past
+--                                                   midnight, no hour at all) whenever a roster was marked
+--                                                   late. Vector (11) is the late-marking proof.
 --   * #237 zero-balance gate (owner ruling         — the walk-in arm HARD-REFUSES a finite member at 0 classes:
 --     2026-08-04, 20260804120000)                    'Sin clases disponibles', the SAME message reservar_clase
 --                                                   raises on the member path. No staff override, no
@@ -56,6 +63,27 @@
 --                                                   the paying rows (3, 6, 7), for the booked branch (1) — free
 --                                                   because the booking paid, which is a different fact — and on the
 --                                                   re-charged recovery row (8).
+--   * resultado, the settlement outcome (#245)    — 2026-08-04: the return also carries the discriminator the
+--                                                   desk shows the operator — 'reserva' when an existing
+--                                                   booking's HOLD was CAPTURED (the booked branch),
+--                                                   'descontada' when the finite decrement actually ran,
+--                                                   'gratis' for ilimitado or a pardoned free admission, and
+--                                                   NULL on every un-mark. Asserted per branch ALONGSIDE the
+--                                                   written rows — a discriminator that disagrees with the
+--                                                   ledger is worse than no discriminator.
+--   * ilimitado order symmetry (12, #245 §3)      — 2026-08-04: the cooldown's key became "was the recent row
+--                                                   itself pardoned?", never "did it charge". An ilimitado
+--                                                   member's rows are always consumio=false, so a
+--                                                   consumio-keyed predicate would silently stop pardoning
+--                                                   them — no money lost, but `perdonada` unstamped and every
+--                                                   dual-surface unlimited member counted twice a day. Both
+--                                                   recording orders, balances NULL throughout, exactly one
+--                                                   stamped row each.
+--   * late marking is SESSION-scoped (11, #166)   — the operator marks yesterday's 07:00 roster today: the
+--                                                   visit stamps 07:00 on yesterday's date (not now()), and
+--                                                   the vigencia gate is judged on the CLASS's day, so a
+--                                                   package that was valid then and has lapsed since still
+--                                                   admits the member for the class they actually attended.
 --   * the return carries session_id + saldo (#162) — 2026-07-29: the RPC's shape grew from (present, hora) to
 --                                                   (present, hora, session_id, clases_restantes) so the front desk can
 --                                                   say WHERE a mark landed and repaint the member's balance instead of
@@ -99,7 +127,13 @@ declare
   c_orph   uuid;                        -- the pardoning class mark is undone (vector 8)
   c_zero   uuid;                        -- #237: 0-balance walk-in, no pardon in play (vector 9)
   c_zeropard uuid;                      -- #237: 0-balance walk-in INSIDE a cooldown pardon (vector 10)
+  c_late   uuid;                        -- #166: marked late — the stamp must be the session's (vector 11a)
+  c_latevig uuid;                       -- #166: valid on the CLASS's day, lapsed since (vector 11b)
+  c_ilimA  uuid;                        -- #245 §3: ilimitado, CLASS then DOOR (vector 12a)
+  c_ilimB  uuid;                        -- #245 §3: ilimitado, DOOR then CLASS (vector 12b)
   s_id     uuid; s2_id uuid;
+  s_late   uuid;                        -- #166: YESTERDAY 07:00 gym-local, marked today
+  v_late   timestamptz;
 begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
@@ -148,12 +182,34 @@ begin
     values ('PL cero balance', '0000000008', 0, v_today + 20, '8 clases', v_gym) returning id into c_zero;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('PL cero perdon', '0000000009', 1, v_today + 20, '8 clases', v_gym) returning id into c_zeropard;
+  -- #166 (vector 11). c_late's package is comfortably valid; c_latevig's `vence` is YESTERDAY — the
+  -- session's own day — so it was valid when the class ran and has lapsed by the time it is marked.
+  -- That pair is the whole point: one proves the STAMP is the session's instant, the other proves the
+  -- VIGENCIA question is asked about the session's day.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL marcada tarde', '0000000010', 5, v_today + 20, '8 clases', v_gym) returning id into c_late;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL vigente ese dia', '0000000011', 5, v_today - 1, '8 clases', v_gym) returning id into c_latevig;
+  -- #245 §3 (vector 12): two ILIMITADO members, one per recording order. They owe nothing on any path,
+  -- so the money is trivially symmetric — the thing that must stay symmetric is the `perdonada` STAMP,
+  -- which is what stops one arrival counting as two visits for a member who never pays a credit.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL ilimitado clase-puerta', '0000000012', null, v_today + 20, 'Ilimitado', v_gym) returning id into c_ilimA;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL ilimitado puerta-clase', '0000000013', null, v_today + 20, 'Ilimitado', v_gym) returning id into c_ilimB;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'PL Metcon') returning id into v_ct;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, now() + interval '2 days', 60, 20) returning id into s_id;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, now() + interval '2 days' + interval '1 hour', 60, 20) returning id into s2_id;
+  -- The late-marked session: YESTERDAY at 07:00 gym-local. Nobody books it (a started class refuses
+  -- booking since #165 anyway), so unlike s_id/s2_id it is seeded straight onto its final instant.
+  -- 07:00 is deliberately far from any plausible run time, so "the stamp is the session's hour" cannot
+  -- pass by coincidence with now().
+  v_late := ((v_today - 1)::timestamp + interval '7 hours') at time zone v_tz;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_late, 60, 20) returning id into s_late;
 
   perform set_config('t.starts',   v_starts::text,  true);
   perform set_config('t.starts2',  v_starts2::text, true);
@@ -171,8 +227,14 @@ begin
   perform set_config('t.c_orph',   c_orph::text,    true);
   perform set_config('t.c_zero',     c_zero::text,     true);
   perform set_config('t.c_zeropard', c_zeropard::text, true);
+  perform set_config('t.c_late',     c_late::text,     true);
+  perform set_config('t.c_latevig',  c_latevig::text,  true);
+  perform set_config('t.c_ilimA',    c_ilimA::text,    true);
+  perform set_config('t.c_ilimB',    c_ilimB::text,    true);
   perform set_config('t.s_id',     s_id::text,      true);
   perform set_config('t.s2_id',    s2_id::text,     true);
+  perform set_config('t.s_late',   s_late::text,    true);
+  perform set_config('t.f_late',   ((v_late at time zone v_tz)::date)::text, true);
 end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -225,12 +287,16 @@ declare
   c_bkfin uuid := current_setting('t.c_bkfin', true)::uuid;
   v_present boolean; v_hora text; v_clases int; v_status text; v_walk boolean;
   v_consumio boolean; v_res_id uuid; v_sess uuid; v_perdonada boolean; v_ret_sess uuid; v_saldo int;
-  v_checked timestamptz; v_gym_id uuid; v_fecha date; v_stored_hora time;
+  v_checked timestamptz; v_gym_id uuid; v_fecha date; v_stored_hora time; v_resultado text;
 begin
   -- pasar lista ON: booked member marked present, NO second consume (balance stays 4)
-  select present, hora, session_id, clases_restantes into v_present, v_hora, v_ret_sess, v_saldo
+  select present, hora, session_id, clases_restantes, resultado into v_present, v_hora, v_ret_sess, v_saldo, v_resultado
     from public.pasar_lista_sesion(s_id, c_bkfin);
   if v_present is not true then raise exception 'RULE FAIL(bkfin ON): not present'; end if;
+  -- #245: this mark CAPTURED the hold reservar_clase took. 'reserva' is the only value that lets the
+  -- operator answer "¿me van a cobrar?" correctly — 'gratis' would be true about the money and false
+  -- about the fact, and 'descontada' would be a lie.
+  if v_resultado is distinct from 'reserva' then raise exception 'RULE FAIL(bkfin ON): resultado % (expected reserva — a hold was captured)', v_resultado; end if;
   select clases_restantes into v_clases from public.clientes where id = c_bkfin;
   if v_clases <> 4 then raise exception 'RULE FAIL(bkfin ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
   -- #162: the return names the class it wrote into and carries the balance AFTER the write — asserted
@@ -253,16 +319,21 @@ begin
   if v_perdonada is distinct from false then raise exception 'RULE FAIL(bkfin ON): asistencia.perdonada % (expected false — a booked mark is one visit, not a pardoned duplicate)', v_perdonada; end if;
   if v_res_id is null then raise exception 'RULE FAIL(bkfin ON): asistencia.reservation_id null (expected linked)'; end if;
   if v_sess is distinct from s_id then raise exception 'RULE FAIL(bkfin ON): asistencia.class_session_id mismatch'; end if;
-  if v_hora is null then raise exception 'RULE FAIL(bkfin ON): hora null on a session dated today'; end if;
+  -- #166/#245: the stamp is the SESSION's own start time in the gym's timezone — this suite seeds it at
+  -- 18:00 gym-local — never now(). Asserted as the exact value, because "not null" would still pass if
+  -- the RPC reverted to stamping the data-entry hour.
+  if v_hora is distinct from '18:00' then raise exception 'RULE FAIL(bkfin ON): returned hora % (expected the session''s own 18:00)', v_hora; end if;
   -- …and the STORED row, not just the RPC's return: hora/gym_id/fecha were written and never read back.
-  if v_stored_hora is null then raise exception 'RULE FAIL(bkfin ON): stored asistencia.hora null though the RPC returned %', v_hora; end if;
+  if v_stored_hora is distinct from '18:00:00'::time then raise exception 'RULE FAIL(bkfin ON): stored asistencia.hora % (expected the session''s own 18:00)', v_stored_hora; end if;
   if v_gym_id is distinct from current_setting('t.gym', true)::uuid then raise exception 'RULE FAIL(bkfin ON): asistencia.gym_id % not the session gym', v_gym_id; end if;
   if v_fecha is distinct from current_setting('t.today', true)::date then raise exception 'RULE FAIL(bkfin ON): asistencia.fecha % (expected today in the gym tz)', v_fecha; end if;
 
   -- pasar lista OFF (untoggle): reservation reverts to reservada, balance UNCHANGED (no refund — the
   -- pase consumed nothing; the booking consume stays until a #58 cancel).
-  select present into v_present from public.pasar_lista_sesion(s_id, c_bkfin);
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s_id, c_bkfin);
   if v_present is not false then raise exception 'RULE FAIL(bkfin OFF): still present'; end if;
+  -- #245: an un-mark settles nothing, so it discloses nothing.
+  if v_resultado is not null then raise exception 'RULE FAIL(bkfin OFF): resultado % (expected NULL on an un-mark)', v_resultado; end if;
   select clases_restantes into v_clases from public.clientes where id = c_bkfin;
   if v_clases <> 4 then raise exception 'RULE FAIL(bkfin OFF): PHANTOM REFUND — balance % (expected 4)', v_clases; end if;
   select status, checked_at into v_status, v_checked from public.reservation where member_id = c_bkfin and class_session_id = s_id;
@@ -277,10 +348,14 @@ do $$
 declare
   s_id     uuid := current_setting('t.s_id', true)::uuid;
   c_bkilim uuid := current_setting('t.c_bkilim', true)::uuid;
-  v_present boolean; v_clases int; v_consumio boolean;
+  v_present boolean; v_clases int; v_consumio boolean; v_resultado text;
 begin
-  select present into v_present from public.pasar_lista_sesion(s_id, c_bkilim);
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s_id, c_bkilim);
   if v_present is not true then raise exception 'RULE FAIL(ilim ON): not present'; end if;
+  -- #245: an ilimitado member who BOOKED still lands in the booked branch, so the outcome is 'reserva'
+  -- (their booking is settled), not 'gratis'. Nothing was ever held for them — reservar_clase stamped
+  -- consumio=false — and 'reserva' says exactly that: this tap answered a reservation.
+  if v_resultado is distinct from 'reserva' then raise exception 'RULE FAIL(ilim ON): resultado % (expected reserva — the booked branch)', v_resultado; end if;
   select clases_restantes into v_clases from public.clientes where id = c_bkilim;
   if v_clases is not null then raise exception 'RULE FAIL(ilim ON): balance % (expected NULL, never decremented)', v_clases; end if;
   select consumio into v_consumio from public.asistencias
@@ -294,16 +369,20 @@ declare
   s_id   uuid := current_setting('t.s_id', true)::uuid;
   c_walk uuid := current_setting('t.c_walk', true)::uuid;
   v_present boolean; v_hora text; v_clases int; v_status text; v_walk boolean; v_consumio boolean;
-  v_perdonada boolean; v_saldo int;
+  v_perdonada boolean; v_saldo int; v_resultado text;
 begin
   -- precondition: this member has NO reservation
   select count(*) into v_clases from public.reservation where member_id = c_walk and class_session_id = s_id;
   if v_clases <> 0 then raise exception 'SEED FAIL(walk): pre-existing reservation'; end if;
 
   -- ON: creates the walk-in reservation AND consumes exactly one (byte-for-byte toggle_pase)
-  select present, hora, clases_restantes into v_present, v_hora, v_saldo from public.pasar_lista_sesion(s_id, c_walk);
+  select present, hora, clases_restantes, resultado into v_present, v_hora, v_saldo, v_resultado
+    from public.pasar_lista_sesion(s_id, c_walk);
   if v_present is not true then raise exception 'RULE FAIL(walk ON): not present'; end if;
-  if v_hora is null then raise exception 'RULE FAIL(walk ON): hora null on a session dated today'; end if;
+  -- #245: no hold existed, so this is a charge against the package — 'descontada', never 'reserva'.
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(walk ON): resultado % (expected descontada)', v_resultado; end if;
+  -- #166/#245: the session's own 18:00, not the hour the operator happened to tap.
+  if v_hora is distinct from '18:00' then raise exception 'RULE FAIL(walk ON): returned hora % (expected the session''s own 18:00)', v_hora; end if;
   select clases_restantes into v_clases from public.clientes where id = c_walk;
   if v_clases <> 4 then raise exception 'RULE FAIL(walk ON): expected consume to 4, got %', v_clases; end if;
   -- the returned balance is the one the decrement left behind, not the one read before it (#162).
@@ -317,8 +396,9 @@ begin
   if v_perdonada is distinct from false then raise exception 'RULE FAIL(walk ON): a PAYING walk-in row was stamped perdonada %', v_perdonada; end if;
 
   -- OFF (untoggle): reservation -> cancelada, refund exactly one (finite) — symmetric to the door consume
-  select present, clases_restantes into v_present, v_saldo from public.pasar_lista_sesion(s_id, c_walk);
+  select present, clases_restantes, resultado into v_present, v_saldo, v_resultado from public.pasar_lista_sesion(s_id, c_walk);
   if v_present is not false then raise exception 'RULE FAIL(walk OFF): still present'; end if;
+  if v_resultado is not null then raise exception 'RULE FAIL(walk OFF): resultado % (expected NULL on an un-mark)', v_resultado; end if;
   select clases_restantes into v_clases from public.clientes where id = c_walk;
   if v_clases <> 5 then raise exception 'RULE FAIL(walk OFF): expected refund to 5, got %', v_clases; end if;
   -- the untoggle returns the REFUNDED balance, not the pre-refund one (#162).
@@ -404,7 +484,7 @@ declare
   c_fd   uuid := current_setting('t.c_fd', true)::uuid;
   v_fecha date := current_setting('t.today', true)::date;
   v_present boolean; v_clases int; v_status text; v_walk boolean; v_consumio boolean; v_origen text; v_n int;
-  v_perdonada boolean;
+  v_perdonada boolean; v_resultado text;
 begin
   -- Arrange: a real consuming FRONT-DESK check-in today (5 -> 4; class-less row, origen='libre').
   -- The member holds no booking at all, so the desk tap takes the plain walk-in path: no attribution to
@@ -421,8 +501,11 @@ begin
   if v_perdonada is distinct from false then raise exception 'SEED FAIL(cool libre→clase): the PAYING desk row was stamped perdonada %', v_perdonada; end if;
 
   -- Act: mark present in the Agenda class (walk-in branch — no prior reservation). Present, NO re-consume.
-  select present into v_present from public.pasar_lista_sesion(s_id, c_fd);
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s_id, c_fd);
   if v_present is not true then raise exception 'RULE FAIL(cool libre→clase ON): not present'; end if;
+  -- #245: pardoned = admitted, nothing charged = 'gratis'. Not 'reserva' (no booking was captured —
+  -- this member never booked) and not 'descontada' (the decrement did not run).
+  if v_resultado is distinct from 'gratis' then raise exception 'RULE FAIL(cool libre→clase ON): resultado % (expected gratis)', v_resultado; end if;
   -- Written-rows rule: balance UNCHANGED at 4 (no second decrement — the desk arrival already paid).
   select clases_restantes into v_clases from public.clientes where id = c_fd;
   if v_clases <> 4 then raise exception 'RULE FAIL(cool libre→clase ON): DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
@@ -683,7 +766,7 @@ declare
   c_zeropard uuid := current_setting('t.c_zeropard', true)::uuid;
   v_fecha    date := current_setting('t.today', true)::date;
   v_present boolean; v_clases int; v_consumio boolean; v_origen text; v_perdonada boolean;
-  v_status text; v_walk boolean;
+  v_status text; v_walk boolean; v_resultado text;
 begin
   -- Arrange: the front-desk libre tap charges 1 -> 0 (no recent row of the OTHER kind exists yet).
   select present into v_present from public.toggle_pase(c_zeropard, v_fecha);
@@ -697,8 +780,11 @@ begin
 
   -- Act: the class mark, minutes later (the whole suite runs in one frozen instant), on a member now
   -- at balance 0. Must be ADMITTED — the #237 gate must not fire inside the cooldown's pardon arm.
-  select present into v_present from public.pasar_lista_sesion(s2_id, c_zeropard);
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s2_id, c_zeropard);
   if v_present is not true then raise exception 'RULE FAIL(v10): a 0-balance member INSIDE a cooldown pardon was refused (the gate fired ahead of the pardon)'; end if;
+  -- #245: 'gratis' — and it is the discriminator that proves WHICH arm admitted them. A 'descontada'
+  -- here would mean the gate/charge path ran on a 0-balance member.
+  if v_resultado is distinct from 'gratis' then raise exception 'RULE FAIL(v10): resultado % (expected gratis — the pardon arm)', v_resultado; end if;
   select clases_restantes into v_clases from public.clientes where id = c_zeropard;
   if v_clases <> 0 then raise exception 'RULE FAIL(v10): the pardoned class mark moved the balance to % (expected untouched 0)', v_clases; end if;
 
@@ -711,6 +797,145 @@ begin
   select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_zeropard and class_session_id = s2_id;
   if v_status <> 'asistida' then raise exception 'RULE FAIL(v10): reservation status % (expected asistida)', v_status; end if;
   if v_walk is not true then raise exception 'RULE FAIL(v10): is_walk_in not true'; end if;
+end $$;
+
+-- ── (11) LATE MARKING IS SESSION-SCOPED (#166's root, closed by #233/#245) ──────────────────────
+-- The operator marks YESTERDAY's 07:00 roster today. Forge's Agenda runs weeks stale, so this is the
+-- ordinary case, not an edge — and it used to record a lie in two different places:
+--
+--   (a) THE STAMP. `hora` was "now() if the session's date is gym-today, else NULL", so a late mark
+--       recorded either the data-entry hour or no hour at all. Since 20260804150000 it is the CLASS's
+--       own start time in the gym's timezone — 07:00 — the exact pair of `fecha`, which has always
+--       been the session's own gym-local date. The old rule is what this vector is aimed at: it would
+--       write NULL here, and nothing before #245 would have noticed.
+--
+--   (b) WHICH PACKAGE IS ASKED ABOUT. The vigencia gate compares `vence` against the SESSION's date,
+--       so c_latevig — whose package expired YESTERDAY, i.e. was valid on the class's own day — is
+--       admitted for the class they actually attended, and would be refused ('Paquete vencido') by any
+--       gate that asked about today instead. Marking a roster late must not retroactively un-attend a
+--       member whose membership was live when they walked in.
+--
+-- Nothing here is a booking: both members take the WALK-IN arm and CHARGE, which is also what makes
+-- 'descontada' the right disclosure — there was no hold to capture.
+do $$
+declare
+  s_late    uuid := current_setting('t.s_late', true)::uuid;
+  f_late    date := current_setting('t.f_late', true)::date;
+  v_today   date := current_setting('t.today', true)::date;
+  c_late    uuid := current_setting('t.c_late', true)::uuid;
+  c_latevig uuid := current_setting('t.c_latevig', true)::uuid;
+  v_present boolean; v_hora text; v_clases int; v_resultado text; v_consumio boolean;
+  v_stored_hora time; v_fecha date; v_origen text; v_status text; v_walk boolean; v_vence date;
+begin
+  if f_late >= v_today then raise exception 'SEED FAIL(v11): the late session lands on % (expected a day before today %)', f_late, v_today; end if;
+
+  -- ── (a) the STAMP is the session's own instant ────────────────────────────────
+  select present, hora, clases_restantes, resultado into v_present, v_hora, v_clases, v_resultado
+    from public.pasar_lista_sesion(s_late, c_late);
+  if v_present is not true then raise exception 'RULE FAIL(v11a): the late mark was refused'; end if;
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(v11a): resultado % (expected descontada — a walk-in with no hold to capture)', v_resultado; end if;
+  if v_hora is distinct from '07:00' then raise exception 'RULE FAIL(v11a): returned hora % (expected the class''s own 07:00 — a NULL here is the pre-#245 now()-keyed rule)', v_hora; end if;
+
+  -- The WRITTEN row, which is the contract: the visit is dated and timed to the class, not to the
+  -- moment the operator typed it.
+  select fecha, hora, consumio, origen into v_fecha, v_stored_hora, v_consumio, v_origen
+    from public.asistencias where cliente_id = c_late and class_session_id = s_late and deleted_at is null;
+  if v_fecha is distinct from f_late then raise exception 'RULE FAIL(v11a): asistencia.fecha % (expected the session''s own day %)', v_fecha, f_late; end if;
+  if v_stored_hora is distinct from '07:00:00'::time then raise exception 'RULE FAIL(v11a): stored asistencia.hora % (expected the class''s own 07:00)', v_stored_hora; end if;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v11a): asistencia.consumio % (expected true)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(v11a): asistencia.origen % (expected clase)', v_origen; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_late;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v11a): expected a charge to 4, got %', v_clases; end if;
+  select status, is_walk_in into v_status, v_walk from public.reservation where member_id = c_late and class_session_id = s_late;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(v11a): reservation status % (expected asistida)', v_status; end if;
+  if v_walk is not true then raise exception 'RULE FAIL(v11a): is_walk_in not true'; end if;
+
+  -- ── (b) the VIGENCIA question is asked about the CLASS's day, not about today ──
+  select vence into v_vence from public.clientes where id = c_latevig;
+  if v_vence is distinct from f_late then raise exception 'SEED FAIL(v11b): vence % (expected the session''s own day %)', v_vence, f_late; end if;
+  if v_vence >= v_today then raise exception 'SEED FAIL(v11b): vence % is not already lapsed relative to today %', v_vence, v_today; end if;
+
+  select present, hora, resultado into v_present, v_hora, v_resultado
+    from public.pasar_lista_sesion(s_late, c_latevig);
+  if v_present is not true then raise exception 'RULE FAIL(v11b): a member whose package was VALID on the class''s own day was refused when marked late — the vigencia gate is asking about today'; end if;
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(v11b): resultado % (expected descontada)', v_resultado; end if;
+  if v_hora is distinct from '07:00' then raise exception 'RULE FAIL(v11b): returned hora % (expected 07:00)', v_hora; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_latevig;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v11b): expected a charge to 4, got %', v_clases; end if;
+end $$;
+
+-- ── (12) ILIMITADO ORDER SYMMETRY: nothing is charged either way, and the STAMP survives (#245 §3) ──
+-- The cooldown's key became "was the recent row itself pardoned?" (20260804150000 §3). An ilimitado
+-- member's rows are ALWAYS consumio=false — they owe nothing on any path — so a predicate keyed on
+-- `consumio = true` instead would refuse to pardon them, and their door tap and class mark would both
+-- come back unstamped. The money would still be right (there is none), which is exactly why this needs
+-- its own vector: the damage would be silent, and it would land on the COUNT.
+--
+-- `perdonada` is what makes a visit count skip the second record of ONE arrival (#169). Lose it here
+-- and every dual-surface ilimitado member reads double in asistencias_mes_por_cliente — at a gym that
+-- runs a door check-in AND class rosters, that is every unlimited member, every day.
+--
+-- Both orders, one member each, balances asserted NULL throughout (an ilimitado NULL is never written
+-- to, ADR-0004 / ADR-0010 §4) and exactly one of the two rows stamped in each.
+do $$
+declare
+  s_id    uuid := current_setting('t.s_id', true)::uuid;
+  s2_id   uuid := current_setting('t.s2_id', true)::uuid;
+  c_ilimA uuid := current_setting('t.c_ilimA', true)::uuid;
+  c_ilimB uuid := current_setting('t.c_ilimB', true)::uuid;
+  v_fecha date := current_setting('t.today', true)::date;
+  v_present boolean; v_clases int; v_consumio boolean; v_perdonada boolean; v_origen text;
+  v_resultado text; v_n int;
+begin
+  -- ── (a) CLASS then DOOR ────────────────────────────────────────────────────────
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s_id, c_ilimA);
+  if v_present is not true then raise exception 'SEED FAIL(v12a): the class mark was refused'; end if;
+  if v_resultado is distinct from 'gratis' then raise exception 'SEED FAIL(v12a): class mark resultado % (expected gratis — ilimitado is never descontada)', v_resultado; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_ilimA and class_session_id = s_id and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'SEED FAIL(v12a): class row consumio % (expected false)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'SEED FAIL(v12a): the FIRST record of the arrival was stamped perdonada %', v_perdonada; end if;
+
+  select present, resultado into v_present, v_resultado from public.toggle_pase(c_ilimA, v_fecha);
+  if v_present is not true then raise exception 'RULE FAIL(v12a): the door tap was refused'; end if;
+  if v_resultado is distinct from 'gratis' then raise exception 'RULE FAIL(v12a): door tap resultado % (expected gratis)', v_resultado; end if;
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_ilimA and fecha = v_fecha and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v12a): libre row consumio % (expected false)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(v12a): libre row origen % (expected libre)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(v12a): the ilimitado door row was NOT stamped perdonada (%) — a member who pays nothing still cannot count twice', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_ilimA;
+  if v_clases is not null then raise exception 'RULE FAIL(v12a): balance % (expected an untouched NULL)', v_clases; end if;
+
+  -- ── (b) DOOR then CLASS — the mirror ──────────────────────────────────────────
+  select present, resultado into v_present, v_resultado from public.toggle_pase(c_ilimB, v_fecha);
+  if v_present is not true then raise exception 'SEED FAIL(v12b): the door tap was refused'; end if;
+  if v_resultado is distinct from 'gratis' then raise exception 'SEED FAIL(v12b): door tap resultado % (expected gratis)', v_resultado; end if;
+  select consumio, perdonada into v_consumio, v_perdonada
+    from public.asistencias where cliente_id = c_ilimB and fecha = v_fecha and deleted_at is null and class_session_id is null;
+  if v_consumio is distinct from false then raise exception 'SEED FAIL(v12b): libre row consumio % (expected false)', v_consumio; end if;
+  if v_perdonada is distinct from false then raise exception 'SEED FAIL(v12b): the FIRST record of the arrival was stamped perdonada %', v_perdonada; end if;
+
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s2_id, c_ilimB);
+  if v_present is not true then raise exception 'RULE FAIL(v12b): the class mark was refused'; end if;
+  if v_resultado is distinct from 'gratis' then raise exception 'RULE FAIL(v12b): class mark resultado % (expected gratis)', v_resultado; end if;
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_ilimB and class_session_id = s2_id and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v12b): class row consumio % (expected false)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(v12b): class row origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from true then raise exception 'RULE FAIL(v12b): the ilimitado class row was NOT stamped perdonada (%)', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_ilimB;
+  if v_clases is not null then raise exception 'RULE FAIL(v12b): balance % (expected an untouched NULL)', v_clases; end if;
+
+  -- Symmetric shape: two active rows each, exactly one stamped — one arrival, one visit, either order.
+  select count(*) into v_n from public.asistencias where cliente_id = c_ilimA and deleted_at is null;
+  if v_n is distinct from 2 then raise exception 'RULE FAIL(v12a): active rows % (expected 2)', v_n; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_ilimB and deleted_at is null;
+  if v_n is distinct from 2 then raise exception 'RULE FAIL(v12b): active rows % (expected 2)', v_n; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_ilimA and deleted_at is null and perdonada;
+  if v_n is distinct from 1 then raise exception 'RULE FAIL(v12a): % pardoned row(s) (expected exactly 1)', v_n; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_ilimB and deleted_at is null and perdonada;
+  if v_n is distinct from 1 then raise exception 'RULE FAIL(v12b): % pardoned row(s) (expected exactly 1)', v_n; end if;
 end $$;
 
 reset role;

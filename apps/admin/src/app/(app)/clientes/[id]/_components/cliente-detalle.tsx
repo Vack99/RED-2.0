@@ -22,6 +22,10 @@ import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "../../../../../lib/swipe";
 import { reenviarInvitacionAction, togglePaseAction } from "../actions";
+// Same pure fn the desk (asistencia.tsx) reads its capture-receipt word off of — this is the
+// SAME togglePaseAction, so the same word belongs here (F11 review, #246): reused, not
+// re-derived, from the route that owns the toggle's vocabulary.
+import { reciboResultado } from "../../../asistencia/_components/marcadas";
 import { EditarClienteSheet } from "./editar-cliente-sheet";
 
 export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
@@ -106,7 +110,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         // refresh re-derives `clasesHoy`, which renders it as a read-only gold stamp.
         forgeToast({
           tone: "success",
-          title: "Asistencia registrada",
+          title: reciboResultado(res.resultado) ?? "Asistencia registrada",
           body: `${c.nombre} · Marcada en su clase de hoy${res.hora ? " · " + res.hora : ""}`,
         });
         router.refresh();
@@ -116,7 +120,11 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
       setHoraHoy(res.hora);
       forgeToast(
         res.present
-          ? { tone: "success", title: "Asistencia registrada", body: `${c.nombre}${res.hora ? " · hoy " + res.hora : ""}` }
+          ? {
+              tone: "success",
+              title: reciboResultado(res.resultado) ?? "Asistencia registrada",
+              body: `${c.nombre}${res.hora ? " · hoy " + res.hora : ""}`,
+            }
           : { tone: "warning", title: "Asistencia quitada", body: `Se deshizo el registro de hoy de ${firstName(c.nombre)}.` },
       );
     } catch {

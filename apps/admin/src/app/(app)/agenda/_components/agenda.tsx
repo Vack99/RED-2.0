@@ -373,7 +373,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
     try {
       const res = await cancelarSesionAction({ sesionId: editor.editId });
       if (!res.ok) return fail(res.error);
-      afterWrite("Clase cancelada", "Se avisó a los reservados");
+      afterWrite("Clase cancelada", "Reservas canceladas y clases devueltas");
     } finally {
       setBusy(false);
     }

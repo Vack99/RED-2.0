@@ -28,8 +28,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // then the S8 member self-register + verified-email claim vectors (registro_claim →
 // preparar_invitacion → actualizar_cliente_email → reclamar_por_codigo, the whole claim rail),
 // then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm), the
-// per-package RLS/RPC-rule vectors (asistencias_unicidad proves the #89 visit-ledger invariants at
-// the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them), and
+// per-package RLS/RPC-rule vectors (cancel_class_session_release runs with the two booking suites
+// rather than with the scheduling ones because its subject is the HOLD, not the schedule: #233's gym
+// cancel releases every reservada booking and refunds what it spent, so it reads as reservar_clase /
+// cancelar_reserva's third act; asistencias_unicidad proves the #89 visit-ledger invariants at
+// the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them;
+// class_horizon_autoroll follows scheduling_materialization because it is the same rule seen from the
+// other side — #136's weekly pg_cron pass over the WHOLE fleet, through the shared core that
+// ensure_week_materialized now delegates to), and
 // then dos_gimnasios_tenant_pin — the two-membership actor (#219), which generalizes the single-gym
 // favorito/mi_membresia rules just above it — then revocacion_sesion_membresia (#218), which reuses
 // that two-membership shape to prove session revocation is global, then class_session_delete_restrict
@@ -68,12 +74,14 @@ export const SUITE = [
   'plantillas_rules.sql',
   'scheduling_rls_denial.sql',
   'scheduling_materialization.sql',
+  'class_horizon_autoroll.sql',
   'gym_content_denial.sql',
   'anon_catalog_read.sql',
   'contact_intake.sql',
   'reservation_rls_denial.sql',
   'reservar_clase_rules.sql',
   'cancelar_reserva_rules.sql',
+  'cancel_class_session_release.sql',
   'asistencias_unicidad.sql',
   'pasar_lista_sesion_rules.sql',
   'toggle_pase_rules.sql',

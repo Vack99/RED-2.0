@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { instanteEnZona } from "@gym/format";
+import { hoyEnZona, inicioSemana, instanteEnZona, toIsoDay } from "@gym/format";
 
 import {
   cancelarReservaCliente,
@@ -274,11 +274,36 @@ describe("getAgendaDia", () => {
     expect(dia.resumen).toEqual({ clases: 2, reservas: 0 });
   });
 
-  it("ensures materialization for the containing week (Monday) exactly once before reading", async () => {
+  it("ensures materialization for the containing week (Monday) exactly once before reading, when the week is in range (#244 guard 3)", async () => {
+    // The Monday is computed from the REAL clock, not a fixed literal (MIERCOLES above is
+    // deliberately far in the past for the estado-derivation tests, which the #244 clamp below
+    // now refuses to materialize) — this vector needs a week guard 3 actually lets through.
+    const lunesActual = inicioSemana(hoyEnZona(TZ));
     const { client, rpcCalls } = makeFake(rowsFor());
-    await getAgendaDia("2026-06-17", client);
+    await getAgendaDia(toIsoDay(lunesActual), client);
     const calls = rpcCalls.filter((c) => c.name === "ensure_week_materialized");
-    expect(calls).toEqual([{ name: "ensure_week_materialized", args: { p_week_start: "2026-06-15" } }]);
+    expect(calls).toEqual([
+      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(lunesActual) } },
+    ]);
+  });
+
+  it("#244 guard 3: a past week's view still reads sessions but does not materialize (clamped)", async () => {
+    // MIERCOLES's week (Jun 2026) is fixed in the past forever once real time passes it —
+    // exactly the shape a `?d=` view of history takes. The read must still work (rows already
+    // materialized, or never staffed, either way this is a read, not a write); only the WRITE
+    // that would permanently materialize the week is refused.
+    const { client, rpcCalls } = makeFake(rowsFor());
+    const dia = await getAgendaDia("2026-06-17", client);
+    expect(dia.sesiones.map((s) => s.id)).toEqual(["s1", "s2"]);
+    expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
+  });
+
+  it("#244 guard 3: a week +2 years out is clamped (no materialize call)", async () => {
+    const lunesActual = inicioSemana(hoyEnZona(TZ));
+    const futuro = new Date(lunesActual.getFullYear() + 2, lunesActual.getMonth(), lunesActual.getDate() + 2);
+    const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
+    await getAgendaDia(toIsoDay(futuro), client);
+    expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
   });
 
   it("returns an empty day cleanly (no sessions)", async () => {
@@ -351,11 +376,21 @@ describe("getAgendaSemana", () => {
     ]);
   });
 
-  it("ensures materialization for the week exactly once, keyed on the Monday", async () => {
+  it("ensures materialization for the week exactly once, keyed on the Monday, when the week is in range (#244 guard 3)", async () => {
+    const lunesActual = inicioSemana(hoyEnZona(TZ));
     const { client, rpcCalls } = makeFake(rowsFor());
-    await getAgendaSemana("2026-06-17", client);
+    await getAgendaSemana(toIsoDay(lunesActual), client);
     const calls = rpcCalls.filter((c) => c.name === "ensure_week_materialized");
-    expect(calls).toEqual([{ name: "ensure_week_materialized", args: { p_week_start: "2026-06-15" } }]);
+    expect(calls).toEqual([
+      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(lunesActual) } },
+    ]);
+  });
+
+  it("#244 guard 3: a past week's view still reads sessions but does not materialize (clamped) — the second caller", async () => {
+    const { client, rpcCalls } = makeFake(rowsFor());
+    const semana = await getAgendaSemana("2026-06-17", client);
+    expect(semana.dias.flatMap((d) => d.sesiones.map((s) => s.id))).toContain("mon1");
+    expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
   });
 
   it("whole-week resumen sums clases/reservas across all sessions in the week", async () => {

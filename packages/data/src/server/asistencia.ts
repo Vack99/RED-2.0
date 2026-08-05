@@ -267,6 +267,11 @@ export interface TogglePaseResult {
   /** The cliente's balance AFTER the write; null = ilimitado. The desk repaints the
    *  tapped row's clases label from it, so a rush no longer shows a page-load count. */
   clasesRestantes: number | null;
+  /** The settlement outcome (#233/#246): 'descontada' (finite credit charged) |
+   *  'gratis' (ilimitado or cooldown-pardoned) | 'reserva' (captured an existing
+   *  booking's hold) | null (every toggle-OFF/un-mark — nothing was settled). The
+   *  desk's capture-receipt toast reads this word verbatim. */
+  resultado: string | null;
 }
 
 /**
@@ -334,6 +339,7 @@ export async function togglePase(
     hora: data.hora,
     sessionId: data.session_id,
     clasesRestantes: data.clases_restantes,
+    resultado: data.resultado,
   };
 }
 

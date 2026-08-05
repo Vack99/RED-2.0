@@ -26,6 +26,11 @@
 --                                  class ran is a consumed credit for a seat nobody can occupy. The
 --                                  fixture is seeded one minute in the past — the boundary is
 --                                  `starts_at <= now()`, an absolute instant, never a gym-local date.
+--   * book-beyond-entitlement (#244 guard 1) — vence vs the SESSION's date, not just today's: a
+--                                  member whose package is still valid TODAY but expires before the
+--                                  class's own gym-local date is refused ('Paquete vencido'), same as
+--                                  the today-gate; a session dated exactly ON vence still books
+--                                  (house rule 'vence-day-valid').
 --
 -- THE OPERATOR PATH (#237, slice 2 of #235). `reservar_clase` gained a nullable second argument naming a
 -- target cliente: NULL is the member self path above (every vector already written stays untouched, and
@@ -80,8 +85,9 @@ declare
   m_full uuid := gen_random_uuid();
   m_start uuid := gen_random_uuid();
   m_walk uuid := gen_random_uuid();
-  c_fin  uuid; c_ilim uuid; c_zero uuid; c_exp uuid; c_full uuid; c_start uuid; c_walk uuid;
-  s_open uuid; s_full uuid; s_started uuid; s_walkfull uuid;
+  m_gap  uuid := gen_random_uuid();   -- #244 guard 1: vence is TOMORROW, still valid today
+  c_fin  uuid; c_ilim uuid; c_zero uuid; c_exp uuid; c_full uuid; c_start uuid; c_walk uuid; c_gap uuid;
+  s_open uuid; s_full uuid; s_started uuid; s_walkfull uuid; s_gap_ok uuid; s_gap_bad uuid;
   d_cli  uuid;
   i int;
   -- ── #237 operator path ──
@@ -105,12 +111,13 @@ begin
     ('00000000-0000-0000-0000-000000000000', m_exp,  'authenticated', 'authenticated', 'rc-exp@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_full, 'authenticated', 'authenticated', 'rc-full@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_start,'authenticated', 'authenticated', 'rc-start@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_walk, 'authenticated', 'authenticated', 'rc-walk@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_walk, 'authenticated', 'authenticated', 'rc-walk@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_gap,  'authenticated', 'authenticated', 'rc-gap@test.local');
 
   insert into public.gym_membership (user_id, gym_id, role) values
     (m_fin, v_gym, 'member'), (m_ilim, v_gym, 'member'), (m_zero, v_gym, 'member'),
     (m_exp, v_gym, 'member'), (m_full, v_gym, 'member'), (m_start, v_gym, 'member'),
-    (m_walk, v_gym, 'member');
+    (m_walk, v_gym, 'member'), (m_gap, v_gym, 'member');
 
   -- one cliente per acting member (auth_user_id links them; balances/vence per case)
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
@@ -127,6 +134,9 @@ begin
     values ('RC started', '0000000006', 5, v_today + 20, '8 clases', v_gym, m_start) returning id into c_start;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
     values ('RC walk-in-full', '0000000007', 5, v_today + 20, '8 clases', v_gym, m_walk) returning id into c_walk;
+  -- #244 guard 1: vence is TOMORROW — still valid TODAY, the exact gap the old today-only gate missed.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC gap', '0000000008', 5, v_today + 1, '8 clases', v_gym, m_gap) returning id into c_gap;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'RC Metcon') returning id into v_ct;
 
@@ -138,6 +148,14 @@ begin
     values (v_gym, v_ct, v_started, 60, 20) returning id into s_started;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 4) returning id into s_walkfull;
+  -- #244 guard 1: two sessions dated relative to v_gym's OWN local calendar (never a client-side
+  -- interval offset) so the vector is exact regardless of what time-of-day the suite runs.
+  --   s_gap_ok  — dated v_today+1: the vence DAY ITSELF (house rule 'vence-day-valid') — must book.
+  --   s_gap_bad — dated v_today+2: one day past vence — must refuse with 'Paquete vencido'.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, ((v_today + 1) + time '10:00') at time zone v_tz, 60, 20) returning id into s_gap_ok;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, ((v_today + 2) + time '10:00') at time zone v_tz, 60, 20) returning id into s_gap_bad;
 
   -- Fill s_full to capacity (4) with four distinct dummy clientes' active reservations.
   for i in 1..4 loop
@@ -239,6 +257,10 @@ begin
   perform set_config('t.s_full', s_full::text,  true);
   perform set_config('t.s_started', s_started::text, true);
   perform set_config('t.s_walkfull', s_walkfull::text, true);
+  perform set_config('t.m_gap',      m_gap::text,      true);
+  perform set_config('t.c_gap',      c_gap::text,      true);
+  perform set_config('t.s_gap_ok',   s_gap_ok::text,   true);
+  perform set_config('t.s_gap_bad',  s_gap_bad::text,  true);
 end $$;
 
 -- Helper to act as a member: set the jwt sub + authenticated role.
@@ -491,6 +513,42 @@ begin
   if v_clases <> 5 then raise exception 'RULE FAIL(started): balance moved to % on a rejected booking', v_clases; end if;
   select count(*) into v_n from public.reservation where member_id = c_start and class_session_id = s_started;
   if v_n <> 0 then raise exception 'RULE FAIL(started): % reservation rows created on a rejected booking', v_n; end if;
+end $$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- #244 guard 1 — vence vs the SESSION's date, not just today's: a package still valid TODAY can
+-- lapse before the class itself happens. m_gap's vence is TOMORROW (v_today + 1).
+-- ════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_gap', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_gap_bad uuid := current_setting('t.s_gap_bad', true)::uuid;
+  s_gap_ok  uuid := current_setting('t.s_gap_ok', true)::uuid;
+  c_gap     uuid := current_setting('t.c_gap', true)::uuid;
+  v_clases int; v_n int; v_msg text; v_res uuid; v_ret int;
+begin
+  -- The session is dated the day AFTER vence — refused, atomically, with the SAME message the
+  -- today-gate already uses (the package will not cover that class either way).
+  v_msg := null;
+  begin perform public.reservar_clase(s_gap_bad); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Paquete vencido%' then
+    raise exception 'RULE FAIL(guard1 gap): got % (expected Paquete vencido)', v_msg;
+  end if;
+  select clases_restantes into v_clases from public.clientes where id = c_gap;
+  if v_clases <> 5 then raise exception 'RULE FAIL(guard1 gap): balance moved to % on a rejected booking', v_clases; end if;
+  select count(*) into v_n from public.reservation where member_id = c_gap and class_session_id = s_gap_bad;
+  if v_n <> 0 then raise exception 'RULE FAIL(guard1 gap): % reservation rows created on a rejected booking', v_n; end if;
+
+  -- The vence DAY ITSELF is valid (house rule 'vence-day-valid') — a session dated exactly on vence
+  -- still books normally, same as every other consume-once vector.
+  select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_gap_ok);
+  if v_res is null then raise exception 'RULE FAIL(guard1 boundary): no reservation returned for a session dated ON vence'; end if;
+  if v_ret <> 4 then raise exception 'RULE FAIL(guard1 boundary): RPC returned clases %, expected 4', v_ret; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_gap;
+  if v_clases <> 4 then raise exception 'RULE FAIL(guard1 boundary): stored clases %, expected 4', v_clases; end if;
 end $$;
 reset role;
 
