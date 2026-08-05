@@ -270,4 +270,11 @@ describe("filaCoincideBusqueda — roster search predicate (#239 tel-arm digit g
     const hits = filas.filter((f) => filaCoincideBusqueda(f, "987654"));
     expect(hits.map((f) => f.c.id)).toEqual(["beto"]);
   });
+
+  it("opus review F2: a separator-formatted query still matches a digit-only stored tel", () => {
+    const ana = mk("ana", { nombre: "Ana López", tel: "6141234567" });
+    const { filas } = derivarVistaRoster([ana]);
+
+    expect(filaCoincideBusqueda(filas[0]!, "614 1234")).toBe(true);
+  });
 });

@@ -84,25 +84,24 @@ export interface RosterVista {
 }
 
 /**
- * Roster search predicate (#239): a name hit is diacritic-folded on both sides
- * (`nombrePlegado` is pre-folded once per row by `derivarVistaRoster`, `query`
- * is folded here). The tel arm is a raw substring check (tel never carries
- * diacritics) and only participates when `query` itself carries at least one
- * digit — a letters-only query (e.g. "ana") must never fall through to
- * "matches every client with a phone" the way the `vender.tsx` picker's
- * digit-stripped comparison did (#239's other call site: stripping non-digits
- * from a letters-only query yields "", and every string `.includes("")`).
- * This arm was never exploitable via that exact mechanism (it compares the
- * RAW query, so it never collapses to ""), but the guard makes the invariant
- * explicit instead of incidental — a future change to a digit-stripped
- * comparison here (to also match a formatted tel) would otherwise silently
- * reintroduce the same bug.
+ * Roster search predicate (#239, opus review F2): a name hit is diacritic-folded on
+ * both sides (`nombrePlegado` is pre-folded once per row by `derivarVistaRoster`,
+ * `query` is folded here). The tel arm strips non-digits from BOTH sides before
+ * comparing — matching `pickerCoincide` (vender-vm.ts) exactly — because the DB
+ * CHECK allows a separator-formatted stored tel (the "-"/" " digit-intake rule lives
+ * at intake, not storage), so a raw `tel.includes(query)` misses "614 1234" against
+ * a stored "6141234567" even though both hold the same digits. The digit guard
+ * (only participate when `query` itself carries ≥1 digit) is what stops a
+ * letters-only query from matching every phone — now load-bearing, since this arm
+ * really does strip to "" for one, not merely documentation of an already-safe raw
+ * comparison.
  */
 export function filaCoincideBusqueda(x: FilaRoster, query: string): boolean {
   if (!query) return true;
   if (x.nombrePlegado.includes(foldDiacritics(query))) return true;
-  if (!telDigits(query)) return false;
-  return !!x.c.tel?.includes(query);
+  const q = telDigits(query);
+  if (!q) return false;
+  return !!x.c.tel && telDigits(x.c.tel).includes(q);
 }
 
 /** The saldo the engine actually reasons about for a package's urgency: a
