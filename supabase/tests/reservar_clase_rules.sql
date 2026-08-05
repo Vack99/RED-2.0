@@ -10,6 +10,11 @@
 --   * expired block              — a finite member past `vence` is rejected; no row, balance untouched.
 --   * full block                 — capacity checked against the DERIVED active count; the (cap+1)th
 --                                  booker is rejected atomically (no decrement).
+--   * walk-in-full does NOT block (20260804130000) — a session at capacity via WALK-IN rows alone
+--                                  (is_walk_in=true, status='asistida') does not raise 'Clase llena': a
+--                                  walk-in never consumed a bookable spot, so the guard (now reading
+--                                  contar_reservas_activas_miembro) must not count it. Counter-vector is
+--                                  `full block` right above — same capacity, non-walk-in rows, still blocks.
 --   * duplicate block            — re-booking an already-active (member, session) is rejected; balance
 --                                  is not decremented a second time.
 --   * re-book reuses the row     — booking a session the member previously CANCELLED reactivates the one
@@ -74,8 +79,9 @@ declare
   m_exp  uuid := gen_random_uuid();
   m_full uuid := gen_random_uuid();
   m_start uuid := gen_random_uuid();
-  c_fin  uuid; c_ilim uuid; c_zero uuid; c_exp uuid; c_full uuid; c_start uuid;
-  s_open uuid; s_full uuid; s_started uuid;
+  m_walk uuid := gen_random_uuid();
+  c_fin  uuid; c_ilim uuid; c_zero uuid; c_exp uuid; c_full uuid; c_start uuid; c_walk uuid;
+  s_open uuid; s_full uuid; s_started uuid; s_walkfull uuid;
   d_cli  uuid;
   i int;
   -- ── #237 operator path ──
@@ -98,11 +104,13 @@ begin
     ('00000000-0000-0000-0000-000000000000', m_zero, 'authenticated', 'authenticated', 'rc-zero@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_exp,  'authenticated', 'authenticated', 'rc-exp@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_full, 'authenticated', 'authenticated', 'rc-full@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_start,'authenticated', 'authenticated', 'rc-start@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_start,'authenticated', 'authenticated', 'rc-start@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_walk, 'authenticated', 'authenticated', 'rc-walk@test.local');
 
   insert into public.gym_membership (user_id, gym_id, role) values
     (m_fin, v_gym, 'member'), (m_ilim, v_gym, 'member'), (m_zero, v_gym, 'member'),
-    (m_exp, v_gym, 'member'), (m_full, v_gym, 'member'), (m_start, v_gym, 'member');
+    (m_exp, v_gym, 'member'), (m_full, v_gym, 'member'), (m_start, v_gym, 'member'),
+    (m_walk, v_gym, 'member');
 
   -- one cliente per acting member (auth_user_id links them; balances/vence per case)
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
@@ -117,6 +125,8 @@ begin
     values ('RC full', '0000000005', 5, v_today + 20, '8 clases', v_gym, m_full) returning id into c_full;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
     values ('RC started', '0000000006', 5, v_today + 20, '8 clases', v_gym, m_start) returning id into c_start;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC walk-in-full', '0000000007', 5, v_today + 20, '8 clases', v_gym, m_walk) returning id into c_walk;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'RC Metcon') returning id into v_ct;
 
@@ -126,6 +136,8 @@ begin
     values (v_gym, v_ct, v_starts, 60, 4) returning id into s_full;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_started, 60, 20) returning id into s_started;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, v_starts, 60, 4) returning id into s_walkfull;
 
   -- Fill s_full to capacity (4) with four distinct dummy clientes' active reservations.
   for i in 1..4 loop
@@ -133,6 +145,17 @@ begin
       returning id into d_cli;
     insert into public.reservation (gym_id, class_session_id, member_id, status)
       values (v_gym, s_full, d_cli, 'reservada');
+  end loop;
+
+  -- Fill s_walkfull to capacity (4) with four WALK-IN rows — mirrors exactly how pasar_lista_sesion's
+  -- walk-in arm writes one (status='asistida', is_walk_in=true; see pasar_lista_sesion_rules.sql's "(3)
+  -- walk-in parity" block), inserted directly here since only the row's SHAPE matters to the guard, not
+  -- the RPC that produced it.
+  for i in 1..4 loop
+    insert into public.clientes (nombre, tel, gym_id) values ('RC walkin '||i, '000000030'||i, v_gym)
+      returning id into d_cli;
+    insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in, checked_at)
+      values (v_gym, s_walkfull, d_cli, 'asistida', true, now());
   end loop;
 
   -- ── #237 operator-path fixtures ────────────────────────────────────────────────
@@ -210,9 +233,12 @@ begin
   perform set_config('t.c_full', c_full::text,  true);
   perform set_config('t.m_start',   m_start::text,   true);
   perform set_config('t.c_start',   c_start::text,   true);
+  perform set_config('t.m_walk',    m_walk::text,    true);
+  perform set_config('t.c_walk',    c_walk::text,    true);
   perform set_config('t.s_open', s_open::text,  true);
   perform set_config('t.s_full', s_full::text,  true);
   perform set_config('t.s_started', s_started::text, true);
+  perform set_config('t.s_walkfull', s_walkfull::text, true);
 end $$;
 
 -- Helper to act as a member: set the jwt sub + authenticated role.
@@ -386,6 +412,43 @@ begin
   if v_clases <> 5 then raise exception 'RULE FAIL(full): balance moved to % on full reject', v_clases; end if;
   select count(*) into v_n from public.reservation where member_id = c_full and class_session_id = s_full;
   if v_n <> 0 then raise exception 'RULE FAIL(full): % rows created on full reject', v_n; end if;
+end $$;
+reset role;
+
+-- ════════════════════════════════════════════════════════════════════════════════
+-- walk-in-full does NOT block (20260804130000) — a session at capacity via WALK-IN rows alone must not
+-- refuse a real booking. Counter-vector is the `full block` above: same capacity, non-walk-in rows,
+-- still raises 'Clase llena' — so this is specifically "walk-ins are excluded", not "capacity broke".
+-- ════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_walk', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_walkfull uuid := current_setting('t.s_walkfull', true)::uuid;
+  c_walk     uuid := current_setting('t.c_walk', true)::uuid;
+  v_ret int; v_res uuid; v_n int; r record;
+begin
+  select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_walkfull);
+  if v_res is null then raise exception 'RULE FAIL(walkfull): a session full of WALK-INS blocked a real booking — no reservation returned'; end if;
+  if v_ret <> 4 then raise exception 'RULE FAIL(walkfull): RPC returned clases %, expected 4', v_ret; end if;
+
+  -- The written row, column by column — the contract is the row, not the return value (#80 AC4).
+  select gym_id, member_id, status, is_walk_in, consumio into r
+    from public.reservation where id = v_res;
+  if r.gym_id     is distinct from current_setting('t.gym', true)::uuid then raise exception 'RULE FAIL(walkfull): reservation.gym_id % — not the session gym', r.gym_id; end if;
+  if r.member_id  is distinct from c_walk      then raise exception 'RULE FAIL(walkfull): reservation.member_id % — not the booker', r.member_id; end if;
+  if r.status     is distinct from 'reservada' then raise exception 'RULE FAIL(walkfull): status %', r.status; end if;
+  if r.is_walk_in is distinct from false       then raise exception 'RULE FAIL(walkfull): is_walk_in % — a member''s own booking is never a walk-in', r.is_walk_in; end if;
+  if r.consumio   is distinct from true        then raise exception 'RULE FAIL(walkfull): consumio % (expected true)', r.consumio; end if;
+
+  select clases_restantes into v_ret from public.clientes where id = c_walk;
+  if v_ret <> 4 then raise exception 'RULE FAIL(walkfull): stored clases % after booking, expected 4', v_ret; end if;
+
+  -- The four walk-in rows are untouched by this booking — still asistida/is_walk_in=true.
+  select count(*) into v_n from public.reservation
+    where class_session_id = s_walkfull and is_walk_in = true and status = 'asistida';
+  if v_n <> 4 then raise exception 'RULE FAIL(walkfull): expected 4 untouched walk-in rows, found %', v_n; end if;
 end $$;
 reset role;
 
