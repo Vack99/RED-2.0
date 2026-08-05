@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 
-import { toCardVM } from "./session-vm";
+import { accionAgregar, esBloqueoVendible, sugerenciaVenta, toCardVM } from "./session-vm";
 
 /**
  * The page's DTO -> card/row view model. The DAL derives a 5-value domain estado
@@ -72,5 +72,93 @@ describe("toCardVM", () => {
   it("carries the passed hora + booked/cap/mins/tipo through for both card and week-row rendering", () => {
     const vm = toCardVM(dto({ activos: 18, capacidad: 20, duracionMin: 60, tipo: "Metcon" }), "12:30");
     expect(vm).toMatchObject({ id: "s1", time: "12:30", mins: 60, tipo: "Metcon", booked: 18, cap: 20 });
+  });
+
+  it("carries the ABSOLUTE start as ISO — the tense predicate can't read the tz-folded hora (#238)", () => {
+    expect(toCardVM(dto(), "08:00").startsAtIso).toBe("2026-06-17T14:00:00.000Z");
+  });
+});
+
+/**
+ * The tap-time branch (#238): which of the two write paths the operator's pick fires. The rule
+ * itself is the domain predicate; this is the wiring in front of it — a correct rule routed to
+ * the wrong callback is exactly what this catches. `ahora` is passed in because the caller
+ * reads the clock INSIDE the tap handler, never at render.
+ */
+describe("accionAgregar", () => {
+  const INICIO = "2026-06-17T14:00:00.000Z"; // window opens 12:30Z
+
+  it("books while the arrival window is still shut — the phone call for tomorrow's class", () => {
+    expect(accionAgregar(INICIO, new Date("2026-06-16T20:00:00.000Z"))).toBe("reservar");
+    expect(accionAgregar(INICIO, new Date("2026-06-17T12:29:59.999Z"))).toBe("reservar");
+  });
+
+  it("checks in from the opening instant on — a member standing there an hour early is a visita", () => {
+    expect(accionAgregar(INICIO, new Date("2026-06-17T12:30:00.000Z"))).toBe("pase");
+    expect(accionAgregar(INICIO, new Date("2026-06-17T13:00:00.000Z"))).toBe("pase");
+  });
+
+  it("a tap AFTER the edge under a stale RESERVA label still checks in — never a false booking", () => {
+    // The sheet was rendered at 12:29 (label: AGREGAR RESERVA) and tapped at 12:31.
+    expect(accionAgregar(INICIO, new Date("2026-06-17T12:31:00.000Z"))).toBe("pase");
+  });
+
+  it("stays on the check-in side past the window's close — the branch never wraps back", () => {
+    expect(accionAgregar(INICIO, new Date("2026-06-18T09:00:00.000Z"))).toBe("pase");
+  });
+});
+
+/**
+ * Which refusals a SALE fixes (#235 story 10). The strings are our own `raise exception` literals,
+ * so exact match is the contract — and the negative cases are what matter: offering VENDER on a
+ * full class or a duplicate booking sends the operator to charge a member for nothing.
+ */
+describe("esBloqueoVendible", () => {
+  it("catches both sellable walls — an empty balance and a lapsed vigencia", () => {
+    expect(esBloqueoVendible("Sin clases disponibles")).toBe(true);
+    expect(esBloqueoVendible("Paquete vencido")).toBe(true);
+  });
+
+  it.each([
+    "Clase llena",
+    "Ya reservaste esta clase",
+    "La clase ya comenzó",
+    "No autorizado",
+    "Cliente no encontrado",
+  ])("refuses '%s' — no paquete on earth changes that fact", (error) => {
+    expect(esBloqueoVendible(error)).toBe(false);
+  });
+
+  it("is exact, never fuzzy: an empty string and a near-miss are both no", () => {
+    expect(esBloqueoVendible("")).toBe(false);
+    expect(esBloqueoVendible("paquete vencido")).toBe(false);
+  });
+});
+
+/**
+ * The blocked pick's bridge (#235 story 10) — and this IS the line's visibility: `null` renders
+ * nothing. Both halves must hold, because each failure mode is its own bug: a non-sellable refusal
+ * would sell against a full class, and an unnamed member would offer an anonymous VENDER.
+ */
+describe("sugerenciaVenta", () => {
+  const MARISA = { id: "c1", nombre: "Marisa Rangel" };
+
+  it("names the blocked member and deep-links the sale that unblocks them (#77)", () => {
+    expect(sugerenciaVenta("Sin clases disponibles", MARISA)).toEqual({
+      nombre: "Marisa Rangel",
+      href: "/vender?cliente=c1",
+    });
+  });
+
+  it("bridges an expired package the same way — one wall, one answer", () => {
+    expect(sugerenciaVenta("Paquete vencido", MARISA)?.href).toBe("/vender?cliente=c1");
+  });
+
+  it("stays silent on a refusal a sale cannot fix", () => {
+    expect(sugerenciaVenta("Clase llena", MARISA)).toBeNull();
+  });
+
+  it("stays silent when the picker can no longer name the member", () => {
+    expect(sugerenciaVenta("Paquete vencido", undefined)).toBeNull();
   });
 });

@@ -26,7 +26,7 @@ import {
 import { urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia, Saldo } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
-import { foldDiacritics } from "@gym/format";
+import { foldDiacritics, telDigits } from "@gym/format";
 
 /** One roster row, pre-shaped for rendering — the screen reads this and
  *  nothing else. `filas` arrives in the engine's RULED order (actionable →
@@ -81,6 +81,27 @@ export interface RosterVista {
   /** Ruled order (`ordenarLifecycle`). */
   filas: FilaRoster[];
   conteos: ConteosRoster;
+}
+
+/**
+ * Roster search predicate (#239, opus review F2): a name hit is diacritic-folded on
+ * both sides (`nombrePlegado` is pre-folded once per row by `derivarVistaRoster`,
+ * `query` is folded here). The tel arm strips non-digits from BOTH sides before
+ * comparing — matching `pickerCoincide` (vender-vm.ts) exactly — because the DB
+ * CHECK allows a separator-formatted stored tel (the "-"/" " digit-intake rule lives
+ * at intake, not storage), so a raw `tel.includes(query)` misses "614 1234" against
+ * a stored "6141234567" even though both hold the same digits. The digit guard
+ * (only participate when `query` itself carries ≥1 digit) is what stops a
+ * letters-only query from matching every phone — now load-bearing, since this arm
+ * really does strip to "" for one, not merely documentation of an already-safe raw
+ * comparison.
+ */
+export function filaCoincideBusqueda(x: FilaRoster, query: string): boolean {
+  if (!query) return true;
+  if (x.nombrePlegado.includes(foldDiacritics(query))) return true;
+  const q = telDigits(query);
+  if (!q) return false;
+  return !!x.c.tel && telDigits(x.c.tel).includes(q);
 }
 
 /** The saldo the engine actually reasons about for a package's urgency: a

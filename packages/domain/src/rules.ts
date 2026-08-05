@@ -478,6 +478,30 @@ export function enVentanaArribo(startsAt: Date, duracionMin: number, ahora: Date
 }
 
 /**
+ * Whether `ahora` is EARLIER than a session's arrival window OPENS — i.e. before
+ * `startsAt − previaMin`. The tense discriminator the Agenda's one add-button derives both
+ * its label and its WRITE PATH from (#238): true → the tap books a reserva, false → the tap
+ * checks the member in, exactly as the desk does. The naive "future class → book" rule is
+ * wrong precisely here: the window opens 90 min BEFORE the class, so a member standing at the
+ * desk an hour early must be checked in, not booked.
+ *
+ * Reads only the START — the opening edge does not depend on duración, which is why this is a
+ * sibling of `ventanaArribo` rather than a caller of it. `previaMin` is a defaulted PARAMETER,
+ * not a closed-over constant, so #234 (per-gym lead) lands on this third consumer without
+ * breaking the signature.
+ *
+ * Past the window's CLOSING edge this stays false: the whole timeline after the opening edge is
+ * the check-in side, and it never wraps back around to booking.
+ */
+export function antesDeVentanaArribo(
+  startsAt: Date,
+  ahora: Date,
+  previaMin: number = VENTANA_ARRIBO_PREVIA_MIN,
+): boolean {
+  return ahora.getTime() < startsAt.getTime() - previaMin * 60_000;
+}
+
+/**
  * Whether a booking reads as "no asistió": still `reservada` once its arrival window has
  * CLOSED. Derived at read, never stored (ruling 2026-07-29) — a mark supersedes it
  * instantly, and there is no sweep to race or repair. The window is half-open, so it is

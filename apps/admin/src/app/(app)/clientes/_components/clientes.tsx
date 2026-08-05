@@ -9,9 +9,8 @@ import { useFlip } from "@gym/ui/forge/use-flip";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
-import { foldDiacritics } from "@gym/format";
 import { markInAppNav } from "../../../../lib/nav";
-import { derivarVistaRoster, type FilaRoster } from "./clientes-vm";
+import { derivarVistaRoster, filaCoincideBusqueda, type FilaRoster } from "./clientes-vm";
 
 /** `null` = the engine's ruled order (default). Picking a named sort
  *  overrides it; re-picking the ACTIVE one clears back to `null` — same
@@ -74,13 +73,9 @@ export function ClientesScreen({
     if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
-      // Diacritic-folded (#224): "chavez" must find "Chávez". Folding applies to both
-      // the query and the candidate name (the candidate side is pre-folded once per
-      // client by derivarVistaRoster, not per keystroke here); the phone check stays a
-      // raw digit/string match (tel never carries diacritics) and the sort comparator
-      // below is untouched.
-      const q = foldDiacritics(query);
-      list = list.filter((x) => x.nombrePlegado.includes(q) || !!x.c.tel?.includes(query));
+      // Diacritic-folded name arm (#224) + digit-guarded tel arm (#239) — see
+      // `filaCoincideBusqueda` in clientes-vm.ts.
+      list = list.filter((x) => filaCoincideBusqueda(x, query));
     }
     // Default = the engine's ruled order: `withU` already arrives sorted that way,
     // and Array#filter is order-preserving, so an untouched `sort` (null) leaves it
@@ -257,12 +252,18 @@ export function ClientesScreen({
         </div>
         <div className="flex items-center">
           <span style={{ fontSize: 10, color: "var(--muted)", letterSpacing: 1, marginRight: 8 }}>ORDEN</span>
-          {/* No button is active by default (ruled order). Tapping one applies that sort;
-              tapping the ACTIVE one again clears back to the ruled order (#227) — the
-              same single-active-button feel as today, plus the "off" state. */}
-          {([{ k: "dias", l: "Días" }, { k: "nombre", l: "A→Z" }, { k: "asist", l: "Asist." }] as const).map((s, i) => (
+          {/* A leading "Prioridad" chip NAMES the ruled order (actionable → current →
+              expired) instead of leaving the default state unlabeled (#241): it lights
+              up exactly when `sort` is null, the same single-active-button idiom the
+              other three chips already use. Tapping it (from any named sort) clears
+              back to `null` via the SAME toggle below — `s.k` is simply `null` here,
+              so `cur === s.k` is the existing "tap active → clear" branch, never a
+              second code path. Tapping one applies that sort; tapping the ACTIVE one
+              again clears back to the ruled order (#227) — the same single-active-button
+              feel as today, plus the "off" state. */}
+          {([{ k: null, l: "Prioridad" }, { k: "dias", l: "Días" }, { k: "nombre", l: "A→Z" }, { k: "asist", l: "Asist." }] as const).map((s, i) => (
             <button
-              key={s.k}
+              key={s.l}
               onClick={() => setSort((cur) => (cur === s.k ? null : s.k))}
               className="forge-pressable"
               style={{ background: "transparent", border: "none", padding: "10px 8px", cursor: "pointer", color: sort === s.k ? "var(--yellow)" : "var(--muted)", fontWeight: 700, fontSize: 11, letterSpacing: 0.4, marginLeft: i === 0 ? 0 : 8, transition: "color 150ms cubic-bezier(.32,.72,0,1)" }}

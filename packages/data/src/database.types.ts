@@ -1383,7 +1383,7 @@ export type Database = {
         Returns: undefined
       }
       cancelar_reserva: {
-        Args: { p_session_id: string }
+        Args: { p_cliente_id?: string; p_session_id: string }
         Returns: {
           clases_restantes: number
           reservation_id: string
@@ -1562,7 +1562,7 @@ export type Database = {
         }[]
       }
       reservar_clase: {
-        Args: { p_session_id: string }
+        Args: { p_cliente_id?: string; p_session_id: string }
         Returns: {
           clases_restantes: number
           reservation_id: string

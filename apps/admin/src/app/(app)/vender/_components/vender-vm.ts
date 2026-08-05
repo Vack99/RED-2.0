@@ -1,5 +1,5 @@
 import type { PaqueteSeleccion } from "@gym/data/server/ventas";
-import { addDays, isTelValido, parseDay, telDigits, toIsoDay } from "@gym/format";
+import { addDays, foldDiacritics, isTelValido, parseDay, telDigits, toIsoDay } from "@gym/format";
 
 /** The NUEVO/EXISTENTE toggle — the two sale doors. */
 type Mode = "new" | "existing";
@@ -36,6 +36,22 @@ export function clienteListo(
     // server rejects, and enabling COBRAR on it would send the operator into a dead end.
     ? nombre.trim().length >= 3 && (tel.trim() === "" || isTelValido(tel))
     : hasExisting;
+}
+
+/**
+ * NUEVO/EXISTENTE client-picker search predicate (#239): a name hit is
+ * diacritic-folded on both sides; the tel arm only participates when `query`
+ * carries at least one digit. Before this guard, a letters-only query (e.g.
+ * "ana") stripped to "" via `telDigits`, and every string `.includes("")` —
+ * so the tel arm matched EVERY client with a phone, and the picker showed the
+ * full roster instead of a name-filtered one.
+ */
+export function pickerCoincide(c: { nombre: string; tel: string | null }, query: string): boolean {
+  if (!query) return true;
+  if (foldDiacritics(c.nombre).includes(foldDiacritics(query))) return true;
+  const qDigits = telDigits(query);
+  if (!qDigits) return false;
+  return !!c.tel && telDigits(c.tel).includes(qDigits);
 }
 
 /** The custom tile's id in `sel`. A sentinel, not a uuid — it can never collide with

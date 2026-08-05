@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { rosterResumen } from "./session-roster";
+import { copiaAgregar, puedeCancelarReserva, rosterResumen } from "./session-roster";
 
 /**
  * The roster headline: how many booked members are actually marked present out of
@@ -15,5 +15,54 @@ describe("rosterResumen", () => {
   });
   it("counts a fully-marked class", () => {
     expect(rosterResumen([{ present: true }, { present: true }])).toEqual({ presentes: 2, total: 2 });
+  });
+});
+
+/**
+ * The sheet has ONE add affordance whose verb follows the tense (#238). This is where a
+ * correct rule wired to the wrong copy would show: the button and the empty state must name
+ * the same action, always, because they are cut from the same word.
+ */
+describe("copiaAgregar", () => {
+  it("reads RESERVA before the arrival window opens — the tap will book a future class", () => {
+    expect(copiaAgregar(true)).toEqual({
+      boton: "Agregar reserva",
+      vacio: "Nadie reservó todavía · agrega una reserva",
+    });
+  });
+
+  it("reads VISITA once the window is open — the tap records an arrival, as it always did", () => {
+    expect(copiaAgregar(false)).toEqual({
+      boton: "Agregar visita",
+      vacio: "Nadie reservó todavía · agrega una visita",
+    });
+  });
+
+  it("keeps the empty state and the button on the same verb — they can never contradict", () => {
+    for (const antes of [true, false]) {
+      const { boton, vacio } = copiaAgregar(antes);
+      expect(vacio).toContain(boton.split(" ")[1]);
+    }
+  });
+});
+
+/**
+ * The operator's undo appears on booked-not-present rows of a class that has not started.
+ * Charging is at booking, so this is the only affordance that gives a mis-tapped member their
+ * class back — and its visibility must track the RPC's OWN gate (`starts_at <= now()`), not
+ * the arrival window's close, or the button renders through a band where every tap fails.
+ */
+describe("puedeCancelarReserva", () => {
+  it("shows on a reserva still awaiting its member, before the class starts", () => {
+    expect(puedeCancelarReserva({ present: false }, false)).toBe(true);
+  });
+
+  it("hides on a row already marked present — the present-toggle owns that removal", () => {
+    expect(puedeCancelarReserva({ present: true }, false)).toBe(false);
+  });
+
+  it("hides from the start instant onward — the RPC refuses a cancel once the class began", () => {
+    expect(puedeCancelarReserva({ present: false }, true)).toBe(false);
+    expect(puedeCancelarReserva({ present: true }, true)).toBe(false);
   });
 });
