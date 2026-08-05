@@ -1,4 +1,4 @@
-import { getAgendaDia, type SesionAgendaDTO } from "@gym/data/server/agenda";
+import { getAgendaDia, type AgendaDiaDTO, type SesionAgendaDTO } from "@gym/data/server/agenda";
 import { getMarcadas, getReservasDelDia, type ReservaDelDia } from "@gym/data/server/asistencia";
 import { getClientesParaPase } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
@@ -19,51 +19,59 @@ function etiquetaSesion(s: SesionAgendaDTO): string {
 }
 
 export default async function Page() {
-  // getOperatorGym() rides in the SAME round trip as the roster/marcadas legs, not before
-  // them (perf #242): getClientesParaPase/getMarcadas each resolve the gym themselves via
-  // the identical memoized client (createClient is cache()'d per request), so
-  // resolveOperatorGyms' own cache() bucket collapses all three calls into ONE
-  // gym_membership query — hoisting the await here just removed a sequential stage that
-  // cost a full round trip for nothing.
-  const [{ timezone: tz }, clientes, marcadas] = await Promise.all([
-    getOperatorGym(),
-    getClientesParaPase(),
-    getMarcadas(),
-  ]);
+  const { timezone: tz } = await getOperatorGym();
   const hoyIso = hoyIsoEnZona(tz);
 
+  // getAgendaDia depends ONLY on hoyIso (resolved above), never on clientes/marcadas — so it
+  // rides in the SAME round trip as that pair, not after it (perf #242): the previous
+  // `await getAgendaDia(...)` AFTER the clientes/marcadas Promise.all was an accidental
+  // sequencing, not a real dependency, and it's the expensive materialize-then-fetch leg
+  // (ADR-0010). Its own failure is caught HERE, inside the leg, rather than left to reject
+  // the whole Promise.all — a failing schedule read must never cost the roster/marcadas that
+  // already succeeded.
+  const [clientes, marcadas, agenda] = await Promise.all([
+    getClientesParaPase(),
+    getMarcadas(),
+    getAgendaDia(hoyIso).catch((err): AgendaDiaDTO | null => {
+      console.error("[asistencia] schedule read failed — falling back to ACCESO LIBRE", err);
+      return null;
+    }),
+  ]);
+
   // The schedule is an ENHANCEMENT of the desk, never its precondition: a gym with no
-  // maintained schedule renders ACCESO LIBRE + the full roster by design, so a failing
-  // agenda read degrades to exactly THAT instead of 500-ing the door screen — the one
-  // screen that must open when someone is standing at it. (There is no error.tsx in this
-  // app; the degradation is here, in the read.) The assignments are ordered so a partial
-  // failure keeps whatever already succeeded: lose the bookings and the pills still work,
-  // only the CON RESERVA grouping goes. getAgendaDia ensures the week is materialized
-  // first (ADR-0010) — an idempotent write, and the intended one: the desk reads the same
-  // schedule the Agenda maintains, never a second projection of it.
+  // maintained schedule (or a failed read, above) renders ACCESO LIBRE + the full roster by
+  // design, so a failing agenda read degrades to exactly THAT instead of 500-ing the door
+  // screen — the one screen that must open when someone is standing at it. (There is no
+  // error.tsx in this app; the degradation is here, in the read.) Bookings are a SECOND,
+  // independent read (getReservasDelDia) that can fail on its own without losing the
+  // sesiones pills already resolved above — only the CON RESERVA grouping goes.
   let sesiones: SesionDelDia[] = [];
   let reservas: Record<string, ReservaDelDia[]> = {};
   let reservaAtribuiblePorCliente: Record<string, string> = {};
   let ctxInicial: string = LIBRE;
-  try {
-    const agenda = await getAgendaDia(hoyIso);
+  if (agenda) {
     sesiones = agenda.sesiones.map((s) => ({
       id: s.id,
       hora: horaEnZona(s.startsAt, tz),
       tipo: etiquetaSesion(s),
       capacidad: s.capacidad,
     }));
-    // Bookings drive the CON RESERVA group; skipped entirely for a gym with no schedule.
-    reservas = await getReservasDelDia(agenda.sesiones.map((s) => s.id));
-    // Both of these are resolved here, not in a state initializer: each measures a
-    // distance from an absolute NOW, which must be the same value in the SSR and hydration
-    // renders or React reports a mismatch. That is also why the session instants stay on
-    // the server — the screen receives only ids and gym-local hora labels.
-    const ahora = new Date();
-    ctxInicial = sesionCercana(agenda.sesiones, ahora);
-    reservaAtribuiblePorCliente = reservaAtribuible(agenda.sesiones, reservas, ahora);
-  } catch (err) {
-    console.error("[asistencia] schedule read failed — falling back to ACCESO LIBRE", err);
+    try {
+      // Bookings drive the CON RESERVA group; skipped entirely for a gym with no schedule.
+      reservas = await getReservasDelDia(agenda.sesiones.map((s) => s.id));
+      // Both of these are resolved here, not in a state initializer: each measures a
+      // distance from an absolute NOW, which must be the same value in the SSR and hydration
+      // renders or React reports a mismatch. That is also why the session instants stay on
+      // the server — the screen receives only ids and gym-local hora labels.
+      const ahora = new Date();
+      ctxInicial = sesionCercana(agenda.sesiones, ahora);
+      reservaAtribuiblePorCliente = reservaAtribuible(agenda.sesiones, reservas, ahora);
+    } catch (err) {
+      console.error(
+        "[asistencia] reservas read failed — sesiones still render, CON RESERVA grouping lost",
+        err,
+      );
+    }
   }
 
   return (
