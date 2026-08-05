@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
-import { derivarVistaRoster } from "./clientes-vm";
+import { derivarVistaRoster, filaCoincideBusqueda } from "./clientes-vm";
 
 // These tests exercise the WIRING (does derivarVistaRoster call the real
 // engine with the right facts?) — the engine's own ordering/estado/urgencia
@@ -249,5 +249,25 @@ describe("derivarVistaRoster — #229: AÚN A TIEMPO filter flag + the {n}D SIN 
     });
     const { filas } = derivarVistaRoster([c]);
     expect(filas[0]?.ausente).toBe(false); // nothing paid — never "paid-up"
+  });
+});
+
+describe("filaCoincideBusqueda — roster search predicate (#239 tel-arm digit guard)", () => {
+  it("a letters-only query matches by name only — never falls through to every phone", () => {
+    const ana = mk("ana", { nombre: "Ana López", tel: "6141234567" });
+    const beto = mk("beto", { nombre: "Beto Ruiz", tel: "6149876543" });
+    const { filas } = derivarVistaRoster([ana, beto]);
+
+    const hits = filas.filter((f) => filaCoincideBusqueda(f, "ana"));
+    expect(hits.map((f) => f.c.id)).toEqual(["ana"]);
+  });
+
+  it("a digit query still matches by phone", () => {
+    const ana = mk("ana", { nombre: "Ana López", tel: "6141234567" });
+    const beto = mk("beto", { nombre: "Beto Ruiz", tel: "6149876543" });
+    const { filas } = derivarVistaRoster([ana, beto]);
+
+    const hits = filas.filter((f) => filaCoincideBusqueda(f, "987654"));
+    expect(hits.map((f) => f.c.id)).toEqual(["beto"]);
   });
 });

@@ -10,6 +10,7 @@ import {
   inicioMinIso,
   paqueteListo,
   PERSONALIZADO,
+  pickerCoincide,
   precioSeleccionado,
   telError,
 } from "./vender-vm";
@@ -203,5 +204,20 @@ describe("customValido", () => {
   it("is false for the empty form and true for a complete, in-bounds one", () => {
     expect(customValido(CUSTOM_VACIO)).toBe(false);
     expect(customValido(lleno)).toBe(true);
+  });
+});
+
+describe("pickerCoincide — client-picker search predicate (#239 tel-arm digit guard)", () => {
+  const ana = { nombre: "Ana López", tel: "6141234567" };
+  const beto = { nombre: "Beto Ruiz", tel: "6149876543" };
+
+  it("a letters-only query matches by name only — never falls through to every phone", () => {
+    expect(pickerCoincide(ana, "ana")).toBe(true);
+    expect(pickerCoincide(beto, "ana")).toBe(false);
+  });
+
+  it("a digit query still matches by phone", () => {
+    expect(pickerCoincide(beto, "987654")).toBe(true);
+    expect(pickerCoincide(ana, "987654")).toBe(false);
   });
 });

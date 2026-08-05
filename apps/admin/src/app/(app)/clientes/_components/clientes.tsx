@@ -9,9 +9,8 @@ import { useFlip } from "@gym/ui/forge/use-flip";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { NivelUrgencia } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
-import { foldDiacritics } from "@gym/format";
 import { markInAppNav } from "../../../../lib/nav";
-import { derivarVistaRoster, type FilaRoster } from "./clientes-vm";
+import { derivarVistaRoster, filaCoincideBusqueda, type FilaRoster } from "./clientes-vm";
 
 /** `null` = the engine's ruled order (default). Picking a named sort
  *  overrides it; re-picking the ACTIVE one clears back to `null` — same
@@ -74,13 +73,9 @@ export function ClientesScreen({
     if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
-      // Diacritic-folded (#224): "chavez" must find "Chávez". Folding applies to both
-      // the query and the candidate name (the candidate side is pre-folded once per
-      // client by derivarVistaRoster, not per keystroke here); the phone check stays a
-      // raw digit/string match (tel never carries diacritics) and the sort comparator
-      // below is untouched.
-      const q = foldDiacritics(query);
-      list = list.filter((x) => x.nombrePlegado.includes(q) || !!x.c.tel?.includes(query));
+      // Diacritic-folded name arm (#224) + digit-guarded tel arm (#239) — see
+      // `filaCoincideBusqueda` in clientes-vm.ts.
+      list = list.filter((x) => filaCoincideBusqueda(x, query));
     }
     // Default = the engine's ruled order: `withU` already arrives sorted that way,
     // and Array#filter is order-preserving, so an untouched `sort` (null) leaves it

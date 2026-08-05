@@ -11,7 +11,7 @@ import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
 import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
 import { calcVigenciaEnd } from "@gym/domain/rules";
-import { DOW, fmtFull, fmtNavegadorDia, fmtShort, foldDiacritics, isoDay, MON, parseDay, pesos, sameDay } from "@gym/format";
+import { DOW, fmtFull, fmtNavegadorDia, fmtShort, isoDay, MON, parseDay, pesos, sameDay } from "@gym/format";
 import { crearVentaAction } from "../actions";
 import { PersonalizadoEditor } from "./personalizado-editor";
 import { Recibo } from "./recibo";
@@ -24,6 +24,7 @@ import {
   inicioMinIso,
   paqueteListo,
   PERSONALIZADO,
+  pickerCoincide,
   precioSeleccionado,
   telError,
   type CustomForm,
@@ -312,14 +313,9 @@ export function VenderScreen({
     );
   }
 
-  const filteredClients = clientes.filter(
-    (c) =>
-      !pickerQuery ||
-      // Diacritic-folded (#224): "chavez" must find "Chávez" in the sale-screen
-      // picker too. The tel arm below is untouched (separate pre-existing defect).
-      foldDiacritics(c.nombre).includes(foldDiacritics(pickerQuery)) ||
-      !!c.tel?.replace(/\D/g, "").includes(pickerQuery.replace(/\D/g, "")),
-  );
+  // Diacritic-folded name arm (#224) + digit-guarded tel arm (#239) — see
+  // `pickerCoincide` in vender-vm.ts.
+  const filteredClients = clientes.filter((c) => pickerCoincide(c, pickerQuery));
 
   const missing: string[] = [];
   if (!clienteValid) missing.push("cliente");

@@ -26,7 +26,7 @@ import {
 import { urgenciaCliente } from "@gym/domain/rules";
 import type { NivelUrgencia, Saldo } from "@gym/domain/types";
 import type { ClienteRosterDTO } from "@gym/data/server/clientes";
-import { foldDiacritics } from "@gym/format";
+import { foldDiacritics, telDigits } from "@gym/format";
 
 /** One roster row, pre-shaped for rendering — the screen reads this and
  *  nothing else. `filas` arrives in the engine's RULED order (actionable →
@@ -81,6 +81,28 @@ export interface RosterVista {
   /** Ruled order (`ordenarLifecycle`). */
   filas: FilaRoster[];
   conteos: ConteosRoster;
+}
+
+/**
+ * Roster search predicate (#239): a name hit is diacritic-folded on both sides
+ * (`nombrePlegado` is pre-folded once per row by `derivarVistaRoster`, `query`
+ * is folded here). The tel arm is a raw substring check (tel never carries
+ * diacritics) and only participates when `query` itself carries at least one
+ * digit — a letters-only query (e.g. "ana") must never fall through to
+ * "matches every client with a phone" the way the `vender.tsx` picker's
+ * digit-stripped comparison did (#239's other call site: stripping non-digits
+ * from a letters-only query yields "", and every string `.includes("")`).
+ * This arm was never exploitable via that exact mechanism (it compares the
+ * RAW query, so it never collapses to ""), but the guard makes the invariant
+ * explicit instead of incidental — a future change to a digit-stripped
+ * comparison here (to also match a formatted tel) would otherwise silently
+ * reintroduce the same bug.
+ */
+export function filaCoincideBusqueda(x: FilaRoster, query: string): boolean {
+  if (!query) return true;
+  if (x.nombrePlegado.includes(foldDiacritics(query))) return true;
+  if (!telDigits(query)) return false;
+  return !!x.c.tel?.includes(query);
 }
 
 /** The saldo the engine actually reasons about for a package's urgency: a
