@@ -134,7 +134,7 @@ describe("getClaseDetalleMiembro", () => {
     const fake = makeFake(detalleRows(), (name) =>
       name === "roster_clase"
         ? { data: [{ iniciales: "JP" }, { iniciales: "LM" }], error: null }
-        : name === "contar_reservas_activas"
+        : name === "contar_reservas_activas_miembro"
           ? { data: [{ session_id: SID, activos: 2 }], error: null }
           : { data: [], error: null },
     );
@@ -162,13 +162,29 @@ describe("getClaseDetalleMiembro", () => {
 
   it("derives 'lleno' when active reservations reach capacity", async () => {
     const fake = makeFake(detalleRows(), (name) =>
-      name === "contar_reservas_activas"
+      name === "contar_reservas_activas_miembro"
         ? { data: [{ session_id: SID, activos: 20 }], error: null }
         : { data: [], error: null },
     );
     const d = await getClaseDetalleMiembro(SID, fake);
     expect(d!.estado).toBe("lleno");
     expect(d!.disponibles).toBe(0);
+  });
+
+  // Owner ruling 2026-08-03: a staff walk-in mark inflates `contar_reservas_activas` (the
+  // staff/roster seam, walk-ins included) but must never drive a MEMBER's class-detail view to
+  // LLENO. Proves the wiring: even when the OLD, walk-in-inclusive seam reports the session at
+  // capacity, `getClaseDetalleMiembro`'s estado/disponibles follow the member-only
+  // `contar_reservas_activas_miembro` seam instead.
+  it("a staff walk-in mark never flips the class-detail estado to lleno (owner ruling 2026-08-03)", async () => {
+    const fake = makeFake(detalleRows(), (name) => {
+      if (name === "contar_reservas_activas") return { data: [{ session_id: SID, activos: 20 }], error: null };
+      if (name === "contar_reservas_activas_miembro") return { data: [{ session_id: SID, activos: 3 }], error: null };
+      return { data: [], error: null };
+    });
+    const d = await getClaseDetalleMiembro(SID, fake);
+    expect(d!.estado).not.toBe("lleno");
+    expect(d!.disponibles).toBe(17);
   });
 
   it("flags miReserva + favorita from the member's own rows", async () => {

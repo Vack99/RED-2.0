@@ -14,7 +14,7 @@ import {
 } from "@gym/format";
 import { z } from "zod";
 
-import { contarActivos } from "./ocupacion";
+import { contarActivosMiembro } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
 
 /**
@@ -30,7 +30,9 @@ import { createClient, type SupabaseServer } from "./supabase";
  *     reservation for the session, so the page redirects rather than paint fallback data.
  *   * toggleFavoritoTipo — the heart's one write path over the self-scoped
  *     `toggle_favorito_tipo` RPC (members hold no direct clientes UPDATE).
- * Occupancy derives through the single `contarActivos` seam. Every read reuses @gym/domain's
+ * Occupancy derives through the member-only `contarActivosMiembro` seam (owner ruling
+ * 2026-08-03) — walk-ins excluded, never the staff/roster `contarActivos`, so a door
+ * mark can never read as LLENO to a member who never booked anything. Every read reuses @gym/domain's
  * state ladder + @gym/format wholesale; the DTOs are display-ready so the client islands
  * are pure presentation.
  */
@@ -247,7 +249,7 @@ export const getClaseDetalleMiembro = cache(
           .select("id")
           .eq("class_session_id", sesion.id)
           .in("status", ["reservada", "asistida"]),
-        contarActivos(supabase, [sesion.id]),
+        contarActivosMiembro(supabase, [sesion.id]),
         fetchFavoritoId(supabase, gymId),
         supabase.rpc("roster_clase", { p_session_id: sesion.id }),
       ]);

@@ -1396,6 +1396,13 @@ export type Database = {
           session_id: string
         }[]
       }
+      contar_reservas_activas_miembro: {
+        Args: { p_session_ids: string[] }
+        Returns: {
+          activos: number
+          session_id: string
+        }[]
+      }
       crear_plantilla: {
         Args: { p_body: string; p_nombre: string }
         Returns: string

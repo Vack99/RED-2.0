@@ -241,7 +241,7 @@ describe("getAgendaSemanaMiembro", () => {
     const rows = pastRows();
     rows.reservation = [{ class_session_id: "wed1", status: "reservada" }]; // the member holds wed1 (RLS returns only own)
     const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows, (name) =>
-      name === "contar_reservas_activas"
+      name === "contar_reservas_activas_miembro"
         ? { data: [{ session_id: "wed1", activos: 15 }], error: null }
         : { data: [], error: null },
     ));
@@ -252,6 +252,39 @@ describe("getAgendaSemanaMiembro", () => {
     expect(wed.miReserva).toBe(true);
     expect(mon.miReserva).toBe(false); // not in the reservation set
     expect(mon.disponibles).toBe(mon.capacidad); // absent from the count → 0 active
+  });
+
+  // Owner ruling 2026-08-03: a staff walk-in mark inflates `contar_reservas_activas` (the
+  // staff/roster seam — walk-ins included, 20260706170000), but must never drive a MEMBER's
+  // view of a session to LLENO. This proves the wiring: even when the OLD, walk-in-inclusive
+  // seam would report the session at capacity, the member reader's estado/disponibles follow
+  // the member-only `contar_reservas_activas_miembro` seam instead. Uses a FUTURE, non-first
+  // session (f2) so the estado ladder actually reaches the lleno check — a past session is
+  // always "termino" and a day's first session is always "a_continuacion" regardless of activos.
+  it("a staff walk-in mark never flips the member-facing estado to lleno (owner ruling 2026-08-03)", async () => {
+    const rows: Rows = {
+      class_session: [
+        { id: "f1", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "06:15"), duration_min: 45, capacity: 24, cancelled_at: null },
+        { id: "f2", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "18:15"), duration_min: 45, capacity: 10, cancelled_at: null },
+      ],
+      class_type: [{ id: "ct1", name: "Fuerza" }],
+      class_session_coach: [],
+      coach: [],
+    };
+    const semana = await getAgendaSemanaMiembro("2099-06-15", makeFake(rows, (name) => {
+      if (name === "contar_reservas_activas") {
+        // The staff/roster count — walk-ins included — reads as FULL (would-be LLENO).
+        return { data: [{ session_id: "f2", activos: 10 }], error: null };
+      }
+      if (name === "contar_reservas_activas_miembro") {
+        // The member-only count — walk-ins excluded — reads well under capacity.
+        return { data: [{ session_id: "f2", activos: 2 }], error: null };
+      }
+      return { data: [], error: null };
+    }));
+    const f2 = semana.dias[0].sesiones[1];
+    expect(f2.estado).not.toBe("lleno");
+    expect(f2.disponibles).toBe(f2.capacidad - 2);
   });
 
   it("flags favorita on sessions whose class type is the member's favorite (else false)", async () => {

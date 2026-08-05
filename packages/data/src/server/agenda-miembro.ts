@@ -25,7 +25,7 @@ import { derivarMembresia, type MembresiaDerivada } from "./derive";
 import { getPlanesPublicos } from "./marketing";
 
 export type { MembresiaDerivada } from "./derive";
-import { contarActivos } from "./ocupacion";
+import { contarActivosMiembro } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
 
 /**
@@ -38,8 +38,11 @@ import { createClient, type SupabaseServer } from "./supabase";
  * only sessions of the gym they belong to (class_session's is_member_of SELECT).
  *
  * It reuses @gym/domain's state ladder and @gym/format wholesale. Occupancy derives
- * through the single `contarActivos` seam (slice #57 repointed it from the 0-active
- * projection to the real count). The DTO is display-ready: hora / duración / weekday /
+ * through the `contarActivosMiembro` seam (slice #57 repointed it from the 0-active
+ * projection to the real count; owner ruling 2026-08-03 repointed it AGAIN, off the
+ * staff/roster `contarActivos` — walk-ins included — onto the member-only, walk-in-
+ * excluded count, so a door mark can never read as LLENO to a member who never booked
+ * anything). The DTO is display-ready: hora / duración / weekday /
  * dnum are formatted server-side in the gym tz, and the sala / nivel / descripción the
  * booking summary sheet renders ride along, so the client island is pure presentation
  * with no tz logic. `miReserva` flags the member's own active booking per session.
@@ -212,8 +215,9 @@ async function fetchSesionesMiembro(
     fetchFavoritoId(supabase, gymId),
     // Occupancy only needs sessionIds (known since the class_session select above) — batched
     // here instead of sequenced after this Promise.all, so it no longer gates the coach fetch
-    // below for no reason (perf).
-    contarActivos(supabase, sessionIds),
+    // below for no reason (perf). The MEMBER-only seam (owner ruling 2026-08-03) — walk-ins
+    // excluded, never the staff/roster `contarActivos`.
+    contarActivosMiembro(supabase, sessionIds),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
