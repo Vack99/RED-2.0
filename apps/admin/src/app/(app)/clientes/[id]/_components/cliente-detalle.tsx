@@ -184,9 +184,10 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   // LIBRE, which today's toggle-owned row is too — that copy lives at the ONE render site below.
   // A pre-#89 historial row has `origen: null` (provenance unknown, #178) and must NOT read as
   // ACCESO LIBRE — the toggle-owned "HOY" row IS always a real libre visit, so it hardcodes it.
-  const histRows: { dDisplay: string; hora: string | null; today: boolean; clase: string | null; origen: string | null }[] = [
-    ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true, clase: null, origen: "libre" }] : []),
-    ...ficha.clasesHoy.map((v) => ({ dDisplay: "HOY", hora: v.hora, today: true, clase: v.clase, origen: null })),
+  const histRows: { dDisplay: string; hora: string | null; today: boolean; clase: string | null; origen: "libre" | "clase" | null }[] = [
+    ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true, clase: null, origen: "libre" as const }] : []),
+    // A class visit — origen is factually 'clase' (clasesHoy is filtered on class_session_id !== null).
+    ...ficha.clasesHoy.map((v) => ({ dDisplay: "HOY", hora: v.hora, today: true, clase: v.clase, origen: "clase" as const })),
     ...ficha.historial,
   ];
 

@@ -264,7 +264,7 @@ export interface FichaAsistencia {
    *  real ACCESO LIBRE visit; null means the row predates #89 and never stamped one, so
    *  the leaf must render "—", never assert ACCESO LIBRE for a visit that may well have
    *  been an unrecorded class (#178: at forge, 189 of 206 pre-#89 class-less rows were). */
-  origen: string | null;
+  origen: "libre" | "clase" | null;
 }
 export interface FichaPago {
   fechaDisplay: string;
@@ -294,7 +294,7 @@ export interface FichaAsistRow {
   /** The visit's stated PROVENANCE (#89): 'libre' | 'clase' | null (row predates #89 —
    *  provenance unknown, #178). Threaded through to `FichaAsistencia.origen` so the ficha's
    *  historial never asserts ACCESO LIBRE for a class-less row it cannot actually attest. */
-  origen: string | null;
+  origen: "libre" | "clase" | null;
   /** The class itself, embedded on the same read (#178) — null on an ACCESO LIBRE row.
    *  Deliberately NOT filtered on `cancelled_at`: cancelling a session afterwards does
    *  not un-attend it, and dropping the embed would blank a real visit's label. */

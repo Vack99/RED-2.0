@@ -330,7 +330,7 @@ declare
   c_expired  uuid := current_setting('t.c_expired', true)::uuid;
   c_venceday uuid := current_setting('t.c_venceday', true)::uuid;
   v_agym uuid; v_clases int; v_present boolean; v_hora text; v_stored time; v_raised boolean; v_origen text;
-  v_perdonada boolean; v_saldo int;
+  v_perdonada boolean; v_saldo int; v_filas int;
 begin
   -- ── refund-iff-consumed-and-not-ilimitado + gym_id stamp + origen + the returned balance ────────
   select present, clases_restantes into v_present, v_saldo from public.toggle_pase(c_finite, v_today);
@@ -380,8 +380,8 @@ begin
   if not v_raised then raise exception 'RULE FAIL(a): a ZERO-BALANCE member was admitted at the desk (the #237 hole)'; end if;
   select clases_restantes into v_clases from public.clientes where id = c_zero;
   if v_clases <> 0 then raise exception 'RULE FAIL(a): the refused tap moved the balance to % (expected untouched 0)', v_clases; end if;
-  select count(*) into v_clases from public.asistencias where cliente_id = c_zero and deleted_at is null;
-  if v_clases <> 0 then raise exception 'RULE FAIL(a): the refused tap wrote % attendance rows (expected 0)', v_clases; end if;
+  select count(*) into v_filas from public.asistencias where cliente_id = c_zero and deleted_at is null;
+  if v_filas <> 0 then raise exception 'RULE FAIL(a): the refused tap wrote % attendance rows (expected 0)', v_filas; end if;
 
   -- ── hora-stamp-today-only ───────────────────────────────────────────────────────
   select present, hora into v_present, v_hora from public.toggle_pase(c_finite, v_today);

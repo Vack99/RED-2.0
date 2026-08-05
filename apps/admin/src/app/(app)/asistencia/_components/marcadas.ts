@@ -154,7 +154,7 @@ export function reservaAtribuible(
  */
 const BLOQUEOS_VENDIBLES = ["Sin clases disponibles", "Paquete vencido"];
 
-export function esBloqueoVendible(error: string): boolean {
+function esBloqueoVendible(error: string): boolean {
   return BLOQUEOS_VENDIBLES.includes(error);
 }
 

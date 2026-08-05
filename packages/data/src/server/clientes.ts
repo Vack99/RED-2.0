@@ -18,6 +18,7 @@ import {
   estadoInvitacion,
   shapeFicha,
   type ClienteDerivado,
+  type FichaAsistRow,
   type FichaDerivada,
   type InvitacionDerivada,
   type PaseClienteDTO,
@@ -529,7 +530,9 @@ export const getClienteFicha = cache(
 
     const ficha = shapeFicha(
       c,
-      asistRes.data ?? [],
+      // `origen` is narrower than the generated `string | null` column type here — the
+      // DB CHECK (asistencias_origen_kind_ck) backs the two literals FichaAsistRow declares.
+      (asistRes.data ?? []) as FichaAsistRow[],
       ventas,
       hoy,
       hoyIso,

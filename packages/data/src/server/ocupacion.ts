@@ -6,8 +6,7 @@ import type { SupabaseServer } from "./supabase";
  * The STAFF/roster derived-occupancy seam (ADR-0010 §3): every active reservation
  * (`reservada | asistida`, walk-ins included) per session, keyed by session id.
  * Repoints slice #56's documented 0-projection to the real count — the staff
- * `agenda.ts` reader (roster headcount) AND the `reservar_clase` capacity guard
- * resolve availability through this one path.
+ * `agenda.ts` reader (roster headcount) resolves availability through this path.
  *
  * The count comes from the `contar_reservas_activas` RPC, SECURITY DEFINER because a
  * member may read only their OWN reservation rows under RLS yet must see a truthful
@@ -15,9 +14,11 @@ import type { SupabaseServer } from "./supabase";
  * `is_member_of`, so it leaks no PII and no cross-gym data. Sessions with zero active
  * reservations are absent from the result — callers default a missing key to 0.
  *
- * NOT the member-facing seam (see `contarActivosMiembro` below) — this one deliberately
- * counts walk-ins too, because it is the operator's real headcount (owner ruling
- * 2026-08-03: "17/15" is truth for her).
+ * NOT the member-facing seam (see `contarActivosMiembro` below) and, as of
+ * 20260804130000, NOT `reservar_clase`'s capacity guard either — this one is now
+ * ONLY the operator's real headcount (owner ruling 2026-08-03: "17/15" is truth for
+ * her). A walk-in mark drives THIS count past cupo on purpose; it must never drive a
+ * booking gate.
  */
 export async function contarActivos(
   supabase: SupabaseServer,
@@ -38,9 +39,17 @@ export async function contarActivos(
  * writing `status = 'asistida', is_walk_in = true`) is a real body in the room the
  * operator already accounted for, not a spot a member could have booked; counting it
  * here would drive a member's `derivarEstadoSesion` to LLENO over headcount they were
- * never offered a seat against. Both member agenda readers (`agenda-miembro.ts`,
- * `clase-miembro.ts`) resolve occupancy through this seam — never `contarActivos`,
- * which stays the staff/roster/`reservar_clase` path, untouched.
+ * never offered a seat against.
+ *
+ * ONE PROJECTION (ADR-0010 §3), READ AND WRITE: both member agenda readers
+ * (`agenda-miembro.ts`, `clase-miembro.ts`) resolve occupancy through this seam, and
+ * so does `reservar_clase`'s own capacity guard (20260804130000) — SQL-to-SQL, calling
+ * `contar_reservas_activas_miembro` directly rather than through this TS wrapper, but
+ * the same walk-in-excluded count. Before 20260804130000 the guard still read through
+ * `contar_reservas_activas`, so a member's own booking attempt could raise 'Clase
+ * llena' on a session their own agenda read as having room — the seam split this
+ * function closes. `contarActivos` stays the deliberate exception: the staff/roster
+ * headcount alone still counts walk-ins.
  *
  * Backed by `contar_reservas_activas_miembro` (20260804110000) — same DEFINER +
  * `is_member_of` shape as `contar_reservas_activas`, filtered on `is_walk_in`.

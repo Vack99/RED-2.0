@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   ctxDe,
-  esBloqueoVendible,
   LIBRE,
   personasEn,
   reservaAtribuible,
@@ -189,27 +188,30 @@ describe("reservaAtribuible — what the RESERVA chip is allowed to promise", ()
 });
 
 /**
- * Which refusals a SALE fixes at the desk (#237, owner ruling 2026-08-04). The strings are our
- * own `raise exception` literals (toggle_pase / pasar_lista_sesion, 20260804120000), so exact
+ * Which refusals a SALE fixes at the desk (#237, owner ruling 2026-08-04) — exercised through
+ * `sugerenciaVenta`, the predicate's only caller (the match itself is unexported). The strings are
+ * our own `raise exception` literals (toggle_pase / pasar_lista_sesion, 20260804120000), so exact
  * match is the contract — the negative cases matter as much as the positive ones: offering VENDER
  * on a refusal a package cannot fix would send the operator to charge a member for nothing.
  */
-describe("esBloqueoVendible", () => {
+describe("sugerenciaVenta's sellable-wall match", () => {
+  const MARISA = { id: "c1", nombre: "Marisa Rangel" };
+
   it("catches both sellable walls — an empty balance and a lapsed vigencia", () => {
-    expect(esBloqueoVendible("Sin clases disponibles")).toBe(true);
-    expect(esBloqueoVendible("Paquete vencido")).toBe(true);
+    expect(sugerenciaVenta("Sin clases disponibles", MARISA)).not.toBeNull();
+    expect(sugerenciaVenta("Paquete vencido", MARISA)).not.toBeNull();
   });
 
   it.each(["Ya marcada en la clase de 18:00", "Cliente no encontrado", "No autenticado"])(
     "refuses '%s' — no paquete on earth changes that fact",
     (error) => {
-      expect(esBloqueoVendible(error)).toBe(false);
+      expect(sugerenciaVenta(error, MARISA)).toBeNull();
     },
   );
 
   it("is exact, never fuzzy: an empty string and a near-miss are both no", () => {
-    expect(esBloqueoVendible("")).toBe(false);
-    expect(esBloqueoVendible("paquete vencido")).toBe(false);
+    expect(sugerenciaVenta("", MARISA)).toBeNull();
+    expect(sugerenciaVenta("paquete vencido", MARISA)).toBeNull();
   });
 });
 
