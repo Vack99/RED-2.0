@@ -9,8 +9,10 @@ convenient). Epic merge closes #233 #166 #167 #171 #172 #232. Session ends with 
 
 ## State
 
-- **Git:** local `main` = `9c34702`, one docs commit ahead of origin — rides the next consented push.
-  This worktree (`reserva-manual-agenda`) is merged and reusable, or start fresh from `main`.
+- **Git:** local `main` is ahead of origin with unpushed docs + test commits (another session
+  committed test vectors to main mid-handoff — `git log origin/main..main` before assuming anything);
+  they ride the next consented push. This worktree (`reserva-manual-agenda`) is merged and reusable,
+  or start fresh from `main`.
 - **Live DB:** current through `20260803140000`. `reservar_clase`/`cancelar_reserva` already take
   `(p_session_id, p_cliente_id default null)` — the epic does NOT touch them (spec pins it).
 - **Scratch:** `gyyujeguycxxoaqgdnjp`, current through `20260803140000`, PAT at
