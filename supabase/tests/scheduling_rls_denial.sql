@@ -17,7 +17,10 @@
 --   3) cross-tenant operator (staff of gym B only): reads 0 of gym A's rows; direct update affects 0;
 --      direct insert denied by with-check; create_class_session referencing gym A's class_type RAISES;
 --      edit/cancel of gym A's session RAISE (RLS scopes the row out → "not found"); delete on gym A's
---      coach join affects 0.
+--      coach join affects 0; and — #243 — retire_recurring_schedule refuses gym A's TEMPLATE, with
+--      ZERO rows written across schedule_template / class_session / reservation / clientes. That gym
+--      pin matters because schedule_template's SELECT policy is is_member_of, which is WIDER than
+--      staff: without it a multi-gym actor would get a silently-zero-row fan-out instead of a refusal.
 --   4) gym-A MEMBER (is_member_of, no staff role): reads sessions/templates but every direct write
 --      affects 0, and the staff RPCs refuse them (staff_gym() = NULL → "No autorizado").
 --
@@ -90,6 +93,8 @@ begin
   perform set_config('t.operator_b', operator_b::text, true);
   perform set_config('t.member_a',   member_a::text,   true);
   perform set_config('t.ct_a',       ct_a::text,       true);
+  perform set_config('t.ct_b',       ct_b::text,       true);
+  perform set_config('t.tmpl_a',     tmpl_a::text,     true);
   perform set_config('t.session_a',  session_a::text,  true);
 end $$;
 
@@ -134,8 +139,11 @@ declare
   n int;
   gym_a     uuid := current_setting('t.gym_a', true)::uuid;
   ct_a      uuid := current_setting('t.ct_a', true)::uuid;
+  ct_b      uuid := current_setting('t.ct_b', true)::uuid;
+  tmpl_a    uuid := current_setting('t.tmpl_a', true)::uuid;
   session_a uuid := current_setting('t.session_a', true)::uuid;
   raised boolean;
+  msg text;
 begin
   select count(*) into n from public.class_session where gym_id = gym_a;           if n <> 0 then raise exception 'DENIAL FAIL: operator_b sees % of gym A''s class_session rows', n; end if;
   select count(*) into n from public.class_session_coach where gym_id = gym_a;     if n <> 0 then raise exception 'DENIAL FAIL: operator_b sees % of gym A''s class_session_coach rows', n; end if;
@@ -168,8 +176,61 @@ begin
   begin perform public.cancel_class_session(session_a);
   exception when others then raised := true; end;
   if not raised then raise exception 'DENIAL FAIL: operator_b cancelled gym A''s session'; end if;
+
+  -- #243 THE SERIES VERB. The template's gym pin is the only thing that can refuse this — the fence
+  -- under test, and the one the is_member_of SELECT policy would otherwise leave as a silent
+  -- zero-row no-op. The message is pinned so the refusal cannot come from somewhere else.
+  raised := false;
+  begin perform public.retire_recurring_schedule(tmpl_a);
+  exception when others then raised := true; msg := sqlerrm; end;
+  if not raised then raise exception 'DENIAL FAIL: operator_b retired gym A''s recurring schedule'; end if;
+  if msg is distinct from 'Horario no encontrado o ya retirado' then
+    raise exception 'DENIAL FAIL: retire_recurring_schedule refused for the wrong reason (%)', msg;
+  end if;
 end $$;
 reset role;
+
+-- ── #243: the two refused series calls wrote NOTHING, read back as ops ────────────────────────────
+-- Read after `reset role` on purpose: gym A's rows are invisible to operator_b, so a leak asserted
+-- from inside the block above would come back as a comfortable zero. Four tables, because a series
+-- verb is the first RPC in this spine that can reach all four in one call.
+do $$
+declare
+  gym_a  uuid := current_setting('t.gym_a', true)::uuid;
+  tmpl_a uuid := current_setting('t.tmpl_a', true)::uuid;
+  n int;
+  r record;
+begin
+  select class_type_id, weekday, start_time, duration_min, capacity, is_active into r
+    from public.schedule_template where id = tmpl_a;
+  if r.class_type_id is distinct from current_setting('t.ct_a', true)::uuid
+     or r.weekday is distinct from 0
+     or r.start_time is distinct from '18:00'::time
+     or r.duration_min is distinct from 45
+     or r.capacity is distinct from 24
+     or r.is_active is distinct from true then
+    raise exception 'DENIAL FAIL(#243): the refused calls rewrote gym A''s template (ct % wd % t % dur % cap % active %)',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity, r.is_active;
+  end if;
+
+  select starts_at, template_id, cancelled_at, duration_min, capacity into r
+    from public.class_session where id = current_setting('t.session_a', true)::uuid;
+  if r.starts_at is distinct from '2026-07-06 18:00:00-06'::timestamptz
+     or r.template_id is distinct from tmpl_a
+     or r.cancelled_at is not null
+     or r.duration_min is distinct from 45
+     or r.capacity is distinct from 24 then
+    raise exception 'DENIAL FAIL(#243): the refused calls rewrote gym A''s session (at % tmpl % cancelled % dur % cap %)',
+      r.starts_at, r.template_id, r.cancelled_at, r.duration_min, r.capacity;
+  end if;
+  select count(*) into n from public.class_session where gym_id = gym_a;
+  if n <> 1 then raise exception 'DENIAL FAIL(#243): gym A has % class_session rows after the refused calls (expected 1)', n; end if;
+
+  select count(*) into n from public.reservation where gym_id = gym_a;
+  if n <> 0 then raise exception 'DENIAL FAIL(#243): the refused calls wrote % reservation row(s) into gym A', n; end if;
+  select count(*) into n from public.clientes where gym_id = gym_a;
+  if n <> 0 then raise exception 'DENIAL FAIL(#243): the refused calls wrote % clientes row(s) into gym A', n; end if;
+end $$;
 
 -- ── member of gym A: reads sessions/templates, but every write affects 0 and staff RPCs refuse ──
 select set_config('request.jwt.claims',

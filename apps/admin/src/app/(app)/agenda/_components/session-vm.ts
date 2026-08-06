@@ -1,5 +1,6 @@
 import { antesDeVentanaArribo } from "@gym/domain/rules";
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
+import type { EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 import type { VentaSugerida } from "@gym/ui/forge/agenda/session-roster";
 import type { EstadoSesion as EstadoUi } from "@gym/ui/forge/agenda/session-view";
 
@@ -9,6 +10,10 @@ import type { EstadoSesion as EstadoUi } from "@gym/ui/forge/agenda/session-view
  * 4-value UI estado plus an orthogonal `isNext` accent — this pure seam bridges
  * them, joins the coaches, and selects the ★-especial flag. Fully serializable so
  * the server page can hand it straight to the client orchestrator.
+ *
+ * It also owns the editor's draft seeds and the two #243 series receipts: the
+ * orchestrator around it is a React component with no test surface, so every
+ * decision that can be a pure function lives here instead.
  */
 
 export interface CardVM {
@@ -34,6 +39,9 @@ export interface CardVM {
   /** The stored is_special fact — the sheet/editor identity (shows even for the next class). */
   esEspecial: boolean;
   specialName: string | null;
+  /** The generating `schedule_template.id`, or `null` for a one-off (#243) — what lets the
+   *  editor sheet offer the series scope toggle only for a generated class. */
+  templateId: string | null;
 }
 
 export function toCardVM(dto: SesionAgendaDTO, hora: string): CardVM {
@@ -57,7 +65,71 @@ export function toCardVM(dto: SesionAgendaDTO, hora: string): CardVM {
     isSpecial: dto.muestraEspecial,
     esEspecial: dto.esEspecial,
     specialName: dto.nombreEspecial,
+    templateId: dto.templateId,
   };
+}
+
+const EMPTY_REPEAT: boolean[] = [false, false, false, false, false, false];
+
+/** Editor defaults for a new class (PRD #36 e): 18:00 / 45 min / cupo 24, first tipo. */
+export function createDraft(tipoInicial: string): EditorDraft {
+  return {
+    tipo: tipoInicial,
+    hora: "18:00",
+    duracionMin: 45,
+    cupo: 24,
+    coachIds: [],
+    repeatDays: [...EMPTY_REPEAT],
+    alcance: "clase",
+    isSpecial: false,
+    specialName: "",
+  };
+}
+
+/**
+ * Seed the editor from an existing session. `repeatDays` stays empty — the weekday
+ * row is the create flow's alone — and `alcance` re-seeds to "clase" on EVERY open
+ * (#243): "esta y las siguientes" is a per-open decision, never sticky, so a series
+ * edit can't leave its blast radius armed for the next card the operator taps.
+ */
+export function editDraftFrom(card: CardVM): EditorDraft {
+  return {
+    tipo: card.tipo,
+    hora: card.time,
+    duracionMin: card.mins,
+    cupo: card.cap,
+    coachIds: card.coachIds,
+    repeatDays: [...EMPTY_REPEAT],
+    alcance: "clase",
+    isSpecial: card.esEspecial,
+    specialName: card.specialName ?? "",
+  };
+}
+
+/**
+ * Did the operator actually touch the coach multi-select? A series write sends
+ * `coachIds` only when they did, because `editDraftFrom` seeds them from the ONE
+ * clicked session — an unconditional replace would stamp last week's substitute onto
+ * the whole schedule. `update_recurring_schedule` leaves the coach set alone when the
+ * argument is omitted, and this is what decides to omit it. Order-insensitive: the
+ * multi-select appends taps, so a re-tapped-back set is still unchanged.
+ */
+export function coachIdsCambiaron(seed: string[], actual: string[]): boolean {
+  return seed.length !== actual.length || seed.some((id) => !actual.includes(id));
+}
+
+/**
+ * The "esta y las siguientes" receipt (#243). The count is what the RPC actually
+ * moved, and it can legitimately be lower than the horizon: a class whose new time
+ * would land in the past is detached from the rule instead of moved.
+ */
+export function movidasLinea(clasesMovidas: number): string {
+  return `${clasesMovidas} ${clasesMovidas === 1 ? "clase futura movida" : "clases futuras movidas"}`;
+}
+
+/** The "terminar el horario" receipt: every future class cancelled, every held class back. */
+export function canceladasLinea(clasesCanceladas: number): string {
+  return `${clasesCanceladas} ${clasesCanceladas === 1 ? "clase cancelada" : "clases canceladas"} · clases devueltas`;
 }
 
 /**

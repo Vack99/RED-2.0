@@ -38,6 +38,16 @@ export function topTag({
   return null;
 }
 
+/**
+ * The series tag, and it names the EXCEPTION (#243): a gym runs ~21 repeating
+ * schedules, so a "se repite" glyph would land on ~100% of cards and carry zero
+ * information — the class that stands alone is the informative one. `null` renders
+ * nothing.
+ */
+export function serieTag(esUnica: boolean): string | null {
+  return esUnica ? "Única" : null;
+}
+
 export interface SessionCardProps {
   time: string;
   mins: number;
@@ -49,6 +59,8 @@ export interface SessionCardProps {
   isNext?: boolean;
   isSpecial?: boolean;
   specialName?: string | null;
+  /** No generating `schedule_template` — a hand-made or hand-detached class (#243). */
+  esUnica?: boolean;
   onClick?: () => void;
 }
 
@@ -63,11 +75,13 @@ export function SessionCard({
   isNext = false,
   isSpecial = false,
   specialName = null,
+  esUnica = false,
   onClick,
 }: SessionCardProps) {
   const v = estadoVisual(estado);
   const accented = railAccent({ isNext, isSpecial });
   const tag = topTag({ isNext, isSpecial, specialName });
+  const serie = serieTag(esUnica);
   const countCol = v.dimmed ? "var(--muted-soft)" : "var(--fg)";
   const pct = occupancyPct(booked, cap);
 
@@ -114,6 +128,11 @@ export function SessionCard({
             <span style={{ display: "block", fontSize: 10, fontWeight: 500, letterSpacing: 0.3, color: "var(--muted)", marginTop: 6 }}>
               {mins} min
             </span>
+            {serie && (
+              <span className="uppercase" style={{ display: "block", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.7, color: "var(--muted-soft)", marginTop: 6 }}>
+                {serie}
+              </span>
+            )}
           </span>
           <span style={{ flex: 1, minWidth: 0 }}>
             <span

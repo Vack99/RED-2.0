@@ -1,6 +1,7 @@
 "use server";
 
 import {
+  actualizarHorarioRecurrente,
   cancelarReservaCliente,
   cancelarSesion,
   crearHorarioRecurrente,
@@ -9,6 +10,8 @@ import {
   getSesionRoster,
   pasarListaSesion,
   reservarClaseCliente,
+  retirarHorarioRecurrente,
+  type ActualizarHorarioRecurrenteInput,
   type AgendaResultado,
   type CancelarSesionInput,
   type CrearHorarioRecurrenteInput,
@@ -16,6 +19,7 @@ import {
   type EditarSesionInput,
   type PasarListaSesionInput,
   type ReservaClienteInput,
+  type RetirarHorarioRecurrenteInput,
   type SesionRosterDTO,
 } from "@gym/data/server/agenda";
 import { crearClassType } from "@gym/data/server/catalog";
@@ -36,6 +40,22 @@ export async function crearHorarioRecurrenteAction(
   input: CrearHorarioRecurrenteInput,
 ): Promise<AgendaResultado<{ templateIds: string[] }>> {
   return crearHorarioRecurrente(input);
+}
+
+/** "Esta y las siguientes": move a recurring schedule's future classes in place —
+ *  bookings ride along, nothing is charged or refunded (#243). */
+export async function actualizarHorarioRecurrenteAction(
+  input: ActualizarHorarioRecurrenteInput,
+): Promise<AgendaResultado<{ clasesMovidas: number }>> {
+  return actualizarHorarioRecurrente(input);
+}
+
+/** "Terminar el horario": stop a recurring schedule and cancel its future classes,
+ *  refunding every hold through the same path the single-class cancel uses (#243). */
+export async function retirarHorarioRecurrenteAction(
+  input: RetirarHorarioRecurrenteInput,
+): Promise<AgendaResultado<{ clasesCanceladas: number }>> {
+  return retirarHorarioRecurrente(input);
 }
 
 export async function editarSesionAction(input: EditarSesionInput): Promise<AgendaResultado> {

@@ -35,7 +35,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them;
 // class_horizon_autoroll follows scheduling_materialization because it is the same rule seen from the
 // other side — #136's weekly pg_cron pass over the WHOLE fleet, through the shared core that
-// ensure_week_materialized now delegates to), and
+// ensure_week_materialized now delegates to; retire_recurring_schedule closes that trio with the same
+// spine seen from the OPERATOR's side — #243's "terminar el horario", which settles money, which is
+// why it runs after the materialization pair rather than beside them), and
 // then dos_gimnasios_tenant_pin — the two-membership actor (#219), which generalizes the single-gym
 // favorito/mi_membresia rules just above it — then revocacion_sesion_membresia (#218), which reuses
 // that two-membership shape to prove session revocation is global, then class_session_delete_restrict
@@ -75,6 +77,7 @@ export const SUITE = [
   'scheduling_rls_denial.sql',
   'scheduling_materialization.sql',
   'class_horizon_autoroll.sql',
+  'retire_recurring_schedule.sql',
   'gym_content_denial.sql',
   'anon_catalog_read.sql',
   'contact_intake.sql',

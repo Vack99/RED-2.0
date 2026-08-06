@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { railAccent, topTag } from "./session-card";
+import { railAccent, serieTag, topTag } from "./session-card";
 
 /**
  * The card's two accent axes are independent of the occupancy `estado`:
@@ -31,5 +31,19 @@ describe("topTag", () => {
   });
   it("is null for an ordinary session", () => {
     expect(topTag({ isNext: false, isSpecial: false })).toBeNull();
+  });
+});
+
+/**
+ * The series tag badges the EXCEPTION (#243). This is the whole rule, and it is
+ * inverted on purpose: a gym runs ~21 repeating schedules, so tagging the repeating
+ * class would put a glyph on ~100% of cards and say nothing. The lone class is news.
+ */
+describe("serieTag", () => {
+  it("badges a class with no rule behind it", () => {
+    expect(serieTag(true)).toBe("Única");
+  });
+  it("says nothing for a generated class — the majority carries no information", () => {
+    expect(serieTag(false)).toBeNull();
   });
 });

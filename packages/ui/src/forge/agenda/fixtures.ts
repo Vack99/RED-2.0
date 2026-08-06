@@ -66,6 +66,7 @@ export const EDITOR_DRAFT_FIXTURE: EditorDraft = {
   cupo: 24,
   coachIds: [],
   repeatDays: [false, false, false, false, false, false],
+  alcance: "clase",
   isSpecial: false,
   specialName: "",
 };

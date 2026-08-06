@@ -8,9 +8,10 @@ import { WheelPickerSheet } from "./wheel-picker";
 /**
  * The session editor: a right-sliding full panel over the agenda. Field rows open
  * the wheel picker (tipo, hora, duración, cupo), a coach multi-select over the
- * catalog, a "Se repite" weekday toggle row (L M Mi J V S), and an "Evento
- * especial" switch that reveals a name input. Primary save + discard, plus a
- * destructive "Cancelar esta clase" when editing. Token-only.
+ * catalog, one toggle row — the "Se repite" weekdays when creating, the #243 scope
+ * control when editing a generated class — and an "Evento especial" switch that
+ * reveals a name input. Primary save + discard, plus one destructive button when
+ * editing whose label AND handler follow the scope toggle. Token-only.
  *
  * The mock's free-text coach field is deliberately replaced by a multi-select
  * over the `coach` catalog (PRD (e), invariant §5.4): no coach chosen renders
@@ -18,6 +19,14 @@ import { WheelPickerSheet } from "./wheel-picker";
  */
 
 export const WEEKDAY_TOGGLES = ["L", "M", "Mi", "J", "V", "S"] as const;
+
+/** How wide an edit writes (#243): this dated class alone, or the rule behind it. */
+export type EditorAlcance = "clase" | "serie";
+
+export const ALCANCE_TOGGLES: { value: EditorAlcance; label: string }[] = [
+  { value: "clase", label: "Solo esta clase" },
+  { value: "serie", label: "Esta y las siguientes" },
+];
 
 export function editorTitle(isEdit: boolean): string {
   return isEdit ? "Editar clase" : "Nueva clase";
@@ -32,6 +41,43 @@ export function especialNombre(name: string): string {
   return name.trim() || "Especial";
 }
 
+/**
+ * The scope caption, or `null` for the narrow scope (which needs no explaining).
+ * The wide arm has to say all three things at once: what moves, what does not, and
+ * that a booked member keeps their spot — a move is not a refund (#243 §4).
+ */
+export function alcanceCaption(alcance: EditorAlcance): string | null {
+  return alcance === "serie"
+    ? "Cambia esta clase y las futuras. Las pasadas no se tocan. Las reservas se mueven con la clase."
+    : null;
+}
+
+/** The one destructive button's label — it follows the scope toggle (#243). */
+export function cancelLabel(alcance: EditorAlcance): string {
+  return alcance === "serie" ? "Terminar el horario" : "Cancelar esta clase";
+}
+
+/**
+ * The confirm the wide arm must clear, or `null` to fire straight through. Only the
+ * series arm is gated: cancelling one class is one class, while "Terminar el horario"
+ * cancels every future class of the schedule and hands back every held class.
+ */
+export function cancelConfirm(alcance: EditorAlcance): string | null {
+  return alcance === "serie"
+    ? "Se cancelarán todas las clases futuras de este horario y se devolverán las clases reservadas. No se puede deshacer."
+    : null;
+}
+
+/**
+ * Cupo shrunk below what is already booked: WARN, never refuse (#243 §7). Refusing
+ * would trap an operator whose one booking is six weeks out; `reservar_clase` already
+ * blocks NEW bookings and the quick-glance already reads "Clase llena · sin lugares".
+ * `null` renders nothing.
+ */
+export function cupoAviso(cupo: number, reservas: number): string | null {
+  return reservas > cupo ? `Cupo por debajo de las ${reservas} reservas · nadie pierde su lugar` : null;
+}
+
 export interface CoachOption {
   id: string;
   label: string;
@@ -43,7 +89,10 @@ export interface EditorDraft {
   duracionMin: number;
   cupo: number;
   coachIds: string[];
+  /** Create-only: the weekdays a new class repeats on. Edit never reads it. */
   repeatDays: boolean[];
+  /** Edit-only (#243): how wide save + the destructive button write. */
+  alcance: EditorAlcance;
   isSpecial: boolean;
   specialName: string;
 }
@@ -57,6 +106,11 @@ export interface EditorSheetProps {
   horaOptions: string[];
   duracionOptions: number[];
   cupoOptions: number[];
+  /** The edited class came from a repeating rule (#243) — the only case that offers
+   *  the scope toggle. A one-off (or a hand-detached class) is always its own scope. */
+  esSerie?: boolean;
+  /** Bookings already on the edited class — drives the cupo-shrink warning. */
+  reservasActuales?: number;
   onPatch: (patch: Partial<EditorDraft>) => void;
   onAddTipo?: (name: string) => void;
   onSave: () => void;
@@ -68,6 +122,23 @@ export interface EditorSheetProps {
 type PickerKey = "tipo" | "hora" | "duracion" | "cupo" | null;
 
 const LABEL_STYLE: React.CSSProperties = { fontSize: 9.5, fontWeight: 700, letterSpacing: 1.6, color: "var(--muted)" };
+/** The under-a-control note ("Por asignar", the scope caption, the cupo warning). */
+const NOTE_STYLE: React.CSSProperties = { marginTop: 8, fontSize: 11.5, letterSpacing: 0.3, color: "var(--muted)" };
+/** One segmented toggle — the weekday row's look, shared with the #243 scope row. */
+function toggleStyle(on: boolean): React.CSSProperties {
+  return {
+    flex: 1,
+    textAlign: "center",
+    padding: "11px 6px",
+    fontSize: 11,
+    fontWeight: 800,
+    fontFamily: "inherit",
+    cursor: "pointer",
+    background: on ? "var(--yellow)" : "transparent",
+    color: on ? "var(--ink)" : "var(--muted)",
+    border: on ? "none" : "1px solid var(--line)",
+  };
+}
 const ROW_STYLE: React.CSSProperties = {
   width: "100%",
   marginTop: 9,
@@ -98,6 +169,8 @@ export function EditorSheet({
   horaOptions,
   duracionOptions,
   cupoOptions,
+  esSerie = false,
+  reservasActuales = 0,
   onPatch,
   onAddTipo,
   onSave,
@@ -106,6 +179,12 @@ export function EditorSheet({
   onClose,
 }: EditorSheetProps) {
   const [picker, setPicker] = React.useState<PickerKey>(null);
+
+  // The scope exists only for a generated class being edited; everything else is its
+  // own scope, so the label, the caption and the confirm all read from this one value.
+  const alcance: EditorAlcance = isEdit && esSerie ? draft.alcance : "clase";
+  const caption = alcanceCaption(alcance);
+  const aviso = cupoAviso(draft.cupo, reservasActuales);
 
   const toggleCoach = (id: string) => {
     const next = draft.coachIds.includes(id) ? draft.coachIds.filter((c) => c !== id) : [...draft.coachIds, id];
@@ -170,8 +249,11 @@ export function EditorSheet({
           {fieldRow("Duración", `${draft.duracionMin} min`, "duracion")}
         </div>
 
-        {/* Cupo */}
-        <div style={{ marginTop: 20 }}>{fieldRow("Cupo", `${draft.cupo} ${draft.cupo === 1 ? "persona" : "personas"}`, "cupo")}</div>
+        {/* Cupo — a shrink below the current bookings warns, it never refuses. */}
+        <div style={{ marginTop: 20 }}>
+          {fieldRow("Cupo", `${draft.cupo} ${draft.cupo === 1 ? "persona" : "personas"}`, "cupo")}
+          {aviso && <div style={{ ...NOTE_STYLE, color: "var(--yellow)" }}>{aviso}</div>}
+        </div>
 
         {/* Coaches — catalog multi-select */}
         <div style={{ marginTop: 20 }}>
@@ -205,70 +287,75 @@ export function EditorSheet({
               );
             })}
           </div>
-          {draft.coachIds.length === 0 && <div style={{ marginTop: 8, fontSize: 11.5, letterSpacing: 0.3, color: "var(--muted)" }}>Por asignar</div>}
+          {draft.coachIds.length === 0 && <div style={NOTE_STYLE}>Por asignar</div>}
         </div>
 
-        {/* Se repite */}
-        <div style={{ marginTop: 20 }}>
-          <div className="uppercase" style={LABEL_STYLE}>
-            Se repite
-          </div>
-          <div className="flex" style={{ marginTop: 9, gap: 5 }}>
-            {WEEKDAY_TOGGLES.map((lab, i) => {
-              const on = draft.repeatDays[i];
-              return (
-                <button
-                  key={lab}
-                  type="button"
-                  onClick={() => toggleDay(i)}
-                  aria-pressed={on}
-                  className="uppercase"
-                  style={{
-                    flex: 1,
-                    textAlign: "center",
-                    padding: "11px 0",
-                    fontSize: 11,
-                    fontWeight: 800,
-                    fontFamily: "inherit",
-                    cursor: "pointer",
-                    background: on ? "var(--yellow)" : "transparent",
-                    color: on ? "var(--ink)" : "var(--muted)",
-                    border: on ? "none" : "1px solid var(--line)",
-                  }}
-                >
+        {/* One toggle row, two jobs. Creating: the "Se repite" weekdays. Editing a
+            generated class: the #243 scope, which governs BOTH the save path and the
+            destructive one — so the sheet keeps three buttons, not five. Editing a
+            one-off: neither, because neither control means anything there. */}
+        {!isEdit && (
+          <div style={{ marginTop: 20 }}>
+            <div className="uppercase" style={LABEL_STYLE}>
+              Se repite
+            </div>
+            <div className="flex" style={{ marginTop: 9, gap: 5 }}>
+              {WEEKDAY_TOGGLES.map((lab, i) => (
+                <button key={lab} type="button" onClick={() => toggleDay(i)} aria-pressed={draft.repeatDays[i]} className="uppercase" style={toggleStyle(draft.repeatDays[i])}>
                   {lab}
                 </button>
-              );
-            })}
+              ))}
+            </div>
           </div>
-        </div>
+        )}
+        {isEdit && esSerie && (
+          <div style={{ marginTop: 20 }}>
+            <div className="uppercase" style={LABEL_STYLE}>
+              Alcance del cambio
+            </div>
+            <div className="flex" style={{ marginTop: 9, gap: 5 }}>
+              {ALCANCE_TOGGLES.map((opt) => (
+                <button key={opt.value} type="button" onClick={() => onPatch({ alcance: opt.value })} aria-pressed={alcance === opt.value} className="uppercase" style={toggleStyle(alcance === opt.value)}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            {caption && <div style={NOTE_STYLE}>{caption}</div>}
+          </div>
+        )}
 
-        {/* Evento especial */}
-        <div
-          className="flex items-center justify-between"
-          style={{ marginTop: 20, border: `1px solid ${draft.isSpecial ? "var(--yellow-edge)" : "var(--line)"}`, background: draft.isSpecial ? "var(--yellow-soft)" : "var(--canvas)", padding: 14 }}
-        >
-          <div className="flex items-center" style={{ gap: 9 }}>
-            <SpecialStar size={15} />
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Evento especial</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => onPatch({ isSpecial: !draft.isSpecial })}
-            aria-label="Evento especial"
-            aria-pressed={draft.isSpecial}
-            style={{ width: 42, height: 24, background: draft.isSpecial ? "var(--yellow)" : "var(--line)", border: "none", position: "relative", cursor: "pointer", padding: 0 }}
-          >
-            <span style={{ position: "absolute", top: 3, left: draft.isSpecial ? 21 : 3, width: 18, height: 18, background: "var(--fg)", transition: "left .2s ease" }} />
-          </button>
-        </div>
-        {draft.isSpecial && (
-          <input
-            value={draft.specialName}
-            onChange={(e) => onPatch({ specialName: e.target.value })}
-            placeholder="Nombre del evento"
-            style={{ width: "100%", marginTop: 8, background: "var(--canvas)", border: "1px solid var(--line)", color: "var(--fg)", fontFamily: "inherit", fontSize: 14, padding: 12, outline: "none" }}
-          />
+        {/* Evento especial — a property of ONE dated class, never of the rule
+            (update_recurring_schedule has no such parameter), so the wide scope hides
+            it rather than taking a toggle it would silently drop. */}
+        {alcance === "clase" && (
+          <>
+            <div
+              className="flex items-center justify-between"
+              style={{ marginTop: 20, border: `1px solid ${draft.isSpecial ? "var(--yellow-edge)" : "var(--line)"}`, background: draft.isSpecial ? "var(--yellow-soft)" : "var(--canvas)", padding: 14 }}
+            >
+              <div className="flex items-center" style={{ gap: 9 }}>
+                <SpecialStar size={15} />
+                <span style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)" }}>Evento especial</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onPatch({ isSpecial: !draft.isSpecial })}
+                aria-label="Evento especial"
+                aria-pressed={draft.isSpecial}
+                style={{ width: 42, height: 24, background: draft.isSpecial ? "var(--yellow)" : "var(--line)", border: "none", position: "relative", cursor: "pointer", padding: 0 }}
+              >
+                <span style={{ position: "absolute", top: 3, left: draft.isSpecial ? 21 : 3, width: 18, height: 18, background: "var(--fg)", transition: "left .2s ease" }} />
+              </button>
+            </div>
+            {draft.isSpecial && (
+              <input
+                value={draft.specialName}
+                onChange={(e) => onPatch({ specialName: e.target.value })}
+                placeholder="Nombre del evento"
+                style={{ width: "100%", marginTop: 8, background: "var(--canvas)", border: "1px solid var(--line)", color: "var(--fg)", fontFamily: "inherit", fontSize: 14, padding: 12, outline: "none" }}
+              />
+            )}
+          </>
         )}
 
         <button
@@ -282,11 +369,15 @@ export function EditorSheet({
         {isEdit && onCancelClass && (
           <button
             type="button"
-            onClick={onCancelClass}
+            onClick={() => {
+              const pregunta = cancelConfirm(alcance);
+              if (pregunta && !window.confirm(pregunta)) return;
+              onCancelClass();
+            }}
             className="uppercase"
             style={{ marginTop: 10, width: "100%", padding: 14, background: "transparent", border: "1px solid color-mix(in srgb, var(--red) 35%, transparent)", color: "var(--red)", fontFamily: "inherit", fontSize: 11, fontWeight: 800, letterSpacing: 1, cursor: "pointer" }}
           >
-            Cancelar esta clase
+            {cancelLabel(alcance)}
           </button>
         )}
         <button

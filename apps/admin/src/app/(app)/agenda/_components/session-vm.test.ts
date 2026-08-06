@@ -2,7 +2,17 @@ import { describe, expect, it } from "vitest";
 
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 
-import { accionAgregar, esBloqueoVendible, sugerenciaVenta, toCardVM } from "./session-vm";
+import {
+  accionAgregar,
+  canceladasLinea,
+  coachIdsCambiaron,
+  createDraft,
+  editDraftFrom,
+  esBloqueoVendible,
+  movidasLinea,
+  sugerenciaVenta,
+  toCardVM,
+} from "./session-vm";
 
 /**
  * The page's DTO -> card/row view model. The DAL derives a 5-value domain estado
@@ -26,6 +36,7 @@ function dto(over: Partial<SesionAgendaDTO> = {}): SesionAgendaDTO {
     muestraEspecial: false,
     roomId: null,
     coaches: [],
+    templateId: null,
     ...over,
   };
 }
@@ -76,6 +87,126 @@ describe("toCardVM", () => {
 
   it("carries the ABSOLUTE start as ISO — the tense predicate can't read the tz-folded hora (#238)", () => {
     expect(toCardVM(dto(), "08:00").startsAtIso).toBe("2026-06-17T14:00:00.000Z");
+  });
+
+  it("carries the generating rule through — null is a one-off, an id is a series (#243)", () => {
+    expect(toCardVM(dto(), "08:00").templateId).toBeNull();
+    expect(toCardVM(dto({ templateId: "tpl-1" }), "08:00").templateId).toBe("tpl-1");
+  });
+});
+
+/**
+ * The editor's draft seeds. The load-bearing field is `alcance`: it is re-seeded on
+ * EVERY open, so "esta y las siguientes" can never be left armed for the next card
+ * the operator taps — a sticky wide scope would silently rewrite a whole schedule.
+ */
+describe("createDraft", () => {
+  it("seeds the PRD defaults with the first tipo and no repeat days", () => {
+    expect(createDraft("Fuerza")).toEqual({
+      tipo: "Fuerza",
+      hora: "18:00",
+      duracionMin: 45,
+      cupo: 24,
+      coachIds: [],
+      repeatDays: [false, false, false, false, false, false],
+      alcance: "clase",
+      isSpecial: false,
+      specialName: "",
+    });
+  });
+  it("tolerates an empty tipo catalog", () => {
+    expect(createDraft("").tipo).toBe("");
+  });
+});
+
+describe("editDraftFrom", () => {
+  const card = toCardVM(
+    dto({
+      templateId: "tpl-1",
+      duracionMin: 60,
+      capacidad: 30,
+      tipo: "Metcon",
+      esEspecial: true,
+      nombreEspecial: "Noche de Fuerza",
+      coaches: [{ id: "co1", nombre: "Marisa" }],
+    }),
+    "19:00",
+  );
+
+  it("seeds the sheet from the clicked session", () => {
+    expect(editDraftFrom(card)).toMatchObject({
+      tipo: "Metcon",
+      hora: "19:00",
+      duracionMin: 60,
+      cupo: 30,
+      coachIds: ["co1"],
+      isSpecial: true,
+      specialName: "Noche de Fuerza",
+    });
+  });
+
+  it("defaults the scope to this class alone, even for a session that came from a rule", () => {
+    expect(editDraftFrom(card).alcance).toBe("clase");
+  });
+
+  it("RE-seeds the scope on every open — a wide edit never survives into the next card", () => {
+    const tocado = { ...editDraftFrom(card), alcance: "serie" as const };
+    expect(tocado.alcance).toBe("serie");
+    expect(editDraftFrom(card).alcance).toBe("clase");
+  });
+
+  it("leaves the weekday row empty — it is the create flow's alone", () => {
+    expect(editDraftFrom(card).repeatDays).toEqual([false, false, false, false, false, false]);
+  });
+
+  it("blanks a missing special name rather than carrying null into the input", () => {
+    expect(editDraftFrom(toCardVM(dto(), "19:00")).specialName).toBe("");
+  });
+});
+
+/**
+ * Whether a series write sends its coach set at all (#243). The sheet seeds coaches
+ * from the ONE clicked session, so sending them unconditionally would stamp last
+ * week's substitute onto the whole schedule; the RPC leaves them alone when omitted.
+ */
+describe("coachIdsCambiaron", () => {
+  it("is false when the operator never touched the multi-select", () => {
+    expect(coachIdsCambiaron(["co1", "co2"], ["co1", "co2"])).toBe(false);
+    expect(coachIdsCambiaron([], [])).toBe(false);
+  });
+  it("ignores order — the multi-select appends taps, a re-tapped-back set is unchanged", () => {
+    expect(coachIdsCambiaron(["co1", "co2"], ["co2", "co1"])).toBe(false);
+  });
+  it("is true on an added, a removed, or a swapped coach", () => {
+    expect(coachIdsCambiaron(["co1"], ["co1", "co2"])).toBe(true);
+    expect(coachIdsCambiaron(["co1", "co2"], ["co1"])).toBe(true);
+    expect(coachIdsCambiaron(["co1"], ["co2"])).toBe(true);
+  });
+  it("is true when the operator clears every coach", () => {
+    expect(coachIdsCambiaron(["co1"], [])).toBe(true);
+  });
+});
+
+/**
+ * The two series receipts. Both RPCs return an int, and the count is the only honest
+ * thing to show: a move can legitimately report fewer classes than the horizon holds
+ * (one whose new time would land in the past is detached, not moved).
+ */
+describe("movidasLinea", () => {
+  it("counts the future classes a series move actually rewrote", () => {
+    expect(movidasLinea(6)).toBe("6 clases futuras movidas");
+  });
+  it("reads singular for one, and survives a zero-move (every week already past)", () => {
+    expect(movidasLinea(1)).toBe("1 clase futura movida");
+    expect(movidasLinea(0)).toBe("0 clases futuras movidas");
+  });
+});
+
+describe("canceladasLinea", () => {
+  it("counts the cancelled classes and says the held ones came back", () => {
+    expect(canceladasLinea(6)).toBe("6 clases canceladas · clases devueltas");
+    expect(canceladasLinea(1)).toBe("1 clase cancelada · clases devueltas");
+    expect(canceladasLinea(0)).toBe("0 clases canceladas · clases devueltas");
   });
 });
 

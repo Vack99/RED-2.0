@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { hoyEnZona, inicioSemana, instanteEnZona, toIsoDay } from "@gym/format";
+import { addDays, hoyEnZona, inicioSemana, instanteEnZona, toIsoDay } from "@gym/format";
 
 import {
+  actualizarHorarioRecurrente,
   cancelarReservaCliente,
   cancelarSesion,
   crearHorarioRecurrente,
@@ -11,6 +12,7 @@ import {
   getAgendaDia,
   getAgendaSemana,
   reservarClaseCliente,
+  retirarHorarioRecurrente,
 } from "./agenda";
 import type { SupabaseServer } from "./supabase";
 
@@ -138,6 +140,8 @@ describe("getAgendaDia", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        // materialized from a recurring schedule (#243) — templateId must survive toDTO.
+        template_id: "tmpl-1",
       },
       {
         id: "s2",
@@ -149,6 +153,8 @@ describe("getAgendaDia", () => {
         special_name: "Noche especial",
         room_id: null,
         cancelled_at: null,
+        // a one-off (#243) — templateId must come through as null, not undefined.
+        template_id: null,
       },
       {
         // previous local day — must be excluded by the window
@@ -219,6 +225,14 @@ describe("getAgendaDia", () => {
       { id: "co1", nombre: "Marisa" },
       { id: "co2", nombre: "Paty" },
     ]);
+  });
+
+  it("carries template_id through toDTO as templateId — a materialized session gets the template's id, a one-off gets null (#243)", async () => {
+    const { client } = makeFake(rowsFor());
+    const dia = await getAgendaDia("2026-06-17", client);
+    const [s1, s2] = dia.sesiones;
+    expect(s1.templateId).toBe("tmpl-1");
+    expect(s2.templateId).toBeNull();
   });
 
   it("a session with no coach joins gets an empty coaches array (UI renders 'Por asignar')", async () => {
@@ -303,6 +317,24 @@ describe("getAgendaDia", () => {
     const futuro = new Date(lunesActual.getFullYear() + 2, lunesActual.getMonth(), lunesActual.getDate() + 2);
     const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
     await getAgendaDia(toIsoDay(futuro), client);
+    expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
+  });
+
+  it("#243 slice 1: the browse clamp is +26 weeks, not +1 year — a week exactly on the boundary still materializes", async () => {
+    const lunesActual = inicioSemana(hoyEnZona(TZ));
+    const enElLimite = addDays(lunesActual, 26 * 7);
+    const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
+    await getAgendaDia(toIsoDay(enElLimite), client);
+    expect(rpcCalls).toEqual([
+      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(enElLimite) } },
+    ]);
+  });
+
+  it("#243 slice 1: a week one week past the +26-week clamp is refused — this would have PASSED under the old +1 year clamp, so it is the boundary the tightening actually moved", async () => {
+    const lunesActual = inicioSemana(hoyEnZona(TZ));
+    const pasadoElLimite = addDays(lunesActual, 27 * 7);
+    const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
+    await getAgendaDia(toIsoDay(pasadoElLimite), client);
     expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
   });
 
@@ -543,6 +575,114 @@ describe("crearHorarioRecurrente — 'Se repite' write orchestration (injected f
     const { client } = makeFake({}, { rpc: () => ({ data: null, error: { message: "boom" } }) });
     const result = await crearHorarioRecurrente(valid(), client);
     expect(result).toEqual({ ok: false, error: "boom" });
+  });
+});
+
+describe("actualizarHorarioRecurrente — 'esta y las siguientes' write orchestration (injected fake, #243)", () => {
+  const valid = () => ({
+    templateId: ID("1"),
+    classTypeId: ID("2"),
+    hora: "20:00",
+    duracionMin: 60,
+    cupo: 30,
+  });
+
+  it("sends the exact update_recurring_schedule payload, omitting p_weekday and p_coach_ids when absent", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 5, error: null }) });
+    const result = await actualizarHorarioRecurrente(valid(), client);
+    expect(result).toEqual({ ok: true, clasesMovidas: 5 });
+    expect(rpcCalls[0].name).toBe("update_recurring_schedule");
+    expect(rpcCalls[0].args).toEqual({
+      p_template_id: ID("1"),
+      p_class_type_id: ID("2"),
+      p_start_time: "20:00",
+      p_duration_min: 60,
+      p_capacity: 30,
+    });
+    expect("p_weekday" in rpcCalls[0].args).toBe(false);
+    expect("p_coach_ids" in rpcCalls[0].args).toBe(false);
+  });
+
+  it("passes weekday and coachIds through when provided", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 0, error: null }) });
+    await actualizarHorarioRecurrente({ ...valid(), weekday: 2, coachIds: [ID("3")] }, client);
+    expect(rpcCalls[0].args.p_weekday).toBe(2);
+    expect(rpcCalls[0].args.p_coach_ids).toEqual([ID("3")]);
+  });
+
+  it("an omitted coachIds never reaches the RPC as an empty array — the coach set is left alone, not cleared", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 1, error: null }) });
+    await actualizarHorarioRecurrente(valid(), client);
+    expect("p_coach_ids" in rpcCalls[0].args).toBe(false);
+  });
+
+  it("0 future classes moved is a success, not an error (the past-instant guard can detach every future row)", async () => {
+    const { client } = makeFake({}, { rpc: () => ({ data: 0, error: null }) });
+    const result = await actualizarHorarioRecurrente(valid(), client);
+    expect(result).toEqual({ ok: true, clasesMovidas: 0 });
+  });
+
+  it("surfaces an RPC error as a typed result (e.g. the duplicate-slot refusal)", async () => {
+    const { client } = makeFake(
+      {},
+      { rpc: () => ({ data: null, error: { message: "Ya existe un horario activo para esta clase el 2 a las 20:00" } }) },
+    );
+    const result = await actualizarHorarioRecurrente(valid(), client);
+    expect(result).toEqual({ ok: false, error: "Ya existe un horario activo para esta clase el 2 a las 20:00" });
+  });
+
+  it("rejects a non-uuid templateId before any RPC call", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 5, error: null }) });
+    const result = await actualizarHorarioRecurrente({ ...valid(), templateId: "nope" }, client);
+    expect(result.ok).toBe(false);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("re-authenticates the operator: an unauthenticated caller never reaches the RPC", async () => {
+    const { client, rpcCalls } = makeFake({}, { sub: null, rpc: () => ({ data: 5, error: null }) });
+    expect(await actualizarHorarioRecurrente(valid(), client)).toEqual({ ok: false, error: "No autenticado" });
+    expect(rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("retirarHorarioRecurrente — 'terminar el horario' write orchestration (injected fake, #243)", () => {
+  const valid = () => ({ templateId: ID("1") });
+
+  it("sends the exact retire_recurring_schedule payload", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 6, error: null }) });
+    const result = await retirarHorarioRecurrente(valid(), client);
+    expect(result).toEqual({ ok: true, clasesCanceladas: 6 });
+    expect(rpcCalls).toEqual([
+      { name: "retire_recurring_schedule", args: { p_template_id: ID("1") } },
+    ]);
+  });
+
+  it("0 future classes cancelled is a success, not an error (a template already past its horizon)", async () => {
+    const { client } = makeFake({}, { rpc: () => ({ data: 0, error: null }) });
+    const result = await retirarHorarioRecurrente(valid(), client);
+    expect(result).toEqual({ ok: true, clasesCanceladas: 0 });
+  });
+
+  it("surfaces the double-tap refusal as a typed result", async () => {
+    const { client } = makeFake(
+      {},
+      { rpc: () => ({ data: null, error: { message: "Horario no encontrado o ya retirado" } }) },
+    );
+    const result = await retirarHorarioRecurrente(valid(), client);
+    expect(result).toEqual({ ok: false, error: "Horario no encontrado o ya retirado" });
+  });
+
+  it("rejects a non-uuid templateId before any RPC call", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 6, error: null }) });
+    const result = await retirarHorarioRecurrente({ templateId: "nope" }, client);
+    expect(result.ok).toBe(false);
+    expect(rpcCalls).toHaveLength(0);
+  });
+
+  it("re-authenticates the operator: an unauthenticated caller never reaches the RPC", async () => {
+    const { client, rpcCalls } = makeFake({}, { sub: null, rpc: () => ({ data: 6, error: null }) });
+    expect(await retirarHorarioRecurrente(valid(), client)).toEqual({ ok: false, error: "No autenticado" });
+    expect(rpcCalls).toHaveLength(0);
   });
 });
 

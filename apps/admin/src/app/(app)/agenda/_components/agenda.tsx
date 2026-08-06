@@ -15,6 +15,7 @@ import { Icon } from "@gym/ui/forge/icon";
 import { forgeToast } from "@gym/ui/forge/toaster";
 
 import {
+  actualizarHorarioRecurrenteAction,
   cancelarReservaClienteAction,
   cancelarSesionAction,
   crearClassTypeAction,
@@ -23,10 +24,20 @@ import {
   editarSesionAction,
   pasarListaSesionAction,
   reservarClaseClienteAction,
+  retirarHorarioRecurrenteAction,
   rosterSesionAction,
 } from "../actions";
 import { pasoAgenda } from "./paso-agenda";
-import { accionAgregar, sugerenciaVenta, type CardVM } from "./session-vm";
+import {
+  accionAgregar,
+  canceladasLinea,
+  coachIdsCambiaron,
+  createDraft,
+  editDraftFrom,
+  movidasLinea,
+  sugerenciaVenta,
+  type CardVM,
+} from "./session-vm";
 
 /**
  * The Agenda orchestrator (PRD #36 S7): DÍA and SEMANA over one week of data, the
@@ -81,38 +92,11 @@ type View = "dia" | "semana";
 interface EditorState {
   open: boolean;
   mode: "create" | "edit";
-  editId: string | null;
+  /** The card under edit, `null` while creating. Kept whole rather than as an id: save
+   *  and cancel read its `templateId` (is there a rule behind this class?), its `booked`
+   *  (the cupo-shrink warning) and its opening `coachIds` (#243) back out at write time. */
+  card: CardVM | null;
   draft: EditorDraft;
-}
-
-const EMPTY_REPEAT: boolean[] = [false, false, false, false, false, false];
-
-/** Editor defaults for a new class (PRD #36 e): 18:00 / 45 min / cupo 24, first tipo. */
-function createDraft(tipos: ClassTypeOpt[]): EditorDraft {
-  return {
-    tipo: tipos[0]?.name ?? "",
-    hora: "18:00",
-    duracionMin: 45,
-    cupo: 24,
-    coachIds: [],
-    repeatDays: [...EMPTY_REPEAT],
-    isSpecial: false,
-    specialName: "",
-  };
-}
-
-/** Seed the editor from an existing session (editing never fans out — ADR-0010). */
-function editDraftFrom(card: CardVM): EditorDraft {
-  return {
-    tipo: card.tipo,
-    hora: card.time,
-    duracionMin: card.mins,
-    cupo: card.cap,
-    coachIds: card.coachIds,
-    repeatDays: [...EMPTY_REPEAT],
-    isSpecial: card.esEspecial,
-    specialName: card.specialName ?? "",
-  };
 }
 
 export function AgendaScreen(props: AgendaScreenProps) {
@@ -174,8 +158,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
   const [editor, setEditor] = React.useState<EditorState>({
     open: false,
     mode: "create",
-    editId: null,
-    draft: createDraft(props.tipos),
+    card: null,
+    draft: createDraft(props.tipos[0]?.name ?? ""),
   });
   const [busy, setBusy] = React.useState(false);
 
@@ -283,11 +267,13 @@ export function AgendaScreen(props: AgendaScreenProps) {
 
   const openCreate = () => {
     closeGlance();
-    setEditor({ open: true, mode: "create", editId: null, draft: createDraft(tipos) });
+    setEditor({ open: true, mode: "create", card: null, draft: createDraft(tipos[0]?.name ?? "") });
   };
+  // Every open re-seeds the draft, which is what resets the #243 scope to "Solo esta
+  // clase" — a wide edit never survives into the next card the operator taps.
   const openEdit = (card: CardVM) => {
     closeGlance();
-    setEditor({ open: true, mode: "edit", editId: card.id, draft: editDraftFrom(card) });
+    setEditor({ open: true, mode: "edit", card, draft: editDraftFrom(card) });
   };
   const patchDraft = (patch: Partial<EditorDraft>) =>
     setEditor((e) => ({ ...e, draft: { ...e.draft, ...patch } }));
@@ -320,9 +306,26 @@ export function AgendaScreen(props: AgendaScreenProps) {
     const nombreEspecial = draft.isSpecial ? draft.specialName : undefined;
     setBusy(true);
     try {
-      if (editor.mode === "edit" && editor.editId) {
+      if (editor.mode === "edit" && editor.card) {
+        const card = editor.card;
+        // "Esta y las siguientes": one RPC rewrites every future class of the rule in
+        // place. The bookings ride along on the FK — nothing is charged, nothing is
+        // refunded, nobody is un-booked. Coaches go only when the operator moved them.
+        if (draft.alcance === "serie" && card.templateId) {
+          const res = await actualizarHorarioRecurrenteAction({
+            templateId: card.templateId,
+            classTypeId: tipoId,
+            hora: draft.hora,
+            duracionMin: draft.duracionMin,
+            cupo: draft.cupo,
+            ...(coachIdsCambiaron(card.coachIds, draft.coachIds) && { coachIds: draft.coachIds }),
+          });
+          if (!res.ok) return fail(res.error);
+          afterWrite("Horario actualizado", movidasLinea(res.clasesMovidas));
+          return;
+        }
         const res = await editarSesionAction({
-          sesionId: editor.editId,
+          sesionId: card.id,
           classTypeId: tipoId,
           fecha: selectedIso,
           hora: draft.hora,
@@ -367,11 +370,21 @@ export function AgendaScreen(props: AgendaScreenProps) {
     }
   };
 
+  // The same scope toggle governs the destructive path — which is why the sheet keeps
+  // one destructive button, not two. Wide: stop the rule and cancel every future class,
+  // each through the shipped cancel_class_session, so every held class comes back.
   const cancelClass = async () => {
-    if (busy || !editor.editId) return;
+    if (busy || !editor.card) return;
+    const { card, draft } = editor;
     setBusy(true);
     try {
-      const res = await cancelarSesionAction({ sesionId: editor.editId });
+      if (draft.alcance === "serie" && card.templateId) {
+        const res = await retirarHorarioRecurrenteAction({ templateId: card.templateId });
+        if (!res.ok) return fail(res.error);
+        afterWrite("Horario terminado", canceladasLinea(res.clasesCanceladas));
+        return;
+      }
+      const res = await cancelarSesionAction({ sesionId: card.id });
       if (!res.ok) return fail(res.error);
       afterWrite("Clase cancelada", "Reservas canceladas y clases devueltas");
     } finally {
@@ -492,6 +505,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
                 isNext={card.isNext}
                 isSpecial={card.isSpecial}
                 specialName={card.specialName}
+                esUnica={card.templateId === null}
                 onClick={() => openGlance(card)}
               />
             ))
@@ -568,6 +582,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
           horaOptions={horaOptions}
           duracionOptions={duracionOptions}
           cupoOptions={cupoOptions}
+          esSerie={editor.card?.templateId != null}
+          reservasActuales={editor.card?.booked ?? 0}
           onPatch={patchDraft}
           onAddTipo={addTipo}
           onSave={save}

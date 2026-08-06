@@ -1569,6 +1569,10 @@ export type Database = {
           reservation_id: string
         }[]
       }
+      retire_recurring_schedule: {
+        Args: { p_template_id: string }
+        Returns: number
+      }
       roster_clase: {
         Args: { p_session_id: string }
         Returns: {
@@ -1596,6 +1600,18 @@ export type Database = {
           resultado: string | null
           session_id: string
         }[]
+      }
+      update_recurring_schedule: {
+        Args: {
+          p_capacity: number
+          p_class_type_id: string
+          p_coach_ids?: string[]
+          p_duration_min: number
+          p_start_time: string
+          p_template_id: string
+          p_weekday?: number
+        }
+        Returns: number
       }
       ventana_arribo: {
         Args: { p_duration_min: number; p_starts_at: string }

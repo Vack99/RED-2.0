@@ -54,6 +54,10 @@ export interface SesionAgendaDTO {
   muestraEspecial: boolean;
   roomId: string | null;
   coaches: CoachLiteDTO[];
+  /** The generating `schedule_template.id`, or `null` for a one-off session (#243 slice 4) —
+   *  today the client cannot tell the two apart. Non-null is what makes a session eligible for
+   *  the series edit/retire verbs; the sheet reads this, not any local heuristic. */
+  templateId: string | null;
 }
 
 export interface ResumenDia {
@@ -91,6 +95,7 @@ interface SesionRaw {
   nombreEspecial: string | null;
   roomId: string | null;
   coaches: CoachLiteDTO[];
+  templateId: string | null;
 }
 
 /** Fetch non-cancelled sessions in `[low, high)` (an absolute UTC instant range),
@@ -104,7 +109,7 @@ async function fetchSesionesEnRango(
 ): Promise<SesionRaw[]> {
   const { data: sesiones, error } = await supabase
     .from("class_session")
-    .select("id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id")
+    .select("id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id")
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
     .lt("starts_at", high.toISOString())
@@ -159,6 +164,7 @@ async function fetchSesionesEnRango(
     nombreEspecial: r.special_name,
     roomId: r.room_id,
     coaches: coachesBySession.get(r.id) ?? [],
+    templateId: r.template_id,
   }));
 }
 
@@ -177,6 +183,7 @@ function toDTO(s: SesionRaw, estado: EstadoSesion): SesionAgendaDTO {
     muestraEspecial: muestraEspecial(estado, s.esEspecial),
     roomId: s.roomId,
     coaches: s.coaches,
+    templateId: s.templateId,
   };
 }
 
@@ -198,13 +205,16 @@ function ratioAgregada(dtos: SesionAgendaDTO[]): number {
 /** #244 guard 3 (weakness 9): staff can ask the Agenda to VIEW any week via `?d=` — including a
  *  past week (the history-browsing flow is legitimate) or one decades out — but materialization
  *  WRITES permanent rows (ADR-0010: cancel is the only undo, there is no delete). So the write is
- *  clamped to [this week's Monday, +1 year] in the gym's own tz, independent of what week the
- *  caller asked to view. Out of range: this returns without calling the RPC at all, and the read
- *  below still runs — an unmaterialized week just comes back with whatever sessions already exist
- *  (none, for a week nobody ever staffed; the true historical rows, for one that was). */
+ *  clamped to [this week's Monday, +26 weeks] in the gym's own tz, independent of what week the
+ *  caller asked to view. #243 slice 1 tightened this from +1 year: it is the only real bound on
+ *  a series retire's blast radius (halves the worst case from 2,080 to 1,040 `clientes` row locks
+ *  — browsing materializes weeks on demand, so a deep browse digs a real hole). Out of range: this
+ *  returns without calling the RPC at all, and the read below still runs — an unmaterialized week
+ *  just comes back with whatever sessions already exist (none, for a week nobody ever staffed; the
+ *  true historical rows, for one that was). */
 async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, tz: string): Promise<void> {
   const lunesActual = inicioSemana(hoyEnZona(tz));
-  const horizonte = new Date(lunesActual.getFullYear() + 1, lunesActual.getMonth(), lunesActual.getDate());
+  const horizonte = addDays(lunesActual, 26 * 7);
   if (lunes.getTime() < lunesActual.getTime() || lunes.getTime() > horizonte.getTime()) return;
   await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes) });
 }
@@ -456,6 +466,84 @@ export async function crearHorarioRecurrente(
     });
     if (error || !data) throw new Error(error?.message || "No se pudo crear el horario recurrente");
     return { templateIds: data };
+  });
+}
+
+export const actualizarHorarioRecurrenteSchema = z.object({
+  templateId: z.string().uuid(),
+  classTypeId: z.string().uuid(),
+  weekday: z.number().int().min(0).max(5).optional(),
+  hora: z.string().refine(horaValida, "Hora fuera de rango"),
+  duracionMin: z.number().int().refine(duracionValida, "Duración inválida"),
+  cupo: z.number().int().refine(cupoValido, "Cupo inválido"),
+  coachIds: z.array(z.string().uuid()).optional(),
+});
+export type ActualizarHorarioRecurrenteInput = z.infer<typeof actualizarHorarioRecurrenteSchema>;
+
+/** Update a recurring schedule going forward ("esta y las siguientes"; #243): UPDATEs
+ *  every future, uncancelled class_session under the template in place —
+ *  update_recurring_schedule recomputes each instant, moving every booking with its
+ *  class for free (the FK points at the row, not the time); nothing is charged or
+ *  refunded. `coachIds` is sent only when the caller actually supplies it — omitted
+ *  (undefined) means "leave the coach set alone", because the RPC's `p_coach_ids`
+ *  defaults to null and only touches `schedule_template_coach` when non-null (an
+ *  unconditional replace would stamp one clicked session's substitute coach onto the
+ *  whole series). `client` injectable (ADR-0001). */
+export async function actualizarHorarioRecurrente(
+  raw: unknown,
+  client?: SupabaseServer,
+): Promise<AgendaResultado<{ clasesMovidas: number }>> {
+  const parsed = actualizarHorarioRecurrenteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  const input = parsed.data;
+
+  return ejecutar(async () => {
+    const supabase = client ?? (await createClient());
+    await requireOperator(supabase);
+
+    const { data, error } = await supabase.rpc("update_recurring_schedule", {
+      p_template_id: input.templateId,
+      p_class_type_id: input.classTypeId,
+      p_start_time: input.hora,
+      p_duration_min: input.duracionMin,
+      p_capacity: input.cupo,
+      ...(input.weekday !== undefined && { p_weekday: input.weekday }),
+      ...(input.coachIds !== undefined && { p_coach_ids: input.coachIds }),
+    });
+    // NOT `!data`: 0 future classes moved (e.g. every materialized week for this
+    // template is already past) is a legitimate success, not an error.
+    if (error || data === null) throw new Error(error?.message || "No se pudo actualizar el horario recurrente");
+    return { clasesMovidas: data };
+  });
+}
+
+export const retirarHorarioRecurrenteSchema = z.object({ templateId: z.string().uuid() });
+export type RetirarHorarioRecurrenteInput = z.infer<typeof retirarHorarioRecurrenteSchema>;
+
+/** Retire a recurring schedule ("terminar el horario"; #243): flips
+ *  `schedule_template.is_active = false` and cancels every future, uncancelled
+ *  class_session under the template through the same `cancel_class_session` the
+ *  single-class cancel already uses — releasing each hold through the one
+ *  implementation that exists (never a copy of the refund body). `client`
+ *  injectable (ADR-0001). */
+export async function retirarHorarioRecurrente(
+  raw: unknown,
+  client?: SupabaseServer,
+): Promise<AgendaResultado<{ clasesCanceladas: number }>> {
+  const parsed = retirarHorarioRecurrenteSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
+  const input = parsed.data;
+
+  return ejecutar(async () => {
+    const supabase = client ?? (await createClient());
+    await requireOperator(supabase);
+
+    const { data, error } = await supabase.rpc("retire_recurring_schedule", {
+      p_template_id: input.templateId,
+    });
+    // NOT `!data`: 0 future classes cancelled is a legitimate success (see above).
+    if (error || data === null) throw new Error(error?.message || "No se pudo retirar el horario recurrente");
+    return { clasesCanceladas: data };
   });
 }
 
