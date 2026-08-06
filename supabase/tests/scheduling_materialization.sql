@@ -9,10 +9,14 @@
 --   2) Idempotent: re-running ensure_week_materialized for an already-materialized week creates 0 new rows.
 --   3) A deactivated template materializes nothing new.
 --   4) Existing sessions are untouched by a template edit (starts_at unchanged after the template changes).
---   5) A MOVED session is not resurrected: after edit_class_session changes a materialized session's
---      starts_at (the ADR-0010 holiday move), re-running ensure_week_materialized for that week creates
---      0 new sessions — the materialization guard is immutable (schedule_template_week), so vacating
---      the old (template_id, starts_at) instant must not regenerate the original slot.
+--   5) A MOVED session LEAVES THE SERIES and is not resurrected: after edit_class_session changes a
+--      materialized session's starts_at (the ADR-0010 holiday move) that session's template_id is
+--      NULL (#243 slice 1 — a hand-placed class must stop belonging to the rule, or the new
+--      "esta y las siguientes" verb would drag it back onto the grid it was deliberately taken off),
+--      and re-running ensure_week_materialized for that week creates 0 new sessions — the
+--      materialization guard is immutable (schedule_template_week), so vacating the old
+--      (template_id, starts_at) instant must not regenerate the original slot. The two halves are
+--      independent: the ledger claim is what holds non-resurrection, NOT template_id.
 --   6) #244 guard 4 — duplicate-template guard: re-creating an ACTIVE (gym, class_type, weekday,
 --      start_time) through create_recurring_schedule is refused (the FULL friendly message, naming
 --      the weekday and time; zero new rows, atomically); a different start_time still succeeds; a
@@ -70,6 +74,7 @@ declare
   starts_after  timestamptz;
   edited_dur int;
   edited_cap int;
+  edited_tmpl uuid;            -- #243 slice 1: NULL after an edit
   tmpl uuid;
   raised boolean;              -- #244 guard 4
   msg text;
@@ -125,17 +130,27 @@ begin
   -- edit_class_session's WRITTEN ROW, not just the materialization invariant: the count checks below are
   -- blind to the SET list, so assert the moved instant, the new duration/capacity, and the coach-join
   -- delete-then-reinsert. This is also the (5) vector's own premise — the slot must really be vacated.
-  select starts_at, duration_min, capacity into starts_after, edited_dur, edited_cap
+  select starts_at, duration_min, capacity, template_id into starts_after, edited_dur, edited_cap, edited_tmpl
     from public.class_session where id = a_session;
   if starts_after is distinct from starts_before + interval '1 day' then raise exception 'MAT FAIL: edit_class_session did not move starts_at (% -> %)', starts_before, starts_after; end if;
   if edited_dur is distinct from 60 then raise exception 'MAT FAIL: edit_class_session did not write duration_min (got %)', edited_dur; end if;
   if edited_cap is distinct from 30 then raise exception 'MAT FAIL: edit_class_session did not write capacity (got %)', edited_cap; end if;
+  -- #243 slice 1: THE HAND-MOVED SESSION LEAVES THE RULE. Until the series-edit verbs existed this
+  -- was a dangling provenance pointer nothing dereferenced; the moment `update_recurring_schedule`
+  -- can fan out over template_id, keeping it means a later series edit silently recomputes this
+  -- class's instant and undoes the operator's holiday move.
+  if edited_tmpl is not null then
+    raise exception 'MAT FAIL: edit_class_session left template_id = % — a hand-moved session still belongs to the series and would be moved again by it', edited_tmpl;
+  end if;
   select count(*) into n from public.class_session_coach where session_id = a_session;
   if n <> 1 then raise exception 'MAT FAIL: edit_class_session coach-join replace left % rows (expected 1)', n; end if;
 
   added := public.ensure_week_materialized(today);
   if added <> 0 then raise exception 'MAT FAIL: re-materializing after a session move resurrected % session(s) at the vacated slot', added; end if;
-  select count(*) into n from public.class_session where gym_id = gym_a and template_id is not null;
+  -- Counted over the GYM, not over `template_id is not null`: since #243 slice 1 the moved session is
+  -- a one-off, so a provenance filter here would report as drift the very thing the slice ships.
+  -- Nothing but create_recurring_schedule has inserted into this gym, so 4 is still the whole population.
+  select count(*) into n from public.class_session where gym_id = gym_a;
   if n <> 4 then raise exception 'MAT FAIL: total sessions drifted to % after the move + re-materialize (expected 4)', n; end if;
 
   -- (6) #244 guard 4 — duplicate-template guard. After (4)/(5) above, gym_a's earliest template

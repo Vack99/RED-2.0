@@ -17,10 +17,13 @@
 --   3) cross-tenant operator (staff of gym B only): reads 0 of gym A's rows; direct update affects 0;
 --      direct insert denied by with-check; create_class_session referencing gym A's class_type RAISES;
 --      edit/cancel of gym A's session RAISE (RLS scopes the row out → "not found"); delete on gym A's
---      coach join affects 0; and — #243 — retire_recurring_schedule refuses gym A's TEMPLATE, with
---      ZERO rows written across schedule_template / class_session / reservation / clientes. That gym
---      pin matters because schedule_template's SELECT policy is is_member_of, which is WIDER than
---      staff: without it a multi-gym actor would get a silently-zero-row fan-out instead of a refusal.
+--      coach join affects 0; and — #243 — the two SERIES-level verbs
+--      (update_recurring_schedule / retire_recurring_schedule) refuse gym A's TEMPLATE, with ZERO
+--      rows written across schedule_template / class_session / reservation / clientes. Both are
+--      aimed with gym B's OWN class_type on purpose, so the class_type guard passes and the refusal
+--      can only come from the template's gym pin — the fence actually under test. That pin matters
+--      because schedule_template's SELECT policy is is_member_of, which is WIDER than staff: without
+--      it a multi-gym actor would get a silently-zero-row fan-out instead of a refusal.
 --   4) gym-A MEMBER (is_member_of, no staff role): reads sessions/templates but every direct write
 --      affects 0, and the staff RPCs refuse them (staff_gym() = NULL → "No autorizado").
 --
@@ -177,9 +180,17 @@ begin
   exception when others then raised := true; end;
   if not raised then raise exception 'DENIAL FAIL: operator_b cancelled gym A''s session'; end if;
 
-  -- #243 THE SERIES VERB. The template's gym pin is the only thing that can refuse this — the fence
-  -- under test, and the one the is_member_of SELECT policy would otherwise leave as a silent
-  -- zero-row no-op. The message is pinned so the refusal cannot come from somewhere else.
+  -- #243 THE SERIES VERBS. Aimed with gym B's OWN class_type so the class_type guard passes and the
+  -- template's gym pin is the only thing left to refuse — the fence under test, and the one the
+  -- is_member_of SELECT policy would otherwise leave as a silent zero-row no-op.
+  raised := false;
+  begin perform public.update_recurring_schedule(tmpl_a, ct_b, '07:00'::time, 60, 20);
+  exception when others then raised := true; msg := sqlerrm; end;
+  if not raised then raise exception 'DENIAL FAIL: operator_b edited gym A''s recurring schedule'; end if;
+  if msg is distinct from 'Horario no encontrado' then
+    raise exception 'DENIAL FAIL: update_recurring_schedule refused for the wrong reason (%) — the gym pin is not what stopped it', msg;
+  end if;
+
   raised := false;
   begin perform public.retire_recurring_schedule(tmpl_a);
   exception when others then raised := true; msg := sqlerrm; end;
