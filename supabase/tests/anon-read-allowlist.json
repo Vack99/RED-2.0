@@ -19,7 +19,13 @@
     "",
     "`gym_domain` is deliberately ABSENT: #216 took it off this surface entirely. anon now",
     "resolves one known hostname through public.gym_id_por_host (SECURITY DEFINER) and holds",
-    "neither policy nor grant on the table, so it cannot enumerate the customer census."
+    "neither policy nor grant on the table, so it cannot enumerate the customer census.",
+    "",
+    "So are room, schedule_template, class_session_coach, class_type_workblock and",
+    "class_type_bring_item: #250 (20260807120000) dropped their anon policies because no anon",
+    "reader ever existed — the 2026-07-06 grant copied a PRD table list, not the pages that",
+    "shipped. A line here needs a READER, not a plausible future page; re-adding one of those",
+    "five means shipping the reader in the same change."
   ],
   "anonReadable": {
     "gym": {
@@ -32,31 +38,15 @@
     },
     "coach": {
       "scope": "scoped",
-      "reason": "The public nosotros/clases pages render the gym coaches. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
+      "reason": "The public nosotros/precios pages render the gym coaches (getCoachesPublicos). Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
     },
     "class_type": {
       "scope": "scoped",
-      "reason": "The public clases page renders the gym class catalog. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
-    },
-    "class_type_workblock": {
-      "scope": "scoped",
-      "reason": "Child rows of class_type, rendered on the same public page. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
-    },
-    "class_type_bring_item": {
-      "scope": "scoped",
-      "reason": "Child rows of class_type, rendered on the same public page. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
+      "reason": "The public nosotros page renders the gym class formats (getFormatosPublicos) and the home page names today's sessions (getHorarioHoyPublico). Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
     },
     "class_session": {
       "scope": "scoped",
       "reason": "The public schedule. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
-    },
-    "class_session_coach": {
-      "scope": "scoped",
-      "reason": "Join rows for the public schedule. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
-    },
-    "schedule_template": {
-      "scope": "scoped",
-      "reason": "Backs the public weekly schedule view. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
     },
     "paquetes": {
       "scope": "scoped",
@@ -81,10 +71,6 @@
     "faq": {
       "scope": "scoped",
       "reason": "Public precios/contacto page content. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
-    },
-    "room": {
-      "scope": "scoped",
-      "reason": "Room names shown beside public sessions. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
     }
   }
 }

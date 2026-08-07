@@ -7,14 +7,19 @@
 -- migration it returns one 'OK' row.
 --
 -- Proves three things the acceptance criteria name:
---   (a) anon SELECT SUCCEEDS on every decision-(b) table (14) — non-vacuous: one seeded row each.
+--   (a) anon SELECT SUCCEEDS on every decision-(b) table that has an anon reader (9 since #250) —
+--       non-vacuous: one seeded row each.
 --   (b) anon SELECT is DENIED on member-owned / non-public tables — non-vacuous: a seeded row in
---       clientes (member-owned) and schedule_template_coach (the one scheduling child deliberately
---       LEFT OUT of the anon set) stays invisible to anon.
+--       clientes (member-owned), in schedule_template_coach (the one scheduling child deliberately
+--       LEFT OUT of the anon set) and in each of the five #250 tables stays invisible to anon.
+--       #250: room, schedule_template, class_session_coach, class_type_workblock and
+--       class_type_bring_item were anon-readable with no anon reader anywhere — the 2026-07-06
+--       grant copied a PRD table list, not the pages that shipped. 20260807120000 dropped those
+--       five anon policies, so the SAME seeds that used to prove the read now prove the denial.
 --   (c) NO OTHER anon widening exists — the authoritative machine check: the exact set of tables
---       carrying an anon-role SELECT policy equals the allowlist (16 since #216 dropped gym_domain:
---       `gym` + 14 decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE
---       policy exists.
+--       carrying an anon-role SELECT policy equals the allowlist (11 since #250: `gym` + 9
+--       decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE policy
+--       exists.
 --   (d)-(f) #215: one anonymous call cannot span gyms. The decision-(b) policies stopped being
 --       `using (true)` and now key on the gym the REQUEST names (x-gym-id → `request.headers` →
 --       public.gym_en_peticion()). A second gym is seeded so "gym B is invisible while naming gym
@@ -99,16 +104,18 @@ begin
   perform set_config('test.gym_b', gym_b::text, true);
 end $$;
 
--- ── (c) Authoritative: the anon-SELECT table set == the 16-table allowlist, and NO anon write ─────
+-- ── (c) Authoritative: the anon-SELECT table set == the 11-table allowlist, and NO anon write ─────
 do $$
 declare
   expected text[] := array[
     -- gym_domain LEFT OUT since #216: anon holds neither policy nor grant on it and reaches
     -- one hostname only through public.gym_id_por_host (SECURITY DEFINER). If it reappears
     -- here the customer census is public again, and this array is what says so.
-    'about_value','class_session','class_session_coach','class_type','class_type_bring_item',
-    'class_type_workblock','coach','faq','facility','gym','gym_contact','paquetes',
-    'plan_feature','room','schedule_template','stat'
+    -- room, schedule_template, class_session_coach, class_type_workblock and class_type_bring_item
+    -- LEFT OUT since #250 for the same kind of reason: no anon reader ever existed. Either name
+    -- reappearing here means a public policy landed ahead of the page that needs it.
+    'about_value','class_session','class_type','coach','faq','facility','gym','gym_contact',
+    'paquetes','plan_feature','stat'
   ];
   got     text[];
   extra   text[];
@@ -147,21 +154,16 @@ select set_config('request.headers', json_build_object('x-gym-id', current_setti
 do $$
 declare n int;
 begin
-  -- (a) succeeds on every decision-(b) table (each seeded with >= 1 row)
+  -- (a) succeeds on every decision-(b) table that has a reader (each seeded with >= 1 row)
   select count(*) into n from public.coach;                  if n < 1 then raise exception 'ANON READ FAIL: coach % rows', n; end if;
   select count(*) into n from public.class_type;             if n < 1 then raise exception 'ANON READ FAIL: class_type % rows', n; end if;
-  select count(*) into n from public.class_type_workblock;   if n < 1 then raise exception 'ANON READ FAIL: class_type_workblock % rows', n; end if;
-  select count(*) into n from public.class_type_bring_item;  if n < 1 then raise exception 'ANON READ FAIL: class_type_bring_item % rows', n; end if;
   select count(*) into n from public.class_session;          if n < 1 then raise exception 'ANON READ FAIL: class_session % rows', n; end if;
-  select count(*) into n from public.class_session_coach;    if n < 1 then raise exception 'ANON READ FAIL: class_session_coach % rows', n; end if;
-  select count(*) into n from public.schedule_template;      if n < 1 then raise exception 'ANON READ FAIL: schedule_template % rows', n; end if;
   select count(*) into n from public.paquetes;               if n < 1 then raise exception 'ANON READ FAIL: paquetes % rows', n; end if;
   select count(*) into n from public.plan_feature;           if n < 1 then raise exception 'ANON READ FAIL: plan_feature % rows', n; end if;
   select count(*) into n from public.about_value;            if n < 1 then raise exception 'ANON READ FAIL: about_value % rows', n; end if;
   select count(*) into n from public.facility;               if n < 1 then raise exception 'ANON READ FAIL: facility % rows', n; end if;
   select count(*) into n from public.stat;                   if n < 1 then raise exception 'ANON READ FAIL: stat % rows', n; end if;
   select count(*) into n from public.faq;                    if n < 1 then raise exception 'ANON READ FAIL: faq % rows', n; end if;
-  select count(*) into n from public.room;                   if n < 1 then raise exception 'ANON READ FAIL: room % rows', n; end if;
   select count(*) into n from public.gym_contact;            if n < 1 then raise exception 'ANON READ FAIL: gym_contact % rows', n; end if;
 
   -- (b) denied on the excluded sibling + the member-owned table (both seeded — non-vacuous)
@@ -169,6 +171,21 @@ begin
   if n <> 0 then raise exception 'ANON DENIAL FAIL: anon reads % schedule_template_coach rows (must be 0)', n; end if;
   select count(*) into n from public.clientes;
   if n <> 0 then raise exception 'ANON DENIAL FAIL: anon reads % clientes rows (member-owned, must be 0)', n; end if;
+
+  -- (b) #250: the five tables whose anon policy 20260807120000 dropped. Same seeds as before —
+  -- they were the (a) assertions until the drop, and asserting the opposite over the SAME rows is
+  -- what makes this suite prove the drop rather than just stop mentioning it. Naming the gym in
+  -- the header cannot help: with no anon policy left, RLS default-deny answers zero.
+  select count(*) into n from public.room;
+  if n <> 0 then raise exception 'ANON DENIAL FAIL(#250): anon reads % room rows (must be 0)', n; end if;
+  select count(*) into n from public.schedule_template;
+  if n <> 0 then raise exception 'ANON DENIAL FAIL(#250): anon reads % schedule_template rows (must be 0)', n; end if;
+  select count(*) into n from public.class_session_coach;
+  if n <> 0 then raise exception 'ANON DENIAL FAIL(#250): anon reads % class_session_coach rows (must be 0)', n; end if;
+  select count(*) into n from public.class_type_workblock;
+  if n <> 0 then raise exception 'ANON DENIAL FAIL(#250): anon reads % class_type_workblock rows (must be 0)', n; end if;
+  select count(*) into n from public.class_type_bring_item;
+  if n <> 0 then raise exception 'ANON DENIAL FAIL(#250): anon reads % class_type_bring_item rows (must be 0)', n; end if;
 
   -- (d) #215's acceptance: ONE anonymous call cannot return rows for more than one gym.
   -- The request names gym A, so gym B's seeded rows must be invisible on the four tables

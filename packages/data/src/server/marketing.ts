@@ -272,7 +272,8 @@ export interface HorarioHoyDTO {
  *  active count anon can observe is 0 and the public label shows best-case availability = capacity — the
  *  same 0-projection the Agenda reader documents until booking lands, applied to the public teaser.
  *
- *  Gym-scoped (`.eq('gym_id', …)`) because the anon policy is flat across gyms (`using (true)`); `tz` is
+ *  Gym-scoped (`.eq('gym_id', …)`) on top of the per-gym anon policy (#215 narrowed `using (true)`
+ *  to the gym the request names — the explicit filter stays as the in-query belt); `tz` is
  *  the caller's resolved gym zone (getMarketingGym), never a constant. Best-effort: [] on no rows/error.
  *  Memoized per request. */
 export const getHorarioHoyPublico = cache(
