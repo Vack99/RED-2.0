@@ -42,14 +42,25 @@ export function especialNombre(name: string): string {
 }
 
 /**
- * The scope caption, or `null` for the narrow scope (which needs no explaining).
- * The wide arm has to say all three things at once: what moves, what does not, and
- * that a booked member keeps their spot — a move is not a refund (#243 §4).
+ * The scope caption. Both arms need one, because both do something the label alone does
+ * not say. The wide arm has to say all three things at once: what moves, what does not,
+ * and that a booked member keeps their spot — a move is not a refund (#243 §4). The
+ * NARROW arm silently DETACHES the class from its rule (edit_class_session clears
+ * template_id), which is why the card comes back badged `Única` — that is a structural
+ * change to the schedule and the operator has to read it before they save, not after.
+ *
+ * The wide arm claims THE SCHEDULE's future classes, never "esta y las futuras": the clicked
+ * class is not guaranteed to be one of them. A class whose recomputed instant would land in the
+ * past is left exactly as it is (the past-instant guard) — so on the very card most likely to be
+ * clicked after a botched move, "cambia esta clase" would be a lie. `esPasada` is the same
+ * honesty one step further: the sheet opens freely on a class that already started, where "las
+ * pasadas no se tocan" would be a promise about the class on screen.
  */
-export function alcanceCaption(alcance: EditorAlcance): string | null {
-  return alcance === "serie"
-    ? "Cambia esta clase y las futuras. Las pasadas no se tocan. Las reservas se mueven con la clase."
-    : null;
+export function alcanceCaption(alcance: EditorAlcance, esPasada: boolean): string {
+  if (alcance === "clase") return "Esta clase se separa del horario. Los cambios del horario ya no la alcanzan.";
+  return esPasada
+    ? "Cambia las clases futuras de este horario. Esta ya pasó y se queda como está. Las reservas se mueven con la clase."
+    : "Cambia las clases futuras de este horario. Las pasadas no se tocan. Las reservas se mueven con la clase.";
 }
 
 /** The one destructive button's label — it follows the scope toggle (#243). */
@@ -73,8 +84,19 @@ export function cancelConfirm(alcance: EditorAlcance): string | null {
  * would trap an operator whose one booking is six weeks out; `reservar_clase` already
  * blocks NEW bookings and the quick-glance already reads "Clase llena · sin lugares".
  * `null` renders nothing.
+ *
+ * The two arms trigger on DIFFERENT facts, because they are warning about different things.
+ * Narrow: `reservas` is this class's own bookings, and the number is the point. Wide: `reservas`
+ * is still only the CLICKED class's — so triggering on it would stay silent while shrinking a
+ * lightly-booked card whose next-week twin is over capacity, and would quote a count that never
+ * held for the series. The wide arm therefore fires on the shrink itself (`cupo` below the rule's
+ * current `cupoSerie`) and drops the number, promising only what it can know: where the new cupo
+ * lands, and that no existing booking is dropped.
  */
-export function cupoAviso(cupo: number, reservas: number): string | null {
+export function cupoAviso(cupo: number, reservas: number, alcance: EditorAlcance, cupoSerie: number): string | null {
+  if (alcance === "serie") {
+    return cupo < cupoSerie ? "El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar" : null;
+  }
   return reservas > cupo ? `Cupo por debajo de las ${reservas} reservas · nadie pierde su lugar` : null;
 }
 
@@ -109,8 +131,16 @@ export interface EditorSheetProps {
   /** The edited class came from a repeating rule (#243) — the only case that offers
    *  the scope toggle. A one-off (or a hand-detached class) is always its own scope. */
   esSerie?: boolean;
-  /** Bookings already on the edited class — drives the cupo-shrink warning. */
+  /** The edited class already started — the scope caption must not promise to move it. */
+  esPasada?: boolean;
+  /** Bookings already on the edited class — drives the NARROW cupo-shrink warning. */
   reservasActuales?: number;
+  /** The rule's current capacity — what the WIDE cupo warning measures a shrink against. */
+  cupoPlantilla?: number;
+  /** A write is already in flight: the whole button stack goes inert. Descartar included —
+   *  closing the sheet mid-save lets the operator edit a second class and land the FIRST
+   *  save's toast on it. */
+  pending?: boolean;
   onPatch: (patch: Partial<EditorDraft>) => void;
   onAddTipo?: (name: string) => void;
   onSave: () => void;
@@ -170,7 +200,10 @@ export function EditorSheet({
   duracionOptions,
   cupoOptions,
   esSerie = false,
+  esPasada = false,
   reservasActuales = 0,
+  cupoPlantilla = 0,
+  pending = false,
   onPatch,
   onAddTipo,
   onSave,
@@ -183,8 +216,8 @@ export function EditorSheet({
   // The scope exists only for a generated class being edited; everything else is its
   // own scope, so the label, the caption and the confirm all read from this one value.
   const alcance: EditorAlcance = isEdit && esSerie ? draft.alcance : "clase";
-  const caption = alcanceCaption(alcance);
-  const aviso = cupoAviso(draft.cupo, reservasActuales);
+  const caption = alcanceCaption(alcance, esPasada);
+  const aviso = cupoAviso(draft.cupo, reservasActuales, alcance, cupoPlantilla);
 
   const toggleCoach = (id: string) => {
     const next = draft.coachIds.includes(id) ? draft.coachIds.filter((c) => c !== id) : [...draft.coachIds, id];
@@ -226,7 +259,7 @@ export function EditorSheet({
         <span className="uppercase" style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.3, color: "var(--fg)", paddingLeft: 4 }}>
           {editorTitle(isEdit)}
         </span>
-        <button type="button" onClick={onClose} aria-label="Cerrar" className="flex items-center justify-center" style={{ width: 34, height: 34, border: "1px solid var(--line)", background: "transparent", cursor: "pointer" }}>
+        <button type="button" disabled={pending} onClick={onClose} aria-label="Cerrar" className="flex items-center justify-center" style={{ width: 34, height: 34, border: "1px solid var(--line)", background: "transparent", cursor: pending ? "default" : "pointer", opacity: pending ? 0.45 : 1 }}>
           <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="var(--muted)" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
             <path d="M5 5l10 10M15 5L5 15" />
           </svg>
@@ -320,7 +353,7 @@ export function EditorSheet({
                 </button>
               ))}
             </div>
-            {caption && <div style={NOTE_STYLE}>{caption}</div>}
+            <div style={NOTE_STYLE}>{caption}</div>
           </div>
         )}
 
@@ -360,31 +393,34 @@ export function EditorSheet({
 
         <button
           type="button"
+          disabled={pending}
           onClick={onSave}
           className="uppercase"
-          style={{ marginTop: 24, width: "100%", padding: 17, background: "var(--yellow)", color: "var(--ink)", border: "none", fontFamily: "inherit", fontSize: 13, fontWeight: 800, letterSpacing: 1.4, cursor: "pointer" }}
+          style={{ marginTop: 24, width: "100%", padding: 17, background: "var(--yellow)", color: "var(--ink)", border: "none", fontFamily: "inherit", fontSize: 13, fontWeight: 800, letterSpacing: 1.4, cursor: pending ? "default" : "pointer", opacity: pending ? 0.45 : 1 }}
         >
           {saveLabel(isEdit)}
         </button>
         {isEdit && onCancelClass && (
           <button
             type="button"
+            disabled={pending}
             onClick={() => {
               const pregunta = cancelConfirm(alcance);
               if (pregunta && !window.confirm(pregunta)) return;
               onCancelClass();
             }}
             className="uppercase"
-            style={{ marginTop: 10, width: "100%", padding: 14, background: "transparent", border: "1px solid color-mix(in srgb, var(--red) 35%, transparent)", color: "var(--red)", fontFamily: "inherit", fontSize: 11, fontWeight: 800, letterSpacing: 1, cursor: "pointer" }}
+            style={{ marginTop: 10, width: "100%", padding: 14, background: "transparent", border: "1px solid color-mix(in srgb, var(--red) 35%, transparent)", color: "var(--red)", fontFamily: "inherit", fontSize: 11, fontWeight: 800, letterSpacing: 1, cursor: pending ? "default" : "pointer", opacity: pending ? 0.45 : 1 }}
           >
             {cancelLabel(alcance)}
           </button>
         )}
         <button
           type="button"
+          disabled={pending}
           onClick={onDiscard}
           className="uppercase"
-          style={{ marginTop: 10, width: "100%", padding: 13, background: "transparent", border: "none", color: "var(--muted)", fontFamily: "inherit", fontSize: 11, fontWeight: 700, letterSpacing: 1, cursor: "pointer" }}
+          style={{ marginTop: 10, width: "100%", padding: 13, background: "transparent", border: "none", color: "var(--muted)", fontFamily: "inherit", fontSize: 11, fontWeight: 700, letterSpacing: 1, cursor: pending ? "default" : "pointer", opacity: pending ? 0.45 : 1 }}
         >
           Descartar
         </button>

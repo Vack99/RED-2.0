@@ -33,8 +33,10 @@ import {
   canceladasLinea,
   coachIdsCambiaron,
   createDraft,
+  draftSinCambios,
   editDraftFrom,
   movidasLinea,
+  semillaAlcance,
   sugerenciaVenta,
   type CardVM,
 } from "./session-vm";
@@ -80,6 +82,10 @@ export interface AgendaScreenProps {
   weekNavLabel: string;
   weekNavRel: string;
   weekFooter: string;
+  /** The viewed week is past the materialization horizon (#243): nothing is generated out
+   *  there yet, so an empty day means "not yet", not "free" — and must not read as an
+   *  invitation to hand-create a class the horizon will generate again later. */
+  fueraDeHorizonte: boolean;
   coaches: CoachOption[];
   tipos: ClassTypeOpt[];
   horaOptions: string[];
@@ -88,6 +94,22 @@ export interface AgendaScreenProps {
 }
 
 type View = "dia" | "semana";
+
+const VACIO_STYLE: React.CSSProperties = {
+  border: "1px solid var(--line)",
+  padding: "34px 20px",
+  textAlign: "center",
+  fontSize: 12.5,
+  letterSpacing: 0.3,
+  color: "var(--muted)",
+};
+
+/** Past the materialization horizon nothing has been GENERATED yet, so an empty stretch out
+ *  there means "not yet", not "free" — the ordinary "toca + para crear una" would invite a
+ *  duplicate of the class the horizon will generate on its own (#243). Forward only: the flag
+ *  is a strict "beyond +26 weeks", so browsing BACKWARDS — the batch-attendance workflow —
+ *  keeps the ordinary empty state and its `+`. */
+const SIN_GENERAR = "Todavía sin generar · las clases de esta semana aparecerán más adelante";
 
 interface EditorState {
   open: boolean;
@@ -109,6 +131,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
     weekNavLabel,
     weekNavRel,
     weekFooter,
+    fueraDeHorizonte,
     coaches,
     horaOptions,
     duracionOptions,
@@ -275,10 +298,21 @@ export function AgendaScreen(props: AgendaScreenProps) {
     closeGlance();
     setEditor({ open: true, mode: "edit", card, draft: editDraftFrom(card) });
   };
+  // A scope toggle is not just a flag — it changes WHAT the save writes, so it re-seeds the four
+  // shared fields from that scope's own baseline (#243): the rule for "esta y las siguientes", the
+  // clicked session for "solo esta clase". Every toggle, both ways, so the form always shows the
+  // exact values the write will start from. On an on-grid class the two seeds are equal and
+  // nothing visibly moves.
   const patchDraft = (patch: Partial<EditorDraft>) =>
-    setEditor((e) => ({ ...e, draft: { ...e.draft, ...patch } }));
+    setEditor((e) => ({
+      ...e,
+      draft: { ...e.draft, ...(patch.alcance && e.card ? semillaAlcance(e.card, patch.alcance) : {}), ...patch },
+    }));
 
-  const fail = (error: string) => forgeToast({ tone: "warning", title: "No se pudo guardar", body: error });
+  // The title NAMES the verb that failed, because the three #243 writes are three different
+  // acts with three different blast radii — "No se pudo guardar" over a refused retire reads
+  // as a lost edit, not as a schedule that is still running.
+  const fail = (error: string, title = "No se pudo guardar") => forgeToast({ tone: "warning", title, body: error });
   const afterWrite = (title: string, body: string) => {
     closeEditor();
     forgeToast({ tone: "success", title, body });
@@ -297,6 +331,13 @@ export function AgendaScreen(props: AgendaScreenProps) {
 
   const save = async () => {
     if (busy) return;
+    // Nothing changed → nothing is written, and this is not a nicety: the narrow save runs
+    // edit_class_session, which CLEARS template_id, so a reflex GUARDAR on an untouched series
+    // class buys an irreversible detach in exchange for no edit at all (#243).
+    if (editor.mode === "edit" && editor.card && draftSinCambios(editor.card, editor.draft)) {
+      closeEditor();
+      return;
+    }
     const tipoId = tipos.find((t) => t.name === editor.draft.tipo)?.id;
     if (!tipoId) {
       forgeToast({ tone: "warning", title: "Falta el tipo", body: "Elige o crea un tipo de clase." });
@@ -310,7 +351,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
         const card = editor.card;
         // "Esta y las siguientes": one RPC rewrites every future class of the rule in
         // place. The bookings ride along on the FK — nothing is charged, nothing is
-        // refunded, nobody is un-booked. Coaches go only when the operator moved them.
+        // refunded, nobody is un-booked. Coaches go only when the operator moved them,
+        // measured against THE RULE's coach set (the draft was seeded from it).
         if (draft.alcance === "serie" && card.templateId) {
           const res = await actualizarHorarioRecurrenteAction({
             templateId: card.templateId,
@@ -318,10 +360,12 @@ export function AgendaScreen(props: AgendaScreenProps) {
             hora: draft.hora,
             duracionMin: draft.duracionMin,
             cupo: draft.cupo,
-            ...(coachIdsCambiaron(card.coachIds, draft.coachIds) && { coachIds: draft.coachIds }),
+            ...(coachIdsCambiaron(semillaAlcance(card, "serie").coachIds, draft.coachIds) && {
+              coachIds: draft.coachIds,
+            }),
           });
-          if (!res.ok) return fail(res.error);
-          afterWrite("Horario actualizado", movidasLinea(res.clasesMovidas));
+          if (!res.ok) return fail(res.error, "No se pudo actualizar el horario");
+          afterWrite("Horario actualizado", movidasLinea(res.clasesMovidas, res.clasesSinMover));
           return;
         }
         const res = await editarSesionAction({
@@ -336,7 +380,9 @@ export function AgendaScreen(props: AgendaScreenProps) {
           nombreEspecial,
         });
         if (!res.ok) return fail(res.error);
-        afterWrite("Clase actualizada", "Visible en la app");
+        // edit_class_session clears template_id, so a narrow save on a series member SEPARATES
+        // it. The caption warned before the fact; this is the receipt after it.
+        afterWrite("Clase actualizada", card.templateId ? "Visible en la app · ahora es Única" : "Visible en la app");
         return;
       }
       const weekdays = draft.repeatDays.map((on, i) => (on ? i : -1)).filter((i) => i >= 0);
@@ -380,12 +426,12 @@ export function AgendaScreen(props: AgendaScreenProps) {
     try {
       if (draft.alcance === "serie" && card.templateId) {
         const res = await retirarHorarioRecurrenteAction({ templateId: card.templateId });
-        if (!res.ok) return fail(res.error);
+        if (!res.ok) return fail(res.error, "No se pudo terminar el horario");
         afterWrite("Horario terminado", canceladasLinea(res.clasesCanceladas));
         return;
       }
       const res = await cancelarSesionAction({ sesionId: card.id });
-      if (!res.ok) return fail(res.error);
+      if (!res.ok) return fail(res.error, "No se pudo cancelar la clase");
       afterWrite("Clase cancelada", "Reservas canceladas y clases devueltas");
     } finally {
       setBusy(false);
@@ -486,10 +532,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
           </div>
 
           {selectedDay.cards.length === 0 ? (
-            <div
-              style={{ border: "1px solid var(--line)", padding: "34px 20px", textAlign: "center", fontSize: 12.5, letterSpacing: 0.3, color: "var(--muted)" }}
-            >
-              Sin clases este día · toca + para crear una
+            <div style={VACIO_STYLE}>
+              {fueraDeHorizonte ? SIN_GENERAR : "Sin clases este día · toca + para crear una"}
             </div>
           ) : (
             selectedDay.cards.map((card) => (
@@ -511,6 +555,12 @@ export function AgendaScreen(props: AgendaScreenProps) {
             ))
           )}
         </div>
+      ) : fueraDeHorizonte && dias.every((d) => d.cards.length === 0) ? (
+        // SEMANA gets the same message, and needs it more: six "Sin clases" groups under a live
+        // `+` is the shape that invites six duplicate creates the horizon will generate anyway.
+        <div style={{ padding: "20px 22px 22px" }}>
+          <div style={VACIO_STYLE}>{SIN_GENERAR}</div>
+        </div>
       ) : (
         <div style={{ padding: "6px 22px 22px" }}>
           {dias.map((dia, i) => (
@@ -527,6 +577,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
                 cap: card.cap,
                 estado: card.estado,
                 isSpecial: card.isSpecial,
+                esUnica: card.templateId === null,
                 onClick: () => {
                   setSelectedIndex(i);
                   openGlance(card);
@@ -583,7 +634,10 @@ export function AgendaScreen(props: AgendaScreenProps) {
           duracionOptions={duracionOptions}
           cupoOptions={cupoOptions}
           esSerie={editor.card?.templateId != null}
+          esPasada={editor.card ? new Date(editor.card.startsAtIso).getTime() <= ahora.getTime() : false}
           reservasActuales={editor.card?.booked ?? 0}
+          cupoPlantilla={editor.card?.plantilla?.capacidad ?? 0}
+          pending={busy}
           onPatch={patchDraft}
           onAddTipo={addTipo}
           onSave={save}

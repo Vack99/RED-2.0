@@ -55,13 +55,21 @@ describe("ALCANCE_TOGGLES", () => {
 });
 
 describe("alcanceCaption", () => {
-  it("says what a series move does — and that a booking rides along, never refunded", () => {
-    expect(alcanceCaption("serie")).toBe(
-      "Cambia esta clase y las futuras. Las pasadas no se tocan. Las reservas se mueven con la clase.",
+  it("claims the SCHEDULE's future classes, never 'esta' — the clicked one may be the kept one", () => {
+    expect(alcanceCaption("serie", false)).toBe(
+      "Cambia las clases futuras de este horario. Las pasadas no se tocan. Las reservas se mueven con la clase.",
     );
   });
-  it("says nothing for a single class — there is nothing to warn about", () => {
-    expect(alcanceCaption("clase")).toBeNull();
+  it("never promises to move a class that already started — the sheet opens on those too", () => {
+    expect(alcanceCaption("serie", true)).toBe(
+      "Cambia las clases futuras de este horario. Esta ya pasó y se queda como está. Las reservas se mueven con la clase.",
+    );
+  });
+  it("warns that the narrow scope DETACHES the class from its schedule — the silent `Única`", () => {
+    expect(alcanceCaption("clase", false)).toBe(
+      "Esta clase se separa del horario. Los cambios del horario ya no la alcanzan.",
+    );
+    expect(alcanceCaption("clase", true)).toBe(alcanceCaption("clase", false));
   });
 });
 
@@ -92,13 +100,27 @@ describe("cancelConfirm", () => {
  */
 describe("cupoAviso", () => {
   it("warns when the new cupo is under what is already booked", () => {
-    expect(cupoAviso(4, 9)).toBe("Cupo por debajo de las 9 reservas · nadie pierde su lugar");
+    expect(cupoAviso(4, 9, "clase", 24)).toBe("Cupo por debajo de las 9 reservas · nadie pierde su lugar");
   });
   it("stays silent at exactly full — a cupo equal to the bookings is legal", () => {
-    expect(cupoAviso(9, 9)).toBeNull();
+    expect(cupoAviso(9, 9, "clase", 24)).toBeNull();
   });
   it("stays silent with room to spare, and on an empty class", () => {
-    expect(cupoAviso(24, 9)).toBeNull();
-    expect(cupoAviso(24, 0)).toBeNull();
+    expect(cupoAviso(24, 9, "clase", 24)).toBeNull();
+    expect(cupoAviso(24, 0, "clase", 24)).toBeNull();
+  });
+
+  // The wide arm measures the SHRINK against the rule, not the clicked class's bookings —
+  // the clicked class is one of dozens and its count says nothing about the others'.
+  it("warns on any shrink below the rule's cupo, whatever THIS class happens to hold", () => {
+    expect(cupoAviso(20, 0, "serie", 24)).toBe("El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar");
+    expect(cupoAviso(4, 9, "serie", 24)).toBe("El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar");
+  });
+  it("stays silent when the rule's cupo holds or grows", () => {
+    expect(cupoAviso(24, 9, "serie", 24)).toBeNull();
+    expect(cupoAviso(30, 9, "serie", 24)).toBeNull();
+  });
+  it("never quotes the clicked class's booking count under the wide scope", () => {
+    expect(cupoAviso(4, 9, "serie", 24)).not.toContain("9");
   });
 });

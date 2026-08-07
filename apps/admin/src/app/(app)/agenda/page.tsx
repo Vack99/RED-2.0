@@ -1,9 +1,10 @@
-import { getAgendaSemana } from "@gym/data/server/agenda";
+import { HORIZONTE_SEMANAS, getAgendaSemana } from "@gym/data/server/agenda";
 import { getClassTypes, getCoaches } from "@gym/data/server/catalog";
 import { getOperatorGym } from "@gym/data/server/gym";
 import {
   DOW,
   MON,
+  addDays,
   fmtDiaAgenda,
   fmtNavegadorDia,
   fmtNavegadorSemana,
@@ -50,6 +51,10 @@ export default async function Page({
 
   const hoy = parseDay(todayIso);
   const lunesHoy = inicioSemana(hoy);
+  // Past the materialization horizon the read comes back empty because nothing has been
+  // GENERATED there yet — the same shape as a week with no classes, and the reason the
+  // empty state has to say which one it is (#243).
+  const fueraDeHorizonte = semana.lunes.getTime() > addDays(lunesHoy, HORIZONTE_SEMANAS * 7).getTime();
 
   const stripDays: StripDay[] = semana.dias.map((dia) => ({
     wd: DOW[dia.fecha.getDay()],
@@ -84,6 +89,7 @@ export default async function Page({
       weekNavLabel={rangoSemana(semana.dias[0].fecha, semana.dias[5].fecha)}
       weekNavRel={fmtNavegadorSemana(semana.lunes, lunesHoy)}
       weekFooter={fmtResumenSemana(semana.resumenSemana.ratioOcupacion)}
+      fueraDeHorizonte={fueraDeHorizonte}
       coaches={coaches.map((c) => ({ id: c.id, label: c.label }))}
       tipos={tipos}
       horaOptions={HORA_OPTIONS}

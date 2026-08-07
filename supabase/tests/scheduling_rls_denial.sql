@@ -183,11 +183,15 @@ begin
   -- #243 THE SERIES VERBS. Aimed with gym B's OWN class_type so the class_type guard passes and the
   -- template's gym pin is the only thing left to refuse — the fence under test, and the one the
   -- is_member_of SELECT policy would otherwise leave as a silent zero-row no-op.
+  -- ONE sentence for both halves of the pin — the template is not there (wrong gym) and the template
+  -- is retired are the same fact to an operator, so update_recurring_schedule raises retire's own
+  -- string. It still isolates the GYM pin here: the block below reads tmpl_a back as ops and asserts
+  -- `is_active` is still true, so "or ya retirado" cannot be what produced this refusal.
   raised := false;
   begin perform public.update_recurring_schedule(tmpl_a, ct_b, '07:00'::time, 60, 20);
   exception when others then raised := true; msg := sqlerrm; end;
   if not raised then raise exception 'DENIAL FAIL: operator_b edited gym A''s recurring schedule'; end if;
-  if msg is distinct from 'Horario no encontrado' then
+  if msg is distinct from 'Horario no encontrado o ya retirado' then
     raise exception 'DENIAL FAIL: update_recurring_schedule refused for the wrong reason (%) — the gym pin is not what stopped it', msg;
   end if;
 

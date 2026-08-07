@@ -1,8 +1,9 @@
--- #243 — "terminar el horario": stop a repeating class. The ONE series-level verb.
--- (The "move / esta y las siguientes" half of the original design was cut by the owner; the design
--- doc's move sections are superseded. Moving a class is retire + create, through the create path
--- that already ships — `schedule_template_active_uq` is partial on `is_active`, so a retired slot is
--- immediately re-creatable by design.)
+-- #243 — "terminar el horario": stop a repeating class. The SECOND of the two series-level verbs.
+-- (The "move / esta y las siguientes" half is NOT cut — it ships beside this file in
+-- 20260806100000. The two verbs split on the one question the design doc's §4 turns on: DOES THE
+-- CLASS STILL HAPPEN? Slice 2 is the arm where it does, so the bookings ride along; this is the arm
+-- where it does not, so every held credit comes back. Slice 2's past-instant guard SKIPS rather than
+-- detaches precisely so that the loop below still reaches the class it declined to move.)
 --
 -- THE RULE, once: the class STOPS EXISTING, so every held credit is given back. `is_active = false`
 -- retires the rule (both materializers already filter on it — 20260805100000:71, and

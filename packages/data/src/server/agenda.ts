@@ -37,6 +37,23 @@ export interface CoachLiteDTO {
   nombre: string;
 }
 
+/**
+ * The RULE behind a generated class, as the rule stands RIGHT NOW (#243) — never the clicked
+ * session's own values, which can legitimately have drifted off it: `update_recurring_schedule`
+ * leaves a class whose recomputed instant would land in the past at the time it already had,
+ * still attached to the template. A wide save REWRITES the template, so the editor has to seed
+ * from this; seeding it from an off-grid session would silently revert the whole series to that
+ * session's stale hora/cupo/tipo/coaches. `null` for a one-off, which has no rule to read.
+ */
+export interface PlantillaDTO {
+  tipo: string;
+  /** The rule's `start_time` as a gym-local "HH:MM" wall clock (the column is already local). */
+  hora: string;
+  duracionMin: number;
+  capacidad: number;
+  coachIds: string[];
+}
+
 export interface SesionAgendaDTO {
   id: string;
   startsAt: Date;
@@ -58,6 +75,9 @@ export interface SesionAgendaDTO {
    *  today the client cannot tell the two apart. Non-null is what makes a session eligible for
    *  the series edit/retire verbs; the sheet reads this, not any local heuristic. */
   templateId: string | null;
+  /** That template's CURRENT values — the wide-scope editor's seed. Non-null exactly when
+   *  `templateId` is. */
+  plantilla: PlantillaDTO | null;
 }
 
 export interface ResumenDia {
@@ -96,12 +116,17 @@ interface SesionRaw {
   roomId: string | null;
   coaches: CoachLiteDTO[];
   templateId: string | null;
+  plantilla: PlantillaDTO | null;
 }
 
 /** Fetch non-cancelled sessions in `[low, high)` (an absolute UTC instant range),
  *  joined to class_type + coaches — three plain reads assembled in JS (no
  *  embedded PostgREST select), matching the rest of the DAL (e.g. getAsistenciasHoy).
- *  Ordered by startsAt ascending — the order `derivarEstadosDia` requires. */
+ *  Ordered by startsAt ascending — the order `derivarEstadosDia` requires.
+ *
+ *  The ONE embed here is the generating `schedule_template` (#243), and it is deliberate: it
+ *  rides the `template_id` FK that already exists, so the rule's own values cost no extra round
+ *  trip on the hot agenda read — and the wide-scope editor cannot seed correctly without them. */
 async function fetchSesionesEnRango(
   supabase: SupabaseServer,
   low: Date,
@@ -109,7 +134,11 @@ async function fetchSesionesEnRango(
 ): Promise<SesionRaw[]> {
   const { data: sesiones, error } = await supabase
     .from("class_session")
-    .select("id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id")
+    // One string LITERAL, deliberately: supabase-js parses this at the type level, and a
+    // concatenation collapses every column to GenericStringError.
+    .select(
+      "id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id, schedule_template(class_type_id, start_time, duration_min, capacity, schedule_template_coach(coach_id))",
+    )
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
     .lt("starts_at", high.toISOString())
@@ -119,7 +148,13 @@ async function fetchSesionesEnRango(
   const rows = sesiones ?? [];
   if (rows.length === 0) return [];
 
-  const tipoIds = [...new Set(rows.map((r) => r.class_type_id))];
+  // The TEMPLATE's class_type rides along: a session that drifted off its rule can sit on a
+  // different tipo than the rule now names, and the wide-scope seed shows the rule's.
+  const tipoIds = [
+    ...new Set(
+      rows.flatMap((r) => (r.schedule_template ? [r.class_type_id, r.schedule_template.class_type_id] : [r.class_type_id])),
+    ),
+  ];
   const sessionIds = rows.map((r) => r.id);
 
   // class_type, class_session_coach, and the occupancy count all only need tipoIds/
@@ -165,6 +200,15 @@ async function fetchSesionesEnRango(
     roomId: r.room_id,
     coaches: coachesBySession.get(r.id) ?? [],
     templateId: r.template_id,
+    plantilla: r.schedule_template
+      ? {
+          tipo: tipoById.get(r.schedule_template.class_type_id) ?? "—",
+          hora: r.schedule_template.start_time.slice(0, 5),
+          duracionMin: r.schedule_template.duration_min,
+          capacidad: r.schedule_template.capacity,
+          coachIds: r.schedule_template.schedule_template_coach.map((c) => c.coach_id),
+        }
+      : null,
   }));
 }
 
@@ -184,6 +228,7 @@ function toDTO(s: SesionRaw, estado: EstadoSesion): SesionAgendaDTO {
     roomId: s.roomId,
     coaches: s.coaches,
     templateId: s.templateId,
+    plantilla: s.plantilla,
   };
 }
 
@@ -202,6 +247,12 @@ function ratioAgregada(dtos: SesionAgendaDTO[]): number {
   return ratioOcupacion(capacidad, activos);
 }
 
+/** How many weeks ahead materialization writes — and therefore the last week that can hold real
+ *  classes. Exported because the Agenda page needs the same number to tell a week PAST the horizon
+ *  (nothing is generated there yet) from a genuinely empty one (#243): the two look identical and
+ *  only one of them should invite a create. */
+export const HORIZONTE_SEMANAS = 26;
+
 /** #244 guard 3 (weakness 9): staff can ask the Agenda to VIEW any week via `?d=` — including a
  *  past week (the history-browsing flow is legitimate) or one decades out — but materialization
  *  WRITES permanent rows (ADR-0010: cancel is the only undo, there is no delete). So the write is
@@ -214,7 +265,7 @@ function ratioAgregada(dtos: SesionAgendaDTO[]): number {
  *  true historical rows, for one that was). */
 async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, tz: string): Promise<void> {
   const lunesActual = inicioSemana(hoyEnZona(tz));
-  const horizonte = addDays(lunesActual, 26 * 7);
+  const horizonte = addDays(lunesActual, HORIZONTE_SEMANAS * 7);
   if (lunes.getTime() < lunesActual.getTime() || lunes.getTime() > horizonte.getTime()) return;
   await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes) });
 }
@@ -488,11 +539,17 @@ export type ActualizarHorarioRecurrenteInput = z.infer<typeof actualizarHorarioR
  *  (undefined) means "leave the coach set alone", because the RPC's `p_coach_ids`
  *  defaults to null and only touches `schedule_template_coach` when non-null (an
  *  unconditional replace would stamp one clicked session's substitute coach onto the
- *  whole series). `client` injectable (ADR-0001). */
+ *  whole series). `client` injectable (ADR-0001).
+ *
+ *  The RPC answers with BOTH halves of what it did: `moved` and `kept` — the future
+ *  classes whose recomputed instant would have landed in the past, which the guard
+ *  leaves at the time they already had (structurally 0 or 1: only the current week's
+ *  class can recompute backwards). They stay in the series; they just did not move.
+ *  Surfaced rather than swallowed because the receipt has to name them (#243 §4). */
 export async function actualizarHorarioRecurrente(
   raw: unknown,
   client?: SupabaseServer,
-): Promise<AgendaResultado<{ clasesMovidas: number }>> {
+): Promise<AgendaResultado<{ clasesMovidas: number; clasesSinMover: number }>> {
   const parsed = actualizarHorarioRecurrenteSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   const input = parsed.data;
@@ -510,10 +567,11 @@ export async function actualizarHorarioRecurrente(
       ...(input.weekday !== undefined && { p_weekday: input.weekday }),
       ...(input.coachIds !== undefined && { p_coach_ids: input.coachIds }),
     });
-    // NOT `!data`: 0 future classes moved (e.g. every materialized week for this
-    // template is already past) is a legitimate success, not an error.
-    if (error || data === null) throw new Error(error?.message || "No se pudo actualizar el horario recurrente");
-    return { clasesMovidas: data };
+    // `!data` is safe HERE (unlike the bare-int retire below): the RPC's OUT params come
+    // back as one object, so only a genuine failure is falsy — `{ moved: 0, kept: 0 }` is
+    // a legitimate success (every materialized week for this template is already past).
+    if (error || !data) throw new Error(error?.message || "No se pudo actualizar el horario recurrente");
+    return { clasesMovidas: data.moved, clasesSinMover: data.kept };
   });
 }
 

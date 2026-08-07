@@ -142,6 +142,17 @@ describe("getAgendaDia", () => {
         cancelled_at: null,
         // materialized from a recurring schedule (#243) — templateId must survive toDTO.
         template_id: "tmpl-1",
+        // …and so must the RULE's own values, which is what the wide-scope editor seeds from.
+        // Deliberately OFF-GRID from the session above (19:00/90/30/ct2 vs 09:00/60/20/ct1):
+        // that is the shape the past-instant guard leaves behind, and the one a seed must not
+        // confuse. `start_time` arrives as a Postgres `time`, i.e. with seconds.
+        schedule_template: {
+          class_type_id: "ct2",
+          start_time: "19:00:00",
+          duration_min: 90,
+          capacity: 30,
+          schedule_template_coach: [{ coach_id: "co2" }],
+        },
       },
       {
         id: "s2",
@@ -233,6 +244,22 @@ describe("getAgendaDia", () => {
     const [s1, s2] = dia.sesiones;
     expect(s1.templateId).toBe("tmpl-1");
     expect(s2.templateId).toBeNull();
+  });
+
+  it("carries the RULE's own values alongside — off-grid from the session, which is the point (#243)", async () => {
+    const { client } = makeFake(rowsFor());
+    const dia = await getAgendaDia("2026-06-17", client);
+    const [s1, s2] = dia.sesiones;
+    // The session reads 09:00 / 60 min / 20 / Yoga; the rule behind it reads 19:00 / 90 / 30 / Box.
+    // A wide save seeds from THIS, or it reverts the whole series to the clicked class.
+    expect(s1.plantilla).toEqual({
+      tipo: "Box",
+      hora: "19:00",
+      duracionMin: 90,
+      capacidad: 30,
+      coachIds: ["co2"],
+    });
+    expect(s2.plantilla).toBeNull();
   });
 
   it("a session with no coach joins gets an empty coaches array (UI renders 'Por asignar')", async () => {
@@ -588,9 +615,9 @@ describe("actualizarHorarioRecurrente — 'esta y las siguientes' write orchestr
   });
 
   it("sends the exact update_recurring_schedule payload, omitting p_weekday and p_coach_ids when absent", async () => {
-    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 5, error: null }) });
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: { moved: 5, kept: 0 }, error: null }) });
     const result = await actualizarHorarioRecurrente(valid(), client);
-    expect(result).toEqual({ ok: true, clasesMovidas: 5 });
+    expect(result).toEqual({ ok: true, clasesMovidas: 5, clasesSinMover: 0 });
     expect(rpcCalls[0].name).toBe("update_recurring_schedule");
     expect(rpcCalls[0].args).toEqual({
       p_template_id: ID("1"),
@@ -604,22 +631,31 @@ describe("actualizarHorarioRecurrente — 'esta y las siguientes' write orchestr
   });
 
   it("passes weekday and coachIds through when provided", async () => {
-    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 0, error: null }) });
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: { moved: 0, kept: 0 }, error: null }) });
     await actualizarHorarioRecurrente({ ...valid(), weekday: 2, coachIds: [ID("3")] }, client);
     expect(rpcCalls[0].args.p_weekday).toBe(2);
     expect(rpcCalls[0].args.p_coach_ids).toEqual([ID("3")]);
   });
 
   it("an omitted coachIds never reaches the RPC as an empty array — the coach set is left alone, not cleared", async () => {
-    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 1, error: null }) });
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: { moved: 1, kept: 0 }, error: null }) });
     await actualizarHorarioRecurrente(valid(), client);
     expect("p_coach_ids" in rpcCalls[0].args).toBe(false);
   });
 
-  it("0 future classes moved is a success, not an error (the past-instant guard can detach every future row)", async () => {
-    const { client } = makeFake({}, { rpc: () => ({ data: 0, error: null }) });
+  it("surfaces `kept` — the class the past-instant guard left at its old time, which the receipt must name", async () => {
+    const { client } = makeFake({}, { rpc: () => ({ data: { moved: 5, kept: 1 }, error: null }) });
+    expect(await actualizarHorarioRecurrente(valid(), client)).toEqual({
+      ok: true,
+      clasesMovidas: 5,
+      clasesSinMover: 1,
+    });
+  });
+
+  it("0 future classes moved is a success, not an error (the past-instant guard can spare every future row)", async () => {
+    const { client } = makeFake({}, { rpc: () => ({ data: { moved: 0, kept: 0 }, error: null }) });
     const result = await actualizarHorarioRecurrente(valid(), client);
-    expect(result).toEqual({ ok: true, clasesMovidas: 0 });
+    expect(result).toEqual({ ok: true, clasesMovidas: 0, clasesSinMover: 0 });
   });
 
   it("surfaces an RPC error as a typed result (e.g. the duplicate-slot refusal)", async () => {

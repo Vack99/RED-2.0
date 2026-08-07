@@ -46,7 +46,7 @@ export async function crearHorarioRecurrenteAction(
  *  bookings ride along, nothing is charged or refunded (#243). */
 export async function actualizarHorarioRecurrenteAction(
   input: ActualizarHorarioRecurrenteInput,
-): Promise<AgendaResultado<{ clasesMovidas: number }>> {
+): Promise<AgendaResultado<{ clasesMovidas: number; clasesSinMover: number }>> {
   return actualizarHorarioRecurrente(input);
 }
 

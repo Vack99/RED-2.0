@@ -1,90 +1,21 @@
--- #243 series-edit — SLICE 1: safety pre-work. No feature lands here; two existing functions gain one
--- line each so that slices 2 and 3 (update_recurring_schedule / retire_recurring_schedule) cannot be
--- built on sand. docs/Context/2026-08-06-243-series-edit-design.md §5.1.
+-- #243 series-edit — SLICE 1: safety pre-work. No feature lands here. One shipped function gains one
+-- line in its SET list, and one backfill runs exactly once, so that slices 2 and 3
+-- (update_recurring_schedule / retire_recurring_schedule) cannot be built on sand.
+-- docs/Context/2026-08-06-243-series-edit-design.md §5.1.
 --
--- ── 1. materialize_week_for_gym: a SHARED per-gym advisory lock before the template loop ──────────
--- 20260805100000:69-72 reads the gym's active templates with a plain, unlocked SELECT and then writes
--- a ledger claim + a session per template. `retire_recurring_schedule` (slice 3) flips is_active off
--- and cancels the future sessions in one transaction. Interleave the two and the outcome is a LIVE,
--- BOOKABLE ORPHAN: the materialization pass reads the template while it is still active, the retire
--- commits (cancelling the sessions that existed at that moment), and the pass then commits a session
--- for a week the retire never saw — in a week whose ledger row is now CLAIMED, so no future
--- materialization pass will ever revisit it and no cancel will ever reach it. Members can book a class
--- belonging to a schedule that no longer exists, and the only cleanup is one-at-a-time by hand.
---
--- The fix is a lock, not a re-read: re-reading `is_active` after the write would still race, and
--- `FOR SHARE` on schedule_template would mint a real row lock (an XID, WAL, multixacts) on the
--- highest-frequency call in the spine — 240k/day at 4000 gyms. `pg_advisory_xact_lock_shared` costs
--- ~1 µs, takes no XID, writes no WAL, and is released at commit. SHARED so concurrent materialization
--- passes (the cron, and every view-time `ensure_week_materialized`) never block each other; slice 3
--- takes the EXCLUSIVE half of the same key, so a retire waits for in-flight passes and vice versa.
--- Keyed on `hashtextextended(gym::text, 0)` — the whole key space is per-gym, so two gyms never
--- serialize against each other, and the cron's 24,000 acquisitions per fleet pass add ~0.02 s to 41 s.
---
--- p_gym_id stays deliberately unguarded (the original header's rule): `hashtextextended` is strict, so
--- a NULL gym yields a NULL key and `pg_advisory_xact_lock_shared(NULL)` is a no-op returning NULL —
--- the function stays naturally inert for a null/foreign gym rather than defensively so.
---
--- EVERYTHING ELSE IS BYTE-FOR-BYTE 20260805100000:51-100. Diff the two: one `perform` line.
-create or replace function public.materialize_week_for_gym(p_gym_id uuid, p_week_start date)
- returns int
- language plpgsql
- set search_path to ''
-as $function$
-declare
-  v_tz      text;
-  v_monday  date;
-  v_count   int := 0;
-  v_session uuid;
-  t         record;
-  v_starts  timestamptz;
-begin
-  select timezone into v_tz from public.gym where id = p_gym_id;
-  -- isodow: Mon=1..Sun=7 → back up to Monday.
-  v_monday := p_week_start - ((extract(isodow from p_week_start)::int - 1));
+-- ── NO ADVISORY LOCK LANDS ANYWHERE IN THIS FEATURE (owner ruling) ───────────────────────────────
+-- An earlier revision of this file also CREATE OR REPLACE'd `materialize_week_for_gym` to take a
+-- SHARED per-gym advisory lock, with slice 3 taking the EXCLUSIVE half, to close the
+-- retire-vs-materialize race. The pair was CUT. The shared half would be held once per gym for the
+-- ENTIRE Monday fleet pass — `cron_materialize_horizon` (20260805100000:184-206) walks every gym in
+-- ONE transaction, so nothing releases until the last gym is done — and Postgres offers
+-- `max_locks_per_transaction=64 × max_connections=60 ≈ 3,840` total lock slots. It binds at ~3,800
+-- gyms: it would lower the 4000-gym ceiling to protect a button an operator presses a few times a
+-- year. `materialize_week_for_gym` therefore stays BYTE-FOR-BYTE at its shipped 20260805100000 body —
+-- this migration does not touch it at all. The race that leaves open, and the one trigger to revisit
+-- it, are stated in 20260806100000's and 20260806100100's own headers.
 
-  -- #243 slice 1: hold the gym's materialization lock SHARED for the rest of this transaction, so a
-  -- concurrent retire (which takes it EXCLUSIVE) cannot strand an orphan session in a claimed week.
-  perform pg_catalog.pg_advisory_xact_lock_shared(pg_catalog.hashtextextended(p_gym_id::text, 0));
-
-  for t in
-    select id, class_type_id, weekday, start_time, duration_min, capacity
-    from public.schedule_template
-    where gym_id = p_gym_id and is_active
-  loop
-    insert into public.schedule_template_week (gym_id, template_id, week_start)
-    values (p_gym_id, t.id, v_monday)
-    on conflict (template_id, week_start) do nothing;
-
-    if found then  -- first materialization of this template for this week
-      -- A garbage gym.timezone raises HERE, after the ledger claim. Under the cron that raise is
-      -- caught by the per-gym subtransaction below, which rolls the claim back with it — the gym
-      -- retries cleanly next week instead of carrying a poisoned "already materialized" row (#3).
-      v_starts := ((v_monday + t.weekday) + t.start_time) at time zone v_tz;
-
-      v_session := null;
-      insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
-      values (p_gym_id, t.class_type_id, v_starts, t.duration_min, t.capacity, t.id)
-      on conflict (template_id, starts_at) do nothing
-      returning id into v_session;
-
-      if v_session is not null then
-        insert into public.class_session_coach (gym_id, session_id, coach_id)
-        select p_gym_id, v_session, stc.coach_id
-        from public.schedule_template_coach stc where stc.template_id = t.id;
-        v_count := v_count + 1;
-      end if;
-    end if;
-  end loop;
-
-  return v_count;
-end;
-$function$;
-
--- Same signature as 20260805100000 — CREATE OR REPLACE carries the EXECUTE grants (revoked from
--- public/anon, granted to authenticated), so no re-issue is needed.
-
--- ── 2. edit_class_session: a hand-moved session LEAVES the rule (template_id = null) ──────────────
+-- ── 1. edit_class_session: a hand-moved session LEAVES the rule (template_id = null) ──────────────
 -- 20260706120100:208-209 deliberately preserves `template_id` on an edit, with the comment "the
 -- provenance link stays but the edit reaches no other session in the series". That was correct while
 -- nothing could ever write the series — a dangling provenance pointer that nothing dereferenced. Slice
@@ -95,9 +26,11 @@ $function$;
 -- operator's exception is silently deleted by a write they aimed at everything else.
 --
 -- So a hand-edited session DETACHES: it becomes a one-off at whatever instant the operator chose, and
--- the series can never reach it again. This is the same rule slice 2 applies to a session that cannot
--- legally move (the past-instant guard) — one meaning for `template_id is null`: "this dated class no
--- longer belongs to the rule".
+-- the series can never reach it again. After this change `template_id = null` carries exactly ONE
+-- writer-meaning — A HAND-EDITED ONE-OFF — and nothing else in the feature ever writes it. In
+-- particular slice 2's past-instant guard does NOT detach: a class it cannot legally move is left
+-- attached and byte-identical (20260806100000), precisely so "terminar el horario" still reaches it.
+-- One writer, one meaning, one thing a reader has to know.
 --
 -- What it costs, stated because it is a real behaviour change and not a refactor:
 --   * PROVENANCE IS LOST on an edit. Nothing reads it today (`packages/data/src/server/agenda.ts:105`
@@ -163,3 +96,49 @@ begin
   select v_gym, p_session_id, cid from unnest(p_coach_ids) as cid;
 end;
 $function$;
+
+-- ── 2. BACKFILL: detach every already-attached session that is OFF its template's grid ────────────
+-- One statement, run once, and it can never need to run again. These rows exist because until §1
+-- above, `edit_class_session` deliberately PRESERVED template_id on a hand move (20260706120100:208,
+-- "template_id is NOT touched") — so every holiday move an operator has ever made left a session
+-- sitting at an instant its template does not describe while still pointing at that template. Harmless
+-- for as long as nothing dereferenced the pointer. Not harmless the moment slice 2 lands, for two
+-- independent reasons:
+--
+--   (a) THE STOMP, RETROACTIVELY. The first `update_recurring_schedule` on that template recomputes
+--       every attached session's instant from its own ISO week and drags the hand-moved class back
+--       onto the grid it was deliberately taken off — the exact outcome §1 exists to prevent, applied
+--       to every move made BEFORE §1 shipped. §1 fixes the future; only this fixes the past.
+--   (b) THE RAW 23505. Two attached rows in the SAME ISO week both recompute to the SAME instant and
+--       collide on `class_session_template_starts_uq` (20260706120000:71). That surfaces as
+--       PostgREST's raw constraint-violation text, not the friendly Spanish refusal — and it is not
+--       self-healing: EVERY future series edit on that template fails identically until someone
+--       hand-detaches a row in SQL. A gym that once moved a Tuesday class into another Tuesday's week
+--       has already minted that state.
+--
+-- HOW "OFF THE GRID" IS DECIDED: by the materializer's OWN instant computation (20260805100000:81 —
+-- `((v_monday + t.weekday) + t.start_time) at time zone tz`), re-anchored on each SESSION's own local
+-- week instead of the pass's Monday. A row is therefore left alone exactly when the arithmetic that
+-- put on-grid rows there still reproduces its instant — the same rule, not a second opinion about it.
+--
+-- That comparison is against HISTORY, not against a moved goalpost, because `schedule_template` was
+-- IMMUTABLE before #243: no RPC and no UI ever updated it (`create_recurring_schedule` only inserts,
+-- 20260805110000:324-326; #243's update RPC lands in the later-timestamped 20260806100000). The
+-- template's CURRENT weekday/start_time IS the pattern every attached row was materialized from.
+--
+-- AND WHY IT IS COMPLETE: this runs before any series move can ever have executed, so at backfill time
+-- "off the grid" ⇔ "hand-moved", with no third cause. After it, plus §1 going forward, TWO ATTACHED
+-- ROWS IN ONE ISO WEEK IS UNREACHABLE — which is why slice 2's fan-out carries no unique_violation
+-- handler: the collision it would catch cannot occur.
+--
+-- What it costs: provenance on those rows, which nothing reads (`agenda.ts:105` does not select the
+-- column) — the same price §1 charges going forward, paid once for the past. Past and cancelled rows
+-- are swept too: neither verb touches them, so detaching them is free, and leaving them attached would
+-- be one more state a reader has to reason about.
+update public.class_session cs
+   set template_id = null
+  from public.schedule_template t
+  join public.gym g on g.id = t.gym_id
+ where t.id = cs.template_id
+   and cs.starts_at is distinct from
+       (((date_trunc('week', (cs.starts_at at time zone g.timezone))::date + t.weekday) + t.start_time) at time zone g.timezone);

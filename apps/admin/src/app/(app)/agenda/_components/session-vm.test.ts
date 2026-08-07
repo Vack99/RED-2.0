@@ -7,9 +7,11 @@ import {
   canceladasLinea,
   coachIdsCambiaron,
   createDraft,
+  draftSinCambios,
   editDraftFrom,
   esBloqueoVendible,
   movidasLinea,
+  semillaAlcance,
   sugerenciaVenta,
   toCardVM,
 } from "./session-vm";
@@ -37,9 +39,13 @@ function dto(over: Partial<SesionAgendaDTO> = {}): SesionAgendaDTO {
     roomId: null,
     coaches: [],
     templateId: null,
+    plantilla: null,
     ...over,
   };
 }
+
+/** A session that came from a rule AND still matches it — the ordinary on-grid case. */
+const REGLA = { tipo: "Metcon", hora: "19:00", duracionMin: 60, capacidad: 30, coachIds: ["co1"] };
 
 describe("toCardVM", () => {
   it("maps a_continuacion to UI estado 'normal' with isNext true", () => {
@@ -92,6 +98,11 @@ describe("toCardVM", () => {
   it("carries the generating rule through — null is a one-off, an id is a series (#243)", () => {
     expect(toCardVM(dto(), "08:00").templateId).toBeNull();
     expect(toCardVM(dto({ templateId: "tpl-1" }), "08:00").templateId).toBe("tpl-1");
+  });
+
+  it("carries the rule's OWN values, which the wide-scope editor seeds from (#243)", () => {
+    expect(toCardVM(dto(), "08:00").plantilla).toBeNull();
+    expect(toCardVM(dto({ templateId: "tpl-1", plantilla: REGLA }), "08:00").plantilla).toEqual(REGLA);
   });
 });
 
@@ -149,18 +160,106 @@ describe("editDraftFrom", () => {
     expect(editDraftFrom(card).alcance).toBe("clase");
   });
 
-  it("RE-seeds the scope on every open — a wide edit never survives into the next card", () => {
-    const tocado = { ...editDraftFrom(card), alcance: "serie" as const };
-    expect(tocado.alcance).toBe("serie");
-    expect(editDraftFrom(card).alcance).toBe("clase");
-  });
-
   it("leaves the weekday row empty — it is the create flow's alone", () => {
     expect(editDraftFrom(card).repeatDays).toEqual([false, false, false, false, false, false]);
   });
 
   it("blanks a missing special name rather than carrying null into the input", () => {
     expect(editDraftFrom(toCardVM(dto(), "19:00")).specialName).toBe("");
+  });
+});
+
+/**
+ * THE seed rule (#243). A wide save rewrites the RULE, so the wide arm must read the rule —
+ * and a class can be attached and still off-grid, because `update_recurring_schedule` leaves the
+ * one whose recomputed instant would land in the past exactly where it was. Seeding a wide save
+ * from that class is how an operator who touched only the cupo reverts a whole schedule.
+ */
+describe("semillaAlcance", () => {
+  /** The kept class: still attached to tpl-1, but sitting at LAST month's values. */
+  const desfasada = toCardVM(
+    dto({
+      templateId: "tpl-1",
+      plantilla: REGLA,
+      tipo: "Funcional",
+      duracionMin: 45,
+      capacidad: 24,
+      coaches: [{ id: "co9", nombre: "Suplente" }],
+    }),
+    "07:00",
+  );
+
+  it("seeds the wide arm from the RULE, not from the off-grid class that was clicked", () => {
+    expect(semillaAlcance(desfasada, "serie")).toEqual({
+      tipo: "Metcon",
+      hora: "19:00",
+      duracionMin: 60,
+      cupo: 30,
+      coachIds: ["co1"],
+    });
+  });
+
+  it("seeds the narrow arm from the clicked class — that is the row it edits", () => {
+    expect(semillaAlcance(desfasada, "clase")).toEqual({
+      tipo: "Funcional",
+      hora: "07:00",
+      duracionMin: 45,
+      cupo: 24,
+      coachIds: ["co9"],
+    });
+  });
+
+  it("is identical both ways for an on-grid class — the normal case shows no visible change", () => {
+    const alDia = toCardVM(
+      dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }),
+      "19:00",
+    );
+    expect(semillaAlcance(alDia, "serie")).toEqual(semillaAlcance(alDia, "clase"));
+  });
+
+  it("falls back to the session for a one-off, which has no rule to read", () => {
+    const unica = toCardVM(dto({ tipo: "Funcional", capacidad: 24 }), "07:00");
+    expect(semillaAlcance(unica, "serie")).toEqual(semillaAlcance(unica, "clase"));
+  });
+});
+
+/**
+ * The no-op guard (#243). A narrow save runs `edit_class_session`, which clears `template_id` —
+ * so GUARDAR on an untouched series class trades an irreversible detach for nothing at all.
+ */
+describe("draftSinCambios", () => {
+  const card = toCardVM(
+    dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }),
+    "19:00",
+  );
+  const limpio = editDraftFrom(card);
+
+  it("is true for a sheet that was opened and not touched", () => {
+    expect(draftSinCambios(card, limpio)).toBe(true);
+  });
+
+  it.each([
+    ["tipo", { tipo: "Funcional" }],
+    ["hora", { hora: "20:00" }],
+    ["duración", { duracionMin: 45 }],
+    ["cupo", { cupo: 24 }],
+    ["coaches", { coachIds: ["co2"] }],
+    ["evento especial", { isSpecial: true }],
+  ])("is false once the operator changes the %s", (_campo, patch) => {
+    expect(draftSinCambios(card, { ...limpio, ...patch })).toBe(false);
+  });
+
+  it("ignores a coach re-tapped back into place — that is not a change", () => {
+    expect(draftSinCambios(card, { ...limpio, coachIds: ["co1"] })).toBe(true);
+  });
+
+  it("measures the WIDE scope against the rule, so a scope flip alone is still no change", () => {
+    expect(draftSinCambios(card, { ...limpio, alcance: "serie" })).toBe(true);
+  });
+
+  it("sees the off-grid class's own values as a real change to the rule under the wide scope", () => {
+    const desfasada = toCardVM(dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }), "07:00");
+    expect(draftSinCambios(desfasada, { ...editDraftFrom(desfasada), alcance: "serie" })).toBe(false);
   });
 });
 
@@ -188,17 +287,24 @@ describe("coachIdsCambiaron", () => {
 });
 
 /**
- * The two series receipts. Both RPCs return an int, and the count is the only honest
- * thing to show: a move can legitimately report fewer classes than the horizon holds
- * (one whose new time would land in the past is detached, not moved).
+ * The two series receipts. The count is what the RPC actually did — and a move can
+ * legitimately rewrite fewer classes than the series holds: the one whose new time would
+ * land in the past keeps its old time, and the receipt has to NAME it rather than let the
+ * operator find it on the agenda (#243 §4).
  */
 describe("movidasLinea", () => {
   it("counts the future classes a series move actually rewrote", () => {
-    expect(movidasLinea(6)).toBe("6 clases futuras movidas");
+    expect(movidasLinea(6, 0)).toBe("6 clases futuras movidas");
   });
   it("reads singular for one, and survives a zero-move (every week already past)", () => {
-    expect(movidasLinea(1)).toBe("1 clase futura movida");
-    expect(movidasLinea(0)).toBe("0 clases futuras movidas");
+    expect(movidasLinea(1, 0)).toBe("1 clase futura movida");
+    expect(movidasLinea(0, 0)).toBe("0 clases futuras movidas");
+  });
+  it("names the class the past-instant guard left alone instead of quietly under-counting", () => {
+    // "se queda como está", not "mantiene su horario": the kept class keeps EVERYTHING —
+    // hora, cupo, tipo and coaches — because the move skipped it whole.
+    expect(movidasLinea(5, 1)).toBe("5 clases futuras movidas · la de esta semana se queda como está");
+    expect(movidasLinea(0, 1)).toBe("0 clases futuras movidas · la de esta semana se queda como está");
   });
 });
 

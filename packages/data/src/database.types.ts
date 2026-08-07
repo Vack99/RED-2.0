@@ -1611,7 +1611,10 @@ export type Database = {
           p_template_id: string
           p_weekday?: number
         }
-        Returns: number
+        Returns: {
+          kept: number
+          moved: number
+        }
       }
       ventana_arribo: {
         Args: { p_duration_min: number; p_starts_at: string }

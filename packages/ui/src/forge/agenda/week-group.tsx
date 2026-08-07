@@ -1,5 +1,6 @@
 import * as React from "react";
 
+import { serieTag } from "./session-card";
 import { type EstadoSesion, countLabel, estadoVisual } from "./session-view";
 import { SpecialStar } from "./special-star";
 
@@ -29,6 +30,9 @@ export interface WeekRow {
   cap: number;
   estado: EstadoSesion;
   isSpecial?: boolean;
+  /** No generating `schedule_template` (#243) — the same `Única` tag the DÍA card carries, and
+   *  for the same reason: a class that just detached from its schedule leaves no other trace. */
+  esUnica?: boolean;
   onClick?: () => void;
 }
 
@@ -63,6 +67,7 @@ export function WeekGroup({ dnum, wd, selected = false, occupancyPct = null, row
 
       {rows.map((r, i) => {
         const v = estadoVisual(r.estado);
+        const unica = serieTag(r.esUnica ?? false);
         return (
           <button
             key={i}
@@ -99,6 +104,11 @@ export function WeekGroup({ dnum, wd, selected = false, occupancyPct = null, row
               >
                 {r.tipo}
               </span>
+              {unica && (
+                <span className="uppercase" style={{ flex: "none", fontSize: 8.5, fontWeight: 700, letterSpacing: 0.7, color: "var(--muted-soft)" }}>
+                  {unica}
+                </span>
+              )}
             </span>
             <span className="tnum" style={{ flex: "none", fontSize: 12, fontWeight: 700, letterSpacing: -0.2, color: v.dimmed ? "var(--muted-soft)" : "var(--muted)" }}>
               {countLabel(r.booked, r.cap)}
