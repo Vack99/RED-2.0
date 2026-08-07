@@ -305,13 +305,21 @@ select (select count(*) from perfil where gym_id='ca1954bc-6b40-4ab1-bb45-1ce4d5
 
 ---
 
-### Stage 5 — Members + sales  ✅ 19 SEEDABLE NOW · 9 SECOND-PASS
+### Stage 5 — Members + sales  ✅ COMPLETE — 19 first pass + 9 second pass (9/9 done 2026-08-02)
 
 **Source of truth:** `docs/supabase/seeding-contacts.json` (reconciled with the owner 2026-07-24). It encodes every decision below — read it before running.
 
 **Seedable now (19):** 13 Mensualidad ilimitada (the `mensualidad` array — includes Elsa María "Sama" Rodríguez) + 5 Clase individual (the `clase_individual` array — everyone with contact info who is NOT on the Inscritos list bought a single class and already attended it) + 1 test member (Aaron Talavera — folio LAST so his post-test removal leaves the gap at the tail; teardown below).
 
-**Second pass — 9, UNBLOCKED by #190 (2026-08-01):** the `roster_without_contact` array (Fer la mexicana, Bibi, Brenda Chávez, Dulce Chávez, Alva Valles, Karen Lara, Gaby Bustillos, Diana Hernández, Abrham Lara). They were blocked because `clientes.tel` was `NOT NULL`; it is now nullable, so they seed with `tel` NULL and the number is added later on the ficha. Abrham's package is now resolved (Mensualidad ilimitada, Ago 2026 → Ene 2027, vence 2027-01-07, venta fecha 2026-07-07); he is *additionally* pending only the **monto** he actually paid for the prepay (see open items). They seed in a later run, folios continuing from the counter (`next_folio` → 1020+; Aaron's 1019 gap stays reserved).
+**Second pass — 9, DONE (unblocked by #190 on 2026-08-01, executed 2026-08-02):** the `roster_without_contact` array. They were blocked because `clientes.tel` was `NOT NULL`; it is now nullable, so they seeded with `tel` NULL and the number goes in later on the ficha.
+- **Folios 1023–1030 — the 8 flat-30 rows** (Fer la mexicana, Bibi, Brenda Chávez, Dulce Chávez, Alva Valles, Karen Lara, Gaby Bustillos, Diana Hernández): same template as the first pass — Mensualidad ilimitada, $1200 efectivo, `clases_restantes` NULL, `vigencia_tipo='dias'`/`vigencia_dias=30`, `vence = fecha + 30`, `created_at` backdated to the payment date.
+- **Folio 1031 — Abrham Lara, PERSONALIZADO.** Owner ruled the monto 2026-08-02: **$1,000/month × 5 months (Ago→Ene) = $5,000**. `paquete_nombre='Ilimitada 5 meses (Ago-Ene)'` (deliberately NOT 'Mensualidad ilimitada' — that package is $1200/30d, so a $5000 sale under that name reads as a data error on the ficha and the recibo), `clases_restantes` NULL, `vigencia_tipo='dias'`, `vigencia_dias=184`, `personalizado=true`, `fecha` 2026-07-07, `vence` 2027-01-07. **`vigencia_dias` is derived as `vence - fecha` (184, not 153)** because the cash landed 2026-07-07 while the coverage he bought runs Ago 7 → Ene 7; the Jul 7→Ago 7 month rides along free, since he has no earlier venta row to carry it. This puts $5,000 into July's corte — correct, that is when the cash arrived.
+
+Also live in this range but *not* from this roster: **1020–1021** (Aaron Test Uno/Dos, throwaway) and **1022** (Fernanda Chávez Quezada — a real new member added during #190's walk; prod's first null-tel row).
+
+**Post-state:** 31 clientes / 31 ventas / 31 distinct folios / `last_folio = 1031`. Aaron's 1019 gap stays reserved.
+
+⚠️ **All 9 second-pass rows have no phone AND no email**, so they are uninvitable — `preparar_invitacion` needs an address. Collect contact info on the ficha before any invite round.
 
 **Shape.** Per member: one `clientes` row + one `ventas` row, linked by `nombre` (unique in the batch — the tel is not, since #190 allows it to be NULL). Emails **are** carried now (this reverses the old "email = NULL" rule) and are lowercased on insert. Rows land in the **`sin_invitar`** invitation state — email set, `invitacion_enviada_at` NULL, `auth_user_id` NULL, **no `claim_code`** (the code is minted only by `preparar_invitacion` at send time; the seed must not set it). See the in-class invite section below.
 - **Mensualidad ilimitada (13 + Aaron):** `clientes.clases_restantes = NULL`, `paquete_nombre='Mensualidad ilimitada'`, `vence = venta fecha + 30`; `ventas` `monto=1200`, `clases=NULL`, `vigencia_tipo='dias'`, `vigencia_dias=30`, `metodo='efectivo'`, `fecha = last_payment_date` (Aaron = seed-execution day).
@@ -461,8 +469,8 @@ commit;
 | 1019 | Aaron Talavera (test member) | Ilimitada | seed-day | seed-day +30 | activo |
 
 **Open items (do not invent resolutions — owner decisions):**
-- The **9** `roster_without_contact` members need real **phone numbers** before they can seed (second pass).
-- **Abrham Lara** — package RESOLVED 2026-07-24: Mensualidad ilimitada prepaid Ago 2026 → Ene 2027 (from the roster's "Agosto a enero 7") → `vence` **2027-01-07**, `clases_restantes` NULL, venta `fecha` 2026-07-07. Still pending, like the other 8: his **phone number**, plus the **monto** actually paid for the prepay (pin both when the owner's WhatsApp round returns).
+- ~~The **9** `roster_without_contact` members need real **phone numbers** before they can seed (second pass).~~ **CLOSED 2026-08-02** — all 9 seeded with `tel` NULL per #190 (folios 1023–1031). What remains is *contact info*, not a seed blocker: they have neither phone nor email, so they cannot be invited until one arrives on the ficha.
+- ~~**Abrham Lara** — the **monto** actually paid for the prepay.~~ **CLOSED 2026-08-02** — owner ruled $1,000/month × 5 months = **$5,000**; seeded as folio 1031, PERSONALIZADO (details in Stage 5).
 - **"Jaime Hernandez"** is a PROVISIONAL name for `jaimehdzh04@` — confirm with the owner.
 - **Single-class venta dates** are approximated as 2026-07-21 — correct individually if the owner has real dates.
 
