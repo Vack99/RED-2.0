@@ -8,11 +8,14 @@
 -- no-show and nothing else.
 --
 -- The rules this suite pins, all of them on the WRITTEN ROWS (a `void` RPC has no return to lean on):
---   * BEFORE-START ONLY (§4) — a PAST session cannot be cancelled: 'La clase ya comenzó', zero rows
---     moved. Its still-`reservada` rows are the NO-SHOWS the roster derives, so releasing them would
---     refund forfeited holds AND erase the absences — the derived-only ruling breached by a write that
+--   * BEFORE-START ONLY (§4) — a session that has begun cannot be cancelled, zero rows moved. Its
+--     still-`reservada` rows are the NO-SHOWS the roster derives, so releasing them would refund
+--     forfeited holds AND erase the absences — the derived-only ruling breached by a write that
 --     deletes history rather than by a sweep that invents it. The Agenda navigates backwards freely,
---     so this is one click away, not a theoretical path;
+--     so this is one click away, not a theoretical path. ONE CONDITION, TWO TENSES since
+--     20260806130000: 'La clase ya comenzó' while it is still running (2b), 'La clase ya pasó' once it
+--     is over (2) — pinned as FULL sentences in both, so a build that collapsed them back into one
+--     literal fails whichever one it kept;
 --   * every active `reservada` on the session flips to `cancelada` + `cancelled_at` stamped;
 --   * each of those members is refunded EXACTLY what their booking spent — consumio-gated, proved on
 --     BOTH halves of that gate: an ILIMITADO booking (consumio=false, balance NULL) has its NULL left
@@ -320,6 +323,12 @@ end $$;
 -- 06:00. Cancelling it would flip every still-`reservada` row to `cancelada` and refund it — which is
 -- both a refund of a FORFEITED hold and, because `no_show` is DERIVED from (reservada, class over),
 -- the erasure of that absence from the roster. The gate refuses with cancelar_reserva's own sentence.
+--
+-- THE TENSE IS PART OF THE CLAIM (20260806130000). s_past starts three hours ago and runs 60 minutes,
+-- so it is OVER, and the refusal must say 'La clase ya pasó'. 'La clase ya comenzó' about a class that
+-- finished two hours ago reads to an operator as the app showing stale state, not as a refusal.
+-- Vector (2b) below holds the other tense, so a build that collapsed both back into one sentence
+-- cannot pass: whichever literal it picked, one of the two vectors fails.
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.op_a', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
@@ -332,8 +341,10 @@ begin
     perform public.cancel_class_session(s_past);
   exception when others then
     v_raised := true;
-    if sqlerrm not like 'La clase ya comenzó%' then
-      raise exception 'RULE FAIL(2): wrong raise for cancelling a past class: %', sqlerrm;
+    -- The FULL sentence, not a prefix: the two tenses share a prefix up to 'La clase ya ', so
+    -- `like 'La clase ya %'` would pass on either and prove nothing about which one fired.
+    if sqlerrm is distinct from 'La clase ya pasó' then
+      raise exception 'RULE FAIL(2): wrong raise for cancelling a class that is OVER: % (expected La clase ya pasó)', sqlerrm;
     end if;
   end;
   if not v_raised then raise exception 'RULE FAIL(2): a PAST class was cancelled — its no-shows were refunded and erased'; end if;
@@ -354,6 +365,69 @@ begin
   if v_status is distinct from 'reservada' then raise exception 'RULE FAIL(2): the refused cancel moved the no-show to % — the derived absence is gone', v_status; end if;
   select clases_restantes into v_n from public.clientes where id = c_past;
   if v_n is distinct from 4 then raise exception 'RULE FAIL(2): the refused cancel refunded the forfeited hold (balance %, expected 4)', v_n; end if;
+end $$;
+
+-- ── (2b) …AND A CLASS THAT IS STILL RUNNING SAYS THE OTHER TENSE ────────────────────────────────
+-- The gate is one condition with two sentences (20260806130000). Vector (2) pins the PASSED one; this
+-- pins the IN-PROGRESS one, which is the tense that must NOT change — it was right all along, for the
+-- ~one hour it describes. Fixture: started 10 minutes ago, runs 60, so `now()` is inside
+-- [starts_at, starts_at + duration). Self-contained (its own session and its own member) so vector
+-- (3)'s per-row assertions on s_a are untouched by it.
+do $$
+declare
+  gym_a uuid := current_setting('t.gym_a', true)::uuid;
+  u_run uuid := gen_random_uuid();
+  s_run uuid; c_run uuid;
+begin
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', u_run, 'authenticated', 'authenticated', 'cr-run@test.local');
+  insert into public.gym_membership (user_id, gym_id, role) values (u_run, gym_a, 'member');
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('CR en curso', '5551100009', 4, (now() + interval '20 days')::date, '8 clases', gym_a, u_run)
+    returning id into c_run;
+
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_a, (select id from public.class_type where gym_id = gym_a limit 1),
+            now() - interval '10 minutes', 60, 20) returning id into s_run;
+  -- A live hold on it, seeded privileged: #165 refuses booking a started class, so a class that is
+  -- mid-run with a hold on it can only be built this way. It is what makes "nothing was refunded"
+  -- below a money claim.
+  insert into public.reservation (gym_id, class_session_id, member_id, status, consumio)
+    values (gym_a, s_run, c_run, 'reservada', true);
+
+  perform set_config('t.s_run', s_run::text, true);
+  perform set_config('t.c_run', c_run::text, true);
+end $$;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_raised boolean := false;
+begin
+  begin
+    perform public.cancel_class_session(current_setting('t.s_run', true)::uuid);
+  exception when others then
+    v_raised := true;
+    if sqlerrm is distinct from 'La clase ya comenzó' then
+      raise exception 'RULE FAIL(2b): wrong raise for cancelling a class that is IN PROGRESS: % (expected La clase ya comenzó)', sqlerrm;
+    end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(2b): a class that had already started was cancelled'; end if;
+end $$;
+reset role;
+
+do $$
+declare
+  v_n int; v_status text; v_cancelled timestamptz;
+begin
+  select cancelled_at into v_cancelled from public.class_session where id = current_setting('t.s_run', true)::uuid;
+  if v_cancelled is not null then raise exception 'RULE FAIL(2b): the refused cancel stamped cancelled_at on a running class'; end if;
+  select status into v_status from public.reservation
+   where member_id = current_setting('t.c_run', true)::uuid and class_session_id = current_setting('t.s_run', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'RULE FAIL(2b): the refused cancel moved the live hold to %', v_status; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.c_run', true)::uuid;
+  if v_n is distinct from 4 then raise exception 'RULE FAIL(2b): the refused cancel refunded a hold on a running class (balance %, expected 4)', v_n; end if;
 end $$;
 
 -- ── (3) THE RELEASE: every hold flips + each member is refunded exactly what it spent ────────────

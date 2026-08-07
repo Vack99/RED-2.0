@@ -20,7 +20,11 @@
 --   * re-book reuses the row     — booking a session the member previously CANCELLED reactivates the one
 --                                  UNIQUE row (no duplicate) and consumes one.
 --   * started-class block (#165) — a session whose starts_at is already past is rejected with the SAME
---                                  message cancelar_reserva has always used ('La clase ya comenzó'), and
+--                                  message cancelar_reserva says for a class in this state, one minute
+--                                  past its start ('La clase ya comenzó' — since 20260806130000 the two
+--                                  cancel paths ALSO have a past tense, 'La clase ya pasó', for a class
+--                                  that is fully over; reservar_clase keeps the single sentence, because
+--                                  "you cannot book this" is one fact at any distance past the start), and
 --                                  atomically: no reservation row, no decrement. The client hides past
 --                                  classes; the client is not the rule, and a booking made after the
 --                                  class ran is a consumed credit for a seat nobody can occupy. The

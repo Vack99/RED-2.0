@@ -406,6 +406,13 @@ reset role;
 -- ── op: once the class has started the operator cancel is refused too — atomic ──
 -- Attendance history is not an operator's to rewrite after the fact: a still-reservada past booking is a
 -- no-show that must consume (ADR-0010 §5), and the before-start gate is SHARED, not forked per path.
+--
+-- THE TENSE: s_started began two hours ago and runs 60 minutes, so it is OVER, and since 20260806130000
+-- the refusal says 'La clase ya pasó'. Same one condition as before — only the sentence knows the
+-- difference between a class that is running and one that finished last Tuesday. The full sentence is
+-- pinned, not a prefix: both tenses share 'La clase ya ', so a prefix match would prove nothing.
+-- ('La clase ya comenzó' is still what a mid-run class says; cancel_class_session_release.sql (2b)
+-- holds that half.)
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
@@ -417,8 +424,8 @@ declare
 begin
   v_msg := null;
   begin perform public.cancelar_reserva(s_started, t_start); exception when others then v_msg := sqlerrm; end;
-  if v_msg is null or v_msg not like 'La clase ya comenz%' then
-    raise exception 'RULE FAIL(op started): got % (expected La clase ya comenzó)', v_msg;
+  if v_msg is distinct from 'La clase ya pasó' then
+    raise exception 'RULE FAIL(op started): got % (expected La clase ya pasó — the class is over, not running)', v_msg;
   end if;
   select clases_restantes into v_clases from public.clientes where id = t_start;
   if v_clases <> 5 then raise exception 'RULE FAIL(op started): balance moved to % on a rejected cancel', v_clases; end if;

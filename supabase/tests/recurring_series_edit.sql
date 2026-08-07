@@ -36,7 +36,8 @@
 --  (5) THE PAST-INSTANT GUARD SKIPS. A future class whose RECOMPUTED instant would land in the past is
 --      NOT WRITTEN AT ALL — same instant, same class_type, same duration/capacity, and STILL ATTACHED
 --      to the template — and is reported as `kept`. Both release paths are shut for a started class
---      ('La clase ya comenzó'), so moving it there would silently destroy every hold on it.
+--      ('La clase ya comenzó' / 'La clase ya pasó'), so moving it there would silently destroy every
+--      hold on it.
 --  (6) THE DUPLICATE-SLOT REFUSAL, in MINIMAL's R5 shape: the identical Spanish sentence
 --      create_recurring_schedule raises (one vocabulary, one index), and FULL ROLLBACK — start_time,
 --      every starts_at, every reservation status and every balance byte-identical.
@@ -1755,8 +1756,9 @@ end $$;
 --       operator was told the class had moved. The refusal has its OWN sentence, because
 --       'Sesión no encontrada' would send them looking for a class that is right there.
 --   (b) A FUTURE class could be moved to a PAST instant — probed on live at 09:45. Past the start both
---       release paths are shut ('La clase ya comenzó'), so every hold on it becomes unrefundable by
---       the gym and uncancellable by the member.
+--       release paths are shut ('La clase ya comenzó', or 'La clase ya pasó' once it is over —
+--       20260806130000, two tenses of one gate), so every hold on it becomes unrefundable by the gym
+--       and uncancellable by the member.
 --   (c) …but retro-editing a class that ALREADY passed (past→past) stays legal: the desk fixes
 --       records, and no release path opens either way.
 --   (d) THE REVERSE CROSSING, which the first build of this file missed. A FORFEIT IS A ZERO-WRITE

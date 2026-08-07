@@ -94,6 +94,19 @@ export function alcanceCaption(alcance: EditorAlcance, esPasada: boolean, dia: n
     : `Cambia las clases futuras de ${alcanzados}. Las pasadas no se tocan. Las reservas se mueven con la clase.`;
 }
 
+/**
+ * Whether the destructive button may render at all (owner re-walk defect). A past "clase" cancel
+ * can never succeed — `cancel_class_session`'s before-start gate is permanent, not a race to
+ * beat — so offering the button only to have the RPC refuse with a confusing message is a UX
+ * defect, not honesty. The "dia"/"horario" arms stay available on a past card: retiring a
+ * schedule is legal from ANY card, and the RPC only ever touches the schedule's FUTURE classes
+ * regardless of which one was clicked to get there. Render-only: the RPC remains the enforcer
+ * either way (same idiom as agenda.tsx's render-time clock reads, ~line 444).
+ */
+export function puedeCancelar(esPasada: boolean, alcance: EditorAlcance): boolean {
+  return !(esPasada && alcance === "clase");
+}
+
 /** The one destructive button's label — it follows the scope toggle (#243). */
 export function cancelLabel(alcance: EditorAlcance, dia: number): string {
   if (alcance === "horario") return "Terminar todo el horario";
@@ -450,7 +463,7 @@ export function EditorSheet({
         >
           {saveLabel(isEdit)}
         </button>
-        {isEdit && onCancelClass && (
+        {isEdit && onCancelClass && puedeCancelar(esPasada, alcance) && (
           <button
             type="button"
             disabled={pending}

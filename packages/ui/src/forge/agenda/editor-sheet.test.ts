@@ -10,6 +10,7 @@ import {
   editorTitle,
   especialNombre,
   puedeAmpliarAlcance,
+  puedeCancelar,
   saveLabel,
 } from "./editor-sheet";
 
@@ -113,6 +114,25 @@ describe("alcanceCaption", () => {
       "Esta clase se separa del horario. Los cambios del horario ya no la alcanzan.",
     );
     expect(alcanceCaption("clase", true, 3)).toBe(alcanceCaption("clase", false, 3));
+  });
+});
+
+/**
+ * The destructive button's render gate (owner re-walk defect). A past "clase" cancel can never
+ * succeed — cancel_class_session's before-start gate is permanent — so the sheet must not offer
+ * it just to have the RPC refuse with a confusing message. The wide arms stay available on a
+ * past card: retiring a schedule is legal from any card, and the RPC only ever touches the
+ * schedule's FUTURE classes regardless of which one was clicked.
+ */
+describe("puedeCancelar", () => {
+  it("hides the destructive button for a past class under the narrow scope", () => {
+    expect(puedeCancelar(true, "clase")).toBe(false);
+  });
+  it.each(["dia", "horario"] as const)("keeps the destructive button for a past card under the wide '%s' scope", (alcance) => {
+    expect(puedeCancelar(true, alcance)).toBe(true);
+  });
+  it("keeps the destructive button for a future class under the narrow scope", () => {
+    expect(puedeCancelar(false, "clase")).toBe(true);
   });
 });
 
