@@ -33,11 +33,11 @@ import {
   canceladasLinea,
   coachIdsCambiaron,
   createDraft,
+  aplicarAlcance,
   diaSemanaDe,
   draftSinCambios,
   editDraftFrom,
   movidasLinea,
-  reseedAlcance,
   semillaAlcance,
   sugerenciaVenta,
   type CardVM,
@@ -121,11 +121,6 @@ interface EditorState {
    *  (the cupo-shrink warning) and its opening `coachIds` (#243) back out at write time. */
   card: CardVM | null;
   draft: EditorDraft;
-  /** Which draft fields the operator has actually changed, reset empty on every open
-   *  (#243 defect fix): a scope toggle re-seeds `patchDraft`'s target fields ONLY when
-   *  they're absent here, so an hora changed BEFORE the toggle survives it instead of
-   *  being silently reverted to the new scope's baseline. */
-  touched: Set<keyof EditorDraft>;
   /** This card's own weekday (Lun=0..Sáb=5), from the day it is rendered under (#243) —
    *  the toggle's "todos los <día>" label and the destructive button's day-scoped copy.
    *  `null` while creating (no card, no day). */
@@ -198,7 +193,6 @@ export function AgendaScreen(props: AgendaScreenProps) {
     mode: "create",
     card: null,
     draft: createDraft(props.tipos[0]?.name ?? ""),
-    touched: new Set(),
     cardDia: null,
   });
   const [busy, setBusy] = React.useState(false);
@@ -307,12 +301,12 @@ export function AgendaScreen(props: AgendaScreenProps) {
 
   const openCreate = () => {
     closeGlance();
-    setEditor({ open: true, mode: "create", card: null, draft: createDraft(tipos[0]?.name ?? ""), touched: new Set(), cardDia: null });
+    setEditor({ open: true, mode: "create", card: null, draft: createDraft(tipos[0]?.name ?? ""), cardDia: null });
   };
   // Every open re-seeds the draft, which is what resets the #243 scope to "Solo esta
-  // clase" — a wide edit never survives into the next card the operator taps. `touched`
-  // resets with it, and `cardDia` reads the day the card was rendered under (glance.dia),
-  // never `card.startsAtIso` — see the glance state's own comment.
+  // clase" — a wide edit never survives into the next card the operator taps. `cardDia`
+  // reads the day the card was rendered under (glance.dia), never `card.startsAtIso` —
+  // see the glance state's own comment.
   const openEdit = (card: CardVM) => {
     closeGlance();
     setEditor({
@@ -320,24 +314,21 @@ export function AgendaScreen(props: AgendaScreenProps) {
       mode: "edit",
       card,
       draft: editDraftFrom(card),
-      touched: new Set(),
       cardDia: glance.dia ? diaSemanaDe(glance.dia) : null,
     });
   };
-  // A scope toggle is not just a flag — it changes WHAT the save writes, so it re-seeds the
-  // shared fields from that scope's own baseline (#243): the rule for "dia"/"horario", the
-  // clicked session for "solo esta clase" — but the pure `reseedAlcance` skips any field the
-  // operator already touched (#243 defect fix), so an hora changed BEFORE the toggle survives it
-  // instead of being silently reverted. Any other patch (not a scope flip) just marks its own
-  // keys touched.
+  // A scope toggle is not just a flag — it changes WHAT the save writes, so the pure
+  // `aplicarAlcance` (session-vm.ts) re-seeds the shared fields from the new scope's own
+  // baseline (#243): the rule for "dia"/"horario", the clicked session for "solo esta clase" —
+  // but ONLY for fields the operator has not actually changed, judged BY VALUE against the scope
+  // being left (D1/D2 fixes), never by a sticky "touched" flag. Any other patch (not a scope
+  // flip) is a plain merge.
   const patchDraft = (patch: Partial<EditorDraft>) =>
     setEditor((e) => {
       if (patch.alcance && e.card) {
-        return { ...e, draft: { ...e.draft, ...reseedAlcance(e.card, patch.alcance, e.touched) } };
+        return { ...e, draft: aplicarAlcance(e.card, e.draft, patch.alcance) };
       }
-      const touched = new Set(e.touched);
-      (Object.keys(patch) as (keyof EditorDraft)[]).forEach((k) => touched.add(k));
-      return { ...e, draft: { ...e.draft, ...patch }, touched };
+      return { ...e, draft: { ...e.draft, ...patch } };
     });
 
   // The title NAMES the verb that failed, because the three #243 writes are three different

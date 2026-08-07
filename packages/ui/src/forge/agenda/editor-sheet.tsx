@@ -26,9 +26,24 @@ export const WEEKDAY_TOGGLES = ["L", "M", "Mi", "J", "V", "S"] as const;
 export type EditorAlcance = "clase" | "dia" | "horario";
 
 /** Spanish weekday plurals, Lun=0..Sáb=5 — this app's own indexing (WEEKDAY_TOGGLES,
- *  `plantilla.groupDias`), used to name the "dia" scope in the toggle, the cancel
- *  label and its confirm sentence. */
-const DIAS_PLURAL = ["los lunes", "los martes", "los miércoles", "los jueves", "los viernes", "los sábados"];
+ *  `plantilla.groupDias`), used to name the "dia" scope in the toggle, the cancel label
+ *  and its confirm sentence. A trailing "los domingos" keeps the lookup total: `dia`
+ *  comes from `diaSemanaDe`, whose Lun=0..Dom=6 range is wider than this app's 0-5 class
+ *  days (unreachable today — the gym never schedules Domingo — but a lookup that can
+ *  return `undefined` is a defect waiting on a scheduling change, not a hard rule). */
+const DIAS_PLURAL = ["los lunes", "los martes", "los miércoles", "los jueves", "los viernes", "los sábados", "los domingos"];
+
+/**
+ * Whether the sheet may offer anything wider than "clase" (#243, defect D5): editing a card that
+ * came from a rule (`esSerie`) AND whose own weekday is actually known. `cardDia === undefined`
+ * means UNKNOWN, not Lunes — this fails CLOSED rather than ever naming the wrong day in a toggle
+ * label, a cancel confirm, or (via `todosLosDias`) an RPC call that retires the wrong weekday.
+ * The one gate behind the toggle row, the effective `alcance`, and the destructive button's
+ * wide arm — so an unknown day can never surface any of the three.
+ */
+export function puedeAmpliarAlcance(isEdit: boolean, esSerie: boolean, cardDia: number | undefined): boolean {
+  return isEdit && esSerie && cardDia !== undefined;
+}
 
 /** The scope options the toggle offers for THIS card: narrow always, "dia" always (the
  *  toggle only renders at all when the card is attached, #243), "horario" only when its
@@ -159,9 +174,10 @@ export interface EditorSheetProps {
   reservasActuales?: number;
   /** The rule's current capacity — what the WIDE cupo warning measures a shrink against. */
   cupoPlantilla?: number;
-  /** This card's own weekday (Lun=0..Sáb=5) — the toggle's "todos los <día>" label and
-   *  the destructive button's day-scoped copy (#243). Unread while `esSerie` is false,
-   *  since neither ever renders. */
+  /** This card's own weekday (Lun=0..Sáb=5) — the toggle's "todos los <día>" label and the
+   *  destructive button's day-scoped copy (#243). `undefined` means UNKNOWN, not Lunes (D5):
+   *  the sheet fails closed and hides the "dia"/"horario" toggle options and the wide
+   *  destructive arm rather than ever naming the wrong day. */
   cardDia?: number;
   /** The schedule's group weekdays, sorted, including this card's own (#243) — gates
    *  the "horario" scope: a lone-weekday group has no wider verb to offer. */
@@ -232,7 +248,7 @@ export function EditorSheet({
   esPasada = false,
   reservasActuales = 0,
   cupoPlantilla = 0,
-  cardDia = 0,
+  cardDia,
   groupDias = [],
   pending = false,
   onPatch,
@@ -244,10 +260,13 @@ export function EditorSheet({
 }: EditorSheetProps) {
   const [picker, setPicker] = React.useState<PickerKey>(null);
 
-  // The scope exists only for a generated class being edited; everything else is its
-  // own scope, so the label, the caption and the confirm all read from this one value.
-  const alcance: EditorAlcance = isEdit && esSerie ? draft.alcance : "clase";
-  const caption = alcanceCaption(alcance, esPasada, cardDia);
+  // The one gate (puedeAmpliarAlcance, D5): everything else is its own scope, so the label, the
+  // caption and the confirm all read from this single value.
+  const ampliable = puedeAmpliarAlcance(isEdit, esSerie, cardDia);
+  const alcance: EditorAlcance = ampliable ? draft.alcance : "clase";
+  // `cardDia ?? 0` is inert here: alcanceCaption/cancelLabel/cancelConfirm only READ `dia` on the
+  // "dia" branch, which `alcance` can only reach when `ampliable` is true (cardDia a number).
+  const caption = alcanceCaption(alcance, esPasada, cardDia ?? 0);
   const aviso = cupoAviso(draft.cupo, reservasActuales, alcance, cupoPlantilla);
 
   const toggleCoach = (id: string) => {
@@ -372,7 +391,7 @@ export function EditorSheet({
             </div>
           </div>
         )}
-        {isEdit && esSerie && (
+        {ampliable && cardDia !== undefined && (
           <div style={{ marginTop: 20 }}>
             <div className="uppercase" style={LABEL_STYLE}>
               Alcance del cambio
@@ -436,14 +455,16 @@ export function EditorSheet({
             type="button"
             disabled={pending}
             onClick={() => {
-              const pregunta = cancelConfirm(alcance, cardDia);
+              // `cardDia ?? 0` is inert (D5): `alcance` can only be "dia"/"horario" — the
+              // branches that read `dia` — when `cardDia` is a known number.
+              const pregunta = cancelConfirm(alcance, cardDia ?? 0);
               if (pregunta && !window.confirm(pregunta)) return;
               onCancelClass();
             }}
             className="uppercase"
             style={{ marginTop: 10, width: "100%", padding: 14, background: "transparent", border: "1px solid color-mix(in srgb, var(--red) 35%, transparent)", color: "var(--red)", fontFamily: "inherit", fontSize: 11, fontWeight: 800, letterSpacing: 1, cursor: pending ? "default" : "pointer", opacity: pending ? 0.45 : 1 }}
           >
-            {cancelLabel(alcance, cardDia)}
+            {cancelLabel(alcance, cardDia ?? 0)}
           </button>
         )}
         <button

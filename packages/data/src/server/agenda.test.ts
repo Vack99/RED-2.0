@@ -149,8 +149,9 @@ describe("getAgendaDia", () => {
         // Deliberately OFF-GRID from the session above (19:00/90/30/ct2 vs 09:00/60/20/ct1):
         // that is the shape the past-instant guard leaves behind, and the one a seed must not
         // confuse. `start_time` arrives as a Postgres `time`, i.e. with seconds.
-        // group_id/weekday ride the embed too — the group-siblings read below is keyed on group_id,
-        // and this weekday must survive the union even if the siblings read omits it (see groupDias).
+        // group_id/weekday/is_active ride the embed too. is_active: true — the ACTIVE-anchor
+        // case; the retired-solo (is_active: false → plantilla null) case is a separate fixture
+        // below (D3).
         schedule_template: {
           class_type_id: "ct2",
           start_time: "19:00:00",
@@ -158,6 +159,7 @@ describe("getAgendaDia", () => {
           capacity: 30,
           group_id: "grp-1",
           weekday: 3,
+          is_active: true,
           schedule_template_coach: [{ coach_id: "co2" }],
         },
       },
@@ -224,12 +226,15 @@ describe("getAgendaDia", () => {
       { id: "co1", name: "Marisa" },
       { id: "co2", name: "Paty" },
     ],
-    // Two siblings sharing s1's template's group_id — deliberately NOT including weekday 3
-    // (s1's own), so the groupDias test proves the own weekday is unioned in, not just read
-    // off this table.
+    // The group's OWN rows, as a real `where group_id in (...) and is_active` read would
+    // return them: s1's own weekday (3) is a row here too (real data has one row per weekday,
+    // including the anchor) — plus an inactive weekday-0 row (D3: a solo-retired sibling)
+    // that the is_active filter must exclude from groupDias.
     schedule_template: [
       { group_id: "grp-1", weekday: 1, is_active: true },
+      { group_id: "grp-1", weekday: 3, is_active: true },
       { group_id: "grp-1", weekday: 5, is_active: true },
+      { group_id: "grp-1", weekday: 0, is_active: false },
     ],
   });
 
@@ -277,20 +282,64 @@ describe("getAgendaDia", () => {
     expect(s2.plantilla).toBeNull();
   });
 
-  it("groupDias: unions the group-siblings read with the template's own weekday, sorted — the siblings fixture omits weekday 3 on purpose", async () => {
+  it("groupDias: reads the group's active weekdays straight off the sibling table (no own-weekday union) — the real table always carries the anchor's own row too", async () => {
     const { client } = makeFake(rowsFor());
     const dia = await getAgendaDia("2026-06-17", client);
     const s1 = dia.sesiones.find((s) => s.id === "s1")!;
     expect(s1.plantilla?.groupDias).toEqual([1, 3, 5]);
   });
 
-  it("groupDias: a template with no siblings besides itself resolves to just its own weekday", async () => {
+  it("D3: the sibling query's is_active filter is pinned — an inactive sibling row (weekday 0, a solo-retired Domingo) in the table fixture never surfaces in groupDias", async () => {
+    const { client } = makeFake(rowsFor());
+    const dia = await getAgendaDia("2026-06-17", client);
+    const s1 = dia.sesiones.find((s) => s.id === "s1")!;
+    expect(s1.plantilla?.groupDias).not.toContain(0);
+  });
+
+  it("groupDias: a template with no other active siblings — just its own row in the table — resolves to just its own weekday", async () => {
     const rows = rowsFor();
-    rows.schedule_template = []; // no ACTIVE siblings for grp-1 at all
+    rows.schedule_template = [{ group_id: "grp-1", weekday: 3, is_active: true }];
     const { client } = makeFake(rows);
     const dia = await getAgendaDia("2026-06-17", client);
     const s1 = dia.sesiones.find((s) => s.id === "s1")!;
     expect(s1.plantilla?.groupDias).toEqual([3]);
+  });
+
+  it("D3: a retired-solo template (is_active: false on the embed) detaches the card — plantilla is null, same as a one-off, so the sheet cannot offer the series verbs that would just re-raise 'ya retirado'", async () => {
+    const rows = rowsFor();
+    const s1 = rows.class_session!.find((s) => s.id === "s1")!;
+    (s1.schedule_template as Record<string, unknown>).is_active = false;
+    const { client } = makeFake(rows);
+    const dia = await getAgendaDia("2026-06-17", client);
+    const s1dto = dia.sesiones.find((s) => s.id === "s1")!;
+    expect(s1dto.templateId).toBe("tmpl-1"); // the FK still points at the dead row
+    expect(s1dto.plantilla).toBeNull();
+  });
+
+  it("the groupIds.length === 0 branch: a page with zero attached cards never needs the sibling read, and every card's plantilla is null", async () => {
+    const rows: Rows = {
+      class_session: [
+        {
+          id: "solo1",
+          class_type_id: "ct1",
+          starts_at: iso(MIERCOLES, "10:00"),
+          duration_min: 60,
+          capacity: 20,
+          is_special: false,
+          special_name: null,
+          room_id: null,
+          cancelled_at: null,
+          template_id: null,
+        },
+      ],
+      class_type: [{ id: "ct1", name: "Yoga" }],
+      class_session_coach: [],
+      coach: [],
+    };
+    const { client } = makeFake(rows);
+    const dia = await getAgendaDia("2026-06-17", client);
+    expect(dia.sesiones).toHaveLength(1);
+    expect(dia.sesiones[0].plantilla).toBeNull();
   });
 
   it("a session with no coach joins gets an empty coaches array (UI renders 'Por asignar')", async () => {

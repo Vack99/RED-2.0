@@ -37,11 +37,28 @@
 -- live and a scratch project holding the same rows land on the same groups, and a re-apply is a
 -- no-op. `gen_random_uuid()` in a backfill would be neither, and would re-shuffle groups on re-apply.
 --
--- The residual error, stated rather than papered over: two genuinely different schedules created in
--- the same transaction with the same class_type, time, duration and capacity but different weekdays
--- would merge into one group — which is one schedule by every definition an operator has. The
--- opposite error (one batch split across two groups) would need two different created_at values
--- inside one statement, which Postgres cannot produce.
+-- ── THE REAL TRADE, AND WHY IT IS STILL THIS KEY (probed on live before shipping) ────────────────
+-- FOUR OF THE SIX KEY COLUMNS ARE MUTABLE — class_type_id, start_time, duration_min and capacity are
+-- exactly what the LIVE `update_recurring_schedule` rewrites. So a batch CAN split: any per-day hora
+-- move an operator made BEFORE this migration puts that day outside its siblings' partition, and it
+-- lands in a group of its own. An earlier revision of this header claimed a split was impossible
+-- because created_at cannot vary inside one statement. That is true of created_at and false of the
+-- key, and it is the claim this paragraph replaces.
+--
+-- The immutable-only alternative (gym_id + created_at) is WORSE, measured rather than argued: live's
+-- seed transactions insert whole gym grids at one timestamp — 21 rows across 13 distinct variants in
+-- one — so that key merges every seeded schedule in a gym into ONE group, and "Terminar el horario"
+-- would then end the gym's entire week from any card. Nor does a coarser class-type key rescue it: a
+-- single seed transaction repeats the same class_type at different horas, so those would merge too.
+-- The params-bearing key is the only one live's own data supports.
+--
+-- WHAT IT ACTUALLY COSTS ON LIVE, counted not estimated: exactly ONE split — the owner's Sat
+-- 22:00→22:30 walk-era test move in the demo gym. It becomes its own group of one, which is a
+-- truthful description of a day that no longer shares its schedule's values. Known and accepted.
+--
+-- The residual error in the other direction: two genuinely different schedules created in the same
+-- transaction with the same class_type, time, duration and capacity but different weekdays merge into
+-- one group — which is one schedule by every definition an operator has.
 --
 -- The no-advisory-lock owner ruling and the materializer race stand exactly as 20260806090000 and
 -- 20260806100000 state them. Nothing here revisits either: `materialize_week_for_gym` is not touched.

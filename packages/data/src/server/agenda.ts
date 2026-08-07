@@ -141,7 +141,7 @@ async function fetchSesionesEnRango(
     // One string LITERAL, deliberately: supabase-js parses this at the type level, and a
     // concatenation collapses every column to GenericStringError.
     .select(
-      "id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id, schedule_template(class_type_id, start_time, duration_min, capacity, group_id, weekday, schedule_template_coach(coach_id))",
+      "id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id, schedule_template(class_type_id, start_time, duration_min, capacity, group_id, weekday, is_active, schedule_template_coach(coach_id))",
     )
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
@@ -223,16 +223,22 @@ async function fetchSesionesEnRango(
     roomId: r.room_id,
     coaches: coachesBySession.get(r.id) ?? [],
     templateId: r.template_id,
-    plantilla: r.schedule_template
+    // A retired-solo template (is_active false) gets null here, same as a one-off: retiring
+    // only cancels FUTURE classes (#243), so a past class can still point at a dead template —
+    // and the series verbs it would otherwise offer ("todos los miércoles" / "todo el horario")
+    // just re-raise "Horario no encontrado o ya retirado". Detach instead of offering that.
+    plantilla: r.schedule_template && r.schedule_template.is_active
       ? {
           tipo: tipoById.get(r.schedule_template.class_type_id) ?? "—",
           hora: r.schedule_template.start_time.slice(0, 5),
           duracionMin: r.schedule_template.duration_min,
           capacidad: r.schedule_template.capacity,
           coachIds: r.schedule_template.schedule_template_coach.map((c) => c.coach_id),
-          groupDias: [
-            ...new Set([...(diasPorGrupo.get(r.schedule_template.group_id) ?? []), r.schedule_template.weekday]),
-          ].sort((a, b) => a - b),
+          // No own-weekday union: this branch only runs when the anchor is_active, and the
+          // sibling read below already filters on is_active — so the anchor's own weekday is
+          // already in there. Unioning it in unconditionally was the bug: it fabricated a day
+          // for a RETIRED anchor whose weekday the sibling read correctly omits.
+          groupDias: [...(diasPorGrupo.get(r.schedule_template.group_id) ?? [])].sort((a, b) => a - b),
         }
       : null,
   }));

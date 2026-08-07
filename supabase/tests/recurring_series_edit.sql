@@ -67,10 +67,15 @@
 -- "Terminar el horario" from the Lunes card left Miércoles and Viernes running. `group_id` records the
 -- batch; `p_all_days` fans the verb out over it. Vectors (14)-(20) run in gym G (and gym B), never in
 -- E or R, so every count those earlier vectors assert still stands.
--- (14) GROUP IDENTITY. Zero templates carry a null group_id anywhere; a 3-weekday
---      create_recurring_schedule mints exactly ONE group across its three rows; and a template created
---      by any other act is NOT in that group — otherwise "todos los días" would reach a schedule the
---      operator never created with it.
+-- (14a) THE BACKFILL KEY, on the rows that already exist — the half of this feature that decides what
+--      happens to every schedule live is already running. 20260806120000's partition expression is
+--      re-run as a plain SELECT over fixtures with a known answer: three rows differing only in
+--      weekday are ONE group; a row differing in start_time (the pre-group_id per-day hora move) is
+--      its own; another gym's identical schedule is its own. All five share one created_at, which is
+--      the hard case, not the easy one.
+-- (14) GROUP IDENTITY, going forward. A 3-weekday create_recurring_schedule mints exactly ONE group
+--      across its three rows, and a template created by any other act is NOT in that group —
+--      otherwise "todos los días" would reach a schedule the operator never created with it.
 -- (15) THE ALL-DAYS COLLISION IS ATOMIC. A sibling template already occupies the Miércoles member's
 --      target slot. The whole call raises, naming the COLLIDING member's weekday (not the anchor's),
 --      and the LUNES member — which the loop had already written, since it runs `order by weekday` —
@@ -87,11 +92,15 @@
 -- (19) THE ALL-DAYS RETIRE. Every member is retired, every future class of every member is cancelled,
 --      every consumed hold comes back exactly once, the PAST class is untouched, a template OUTSIDE
 --      the group is untouched, and the second tap raises with no balance moving twice.
--- (20) edit_class_session, THE TWO HOLES THE WALK FOUND. A CANCELLED target refuses ('La clase ya fue
---      cancelada') and stays byte-identical — the stale-tab edit that used to report success against a
---      dead row. A FUTURE class refuses to be moved to a PAST instant (both release paths are shut
---      past the start, so every hold on it would be stranded) and stays byte-identical. Retro-editing
---      a class that ALREADY passed still succeeds — the desk fixes records.
+-- (20) edit_class_session, THE HOLES THE WALK FOUND — and the one the first build of the fix missed.
+--      A CANCELLED target refuses ('La clase ya fue cancelada') and stays byte-identical: the
+--      stale-tab edit that used to report success against a dead row. A FUTURE class refuses to move
+--      to a PAST instant (both release paths shut past the start, so every hold would be stranded).
+--      And the REVERSE crossing refuses too when a hold is on it: a forfeit is a ZERO-WRITE outcome
+--      derived from starts_at, so dragging a passed class forward re-arms both release gates over a
+--      hold the gym already kept — asserted on the BALANCE, not just the row. Both the retro edit
+--      (past→past) and the forward move of an UN-BOOKED passed class still succeed: the guard is
+--      about the hold, not the direction.
 --
 -- Vectors (7)-(10) run in their OWN GYM. ensure_week_materialized is gym-wide (it walks every active
 -- template of staff_gym()), so vector (9)'s "each week returns 0" is only a statement about the
@@ -1212,9 +1221,98 @@ begin
 end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
--- (14) GROUP IDENTITY. The whole feature rests on one claim: rows created together share a group_id,
--- and rows created apart do not. A create that minted N groups leaves "todos los días" reaching one
--- weekday — the bug this slice exists to close, with the button now lying about it.
+-- (14a) THE BACKFILL KEY. What the backfill in 20260806120000 does to rows that ALREADY existed —
+-- which is every schedule live is running — is decided entirely by its partition expression, and that
+-- expression is a judgement call with a live-probed trade behind it (that migration's header). So the
+-- expression is re-run HERE as a plain SELECT over fixtures whose right answer is known by
+-- construction.
+--
+-- An earlier revision asserted `count(*) where group_id is null = 0` and called it the backfill
+-- vector. On a NOT NULL column that check cannot fail, in any build, ever — it covered nothing.
+--
+-- The fixtures are the HARD case, not an easy one: every row this suite inserts shares one created_at
+-- (it is the transaction timestamp), exactly the condition the backfill meets inside a seed
+-- transaction, where created_at alone would fuse an entire gym's grid into one group.
+--   * three rows differing ONLY in weekday   → one batch, ONE group   (the "repetir en N días" shape)
+--   * one row differing in start_time        → its OWN group          (the pre-group_id per-day hora
+--                                                                      move; live carries exactly one)
+--   * one row in ANOTHER GYM, same values    → its OWN group          (tenant isolation)
+-- Scoping the SELECT to the two fixture gyms is faithful to the real backfill because gym_id LEADS
+-- the partition: a partition can never span gyms, which is the third bullet.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+do $$
+declare
+  gym_k  uuid := gen_random_uuid();
+  gym_k2 uuid := gen_random_uuid();
+  ct_k uuid; ct_o uuid;
+  t_k0 uuid; t_k2 uuid; t_k4 uuid; t_kx uuid; t_o uuid;
+  v_sizes int[];
+  g_k0 uuid; g_k2 uuid; g_k4 uuid; g_x uuid; g_o uuid;
+begin
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
+    (gym_k,  'series-key-gym-k',  'Series Key Gym K',  'America/Mexico_City', 'forge'),
+    (gym_k2, 'series-key-gym-k2', 'Series Key Gym K2', 'America/Mexico_City', 'forge');
+  insert into public.class_type (gym_id, name) values (gym_k,  'SK Metcon') returning id into ct_k;
+  insert into public.class_type (gym_id, name) values (gym_k2, 'SK Metcon') returning id into ct_o;
+
+  -- THE BATCH — one "repetir Lun/Mié/Vie": identical on every key column but weekday.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_k, ct_k, 0, '07:00', 60, 20, gen_random_uuid()) returning id into t_k0;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_k, ct_k, 2, '07:00', 60, 20, gen_random_uuid()) returning id into t_k2;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_k, ct_k, 4, '07:00', 60, 20, gen_random_uuid()) returning id into t_k4;
+  -- THE DIVERGED DAY — the shape a per-day hora move made BEFORE group_id existed leaves behind.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_k, ct_k, 1, '08:00', 60, 20, gen_random_uuid()) returning id into t_kx;
+  -- ANOTHER TENANT, same weekday and the same values.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_k2, ct_o, 0, '07:00', 60, 20, gen_random_uuid()) returning id into t_o;
+
+  -- The migration's OWN expression, verbatim, as a read.
+  with grp as (
+    select id,
+           min(id::text) over (
+             partition by gym_id, class_type_id, start_time, duration_min, capacity, created_at
+           )::uuid as derived
+      from public.schedule_template
+     where gym_id in (gym_k, gym_k2)
+  )
+  select array_agg(c order by c desc) into v_sizes
+    from (select derived, count(*)::int c from grp group by derived) s;
+  if v_sizes is distinct from array[3, 1, 1] then
+    raise exception 'SERIES FAIL(14a): the backfill key partitions these 5 rules as % (expected {3,1,1})', v_sizes;
+  end if;
+
+  with grp as (
+    select id,
+           min(id::text) over (
+             partition by gym_id, class_type_id, start_time, duration_min, capacity, created_at
+           )::uuid as derived
+      from public.schedule_template
+     where gym_id in (gym_k, gym_k2)
+  )
+  select (select derived from grp where id = t_k0), (select derived from grp where id = t_k2),
+         (select derived from grp where id = t_k4), (select derived from grp where id = t_kx),
+         (select derived from grp where id = t_o)
+    into g_k0, g_k2, g_k4, g_x, g_o;
+
+  if g_k0 is distinct from g_k2 or g_k0 is distinct from g_k4 then
+    raise exception 'SERIES FAIL(14a): the three weekdays of ONE create derived groups % / % / % — "todos los días" would reach one card',
+      g_k0, g_k2, g_k4;
+  end if;
+  if g_x is not distinct from g_k0 then
+    raise exception 'SERIES FAIL(14a): a rule differing in start_time joined the batch''s group — a per-day hora move would drag the untouched days back onto its values';
+  end if;
+  if g_o is not distinct from g_k0 then
+    raise exception 'SERIES FAIL(14a): ANOTHER GYM''s identical schedule landed in this group — "Terminar el horario" would cross a tenant boundary';
+  end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (14) GROUP IDENTITY, going forward. The whole feature rests on one claim: rows created together
+-- share a group_id, and rows created apart do not. A create that minted N groups leaves "todos los
+-- días" reaching one weekday — the bug this slice exists to close, with the button now lying about it.
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.sg_op_b', true), 'role', 'authenticated')::text, true);
@@ -1232,13 +1330,6 @@ declare
   gym_b uuid := current_setting('t.sg_gym_b', true)::uuid;
   v_n int; v_group uuid;
 begin
-  -- (a) THE BACKFILL INVARIANT, over the whole table: not one rule anywhere is groupless. The column
-  -- is NOT NULL, so this also pins that the backfill in 20260806120000 ran before the constraint did.
-  select count(*) into v_n from public.schedule_template where group_id is null;
-  if v_n is distinct from 0 then
-    raise exception 'SERIES FAIL(14): % template row(s) carry a null group_id — a rule that belongs to no schedule', v_n;
-  end if;
-
   -- (b) ONE BATCH, ONE GROUP, THREE WEEKDAYS.
   select count(*) into v_n from public.schedule_template where gym_id = gym_b;
   if v_n is distinct from 3 then raise exception 'SERIES FAIL(14): the 3-weekday create left % template row(s)', v_n; end if;
@@ -1303,12 +1394,18 @@ begin
 end $$;
 
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
--- (15) THE ALL-DAYS COLLISION IS ATOMIC, AND NAMES THE RIGHT DAY.
+-- (15) THE ALL-DAYS COLLISION NAMES THE RIGHT DAY.
 -- tg_block already owns (ct_g2, Miércoles, 20:00). The loop runs `order by weekday`, so the LUNES
--- member is written FIRST and the Miércoles member is what raises — which is exactly why this vector
--- is not a tautology about aborted transactions: a row really had been written when the failure fired,
--- and it is byte-identical below. The sentence must name MIÉRCOLES; naming the anchor's Lunes would
--- send the operator to change a day that was never in the way.
+-- member is written first and the MIÉRCOLES member is what raises — and the sentence must say
+-- Miércoles. Naming the anchor's Lunes would send the operator to change a day that was never in the
+-- way, which is the one thing this vector can actually detect.
+--
+-- IT DOES NOT CLAIM ATOMICITY. The call sits in a BEGIN…EXCEPTION block, which is an implicit
+-- subtransaction, so Postgres rolls back everything the function wrote before any assertion below
+-- runs — "no member row changed" would be true of a completely non-atomic function too. An earlier
+-- revision raised 'the call is not atomic' here and could never have fired. The state checks that
+-- remain are cheap regression cover in the shape vector (6) already uses, and are read as exactly
+-- that.
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
@@ -1335,15 +1432,6 @@ declare
   ct_g1 uuid := current_setting('t.sg_ct_g1', true)::uuid;
   r record; v_n int; v_status text;
 begin
-  -- THE MEMBER THAT HAD ALREADY BEEN WRITTEN.
-  select class_type_id, weekday, start_time, duration_min, capacity into r
-    from public.schedule_template where id = current_setting('t.sg_lun', true)::uuid;
-  if r.class_type_id is distinct from ct_g1 or r.weekday is distinct from 0
-     or r.start_time is distinct from '19:00'::time or r.duration_min is distinct from 45
-     or r.capacity is distinct from 24 then
-    raise exception 'SERIES FAIL(15): the already-written Lunes rule survived the collision as (ct % wd % t % dur % cap %) — the call is not atomic',
-      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity;
-  end if;
   select class_type_id, start_time into r from public.schedule_template where id = current_setting('t.sg_mie', true)::uuid;
   if r.class_type_id is distinct from ct_g1 or r.start_time is distinct from '19:00'::time then
     raise exception 'SERIES FAIL(15): the colliding Miércoles rule was written anyway';
@@ -1669,10 +1757,78 @@ end $$;
 --   (b) A FUTURE class could be moved to a PAST instant — probed on live at 09:45. Past the start both
 --       release paths are shut ('La clase ya comenzó'), so every hold on it becomes unrefundable by
 --       the gym and uncancellable by the member.
---   (c) …but retro-editing a class that ALREADY passed stays legal: the desk fixes records, and those
---       holds are already unreleasable either way.
--- All three targets are one-offs (template_id null), so no series verb above could have touched them.
+--   (c) …but retro-editing a class that ALREADY passed (past→past) stays legal: the desk fixes
+--       records, and no release path opens either way.
+--   (d) THE REVERSE CROSSING, which the first build of this file missed. A FORFEIT IS A ZERO-WRITE
+--       OUTCOME: a class passes with a `reservada` hold and NOTHING is written — the row stays
+--       `reservada` and the no-show DERIVES from starts_at (20260804150000:471). Both release gates
+--       read the CURRENT starts_at, so dragging that class into the future re-arms them over a hold
+--       the gym has already kept, and the member cancels a class they did not attend for a credit
+--       back. Refused, and the row is byte-identical after.
+--   (e) …but only when a hold is actually there: a passed class with NO live booking still moves
+--       forward. Rescheduling an empty class is the ordinary desk act this must not cost.
+-- Every target is a one-off (template_id null), so no series verb above could have touched them.
 -- ════════════════════════════════════════════════════════════════════════════════════════════════
+
+-- (d)/(e) fixtures. sg_forfeit is booked through reservar_clase WHILE STILL FUTURE — the only honest
+-- way to stamp `consumio` — and then pushed into the past by a direct UPDATE. That update IS what a
+-- class passing looks like: forfeit writes no row anywhere, so the wall clock moving past a booked
+-- class and this statement leave the database in the same state.
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone 'America/Mexico_City'))::date;
+  v_today  date := (now() at time zone 'America/Mexico_City')::date;
+  gym_g uuid := current_setting('t.sg_gym_g', true)::uuid;
+  u_gc uuid := gen_random_uuid();
+  c_gc uuid; sg_forfeit uuid; sg_nohold uuid;
+begin
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', u_gc, 'authenticated', 'authenticated', 'sg-gc@test.local');
+  insert into public.gym_membership (user_id, gym_id, role) values (u_gc, gym_g, 'member');
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('SG Perdida', '5552300003', 6, v_today + 60, '8 clases', gym_g, u_gc) returning id into c_gc;
+
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_g, current_setting('t.sg_ct_g1', true)::uuid,
+            (((v_monday + 14) + 1) + '14:00'::time) at time zone v_tz, 45, 24) returning id into sg_forfeit;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_g, current_setting('t.sg_ct_g1', true)::uuid,
+            (((v_monday - 7) + 1) + '15:00'::time) at time zone v_tz, 45, 24) returning id into sg_nohold;
+
+  perform set_config('t.sg_u_gc', u_gc::text, true);
+  perform set_config('t.sg_c_gc', c_gc::text, true);
+  perform set_config('t.sg_forfeit', sg_forfeit::text, true);
+  perform set_config('t.sg_nohold', sg_nohold::text, true);
+end $$;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_u_gc', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.sg_forfeit', true)::uuid); end $$;
+reset role;
+
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone 'America/Mexico_City'))::date;
+  v_n int; v_consumio boolean;
+begin
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gc', true)::uuid;
+  if v_n is distinct from 5 then raise exception 'SEED FAIL: c_gc expected 5 after booking, got %', v_n; end if;
+  select consumio into v_consumio from public.reservation
+   where member_id = current_setting('t.sg_c_gc', true)::uuid
+     and class_session_id = current_setting('t.sg_forfeit', true)::uuid;
+  if v_consumio is distinct from true then
+    raise exception 'SEED FAIL: the forfeit fixture stamped consumio % (expected true — an unconsumed hold has nothing to re-arm)', v_consumio;
+  end if;
+
+  -- THE CLASS PASSES. No settlement row is written, by design: the hold stays `reservada`.
+  update public.class_session set starts_at = (((v_monday - 7) + 1) + '14:00'::time) at time zone v_tz
+   where id = current_setting('t.sg_forfeit', true)::uuid;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gc', true)::uuid;
+  if v_n is distinct from 5 then raise exception 'SEED FAIL: the forfeit moved a balance to %', v_n; end if;
+end $$;
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
@@ -1713,6 +1869,26 @@ begin
   perform public.edit_class_session(
     current_setting('t.sg_past', true)::uuid, ct_g2,
     (((v_monday - 7) + 1) + '07:00'::time) at time zone v_tz, 60, 30);
+
+  -- (d) PAST → FUTURE with a FORFEITED hold on it. Refused: both release gates read the current
+  -- starts_at, so this move alone hands the credit back.
+  raised := false;
+  begin
+    perform public.edit_class_session(
+      current_setting('t.sg_forfeit', true)::uuid, ct_g2,
+      (((v_monday + 14) + 1) + '14:00'::time) at time zone v_tz, 60, 30);
+  exception when others then raised := true; msg := sqlerrm;
+  end;
+  if not raised then raise exception 'SERIES FAIL(20d): a PASSED class with a live hold was moved to the future — the forfeit is re-armed and the credit can be taken back'; end if;
+  if msg is distinct from 'No se puede mover al futuro una clase que ya pasó con reservas' then
+    raise exception 'SERIES FAIL(20d): wrong refusal for a forfeited class moved forward: %', msg;
+  end if;
+
+  -- (e) …and the same crossing with NO hold on it SUCCEEDS. The guard is about the hold, not the
+  -- direction: rescheduling an empty class that nobody came to is ordinary desk work.
+  perform public.edit_class_session(
+    current_setting('t.sg_nohold', true)::uuid, ct_g2,
+    (((v_monday + 21) + 1) + '15:00'::time) at time zone v_tz, 60, 30);
 end $$;
 reset role;
 
@@ -1752,6 +1928,39 @@ begin
      or r.class_type_id is distinct from current_setting('t.sg_ct_g2', true)::uuid
      or r.duration_min is distinct from 60 or r.capacity is distinct from 30 then
     raise exception 'SERIES FAIL(20c): the retro edit of an already-past class did not land (% ct % dur % cap %)',
+      r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+  end if;
+
+  -- (d) THE FORFEITED CLASS IS BYTE-IDENTICAL — still in the past, still carrying the kept hold, and
+  -- the balance is still the one the member paid. Asserted on the MONEY as well as the row: "the
+  -- credit was not handed back" is the property, the refusal is only the mechanism.
+  select starts_at, class_type_id, duration_min, capacity, cancelled_at into r
+    from public.class_session where id = current_setting('t.sg_forfeit', true)::uuid;
+  if r.starts_at is distinct from ((((v_monday - 7) + 1) + '14:00'::time) at time zone v_tz)
+     or r.class_type_id is distinct from ct_g1 or r.duration_min is distinct from 45
+     or r.capacity is distinct from 24 or r.cancelled_at is not null then
+    raise exception 'SERIES FAIL(20d): the refused forward move wrote the row anyway (% ct % dur % cap %)',
+      r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+  end if;
+  select status, consumio into r from public.reservation
+   where member_id = current_setting('t.sg_c_gc', true)::uuid
+     and class_session_id = current_setting('t.sg_forfeit', true)::uuid;
+  if r.status is distinct from 'reservada' or r.consumio is distinct from true then
+    raise exception 'SERIES FAIL(20d): the forfeited hold reads (% consumio %) after a refused move', r.status, r.consumio;
+  end if;
+  select clases_restantes into r from public.clientes where id = current_setting('t.sg_c_gc', true)::uuid;
+  if r.clases_restantes is distinct from 5 then
+    raise exception 'SERIES FAIL(20d): the forfeited member''s balance is % (expected an untouched 5)', r.clases_restantes;
+  end if;
+
+  -- (e) THE EMPTY PASSED CLASS MOVED. A guard keyed on the direction alone would have refused this
+  -- too, and the desk could never reschedule a class nobody booked.
+  select starts_at, class_type_id, duration_min, capacity into r
+    from public.class_session where id = current_setting('t.sg_nohold', true)::uuid;
+  if r.starts_at is distinct from ((((v_monday + 21) + 1) + '15:00'::time) at time zone v_tz)
+     or r.class_type_id is distinct from current_setting('t.sg_ct_g2', true)::uuid
+     or r.duration_min is distinct from 60 or r.capacity is distinct from 30 then
+    raise exception 'SERIES FAIL(20e): the un-booked passed class did not move forward (% ct % dur % cap %)',
       r.starts_at, r.class_type_id, r.duration_min, r.capacity;
   end if;
 end $$;

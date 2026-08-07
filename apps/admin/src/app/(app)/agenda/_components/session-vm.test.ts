@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
-import type { EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 
 import {
   accionAgregar,
+  aplicarAlcance,
   canceladasLinea,
   coachIdsCambiaron,
   createDraft,
@@ -13,7 +13,6 @@ import {
   editDraftFrom,
   esBloqueoVendible,
   movidasLinea,
-  reseedAlcance,
   semillaAlcance,
   sugerenciaVenta,
   toCardVM,
@@ -266,42 +265,75 @@ describe("draftSinCambios", () => {
     const desfasada = toCardVM(dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }), "07:00");
     expect(draftSinCambios(desfasada, { ...editDraftFrom(desfasada), alcance })).toBe(false);
   });
+
+  // D7: isSpecial/specialName are a property of ONE dated class — the wide RPCs never write
+  // them, and the sheet hides the toggle once the scope isn't "clase" — so a special-flag edit
+  // abandoned by flipping scope must NOT block the no-op guard and silently ride a rule-wide
+  // write through instead.
+  it.each(["dia", "horario"] as const)("ignores an isSpecial/specialName change under the WIDE scope (D7) — the wide RPC never writes it", (alcance) => {
+    expect(draftSinCambios(card, { ...limpio, alcance, isSpecial: true, specialName: "Noche de Fuerza" })).toBe(true);
+  });
 });
 
 /**
- * The SILENT EDIT WIPE fix. A scope toggle still baselines untouched fields from the new scope's
- * seed (an hour nobody touched must show the RULE, not a stale off-grid card) — but a field the
- * operator already changed has to survive the toggle, or GUARDAR trips `draftSinCambios`' no-op
- * guard and closes with zero feedback for an edit that really happened.
+ * The scope-toggle transform (#243 fix; defects D1/D2/D4). A flip still baselines the new
+ * scope's RULE for anything the operator has NOT actually changed — the SILENT EDIT WIPE fix —
+ * but "changed" is judged BY VALUE against the scope being LEFT, never by a sticky touched-flag
+ * (D2): a value dialed away and corrected back by hand must re-seed like any other untouched
+ * field, not freeze forever because it was momentarily dirtied. `coachIds` can't use the same
+ * value test — it's a set — so a dirty multi-select rebases the operator's DELTA (added minus
+ * removed) onto the new seed instead of carrying the raw array forward (D1): carrying the raw
+ * array would let an off-grid session's own substitute coach silently replace the rule's coach.
+ *
+ * Sequence (a)/(b)/(c) plus the coach-removal case below are the mutation-tested set: with
+ * `aplicarAlcance`'s body temporarily swapped for a naive "always take the new seed" full
+ * re-seed (`return { ...draft, ...semillaAlcance(card, alcance), alcance }`), (a), (c) and the
+ * removal test go red — confirmed by actually running it. (b) stays green under that particular
+ * mutation (a blind full-reseed happens to produce the same "19:00" here); it instead
+ * discriminates the EARLIER touched-Set implementation, where a value corrected back by hand
+ * stayed stuck at the card's own value forever (D2) rather than re-seeding.
  */
-describe("reseedAlcance", () => {
+describe("aplicarAlcance", () => {
+  /** Off-grid: still attached to tpl-1, but its own values (Funcional/07:00/45/24/[co9]) have
+   *  drifted from the rule's (Metcon/19:00/60/30/[co1]) — the case the delta rebase exists for. */
   const desfasada = toCardVM(
     dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Funcional", duracionMin: 45, capacidad: 24, coaches: [{ id: "co9", nombre: "Suplente" }] }),
     "07:00",
   );
 
-  it("keeps a touched hora across the toggle while re-seeding the untouched cupo from the rule", () => {
-    // The operator dialed hora to 08:00 BEFORE tapping "dia" — it must survive, cupo must not.
-    const patch = reseedAlcance(desfasada, "dia", new Set<keyof EditorDraft>(["hora"]));
-    expect(patch.hora).toBeUndefined(); // untouched-by-the-patch key: draft keeps its own "08:00"
-    expect(patch.cupo).toBe(30); // untouched field: re-seeded from REGLA
-    expect(patch.alcance).toBe("dia");
+  it("re-seeds every scalar field and the coach set on an ordinary toggle — nothing was touched", () => {
+    const next = aplicarAlcance(desfasada, editDraftFrom(desfasada), "dia");
+    expect(next).toMatchObject({ tipo: "Metcon", hora: "19:00", duracionMin: 60, cupo: 30, coachIds: ["co1"], alcance: "dia" });
   });
 
-  it("re-seeds every field when nothing was touched — the ordinary toggle", () => {
-    expect(reseedAlcance(desfasada, "dia", new Set())).toEqual({
-      tipo: "Metcon",
-      hora: "19:00",
-      duracionMin: 60,
-      cupo: 30,
-      coachIds: ["co1"],
-      alcance: "dia",
-    });
+  it("(a) a touched hora survives the flip to 'dia'; the untouched cupo re-seeds from the rule", () => {
+    const conHora = { ...editDraftFrom(desfasada), hora: "08:00" };
+    const next = aplicarAlcance(desfasada, conHora, "dia");
+    expect(next.hora).toBe("08:00");
+    expect(next.cupo).toBe(30);
   });
 
-  it("re-seeds nothing when every field is already touched — the operator's values are final", () => {
-    const touched = new Set<keyof EditorDraft>(["tipo", "hora", "duracionMin", "cupo", "coachIds"]);
-    expect(reseedAlcance(desfasada, "dia", touched)).toEqual({ alcance: "dia" });
+  it("(b) an hora dialed away and corrected back to the clase seed still re-seeds on flip (D2)", () => {
+    const overshoot = { ...editDraftFrom(desfasada), hora: "09:00" }; // wheel-picker overshoot
+    const corregido = { ...overshoot, hora: "07:00" }; // corrected back BY HAND to the session's own hora
+    const next = aplicarAlcance(desfasada, corregido, "dia");
+    expect(next.hora).toBe("19:00"); // the rule's hora — not stuck at "07:00" nor "09:00"
+  });
+
+  it("(c) an added coach chip rebases onto the rule's set on flip — the substitute coach does not carry over (D1)", () => {
+    const conChip = { ...editDraftFrom(desfasada), coachIds: ["co9", "co5"] }; // co9 = session's own substitute; co5 = the operator's new tap
+    const next = aplicarAlcance(desfasada, conChip, "dia");
+    expect(next.coachIds).toEqual(["co1", "co5"]); // co1 = the rule's own coach; co9 never appears
+  });
+
+  it("a removed coach chip rebases too — dropping the rule's only coach carries the drop forward (D1)", () => {
+    const alDia = toCardVM(
+      dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }),
+      "19:00",
+    );
+    const sinCoach = { ...editDraftFrom(alDia), coachIds: [] };
+    const next = aplicarAlcance(alDia, sinCoach, "dia");
+    expect(next.coachIds).toEqual([]); // the removal carries forward — not silently restored
   });
 });
 

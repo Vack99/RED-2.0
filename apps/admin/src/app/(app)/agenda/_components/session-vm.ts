@@ -122,24 +122,45 @@ export function semillaAlcance(
     : { tipo: card.tipo, hora: card.time, duracionMin: card.mins, cupo: card.cap, coachIds: card.coachIds };
 }
 
+/** The scalar keys a scope's rule seeds (semillaAlcance's shape minus `coachIds`, which has its
+ *  own dirty test — a set, not a value, can't use `!==`). Walked as a tuple so `aplicarAlcance`
+ *  never repeats it. */
+const SEED_ESCALARES = ["tipo", "hora", "duracionMin", "cupo"] as const;
+
 /**
- * The scope-toggle re-seed (#243 defect fix). A toggle still baselines from the new scope's seed
- * (semillaAlcance) — a wide edit has to start from the RULE, not an off-grid card — but ONLY for
- * the fields the operator has not already touched: an hora changed BEFORE the toggle must survive
- * it, not be silently reverted, or GUARDAR would trip `draftSinCambios`' no-op guard and close
- * with zero feedback for a change that really happened. `touched` is the caller's own record of
- * which draft keys it has patched outside a scope flip (agenda.tsx's EditorState).
+ * The scope-toggle transform (#243 fix, defects D1/D2). A flip still baselines the new scope's
+ * seed (semillaAlcance) — a wide edit has to start from the RULE, not an off-grid card — but ONLY
+ * for the fields the operator has not actually changed. "Changed" is judged BY VALUE against the
+ * scope being LEFT (`draft.alcance`), never by a sticky touched-flag (D2): a field dialed away and
+ * corrected back by hand must re-seed on the next flip like any other untouched field, not stay
+ * frozen at the card's value forever because it was dirtied once.
+ *
+ * `coachIds` can't reuse that value test — it's a set, not a scalar — so a dirty multi-select
+ * rebases the operator's DELTA (added minus removed, against the OUTGOING seed) onto the INCOMING
+ * seed, rather than carrying the raw array forward (D1): carrying the raw array would let an
+ * off-grid session's own substitute coach silently replace the whole rule's coach set the moment
+ * the operator's edit happened to also touch coachIds.
  */
-export function reseedAlcance(
-  card: CardVM,
-  alcance: EditorAlcance,
-  touched: ReadonlySet<keyof EditorDraft>,
-): Partial<EditorDraft> {
-  const seed = semillaAlcance(card, alcance);
-  const sinTocar = Object.fromEntries(
-    Object.entries(seed).filter(([k]) => !touched.has(k as keyof EditorDraft)),
+export function aplicarAlcance(card: CardVM, draft: EditorDraft, alcance: EditorAlcance): EditorDraft {
+  const seedAnterior = semillaAlcance(card, draft.alcance);
+  const seedNuevo = semillaAlcance(card, alcance);
+  const reseedado = Object.fromEntries(
+    SEED_ESCALARES.filter((k) => draft[k] === seedAnterior[k]).map((k) => [k, seedNuevo[k]]),
   ) as Partial<EditorDraft>;
-  return { ...sinTocar, alcance };
+  const coachIds = coachIdsCambiaron(seedAnterior.coachIds, draft.coachIds)
+    ? rebaseCoachIds(seedAnterior.coachIds, draft.coachIds, seedNuevo.coachIds)
+    : seedNuevo.coachIds;
+  return { ...draft, ...reseedado, coachIds, alcance };
+}
+
+/** D1's delta rebase: what the operator ADDED (present in the draft, absent from the seed they
+ *  edited under) and REMOVED (the reverse) replay onto the NEW seed, instead of carrying the raw
+ *  multi-select forward. Dedup: an addition the new seed already has does not duplicate. */
+function rebaseCoachIds(seedAnterior: string[], draftCoachIds: string[], seedNuevo: string[]): string[] {
+  const agregados = draftCoachIds.filter((id) => !seedAnterior.includes(id));
+  const quitados = seedAnterior.filter((id) => !draftCoachIds.includes(id));
+  const base = seedNuevo.filter((id) => !quitados.includes(id));
+  return [...base, ...agregados.filter((id) => !base.includes(id))];
 }
 
 /**
@@ -162,21 +183,27 @@ export function editDraftFrom(card: CardVM): EditorDraft {
  * Did the operator change ANYTHING? (#243) A narrow save runs `edit_class_session`, which clears
  * `template_id` — so opening an attached class and tapping GUARDAR out of reflex buys an
  * irreversible detach in exchange for no edit at all. Compared against the scope's OWN seed,
- * because the toggle re-seeds the form: under "dia"/"horario" the baseline is the rule, under
- * "clase" it is the session. Untouched fields equal the seed by construction (agenda.tsx's
- * `patchDraft` keeps a touched-fields set and only re-seeds the rest on a scope flip), so this
- * still catches the reflex-GUARDAR case rather than seeing a re-seed as a real change.
+ * because a scope flip re-seeds the form (aplicarAlcance): under "dia"/"horario" the baseline is
+ * the rule, under "clase" it is the session.
+ *
+ * `isSpecial`/`specialName` are ignored under a WIDE scope (D7): they are a property of ONE dated
+ * class, the wide RPCs never write them, and the sheet hides the toggle entirely once the scope
+ * isn't "clase" (editor-sheet.tsx). Counting them under "dia"/"horario" would report a real change
+ * for a special-flag edit the operator made and then abandoned by flipping scope — and the wide
+ * save would silently drop exactly that edit while still moving the whole rule.
  */
 export function draftSinCambios(card: CardVM, draft: EditorDraft): boolean {
   const seed = semillaAlcance(card, draft.alcance);
+  const especialSinCambios =
+    draft.alcance !== "clase" ||
+    (draft.isSpecial === card.esEspecial && draft.specialName === (card.specialName ?? ""));
   return (
     draft.tipo === seed.tipo &&
     draft.hora === seed.hora &&
     draft.duracionMin === seed.duracionMin &&
     draft.cupo === seed.cupo &&
     !coachIdsCambiaron(seed.coachIds, draft.coachIds) &&
-    draft.isSpecial === card.esEspecial &&
-    draft.specialName === (card.specialName ?? "")
+    especialSinCambios
   );
 }
 

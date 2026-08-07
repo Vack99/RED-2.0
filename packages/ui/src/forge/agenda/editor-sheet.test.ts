@@ -9,6 +9,7 @@ import {
   cupoAviso,
   editorTitle,
   especialNombre,
+  puedeAmpliarAlcance,
   saveLabel,
 } from "./editor-sheet";
 
@@ -40,6 +41,27 @@ describe("especialNombre", () => {
 });
 
 /**
+ * The one gate behind the wide scope (#243, defect D5): the toggle row, the effective `alcance`,
+ * and the destructive button's wide arm all read this SAME value, so an unknown weekday can't
+ * surface a wide option through one path while another correctly stays narrow. `cardDia`
+ * undefined means UNKNOWN, never Lunes — fail CLOSED, never lie about which day gets touched.
+ */
+describe("puedeAmpliarAlcance", () => {
+  it("allows a wide scope only when editing an attached card with a known weekday", () => {
+    expect(puedeAmpliarAlcance(true, true, 3)).toBe(true);
+  });
+  it("refuses while creating — the scope toggle is an edit-only affordance", () => {
+    expect(puedeAmpliarAlcance(false, true, 3)).toBe(false);
+  });
+  it("refuses for a one-off card (no rule behind it, esSerie false)", () => {
+    expect(puedeAmpliarAlcance(true, false, 3)).toBe(false);
+  });
+  it("fails CLOSED when cardDia is unknown (D5) — never defaults to Lunes", () => {
+    expect(puedeAmpliarAlcance(true, true, undefined)).toBe(false);
+  });
+});
+
+/**
  * The #243 scope control. ONE toggle governs both the save path and the destructive one, so
  * these pure functions are the whole affordance: what the operator picks from, what each arm
  * promises, what the destructive button says, and what it must make them confirm first.
@@ -61,6 +83,9 @@ describe("alcanceToggles", () => {
   it("adds 'horario' only once the group spans more than one weekday", () => {
     expect(alcanceToggles(3, [3]).map((o) => o.value)).not.toContain("horario");
     expect(alcanceToggles(3, [1, 3]).map((o) => o.value)).toContain("horario");
+  });
+  it("never renders 'Todos undefined' for a domingo card (D6) — the DIAS_PLURAL lookup is total", () => {
+    expect(alcanceToggles(6, [6]).find((o) => o.value === "dia")?.label).toBe("Todos los domingos");
   });
 });
 
@@ -100,6 +125,9 @@ describe("cancelLabel", () => {
   });
   it("stays the single-class cancel when the scope is narrow", () => {
     expect(cancelLabel("clase", 3)).toBe("Cancelar esta clase");
+  });
+  it("never says 'Terminar undefined' for a domingo card (D6)", () => {
+    expect(cancelLabel("dia", 6)).toBe("Terminar los domingos");
   });
 });
 

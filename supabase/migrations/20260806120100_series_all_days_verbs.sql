@@ -39,6 +39,14 @@
 -- schedule_template_active_uq). The refusal is explicit rather than "we ignore that field", because a
 -- silently-dropped parameter is how a UI ships a control that does nothing.
 --
+-- ── AN ALL-DAYS EDIT RE-UNIFIES A DIVERGED MEMBER, AND THAT IS THE FEATURE ───────────────────────
+-- Group membership is PERMANENT: a per-day edit (p_all_days = false) changes one member's values but
+-- never its group, so the next all-days edit pulls that member back onto the schedule's shared values
+-- — overwriting a divergence the operator may have made deliberately. Chosen, not missed: "todos los
+-- días" means the schedule is ONE thing, and a checkbox that silently skipped the days that had been
+-- customised would be a verb whose blast radius nobody can predict from the confirm dialog. The escape
+-- hatch is the one that already exists — edit that day on its own afterwards.
+--
 -- ── kept IS NO LONGER 0-OR-1 ─────────────────────────────────────────────────────────────────────
 -- The shipped receipt could say "1 clase se quedó en su horario" because only the CURRENT ISO week's
 -- class can recompute into the past, and there is one of those per template. Across N members there
@@ -169,6 +177,13 @@ begin
   end loop;
 
   if v_members = 0 then raise exception 'Horario no encontrado o ya retirado'; end if;
+  -- …and the ANCHOR specifically. Zero members covers "the whole group went"; this covers the narrower
+  -- race — a retire of the CLICKED rule committing between the pin above and the driving query's
+  -- snapshot leaves N-1 siblings, which would edit them and hand back a success receipt for the card
+  -- the operator actually clicked. The clicked rule is the one the receipt is about.
+  if p_all_days and not (p_template_id = any(v_tids)) then
+    raise exception 'Horario no encontrado o ya retirado';
+  end if;
 
   -- The coach set is REPLACED only when the caller actually names one — `p_coach_ids IS NULL` means
   -- "leave the coaches alone", because the sheet seeds coachIds from the CLICKED SESSION and an
@@ -262,8 +277,8 @@ revoke execute on function public.retire_recurring_schedule(uuid, boolean) from 
 grant  execute on function public.retire_recurring_schedule(uuid, boolean) to authenticated;
 
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
--- 3. edit_class_session — the two holes the owner's walk found. Same signature, so CREATE OR REPLACE
---    carries the grant; the body is 20260806090000's with a pre-read and two guards added.
+-- 3. edit_class_session — the holes the owner's walk found. Same signature, so CREATE OR REPLACE
+--    carries the grant; the body is 20260806090000's with a pre-read and three guards added.
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
 -- HOLE 1 — IT SUCCEEDED ON A CANCELLED CLASS. A stale tab (or a second operator) edits a class that
 -- has since been cancelled: the UPDATE matched the dead row, rewrote it, and reported success. The
@@ -281,9 +296,22 @@ grant  execute on function public.retire_recurring_schedule(uuid, boolean) to au
 -- skipping, because a single-class edit has exactly one row to act on and silently doing nothing to it
 -- would be a lie in the receipt.
 --
--- RETRO-EDITING STAYS LEGAL. If the class has ALREADY started or passed, the desk is fixing a record,
--- not stranding a hold — those bookings are already unreleasable and the edit changes nothing about
--- that. Only the future→past crossing is refused.
+-- HOLE 3 — THE CROSSING RUNS BOTH WAYS, AND THE REVERSE MINTS CREDIT. An earlier revision of this file
+-- guarded only future→past, on the reasoning that a past class's holds are "already unreleasable, so
+-- the edit changes nothing". That reasoning is FALSE, and this is the direction it is false in.
+-- FORFEIT IS A ZERO-WRITE OUTCOME: when a class passes with a `reservada` hold on it, no row is
+-- written anywhere — the booking STAYS `reservada` and the no-show is DERIVED from `starts_at`
+-- (20260804150000:471). And both release gates compare against the row's CURRENT starts_at
+-- (`cancel_class_session` 20260804150000:195, `cancelar_reserva` 20260803140000:290). So dragging a
+-- PASSED class forward re-opens both paths over holds the gym has already kept: the member cancels a
+-- class they did not attend and the credit comes back, minted out of an attendance record. The
+-- forfeit is not a fact in a column that the move leaves alone; it is a function of the column the
+-- move rewrites.
+--
+-- So the guard is symmetric, and the sentence names the reason: a past class with live `reservada`
+-- holds does not move to the future. Past→future with NO such holds is untouched — nothing to re-arm —
+-- and RETRO-EDITING (past→past) STAYS LEGAL, which is the desk fixing a record and the only reason
+-- this function tolerates a past instant at all.
 --
 -- The pre-read is pinned with `gym_id = v_gym` for the same reason the series verbs pin theirs: the
 -- class_session SELECT policy is member-wide (and anon-wide per request gym), so without the pin a
@@ -327,6 +355,15 @@ begin
   if v_cancelled is not null then raise exception 'La clase ya fue cancelada'; end if;
   if v_starts > now() and p_starts_at <= now() then
     raise exception 'No se puede mover la clase a una hora que ya pasó';
+  end if;
+  -- The reverse crossing (HOLE 3): only when a hold is actually there to re-arm. `reservada` is the
+  -- exact set — an `asistida` row is a captured hold that cancel_class_session already refuses to
+  -- re-credit, and a `cancelada` one is settled — so this refuses precisely the forfeits a move
+  -- forward would hand back.
+  if v_starts <= now() and p_starts_at > now()
+     and exists (select 1 from public.reservation
+                  where class_session_id = p_session_id and status = 'reservada') then
+    raise exception 'No se puede mover al futuro una clase que ya pasó con reservas';
   end if;
 
   -- One row only (RLS update scopes to is_staff_of(gym_id)); the edit still reaches no other session
