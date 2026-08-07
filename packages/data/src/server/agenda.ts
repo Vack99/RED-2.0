@@ -52,6 +52,10 @@ export interface PlantillaDTO {
   duracionMin: number;
   capacidad: number;
   coachIds: string[];
+  /** Every ACTIVE weekday (0=Lun..5=Sáb) sharing this template's `group_id` — the siblings one
+   *  "repeat on N weekdays" create left behind — sorted, own weekday always included even if this
+   *  template itself has since been retired solo (a per-weekday edit/retire can diverge a group). */
+  groupDias: number[];
 }
 
 export interface SesionAgendaDTO {
@@ -137,7 +141,7 @@ async function fetchSesionesEnRango(
     // One string LITERAL, deliberately: supabase-js parses this at the type level, and a
     // concatenation collapses every column to GenericStringError.
     .select(
-      "id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id, schedule_template(class_type_id, start_time, duration_min, capacity, schedule_template_coach(coach_id))",
+      "id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id, schedule_template(class_type_id, start_time, duration_min, capacity, group_id, weekday, schedule_template_coach(coach_id))",
     )
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
@@ -157,17 +161,36 @@ async function fetchSesionesEnRango(
   ];
   const sessionIds = rows.map((r) => r.id);
 
-  // class_type, class_session_coach, and the occupancy count all only need tipoIds/
-  // sessionIds (known since the class_session select above) — batched here instead of
-  // sequencing contarActivos after the conditional coach query, so it no longer adds a
-  // 4th sequential round trip for no reason (perf; same pattern as agenda-miembro.ts).
-  const [tiposRes, joinsRes, activosBySession] = await Promise.all([
+  // Every group_id riding along on the page's templates — the extra read below (siblings'
+  // weekdays for the "todos los días" seed) is batched over THESE, one query for the whole
+  // page, never per-card.
+  const groupIds = [
+    ...new Set(rows.flatMap((r) => (r.schedule_template ? [r.schedule_template.group_id] : []))),
+  ];
+
+  // class_type, class_session_coach, the occupancy count, and the template group's sibling
+  // weekdays all only need tipoIds/sessionIds/groupIds (known since the class_session select
+  // above) — batched here instead of sequencing contarActivos after the conditional coach
+  // query, so it no longer adds a 4th sequential round trip for no reason (perf; same pattern
+  // as agenda-miembro.ts).
+  const [tiposRes, joinsRes, activosBySession, gruposRes] = await Promise.all([
     supabase.from("class_type").select("id, name").in("id", tipoIds),
     supabase.from("class_session_coach").select("session_id, coach_id").in("session_id", sessionIds),
     contarActivos(supabase, sessionIds),
+    groupIds.length
+      ? supabase.from("schedule_template").select("group_id, weekday").in("group_id", groupIds).eq("is_active", true)
+      : Promise.resolve({ data: [] as { group_id: string; weekday: number }[], error: null }),
   ]);
   if (tiposRes.error) throw tiposRes.error;
   if (joinsRes.error) throw joinsRes.error;
+  if (gruposRes.error) throw gruposRes.error;
+
+  const diasPorGrupo = new Map<string, Set<number>>();
+  for (const g of gruposRes.data ?? []) {
+    const dias = diasPorGrupo.get(g.group_id) ?? new Set<number>();
+    dias.add(g.weekday);
+    diasPorGrupo.set(g.group_id, dias);
+  }
 
   const tipoById = new Map((tiposRes.data ?? []).map((t) => [t.id, t.name]));
   const joins = joinsRes.data ?? [];
@@ -207,6 +230,9 @@ async function fetchSesionesEnRango(
           duracionMin: r.schedule_template.duration_min,
           capacidad: r.schedule_template.capacity,
           coachIds: r.schedule_template.schedule_template_coach.map((c) => c.coach_id),
+          groupDias: [
+            ...new Set([...(diasPorGrupo.get(r.schedule_template.group_id) ?? []), r.schedule_template.weekday]),
+          ].sort((a, b) => a - b),
         }
       : null,
   }));
@@ -528,6 +554,9 @@ export const actualizarHorarioRecurrenteSchema = z.object({
   duracionMin: z.number().int().refine(duracionValida, "Duración inválida"),
   cupo: z.number().int().refine(cupoValido, "Cupo inválido"),
   coachIds: z.array(z.string().uuid()).optional(),
+  /** "Todos los días" — fan the edit out to every template sharing this one's group_id
+   *  (the siblings one "repeat on N weekdays" create left behind), not just this weekday. */
+  todosLosDias: z.boolean().optional(),
 });
 export type ActualizarHorarioRecurrenteInput = z.infer<typeof actualizarHorarioRecurrenteSchema>;
 
@@ -566,6 +595,7 @@ export async function actualizarHorarioRecurrente(
       p_capacity: input.cupo,
       ...(input.weekday !== undefined && { p_weekday: input.weekday }),
       ...(input.coachIds !== undefined && { p_coach_ids: input.coachIds }),
+      ...(input.todosLosDias && { p_all_days: true }),
     });
     // `!data` is safe HERE (unlike the bare-int retire below): the RPC's OUT params come
     // back as one object, so only a genuine failure is falsy — `{ moved: 0, kept: 0 }` is
@@ -575,7 +605,11 @@ export async function actualizarHorarioRecurrente(
   });
 }
 
-export const retirarHorarioRecurrenteSchema = z.object({ templateId: z.string().uuid() });
+export const retirarHorarioRecurrenteSchema = z.object({
+  templateId: z.string().uuid(),
+  /** "Todos los días" — retire every template sharing this one's group_id, not just this weekday. */
+  todosLosDias: z.boolean().optional(),
+});
 export type RetirarHorarioRecurrenteInput = z.infer<typeof retirarHorarioRecurrenteSchema>;
 
 /** Retire a recurring schedule ("terminar el horario"; #243): flips
@@ -598,6 +632,7 @@ export async function retirarHorarioRecurrente(
 
     const { data, error } = await supabase.rpc("retire_recurring_schedule", {
       p_template_id: input.templateId,
+      ...(input.todosLosDias && { p_all_days: true }),
     });
     // NOT `!data`: 0 future classes cancelled is a legitimate success (see above).
     if (error || data === null) throw new Error(error?.message || "No se pudo retirar el horario recurrente");

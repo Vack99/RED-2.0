@@ -33,9 +33,11 @@ import {
   canceladasLinea,
   coachIdsCambiaron,
   createDraft,
+  diaSemanaDe,
   draftSinCambios,
   editDraftFrom,
   movidasLinea,
+  reseedAlcance,
   semillaAlcance,
   sugerenciaVenta,
   type CardVM,
@@ -119,6 +121,15 @@ interface EditorState {
    *  (the cupo-shrink warning) and its opening `coachIds` (#243) back out at write time. */
   card: CardVM | null;
   draft: EditorDraft;
+  /** Which draft fields the operator has actually changed, reset empty on every open
+   *  (#243 defect fix): a scope toggle re-seeds `patchDraft`'s target fields ONLY when
+   *  they're absent here, so an hora changed BEFORE the toggle survives it instead of
+   *  being silently reverted to the new scope's baseline. */
+  touched: Set<keyof EditorDraft>;
+  /** This card's own weekday (Lun=0..Sáb=5), from the day it is rendered under (#243) —
+   *  the toggle's "todos los <día>" label and the destructive button's day-scoped copy.
+   *  `null` while creating (no card, no day). */
+  cardDia: number | null;
 }
 
 export function AgendaScreen(props: AgendaScreenProps) {
@@ -167,10 +178,14 @@ export function AgendaScreen(props: AgendaScreenProps) {
   const [glance, setGlance] = React.useState<{
     open: boolean;
     card: CardVM | null;
+    /** The calendar day (iso) the card is rendered under — #243's only source for "this
+     *  card's own weekday" (openEdit's cardDia): `card.startsAtIso` is an absolute instant
+     *  that can straddle midnight against the gym's own local calendar day. */
+    dia: string | null;
     loading: boolean;
     roster: RosterRow[];
     candidates: CandidateRow[];
-  }>({ open: false, card: null, loading: false, roster: [], candidates: [] });
+  }>({ open: false, card: null, dia: null, loading: false, roster: [], candidates: [] });
   // clienteIds with a pase in flight — drives the roster's pending affordance.
   const [rosterBusy, setRosterBusy] = React.useState<Set<string>>(() => new Set());
   // #235 story 10: the last PICKER add the RPC refused over balance or vigencia. The toast that
@@ -183,6 +198,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
     mode: "create",
     card: null,
     draft: createDraft(props.tipos[0]?.name ?? ""),
+    touched: new Set(),
+    cardDia: null,
   });
   const [busy, setBusy] = React.useState(false);
 
@@ -200,8 +217,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // ── Sheets ──────────────────────────────────────────────────────────────
   // Opening a card's quick-glance lazily loads its roster (booked members + walk-in
   // candidates) — the whole week's rosters would be a read per session up front.
-  const openGlance = (card: CardVM) => {
-    setGlance({ open: true, card, loading: true, roster: [], candidates: [] });
+  const openGlance = (card: CardVM, dia: string) => {
+    setGlance({ open: true, card, dia, loading: true, roster: [], candidates: [] });
     setRosterBusy(new Set());
     void rosterSesionAction(card.id).then((res) => {
       setGlance((g) => (g.card?.id === card.id ? { ...g, loading: false, roster: res.roster, candidates: res.candidates } : g));
@@ -290,24 +307,38 @@ export function AgendaScreen(props: AgendaScreenProps) {
 
   const openCreate = () => {
     closeGlance();
-    setEditor({ open: true, mode: "create", card: null, draft: createDraft(tipos[0]?.name ?? "") });
+    setEditor({ open: true, mode: "create", card: null, draft: createDraft(tipos[0]?.name ?? ""), touched: new Set(), cardDia: null });
   };
   // Every open re-seeds the draft, which is what resets the #243 scope to "Solo esta
-  // clase" — a wide edit never survives into the next card the operator taps.
+  // clase" — a wide edit never survives into the next card the operator taps. `touched`
+  // resets with it, and `cardDia` reads the day the card was rendered under (glance.dia),
+  // never `card.startsAtIso` — see the glance state's own comment.
   const openEdit = (card: CardVM) => {
     closeGlance();
-    setEditor({ open: true, mode: "edit", card, draft: editDraftFrom(card) });
+    setEditor({
+      open: true,
+      mode: "edit",
+      card,
+      draft: editDraftFrom(card),
+      touched: new Set(),
+      cardDia: glance.dia ? diaSemanaDe(glance.dia) : null,
+    });
   };
-  // A scope toggle is not just a flag — it changes WHAT the save writes, so it re-seeds the four
-  // shared fields from that scope's own baseline (#243): the rule for "esta y las siguientes", the
-  // clicked session for "solo esta clase". Every toggle, both ways, so the form always shows the
-  // exact values the write will start from. On an on-grid class the two seeds are equal and
-  // nothing visibly moves.
+  // A scope toggle is not just a flag — it changes WHAT the save writes, so it re-seeds the
+  // shared fields from that scope's own baseline (#243): the rule for "dia"/"horario", the
+  // clicked session for "solo esta clase" — but the pure `reseedAlcance` skips any field the
+  // operator already touched (#243 defect fix), so an hora changed BEFORE the toggle survives it
+  // instead of being silently reverted. Any other patch (not a scope flip) just marks its own
+  // keys touched.
   const patchDraft = (patch: Partial<EditorDraft>) =>
-    setEditor((e) => ({
-      ...e,
-      draft: { ...e.draft, ...(patch.alcance && e.card ? semillaAlcance(e.card, patch.alcance) : {}), ...patch },
-    }));
+    setEditor((e) => {
+      if (patch.alcance && e.card) {
+        return { ...e, draft: { ...e.draft, ...reseedAlcance(e.card, patch.alcance, e.touched) } };
+      }
+      const touched = new Set(e.touched);
+      (Object.keys(patch) as (keyof EditorDraft)[]).forEach((k) => touched.add(k));
+      return { ...e, draft: { ...e.draft, ...patch }, touched };
+    });
 
   // The title NAMES the verb that failed, because the three #243 writes are three different
   // acts with three different blast radii — "No se pudo guardar" over a refused retire reads
@@ -332,7 +363,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
   const save = async () => {
     if (busy) return;
     // Nothing changed → nothing is written, and this is not a nicety: the narrow save runs
-    // edit_class_session, which CLEARS template_id, so a reflex GUARDAR on an untouched series
+    // edit_class_session, which CLEARS template_id, so a reflex GUARDAR on an untouched attached
     // class buys an irreversible detach in exchange for no edit at all (#243).
     if (editor.mode === "edit" && editor.card && draftSinCambios(editor.card, editor.draft)) {
       closeEditor();
@@ -349,18 +380,19 @@ export function AgendaScreen(props: AgendaScreenProps) {
     try {
       if (editor.mode === "edit" && editor.card) {
         const card = editor.card;
-        // "Esta y las siguientes": one RPC rewrites every future class of the rule in
-        // place. The bookings ride along on the FK — nothing is charged, nothing is
-        // refunded, nobody is un-booked. Coaches go only when the operator moved them,
-        // measured against THE RULE's coach set (the draft was seeded from it).
-        if (draft.alcance === "serie" && card.templateId) {
+        // "dia" / "horario": one RPC rewrites every future class of the rule (one weekday, or
+        // every weekday of the group) in place. The bookings ride along on the FK — nothing is
+        // charged, nothing is refunded, nobody is un-booked. Coaches go only when the operator
+        // moved them, measured against THE RULE's coach set (the draft was seeded from it).
+        if (draft.alcance !== "clase" && card.templateId) {
           const res = await actualizarHorarioRecurrenteAction({
             templateId: card.templateId,
             classTypeId: tipoId,
             hora: draft.hora,
             duracionMin: draft.duracionMin,
             cupo: draft.cupo,
-            ...(coachIdsCambiaron(semillaAlcance(card, "serie").coachIds, draft.coachIds) && {
+            ...(draft.alcance === "horario" && { todosLosDias: true }),
+            ...(coachIdsCambiaron(semillaAlcance(card, draft.alcance).coachIds, draft.coachIds) && {
               coachIds: draft.coachIds,
             }),
           });
@@ -417,15 +449,18 @@ export function AgendaScreen(props: AgendaScreenProps) {
   };
 
   // The same scope toggle governs the destructive path — which is why the sheet keeps
-  // one destructive button, not two. Wide: stop the rule and cancel every future class,
+  // one destructive button, not two. Wide: stop the rule(s) and cancel every future class,
   // each through the shipped cancel_class_session, so every held class comes back.
   const cancelClass = async () => {
     if (busy || !editor.card) return;
     const { card, draft } = editor;
     setBusy(true);
     try {
-      if (draft.alcance === "serie" && card.templateId) {
-        const res = await retirarHorarioRecurrenteAction({ templateId: card.templateId });
+      if (draft.alcance !== "clase" && card.templateId) {
+        const res = await retirarHorarioRecurrenteAction({
+          templateId: card.templateId,
+          ...(draft.alcance === "horario" && { todosLosDias: true }),
+        });
         if (!res.ok) return fail(res.error, "No se pudo terminar el horario");
         afterWrite("Horario terminado", canceladasLinea(res.clasesCanceladas));
         return;
@@ -550,7 +585,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
                 isSpecial={card.isSpecial}
                 specialName={card.specialName}
                 esUnica={card.templateId === null}
-                onClick={() => openGlance(card)}
+                onClick={() => openGlance(card, selectedDay.iso)}
               />
             ))
           )}
@@ -580,7 +615,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
                 esUnica: card.templateId === null,
                 onClick: () => {
                   setSelectedIndex(i);
-                  openGlance(card);
+                  openGlance(card, dia.iso);
                 },
               }))}
             />
@@ -637,6 +672,8 @@ export function AgendaScreen(props: AgendaScreenProps) {
           esPasada={editor.card ? new Date(editor.card.startsAtIso).getTime() <= ahora.getTime() : false}
           reservasActuales={editor.card?.booked ?? 0}
           cupoPlantilla={editor.card?.plantilla?.capacidad ?? 0}
+          cardDia={editor.cardDia ?? undefined}
+          groupDias={editor.card?.plantilla?.groupDias ?? []}
           pending={busy}
           onPatch={patchDraft}
           onAddTipo={addTipo}

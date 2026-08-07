@@ -41,6 +41,9 @@ interface Rows {
   class_type?: Record<string, unknown>[];
   class_session_coach?: Record<string, unknown>[];
   coach?: Record<string, unknown>[];
+  // The direct (non-embedded) group-siblings read — group_id/weekday rows for the ACTIVE
+  // templates sharing a group_id, separate from the per-session `schedule_template` embed above.
+  schedule_template?: Record<string, unknown>[];
   gymTimezone?: string;
 }
 
@@ -146,11 +149,15 @@ describe("getAgendaDia", () => {
         // Deliberately OFF-GRID from the session above (19:00/90/30/ct2 vs 09:00/60/20/ct1):
         // that is the shape the past-instant guard leaves behind, and the one a seed must not
         // confuse. `start_time` arrives as a Postgres `time`, i.e. with seconds.
+        // group_id/weekday ride the embed too — the group-siblings read below is keyed on group_id,
+        // and this weekday must survive the union even if the siblings read omits it (see groupDias).
         schedule_template: {
           class_type_id: "ct2",
           start_time: "19:00:00",
           duration_min: 90,
           capacity: 30,
+          group_id: "grp-1",
+          weekday: 3,
           schedule_template_coach: [{ coach_id: "co2" }],
         },
       },
@@ -217,6 +224,13 @@ describe("getAgendaDia", () => {
       { id: "co1", name: "Marisa" },
       { id: "co2", name: "Paty" },
     ],
+    // Two siblings sharing s1's template's group_id — deliberately NOT including weekday 3
+    // (s1's own), so the groupDias test proves the own weekday is unioned in, not just read
+    // off this table.
+    schedule_template: [
+      { group_id: "grp-1", weekday: 1, is_active: true },
+      { group_id: "grp-1", weekday: 5, is_active: true },
+    ],
   });
 
   it("returns only the target local day's non-cancelled sessions, windowed in the gym's tz", async () => {
@@ -258,8 +272,25 @@ describe("getAgendaDia", () => {
       duracionMin: 90,
       capacidad: 30,
       coachIds: ["co2"],
+      groupDias: [1, 3, 5],
     });
     expect(s2.plantilla).toBeNull();
+  });
+
+  it("groupDias: unions the group-siblings read with the template's own weekday, sorted — the siblings fixture omits weekday 3 on purpose", async () => {
+    const { client } = makeFake(rowsFor());
+    const dia = await getAgendaDia("2026-06-17", client);
+    const s1 = dia.sesiones.find((s) => s.id === "s1")!;
+    expect(s1.plantilla?.groupDias).toEqual([1, 3, 5]);
+  });
+
+  it("groupDias: a template with no siblings besides itself resolves to just its own weekday", async () => {
+    const rows = rowsFor();
+    rows.schedule_template = []; // no ACTIVE siblings for grp-1 at all
+    const { client } = makeFake(rows);
+    const dia = await getAgendaDia("2026-06-17", client);
+    const s1 = dia.sesiones.find((s) => s.id === "s1")!;
+    expect(s1.plantilla?.groupDias).toEqual([3]);
   });
 
   it("a session with no coach joins gets an empty coaches array (UI renders 'Por asignar')", async () => {
@@ -643,6 +674,16 @@ describe("actualizarHorarioRecurrente — 'esta y las siguientes' write orchestr
     expect("p_coach_ids" in rpcCalls[0].args).toBe(false);
   });
 
+  it("todosLosDias sends p_all_days: true; omitted (and false) never reach the RPC at all", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: { moved: 3, kept: 0 }, error: null }) });
+    await actualizarHorarioRecurrente({ ...valid(), todosLosDias: true }, client);
+    expect(rpcCalls[0].args.p_all_days).toBe(true);
+
+    const { client: client2, rpcCalls: calls2 } = makeFake({}, { rpc: () => ({ data: { moved: 1, kept: 0 }, error: null }) });
+    await actualizarHorarioRecurrente({ ...valid(), todosLosDias: false }, client2);
+    expect("p_all_days" in calls2[0].args).toBe(false);
+  });
+
   it("surfaces `kept` — the class the past-instant guard left at its old time, which the receipt must name", async () => {
     const { client } = makeFake({}, { rpc: () => ({ data: { moved: 5, kept: 1 }, error: null }) });
     expect(await actualizarHorarioRecurrente(valid(), client)).toEqual({
@@ -697,6 +738,18 @@ describe("retirarHorarioRecurrente — 'terminar el horario' write orchestration
     const { client } = makeFake({}, { rpc: () => ({ data: 0, error: null }) });
     const result = await retirarHorarioRecurrente(valid(), client);
     expect(result).toEqual({ ok: true, clasesCanceladas: 0 });
+  });
+
+  it("todosLosDias sends p_all_days: true; omitted never reaches the RPC at all", async () => {
+    const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 9, error: null }) });
+    await retirarHorarioRecurrente({ ...valid(), todosLosDias: true }, client);
+    expect(rpcCalls).toEqual([
+      { name: "retire_recurring_schedule", args: { p_template_id: ID("1"), p_all_days: true } },
+    ]);
+
+    const { client: client2, rpcCalls: calls2 } = makeFake({}, { rpc: () => ({ data: 6, error: null }) });
+    await retirarHorarioRecurrente(valid(), client2);
+    expect("p_all_days" in calls2[0].args).toBe(false);
   });
 
   it("surfaces the double-tap refusal as a typed result", async () => {

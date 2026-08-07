@@ -69,8 +69,10 @@ begin
   insert into public.class_type (gym_id, name) values (gym_a, 'Metcon Denial')
     returning id into ct_a;
 
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_a, ct_a, 0, '18:00', 45, 24) returning id into tmpl_a;
+  -- group_id is NOT NULL with no default since #243 slice 4 (20260806120000): every writer names the
+  -- schedule its rule belongs to. A lone fixture template is a group of one.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_a, ct_a, 0, '18:00', 45, 24, gen_random_uuid()) returning id into tmpl_a;
   insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_a, tmpl_a, coach_a);
 
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
@@ -84,8 +86,8 @@ begin
     returning id into coach_b;
   insert into public.class_type (gym_id, name) values (gym_b, 'Metcon B')
     returning id into ct_b;
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_b, ct_b, 1, '19:00', 45, 24);
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_b, ct_b, 1, '19:00', 45, 24, gen_random_uuid());
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (gym_b, ct_b, '2026-07-06 19:00:00-06', 45, 24) returning id into session_b;
   insert into public.class_session_coach (gym_id, session_id, coach_id) values (gym_b, session_b, coach_b);

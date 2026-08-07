@@ -1,16 +1,19 @@
 import { describe, expect, it } from "vitest";
 
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
+import type { EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 
 import {
   accionAgregar,
   canceladasLinea,
   coachIdsCambiaron,
   createDraft,
+  diaSemanaDe,
   draftSinCambios,
   editDraftFrom,
   esBloqueoVendible,
   movidasLinea,
+  reseedAlcance,
   semillaAlcance,
   sugerenciaVenta,
   toCardVM,
@@ -44,8 +47,10 @@ function dto(over: Partial<SesionAgendaDTO> = {}): SesionAgendaDTO {
   };
 }
 
-/** A session that came from a rule AND still matches it — the ordinary on-grid case. */
-const REGLA = { tipo: "Metcon", hora: "19:00", duracionMin: 60, capacidad: 30, coachIds: ["co1"] };
+/** A session that came from a rule AND still matches it — the ordinary on-grid case.
+ *  `groupDias: [3]` (jueves alone) — its value is irrelevant here; the "horario" toggle
+ *  gating on group size is an editor-sheet concern, tested in editor-sheet.test.ts. */
+const REGLA = { tipo: "Metcon", hora: "19:00", duracionMin: 60, capacidad: 30, coachIds: ["co1"], groupDias: [3] };
 
 describe("toCardVM", () => {
   it("maps a_continuacion to UI estado 'normal' with isNext true", () => {
@@ -108,7 +113,7 @@ describe("toCardVM", () => {
 
 /**
  * The editor's draft seeds. The load-bearing field is `alcance`: it is re-seeded on
- * EVERY open, so "esta y las siguientes" can never be left armed for the next card
+ * EVERY open, so a "dia"/"horario" scope can never be left armed for the next card
  * the operator taps — a sticky wide scope would silently rewrite a whole schedule.
  */
 describe("createDraft", () => {
@@ -189,8 +194,8 @@ describe("semillaAlcance", () => {
     "07:00",
   );
 
-  it("seeds the wide arm from the RULE, not from the off-grid class that was clicked", () => {
-    expect(semillaAlcance(desfasada, "serie")).toEqual({
+  it.each(["dia", "horario"] as const)("seeds the %s arm from the RULE, not from the off-grid class that was clicked", (alcance) => {
+    expect(semillaAlcance(desfasada, alcance)).toEqual({
       tipo: "Metcon",
       hora: "19:00",
       duracionMin: 60,
@@ -209,17 +214,17 @@ describe("semillaAlcance", () => {
     });
   });
 
-  it("is identical both ways for an on-grid class — the normal case shows no visible change", () => {
+  it.each(["dia", "horario"] as const)("is identical to 'clase' for an on-grid class — the normal case shows no visible change", (alcance) => {
     const alDia = toCardVM(
       dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }),
       "19:00",
     );
-    expect(semillaAlcance(alDia, "serie")).toEqual(semillaAlcance(alDia, "clase"));
+    expect(semillaAlcance(alDia, alcance)).toEqual(semillaAlcance(alDia, "clase"));
   });
 
-  it("falls back to the session for a one-off, which has no rule to read", () => {
+  it.each(["dia", "horario"] as const)("falls back to the session for a one-off, which has no rule to read", (alcance) => {
     const unica = toCardVM(dto({ tipo: "Funcional", capacidad: 24 }), "07:00");
-    expect(semillaAlcance(unica, "serie")).toEqual(semillaAlcance(unica, "clase"));
+    expect(semillaAlcance(unica, alcance)).toEqual(semillaAlcance(unica, "clase"));
   });
 });
 
@@ -253,13 +258,50 @@ describe("draftSinCambios", () => {
     expect(draftSinCambios(card, { ...limpio, coachIds: ["co1"] })).toBe(true);
   });
 
-  it("measures the WIDE scope against the rule, so a scope flip alone is still no change", () => {
-    expect(draftSinCambios(card, { ...limpio, alcance: "serie" })).toBe(true);
+  it.each(["dia", "horario"] as const)("measures the WIDE scope against the rule, so a scope flip alone is still no change", (alcance) => {
+    expect(draftSinCambios(card, { ...limpio, alcance })).toBe(true);
   });
 
-  it("sees the off-grid class's own values as a real change to the rule under the wide scope", () => {
+  it.each(["dia", "horario"] as const)("sees the off-grid class's own values as a real change to the rule under the wide scope", (alcance) => {
     const desfasada = toCardVM(dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Metcon", duracionMin: 60, capacidad: 30, coaches: [{ id: "co1", nombre: "Marisa" }] }), "07:00");
-    expect(draftSinCambios(desfasada, { ...editDraftFrom(desfasada), alcance: "serie" })).toBe(false);
+    expect(draftSinCambios(desfasada, { ...editDraftFrom(desfasada), alcance })).toBe(false);
+  });
+});
+
+/**
+ * The SILENT EDIT WIPE fix. A scope toggle still baselines untouched fields from the new scope's
+ * seed (an hour nobody touched must show the RULE, not a stale off-grid card) — but a field the
+ * operator already changed has to survive the toggle, or GUARDAR trips `draftSinCambios`' no-op
+ * guard and closes with zero feedback for an edit that really happened.
+ */
+describe("reseedAlcance", () => {
+  const desfasada = toCardVM(
+    dto({ templateId: "tpl-1", plantilla: REGLA, tipo: "Funcional", duracionMin: 45, capacidad: 24, coaches: [{ id: "co9", nombre: "Suplente" }] }),
+    "07:00",
+  );
+
+  it("keeps a touched hora across the toggle while re-seeding the untouched cupo from the rule", () => {
+    // The operator dialed hora to 08:00 BEFORE tapping "dia" — it must survive, cupo must not.
+    const patch = reseedAlcance(desfasada, "dia", new Set<keyof EditorDraft>(["hora"]));
+    expect(patch.hora).toBeUndefined(); // untouched-by-the-patch key: draft keeps its own "08:00"
+    expect(patch.cupo).toBe(30); // untouched field: re-seeded from REGLA
+    expect(patch.alcance).toBe("dia");
+  });
+
+  it("re-seeds every field when nothing was touched — the ordinary toggle", () => {
+    expect(reseedAlcance(desfasada, "dia", new Set())).toEqual({
+      tipo: "Metcon",
+      hora: "19:00",
+      duracionMin: 60,
+      cupo: 30,
+      coachIds: ["co1"],
+      alcance: "dia",
+    });
+  });
+
+  it("re-seeds nothing when every field is already touched — the operator's values are final", () => {
+    const touched = new Set<keyof EditorDraft>(["tipo", "hora", "duracionMin", "cupo", "coachIds"]);
+    expect(reseedAlcance(desfasada, "dia", touched)).toEqual({ alcance: "dia" });
   });
 });
 
@@ -288,12 +330,14 @@ describe("coachIdsCambiaron", () => {
 
 /**
  * The two series receipts. The count is what the RPC actually did — and a move can
- * legitimately rewrite fewer classes than the series holds: the one whose new time would
- * land in the past keeps its old time, and the receipt has to NAME it rather than let the
- * operator find it on the agenda (#243 §4).
+ * legitimately rewrite fewer classes than the series holds: the ones whose new time would
+ * land in the past keep their old time, and the receipt has to NAME them rather than let the
+ * operator find it on the agenda (#243 §4). "horario" can skip one PER WEEKDAY in the group,
+ * hence the plural arm — "dia" only ever skips 0 or 1 (only the current week can recompute
+ * backwards).
  */
 describe("movidasLinea", () => {
-  it("counts the future classes a series move actually rewrote", () => {
+  it("counts the future classes a move actually rewrote", () => {
     expect(movidasLinea(6, 0)).toBe("6 clases futuras movidas");
   });
   it("reads singular for one, and survives a zero-move (every week already past)", () => {
@@ -306,6 +350,10 @@ describe("movidasLinea", () => {
     expect(movidasLinea(5, 1)).toBe("5 clases futuras movidas · la de esta semana se queda como está");
     expect(movidasLinea(0, 1)).toBe("0 clases futuras movidas · la de esta semana se queda como está");
   });
+  it("pluralizes the skipped classes for 'horario' — one skip per weekday in the group", () => {
+    expect(movidasLinea(11, 2)).toBe("11 clases futuras movidas · 2 clases de esta semana se quedan como están");
+    expect(movidasLinea(0, 3)).toBe("0 clases futuras movidas · 3 clases de esta semana se quedan como están");
+  });
 });
 
 describe("canceladasLinea", () => {
@@ -313,6 +361,25 @@ describe("canceladasLinea", () => {
     expect(canceladasLinea(6)).toBe("6 clases canceladas · clases devueltas");
     expect(canceladasLinea(1)).toBe("1 clase cancelada · clases devueltas");
     expect(canceladasLinea(0)).toBe("0 clases canceladas · clases devueltas");
+  });
+});
+
+/**
+ * The card's own weekday (#243), Lun=0..Dom=6 — reads the LOCAL calendar date `parseDay`
+ * resolves, never `card.startsAtIso`: that is an absolute instant, and an evening class can sit
+ * on the far side of UTC midnight from the gym's own calendar day (2026-06-17 is a Wednesday,
+ * same fixture date the rest of this file's `dto()` default uses).
+ */
+describe("diaSemanaDe", () => {
+  it("maps Lun..Sáb to this app's 0..5 indexing (WEEKDAY_TOGGLES, groupDias)", () => {
+    expect(diaSemanaDe("2026-06-15")).toBe(0); // lunes
+    expect(diaSemanaDe("2026-06-17")).toBe(2); // miércoles
+    expect(diaSemanaDe("2026-06-18")).toBe(3); // jueves
+    expect(diaSemanaDe("2026-06-20")).toBe(5); // sábado
+  });
+
+  it("maps domingo to 6 — past this app's 0-5 class-day range, but a real calendar day", () => {
+    expect(diaSemanaDe("2026-06-21")).toBe(6);
   });
 });
 

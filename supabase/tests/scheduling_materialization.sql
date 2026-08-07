@@ -191,16 +191,16 @@ begin
   -- Direct INSERT of the exact same duplicate slot hits the unique index itself (not the RPC's catch).
   raised := false;
   begin
-    insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-      values (gym_a, ct_a, 0, '20:00', 45, 24);
+    insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+      values (gym_a, ct_a, 0, '20:00', 45, 24, gen_random_uuid());
   exception when unique_violation then raised := true;
   end;
   if not raised then raise exception 'MAT FAIL(dup guard): a direct duplicate INSERT did not raise unique_violation'; end if;
 
   -- An INACTIVE duplicate of the exact same slot is allowed — the partial index only covers is_active
   -- rows, so a retired schedule never blocks its own replacement.
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active)
-    values (gym_a, ct_a, 0, '20:00', 45, 24, false);
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active, group_id)
+    values (gym_a, ct_a, 0, '20:00', 45, 24, false, gen_random_uuid());
   select count(*) into n from public.schedule_template
     where gym_id = gym_a and class_type_id = ct_a and weekday = 0 and start_time = '20:00' and is_active = false;
   if n <> 1 then raise exception 'MAT FAIL(dup guard): the inactive duplicate template was not inserted'; end if;

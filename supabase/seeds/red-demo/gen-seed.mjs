@@ -101,6 +101,18 @@ const ALL_TEMPLATES = [
   ...NEW_TEMPLATES.map((t) => ({ ...t, isNew: true })),
 ];
 
+// #243 slice 4: schedule_template.group_id is NOT NULL with no default. Templates sharing a class
+// type, time, duration and capacity ARE one "repetir en N días" schedule, so they share one group —
+// which is what makes the demo's "todos los días" verbs reach every weekday of that schedule.
+// The group id is the FIRST member's template id, exactly the `min(id)` convention 20260806120000's
+// backfill uses, so a re-seeded demo and a backfilled one land on identical groups — and it consumes
+// no uid(), so every session id downstream is unchanged.
+const TEMPLATE_GROUPS = new Map();
+for (const t of NEW_TEMPLATES) {
+  const k = `${t.ct}|${t.t}|${t.dur}|${t.cap}`;
+  if (!TEMPLATE_GROUPS.has(k)) TEMPLATE_GROUPS.set(k, t.id);
+}
+
 // Mondays to publish: 2026-06-01 … 2026-08-10
 const MONDAYS = [];
 for (let m = "2026-06-01"; daysBetween(m, "2026-08-10") >= 0; m = addDays(m, 7)) MONDAYS.push(m);
@@ -395,8 +407,8 @@ parts["02_clientes"] = [
 ].join("\n");
 
 parts["03_schedule"] = [
-  `insert into schedule_template (id, gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active) values`,
-  NEW_TEMPLATES.map((t) => `('${t.id}','${GYM}','${t.ct}',${t.wd},'${t.t}',${t.dur},${t.cap},true)`).join(",\n") + ";",
+  `insert into schedule_template (id, gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active, group_id) values`,
+  NEW_TEMPLATES.map((t) => `('${t.id}','${GYM}','${t.ct}',${t.wd},'${t.t}',${t.dur},${t.cap},true,'${TEMPLATE_GROUPS.get(`${t.ct}|${t.t}|${t.dur}|${t.cap}`)}')`).join(",\n") + ";",
   `insert into schedule_template_coach (gym_id, template_id, coach_id) values`,
   NEW_TEMPLATES.flatMap((t) => t.co.map((c) => `('${GYM}','${t.id}','${c}')`)).join(",\n") + " on conflict do nothing;",
   `insert into schedule_template_week (gym_id, template_id, week_start) values`,

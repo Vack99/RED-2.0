@@ -353,8 +353,10 @@ async function main() {
     // ---- schedule + sessions ------------------------------------------------------
     // weekday is 0..5 (Mon..Sat) per schedule_template_weekday_check — not 1..7.
     await db.query(
-      `insert into schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active)
-       select $1, ct.id, w.weekday, t.start_time, 60, 20, true
+      // group_id is NOT NULL with no default (#243 slice 4). This grid is a perf fixture, not a
+      // schedule an operator created, so every row is its own group of one.
+      `insert into schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active, group_id)
+       select $1, ct.id, w.weekday, t.start_time, 60, 20, true, gen_random_uuid()
        from (select id, row_number() over (order by name) rn from class_type where gym_id = $1) ct
        join (select generate_series(0, 5) as weekday) w on true
        join lateral (select (array['07:00','12:00','19:00'])[1 + (w.weekday + ct.rn) % 3]::time as start_time) t on true

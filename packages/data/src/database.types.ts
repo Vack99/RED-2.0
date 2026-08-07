@@ -1100,6 +1100,7 @@ export type Database = {
           class_type_id: string
           created_at: string
           duration_min: number
+          group_id: string
           gym_id: string
           id: string
           is_active: boolean
@@ -1111,6 +1112,7 @@ export type Database = {
           class_type_id: string
           created_at?: string
           duration_min: number
+          group_id: string
           gym_id: string
           id?: string
           is_active?: boolean
@@ -1122,6 +1124,7 @@ export type Database = {
           class_type_id?: string
           created_at?: string
           duration_min?: number
+          group_id?: string
           gym_id?: string
           id?: string
           is_active?: boolean
@@ -1570,7 +1573,7 @@ export type Database = {
         }[]
       }
       retire_recurring_schedule: {
-        Args: { p_template_id: string }
+        Args: { p_all_days?: boolean; p_template_id: string }
         Returns: number
       }
       roster_clase: {
@@ -1603,6 +1606,7 @@ export type Database = {
       }
       update_recurring_schedule: {
         Args: {
+          p_all_days?: boolean
           p_capacity: number
           p_class_type_id: string
           p_coach_ids?: string[]

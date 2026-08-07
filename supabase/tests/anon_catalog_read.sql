@@ -56,8 +56,8 @@ begin
     returning id into ct;
   insert into public.class_type_workblock  (gym_id, class_type_id, label) values (gym_a, ct, 'Calentamiento');
   insert into public.class_type_bring_item (gym_id, class_type_id, label) values (gym_a, ct, 'Toalla');
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_a, ct, 0, '07:00', 60, 10) returning id into tmpl;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_a, ct, 0, '07:00', 60, 10, gen_random_uuid()) returning id into tmpl;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (gym_a, ct, now() + interval '1 day', 60, 10) returning id into cs;
   insert into public.class_session_coach (gym_id, session_id, coach_id) values (gym_a, cs, co);

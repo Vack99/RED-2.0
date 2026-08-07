@@ -62,10 +62,43 @@
 --      schedule_template_active_uq is partial on is_active precisely so re-creating IS the un-retire.
 -- (10) THE SECOND TAP. A re-retire raises above the loop, and NO balance moves twice.
 --
+-- ── #243 follow-up: "TODOS LOS DÍAS" (20260806120000 / 20260806120100) ───────────────────────────
+-- The owner's walk: "repetir en N días" mints N INDEPENDENT templates and both verbs acted on ONE, so
+-- "Terminar el horario" from the Lunes card left Miércoles and Viernes running. `group_id` records the
+-- batch; `p_all_days` fans the verb out over it. Vectors (14)-(20) run in gym G (and gym B), never in
+-- E or R, so every count those earlier vectors assert still stands.
+-- (14) GROUP IDENTITY. Zero templates carry a null group_id anywhere; a 3-weekday
+--      create_recurring_schedule mints exactly ONE group across its three rows; and a template created
+--      by any other act is NOT in that group — otherwise "todos los días" would reach a schedule the
+--      operator never created with it.
+-- (15) THE ALL-DAYS COLLISION IS ATOMIC. A sibling template already occupies the Miércoles member's
+--      target slot. The whole call raises, naming the COLLIDING member's weekday (not the anchor's),
+--      and the LUNES member — which the loop had already written, since it runs `order by weekday` —
+--      is byte-identical afterwards, along with every session, booking and balance.
+-- (16) THE ALL-DAYS MOVE. Every member's rule takes the new class_type/time/duration/capacity while
+--      KEEPING ITS OWN WEEKDAY; every member's future classes are re-anchored on their own ISO weeks;
+--      `moved` is the SUM across members; the coach replace reaches every member's rule and exactly
+--      the union of the sessions that moved; and — the settlement claim again, at group scale — every
+--      booking is still `reservada` and every balance numerically unchanged.
+-- (17) A WEEKDAY MOVE ACROSS A SCHEDULE IS REFUSED. p_weekday with p_all_days would collapse
+--      Lun/Mié/Vie onto one day; it raises and writes nothing.
+-- (18) THE SINGLE-DAY VERB IS STILL SINGLE-DAY. A p_all_days=false call on one member leaves its
+--      sibling's rule, its sibling's sessions and their coach joins byte-identical.
+-- (19) THE ALL-DAYS RETIRE. Every member is retired, every future class of every member is cancelled,
+--      every consumed hold comes back exactly once, the PAST class is untouched, a template OUTSIDE
+--      the group is untouched, and the second tap raises with no balance moving twice.
+-- (20) edit_class_session, THE TWO HOLES THE WALK FOUND. A CANCELLED target refuses ('La clase ya fue
+--      cancelada') and stays byte-identical — the stale-tab edit that used to report success against a
+--      dead row. A FUTURE class refuses to be moved to a PAST instant (both release paths are shut
+--      past the start, so every hold on it would be stranded) and stays byte-identical. Retro-editing
+--      a class that ALREADY passed still succeeds — the desk fixes records.
+--
 -- Vectors (7)-(10) run in their OWN GYM. ensure_week_materialized is gym-wide (it walks every active
 -- template of staff_gym()), so vector (9)'s "each week returns 0" is only a statement about the
 -- retired template if no other active template shares the gym. Vector (11) also retires — in gym E,
--- deliberately — but it makes no materialization claim, so it needs no such isolation.
+-- deliberately — but it makes no materialization claim, so it needs no such isolation. Vector (14)'s
+-- create_recurring_schedule materializes GYM-WIDE for the same reason, which is why it gets gym B to
+-- itself instead of running beside gym G's hand-placed fixtures.
 --
 -- Bookings are made through `reservar_clase` AS EACH MEMBER, never seeded by hand: `consumio` is the
 -- entire gate on the refund and the only honest way to get it is the function that stamps it.
@@ -137,24 +170,27 @@ begin
   insert into public.coach (gym_id, name, initials, role) values (gym_r, 'SE Coach R',   'CR', 'coach') returning id into coach_r;
 
   -- t1 — the series under edit: Martes 19:00, 45 min, cupo 24, one default coach.
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_e, ct1, 1, '19:00', 45, 24) returning id into t1;
+  -- group_id is NOT NULL with no default since 20260806120000. t1..t4 are four INDEPENDENT schedules,
+  -- so each is its own group of one — which is also what makes the p_all_days=false vectors below
+  -- statements about scoping rather than accidents of a shared group.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_e, ct1, 1, '19:00', 45, 24, gen_random_uuid()) returning id into t1;
   insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_e, t1, coach1);
 
   -- t2 — the past-instant guard's series (vectors 5, 11, 12). Its OWN weekday/time never matter: the
   -- guard recomputes from each SESSION's own instant, so all that matters is which ISO week its rows
   -- sit in.
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_e, ct1, 3, '10:00', 60, 20) returning id into t2;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_e, ct1, 3, '10:00', 60, 20, gen_random_uuid()) returning id into t2;
 
   -- t3 — the blocker for vector (6). Deliberately (ct2, Martes, 21:00): it does NOT collide with t1's
   -- seed slot, and only collides once vector (6) tries to move t1 onto it.
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_e, ct2, 1, '21:00', 45, 24) returning id into t3;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_e, ct2, 1, '21:00', 45, 24, gen_random_uuid()) returning id into t3;
 
   -- t4 — the retired series, alone in its gym (vector 9).
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_r, ct_r, 2, '18:00', 60, 20) returning id into t4;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_r, ct_r, 2, '18:00', 60, 20, gen_random_uuid()) returning id into t4;
   insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_r, t4, coach_r);
 
   -- t1's dated classes, each at the rule's instant for its own week. Week -1 is PAST; week +1 is
@@ -1019,6 +1055,705 @@ begin
   if v_n is distinct from 7 then raise exception 'SERIES FAIL(10): the balance moved to % after a refused re-retire — DOUBLE REFUND', v_n; end if;
   select clases_restantes into v_n from public.clientes where id = current_setting('t.se_c_rasis', true)::uuid;
   if v_n is distinct from 8 then raise exception 'SERIES FAIL(10): the attended member''s balance moved to % after a refused re-retire', v_n; end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- SEED for (14)-(20) — "todos los días". Two fresh gyms, so nothing above can shift underneath.
+--   gym G: a hand-placed SCHEDULE — two templates (Lunes + Miércoles) sharing ONE group_id, exactly
+--          the shape one "repetir en N días" create mints — with its dated classes pinned to weeks +2
+--          and +3 so no recomputed instant can land in the past whichever day the suite runs. The
+--          past-instant guard already has its own vector (5); these are about SCOPE.
+--   gym B: nothing but the create_recurring_schedule call of vector (14). It gets its own gym because
+--          that RPC materializes GYM-WIDE, and beside gym G's fixtures it would stamp extra classes
+--          onto the very templates (16)-(19) count.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone v_tz))::date;
+  v_today  date := (now() at time zone v_tz)::date;
+
+  gym_g uuid := gen_random_uuid();
+  gym_b uuid := gen_random_uuid();
+  op_g  uuid := gen_random_uuid();
+  op_b  uuid := gen_random_uuid();
+  u_ga  uuid := gen_random_uuid();
+  u_gb  uuid := gen_random_uuid();
+
+  ct_g1 uuid; ct_g2 uuid; ct_b uuid;
+  coach_g1 uuid; coach_g2 uuid; coach_b uuid;
+  gid uuid := gen_random_uuid();
+  tg_lun uuid; tg_mie uuid; tg_block uuid;
+  c_ga uuid; c_gb uuid;
+  sg_l2 uuid; sg_l3 uuid; sg_m0 uuid; sg_m2 uuid; sg_m3 uuid;
+  sg_canc uuid; sg_past uuid; sg_fut uuid;
+begin
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
+    (gym_g, 'series-group-gym-g', 'Series Group Gym G', v_tz, 'forge'),
+    (gym_b, 'series-group-gym-b', 'Series Group Gym B', v_tz, 'forge');
+
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', op_g, 'authenticated', 'authenticated', 'sg-op-g@test.local'),
+    ('00000000-0000-0000-0000-000000000000', op_b, 'authenticated', 'authenticated', 'sg-op-b@test.local'),
+    ('00000000-0000-0000-0000-000000000000', u_ga, 'authenticated', 'authenticated', 'sg-ga@test.local'),
+    ('00000000-0000-0000-0000-000000000000', u_gb, 'authenticated', 'authenticated', 'sg-gb@test.local');
+
+  insert into public.gym_membership (user_id, gym_id, role) values
+    (op_g, gym_g, 'operator'), (op_b, gym_b, 'operator'),
+    (u_ga, gym_g, 'member'),   (u_gb, gym_g, 'member');
+
+  insert into public.class_type (gym_id, name) values (gym_g, 'SG Metcon') returning id into ct_g1;
+  insert into public.class_type (gym_id, name) values (gym_g, 'SG Yoga')   returning id into ct_g2;
+  insert into public.class_type (gym_id, name) values (gym_b, 'SG Batch')  returning id into ct_b;
+  insert into public.coach (gym_id, name, initials, role) values (gym_g, 'SG Coach Uno', 'G1', 'coach') returning id into coach_g1;
+  insert into public.coach (gym_id, name, initials, role) values (gym_g, 'SG Coach Dos', 'G2', 'coach') returning id into coach_g2;
+  insert into public.coach (gym_id, name, initials, role) values (gym_b, 'SG Coach B',   'GB', 'coach') returning id into coach_b;
+
+  -- THE SCHEDULE: two rules, one group. Same class type, time, duration and capacity; different
+  -- weekday — the exact shape a "repetir Lunes y Miércoles" create leaves behind.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_g, ct_g1, 0, '19:00', 45, 24, gid) returning id into tg_lun;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_g, ct_g1, 2, '19:00', 45, 24, gid) returning id into tg_mie;
+  insert into public.schedule_template_coach (gym_id, template_id, coach_id) values
+    (gym_g, tg_lun, coach_g1), (gym_g, tg_mie, coach_g1);
+
+  -- tg_block — deliberately NOT in the group, and doing double duty: it occupies (ct_g2, Miércoles,
+  -- 20:00), which is free of every seed slot and collides only once (15) aims the schedule at it; and
+  -- it is (19)'s scope probe, because an all-days retire that reached it would be retiring by gym
+  -- rather than by group.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_g, ct_g2, 2, '20:00', 60, 30, gen_random_uuid()) returning id into tg_block;
+
+  -- The dated classes. Weeks +2/+3 per member, plus ONE past class on the Miércoles member so
+  -- "nothing in the past" is a claim about this verb too and not an inherited one.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
+    values (gym_g, ct_g1, ((v_monday + 14) + '19:00'::time) at time zone v_tz, 45, 24, tg_lun) returning id into sg_l2;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
+    values (gym_g, ct_g1, ((v_monday + 21) + '19:00'::time) at time zone v_tz, 45, 24, tg_lun) returning id into sg_l3;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
+    values (gym_g, ct_g1, (((v_monday - 7) + 2) + '19:00'::time) at time zone v_tz, 45, 24, tg_mie) returning id into sg_m0;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
+    values (gym_g, ct_g1, (((v_monday + 14) + 2) + '19:00'::time) at time zone v_tz, 45, 24, tg_mie) returning id into sg_m2;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, template_id)
+    values (gym_g, ct_g1, (((v_monday + 21) + 2) + '19:00'::time) at time zone v_tz, 45, 24, tg_mie) returning id into sg_m3;
+
+  -- The DATED coach joins, as the materializer writes them — including the past class, which is what
+  -- makes (16)'s "exactly the union of the movers" a real claim about the coach fan-out.
+  insert into public.class_session_coach (gym_id, session_id, coach_id) values
+    (gym_g, sg_l2, coach_g1), (gym_g, sg_l3, coach_g1),
+    (gym_g, sg_m0, coach_g1), (gym_g, sg_m2, coach_g1), (gym_g, sg_m3, coach_g1);
+
+  -- (20)'s three one-offs. template_id is null on all three — they belong to no rule, so no series
+  -- verb above or below can touch them and each vector is about edit_class_session alone.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, cancelled_at)
+    values (gym_g, ct_g1, (((v_monday + 14) + 1) + '12:00'::time) at time zone v_tz, 45, 24, now()) returning id into sg_canc;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_g, ct_g1, (((v_monday - 7) + 1) + '12:00'::time) at time zone v_tz, 45, 24) returning id into sg_past;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_g, ct_g1, (((v_monday + 14) + 1) + '13:00'::time) at time zone v_tz, 45, 24) returning id into sg_fut;
+
+  -- Two members, different balances, one booking each on a DIFFERENT member of the schedule: the move
+  -- must leave both numerically alone and the retire must pay both back exactly once.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('SG Lunes', '5552300001', 5, v_today + 60, '8 clases', gym_g, u_ga) returning id into c_ga;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('SG Miércoles', '5552300002', 8, v_today + 60, '8 clases', gym_g, u_gb) returning id into c_gb;
+
+  perform set_config('t.sg_gym_g', gym_g::text, true);
+  perform set_config('t.sg_gym_b', gym_b::text, true);
+  perform set_config('t.sg_op_g',  op_g::text,  true);
+  perform set_config('t.sg_op_b',  op_b::text,  true);
+  perform set_config('t.sg_u_ga',  u_ga::text,  true);
+  perform set_config('t.sg_u_gb',  u_gb::text,  true);
+  perform set_config('t.sg_ct_g1', ct_g1::text, true);
+  perform set_config('t.sg_ct_g2', ct_g2::text, true);
+  perform set_config('t.sg_ct_b',  ct_b::text,  true);
+  perform set_config('t.sg_coach_g1', coach_g1::text, true);
+  perform set_config('t.sg_coach_g2', coach_g2::text, true);
+  perform set_config('t.sg_coach_b',  coach_b::text,  true);
+  perform set_config('t.sg_gid',   gid::text,   true);
+  perform set_config('t.sg_lun',   tg_lun::text, true);
+  perform set_config('t.sg_mie',   tg_mie::text, true);
+  perform set_config('t.sg_block', tg_block::text, true);
+  perform set_config('t.sg_c_ga',  c_ga::text,  true);
+  perform set_config('t.sg_c_gb',  c_gb::text,  true);
+  perform set_config('t.sg_l2',    sg_l2::text, true);
+  perform set_config('t.sg_l3',    sg_l3::text, true);
+  perform set_config('t.sg_m0',    sg_m0::text, true);
+  perform set_config('t.sg_m2',    sg_m2::text, true);
+  perform set_config('t.sg_m3',    sg_m3::text, true);
+  perform set_config('t.sg_canc',  sg_canc::text, true);
+  perform set_config('t.sg_past',  sg_past::text, true);
+  perform set_config('t.sg_fut',   sg_fut::text,  true);
+end $$;
+
+-- The two bookings, made AS EACH MEMBER through reservar_clase — `consumio` is the entire gate on the
+-- refund and the only honest way to stamp it is the function that stamps it.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_u_ga', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.sg_l2', true)::uuid); end $$;
+reset role;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_u_gb', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.sg_m2', true)::uuid); end $$;
+reset role;
+
+do $$
+declare v_n int;
+begin
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_ga', true)::uuid;
+  if v_n is distinct from 4 then raise exception 'SEED FAIL: c_ga expected 4 after booking, got %', v_n; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gb', true)::uuid;
+  if v_n is distinct from 7 then raise exception 'SEED FAIL: c_gb expected 7 after booking, got %', v_n; end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (14) GROUP IDENTITY. The whole feature rests on one claim: rows created together share a group_id,
+-- and rows created apart do not. A create that minted N groups leaves "todos los días" reaching one
+-- weekday — the bug this slice exists to close, with the button now lying about it.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_b', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+begin
+  perform public.create_recurring_schedule(
+    current_setting('t.sg_ct_b', true)::uuid, array[0, 2, 4], '07:00'::time, 60, 20,
+    array[current_setting('t.sg_coach_b', true)::uuid], 6);
+end $$;
+reset role;
+
+do $$
+declare
+  gym_b uuid := current_setting('t.sg_gym_b', true)::uuid;
+  v_n int; v_group uuid;
+begin
+  -- (a) THE BACKFILL INVARIANT, over the whole table: not one rule anywhere is groupless. The column
+  -- is NOT NULL, so this also pins that the backfill in 20260806120000 ran before the constraint did.
+  select count(*) into v_n from public.schedule_template where group_id is null;
+  if v_n is distinct from 0 then
+    raise exception 'SERIES FAIL(14): % template row(s) carry a null group_id — a rule that belongs to no schedule', v_n;
+  end if;
+
+  -- (b) ONE BATCH, ONE GROUP, THREE WEEKDAYS.
+  select count(*) into v_n from public.schedule_template where gym_id = gym_b;
+  if v_n is distinct from 3 then raise exception 'SERIES FAIL(14): the 3-weekday create left % template row(s)', v_n; end if;
+  select count(distinct group_id) into v_n from public.schedule_template where gym_id = gym_b;
+  if v_n is distinct from 1 then
+    raise exception 'SERIES FAIL(14): a 3-weekday create minted % group(s) (expected 1) — "todos los días" would reach only the clicked card', v_n;
+  end if;
+  select count(distinct weekday) into v_n from public.schedule_template where gym_id = gym_b;
+  if v_n is distinct from 3 then raise exception 'SERIES FAIL(14): the batch holds % distinct weekday(s) (expected 3)', v_n; end if;
+
+  -- (c) AND NOTHING ELSE IS IN IT. tg_block was created on its own, so a group it shared with the
+  -- hand-placed schedule would make "todos los días" reach a schedule the operator never created.
+  select group_id into v_group from public.schedule_template where id = current_setting('t.sg_block', true)::uuid;
+  if v_group is not distinct from current_setting('t.sg_gid', true)::uuid then
+    raise exception 'SERIES FAIL(14): an unrelated template shares the schedule''s group';
+  end if;
+  select count(distinct group_id) into v_n from public.schedule_template
+   where id in (current_setting('t.sg_lun', true)::uuid, current_setting('t.sg_mie', true)::uuid);
+  if v_n is distinct from 1 then raise exception 'SERIES FAIL(14): the fixture schedule''s two weekdays are in % groups', v_n; end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (17) A WEEKDAY MOVE ACROSS A WHOLE SCHEDULE IS REFUSED. Each member IS its own weekday, so
+-- "move Lun/Mié to Jueves" would collapse the schedule onto one day (and self-collide on
+-- schedule_template_active_uq). Refused explicitly rather than silently ignored — a dropped parameter
+-- is how a UI ships a control that does nothing.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare raised boolean := false; msg text;
+begin
+  begin
+    perform public.update_recurring_schedule(
+      current_setting('t.sg_lun', true)::uuid, current_setting('t.sg_ct_g2', true)::uuid,
+      '21:00'::time, 60, 30, p_weekday => 3, p_all_days => true);
+  exception when others then raised := true; msg := sqlerrm;
+  end;
+  if not raised then raise exception 'SERIES FAIL(17): a weekday move across a whole schedule was accepted'; end if;
+  if msg is distinct from 'No se puede cambiar el día al editar todo el horario' then
+    raise exception 'SERIES FAIL(17): wrong refusal for a weekday move across a schedule: %', msg;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare r record;
+begin
+  select class_type_id, weekday, start_time, duration_min, capacity into r
+    from public.schedule_template where id = current_setting('t.sg_lun', true)::uuid;
+  if r.class_type_id is distinct from current_setting('t.sg_ct_g1', true)::uuid
+     or r.weekday is distinct from 0 or r.start_time is distinct from '19:00'::time
+     or r.duration_min is distinct from 45 or r.capacity is distinct from 24 then
+    raise exception 'SERIES FAIL(17): the refused call wrote the Lunes rule (ct % wd % t % dur % cap %)',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity;
+  end if;
+  select weekday, start_time into r from public.schedule_template where id = current_setting('t.sg_mie', true)::uuid;
+  if r.weekday is distinct from 2 or r.start_time is distinct from '19:00'::time then
+    raise exception 'SERIES FAIL(17): the refused call wrote the Miércoles rule (wd % t %)', r.weekday, r.start_time;
+  end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (15) THE ALL-DAYS COLLISION IS ATOMIC, AND NAMES THE RIGHT DAY.
+-- tg_block already owns (ct_g2, Miércoles, 20:00). The loop runs `order by weekday`, so the LUNES
+-- member is written FIRST and the Miércoles member is what raises — which is exactly why this vector
+-- is not a tautology about aborted transactions: a row really had been written when the failure fired,
+-- and it is byte-identical below. The sentence must name MIÉRCOLES; naming the anchor's Lunes would
+-- send the operator to change a day that was never in the way.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare raised boolean := false; msg text;
+begin
+  begin
+    perform public.update_recurring_schedule(
+      current_setting('t.sg_lun', true)::uuid, current_setting('t.sg_ct_g2', true)::uuid,
+      '20:00'::time, 60, 30, p_all_days => true);
+  exception when others then raised := true; msg := sqlerrm;
+  end;
+  if not raised then raise exception 'SERIES FAIL(15): an all-days move onto an occupied slot was accepted'; end if;
+  if msg is distinct from 'Ya existe un horario activo para esta clase el Miércoles a las 20:00' then
+    raise exception 'SERIES FAIL(15): wrong refusal for the colliding member (%) — the sentence must name the day that actually collided', msg;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  v_tz  text := 'America/Mexico_City';
+  ct_g1 uuid := current_setting('t.sg_ct_g1', true)::uuid;
+  r record; v_n int; v_status text;
+begin
+  -- THE MEMBER THAT HAD ALREADY BEEN WRITTEN.
+  select class_type_id, weekday, start_time, duration_min, capacity into r
+    from public.schedule_template where id = current_setting('t.sg_lun', true)::uuid;
+  if r.class_type_id is distinct from ct_g1 or r.weekday is distinct from 0
+     or r.start_time is distinct from '19:00'::time or r.duration_min is distinct from 45
+     or r.capacity is distinct from 24 then
+    raise exception 'SERIES FAIL(15): the already-written Lunes rule survived the collision as (ct % wd % t % dur % cap %) — the call is not atomic',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity;
+  end if;
+  select class_type_id, start_time into r from public.schedule_template where id = current_setting('t.sg_mie', true)::uuid;
+  if r.class_type_id is distinct from ct_g1 or r.start_time is distinct from '19:00'::time then
+    raise exception 'SERIES FAIL(15): the colliding Miércoles rule was written anyway';
+  end if;
+
+  -- Every dated class, still at 19:00 in its own week.
+  select count(*) into v_n from public.class_session
+   where template_id in (current_setting('t.sg_lun', true)::uuid, current_setting('t.sg_mie', true)::uuid)
+     and (starts_at at time zone v_tz)::time is distinct from '19:00'::time;
+  if v_n is distinct from 0 then raise exception 'SERIES FAIL(15): % class(es) moved across a refused all-days call', v_n; end if;
+
+  -- Every booking and every balance, byte-identical.
+  select status into v_status from public.reservation
+   where member_id = current_setting('t.sg_c_ga', true)::uuid and class_session_id = current_setting('t.sg_l2', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'SERIES FAIL(15): the refused call settled a booking (%)', v_status; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_ga', true)::uuid;
+  if v_n is distinct from 4 then raise exception 'SERIES FAIL(15): the refused call moved a balance to %', v_n; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gb', true)::uuid;
+  if v_n is distinct from 7 then raise exception 'SERIES FAIL(15): the refused call moved a balance to %', v_n; end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (16) THE ALL-DAYS MOVE. 19:00/45/24/ct_g1 → 21:00/60/30/ct_g2 with a new coach, across BOTH
+-- weekdays in ONE call: every value differs from what either member's rows already carried, so every
+-- "was written" below is a real claim (#80 AC6). Each member KEEPS ITS OWN WEEKDAY — Lunes stays
+-- Lunes — and `moved` is the SUM over members, 4, not one member's 2.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_moved int; v_kept int;
+begin
+  select moved, kept into v_moved, v_kept
+    from public.update_recurring_schedule(
+      current_setting('t.sg_lun', true)::uuid, current_setting('t.sg_ct_g2', true)::uuid,
+      '21:00'::time, 60, 30,
+      p_coach_ids => array[current_setting('t.sg_coach_g2', true)::uuid], p_all_days => true);
+  if v_moved is distinct from 4 then
+    raise exception 'SERIES FAIL(16): the all-days move reports % moved (expected 4 — BOTH weekdays'' future classes)', v_moved;
+  end if;
+  if v_kept is distinct from 0 then
+    raise exception 'SERIES FAIL(16): the all-days move reports % kept (expected 0 — every fixture class is two weeks out)', v_kept;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone 'America/Mexico_City'))::date;
+  ct_g2  uuid := current_setting('t.sg_ct_g2', true)::uuid;
+  tg_lun uuid := current_setting('t.sg_lun', true)::uuid;
+  tg_mie uuid := current_setting('t.sg_mie', true)::uuid;
+  coach_g2 uuid := current_setting('t.sg_coach_g2', true)::uuid;
+  r record; v_ts timestamptz; v_n int; v_status text; v_coach uuid; s uuid;
+begin
+  -- BOTH RULES took the edit, and each kept its OWN weekday. A fan-out that wrote the anchor's
+  -- weekday onto the group collapses Lunes and Miércoles onto one day here.
+  select class_type_id, weekday, start_time, duration_min, capacity, is_active into r
+    from public.schedule_template where id = tg_lun;
+  if r.class_type_id is distinct from ct_g2 or r.weekday is distinct from 0
+     or r.start_time is distinct from '21:00'::time or r.duration_min is distinct from 60
+     or r.capacity is distinct from 30 or r.is_active is distinct from true then
+    raise exception 'SERIES FAIL(16): the Lunes rule reads (ct % wd % t % dur % cap % active %)',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity, r.is_active;
+  end if;
+  select class_type_id, weekday, start_time, duration_min, capacity, is_active into r
+    from public.schedule_template where id = tg_mie;
+  if r.class_type_id is distinct from ct_g2 or r.weekday is distinct from 2
+     or r.start_time is distinct from '21:00'::time or r.duration_min is distinct from 60
+     or r.capacity is distinct from 30 or r.is_active is distinct from true then
+    raise exception 'SERIES FAIL(16): the Miércoles rule reads (ct % wd % t % dur % cap % active %)',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity, r.is_active;
+  end if;
+
+  -- EVERY FUTURE CLASS OF EVERY MEMBER, re-anchored on its own ISO week and its own weekday.
+  select starts_at into v_ts from public.class_session where id = current_setting('t.sg_l2', true)::uuid;
+  if v_ts is distinct from (((v_monday + 14) + '21:00'::time) at time zone v_tz) then
+    raise exception 'SERIES FAIL(16): the Lunes week-+2 class landed at %', v_ts;
+  end if;
+  select starts_at into v_ts from public.class_session where id = current_setting('t.sg_l3', true)::uuid;
+  if v_ts is distinct from (((v_monday + 21) + '21:00'::time) at time zone v_tz) then
+    raise exception 'SERIES FAIL(16): the Lunes week-+3 class landed at %', v_ts;
+  end if;
+  select starts_at into v_ts from public.class_session where id = current_setting('t.sg_m2', true)::uuid;
+  if v_ts is distinct from ((((v_monday + 14) + 2) + '21:00'::time) at time zone v_tz) then
+    raise exception 'SERIES FAIL(16): the Miércoles week-+2 class landed at % (expected its own Miércoles, not the anchor''s Lunes)', v_ts;
+  end if;
+  select starts_at into v_ts from public.class_session where id = current_setting('t.sg_m3', true)::uuid;
+  if v_ts is distinct from ((((v_monday + 21) + 2) + '21:00'::time) at time zone v_tz) then
+    raise exception 'SERIES FAIL(16): the Miércoles week-+3 class landed at %', v_ts;
+  end if;
+  for r in select id, class_type_id, duration_min, capacity, template_id from public.class_session
+            where id in (current_setting('t.sg_l2', true)::uuid, current_setting('t.sg_l3', true)::uuid,
+                         current_setting('t.sg_m2', true)::uuid, current_setting('t.sg_m3', true)::uuid) loop
+    if r.class_type_id is distinct from ct_g2 or r.duration_min is distinct from 60 or r.capacity is distinct from 30 then
+      raise exception 'SERIES FAIL(16): moved class % reads (ct % dur % cap %)', r.id, r.class_type_id, r.duration_min, r.capacity;
+    end if;
+    if r.template_id is null then raise exception 'SERIES FAIL(16): a moved class left its rule (id %)', r.id; end if;
+  end loop;
+
+  -- THE PAST CLASS of the Miércoles member: written by no statement in this call.
+  select starts_at, class_type_id, duration_min, capacity, template_id, cancelled_at into r
+    from public.class_session where id = current_setting('t.sg_m0', true)::uuid;
+  if r.starts_at is distinct from ((((v_monday - 7) + 2) + '19:00'::time) at time zone v_tz)
+     or r.class_type_id is distinct from current_setting('t.sg_ct_g1', true)::uuid
+     or r.duration_min is distinct from 45 or r.capacity is distinct from 24
+     or r.template_id is distinct from tg_mie or r.cancelled_at is not null then
+    raise exception 'SERIES FAIL(16): the PAST class was rewritten by an all-days move (% ct % dur % cap %)',
+      r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+  end if;
+
+  -- THE COACH REPLACE reaches EVERY member's rule…
+  select count(*) into v_n from public.schedule_template_coach where template_id in (tg_lun, tg_mie);
+  if v_n is distinct from 2 then raise exception 'SERIES FAIL(16): the two rules hold % coach row(s) (expected 1 each)', v_n; end if;
+  select count(*) into v_n from public.schedule_template_coach
+   where template_id in (tg_lun, tg_mie) and coach_id = coach_g2;
+  if v_n is distinct from 2 then raise exception 'SERIES FAIL(16): the coach replace reached % of the 2 rules', v_n; end if;
+
+  -- …and EXACTLY the union of the classes that moved, on the dated join the agenda reads.
+  foreach s in array array[current_setting('t.sg_l2', true)::uuid, current_setting('t.sg_l3', true)::uuid,
+                           current_setting('t.sg_m2', true)::uuid, current_setting('t.sg_m3', true)::uuid] loop
+    select count(*) into v_n from public.class_session_coach where session_id = s;
+    if v_n is distinct from 1 then raise exception 'SERIES FAIL(16): moved class % has % coach row(s)', s, v_n; end if;
+    select coach_id into v_coach from public.class_session_coach where session_id = s;
+    if v_coach is distinct from coach_g2 then
+      raise exception 'SERIES FAIL(16): moved class % still carries coach % — the change never reached the agenda', s, v_coach;
+    end if;
+  end loop;
+  select coach_id into v_coach from public.class_session_coach where session_id = current_setting('t.sg_m0', true)::uuid;
+  if v_coach is distinct from current_setting('t.sg_coach_g1', true)::uuid then
+    raise exception 'SERIES FAIL(16): the PAST class''s coach was rewritten to % — the dated fan-out is not scoped to the movers', v_coach;
+  end if;
+
+  -- THE SETTLEMENT ASSERTION, at schedule scale: the classes still happen, so the bookings moved with
+  -- them. Zero rows to `reservation`, zero to `clientes`.
+  select status into v_status from public.reservation
+   where member_id = current_setting('t.sg_c_ga', true)::uuid and class_session_id = current_setting('t.sg_l2', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'SERIES FAIL(16): an all-days move settled a booking (%)', v_status; end if;
+  select status into v_status from public.reservation
+   where member_id = current_setting('t.sg_c_gb', true)::uuid and class_session_id = current_setting('t.sg_m2', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'SERIES FAIL(16): an all-days move settled the sibling weekday''s booking (%)', v_status; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_ga', true)::uuid;
+  if v_n is distinct from 4 then raise exception 'SERIES FAIL(16): a balance moved to % across an all-days move (expected 4)', v_n; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gb', true)::uuid;
+  if v_n is distinct from 7 then raise exception 'SERIES FAIL(16): a balance moved to % across an all-days move (expected 7)', v_n; end if;
+  select count(*) into v_n from public.reservation where gym_id = current_setting('t.sg_gym_g', true)::uuid;
+  if v_n is distinct from 2 then raise exception 'SERIES FAIL(16): % reservation row(s) in the gym (expected the 2 seeded bookings)', v_n; end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (18) THE SINGLE-DAY VERB IS STILL SINGLE-DAY. The same schedule, the same group, p_all_days omitted:
+-- only the clicked weekday may move. If the fan-out ever defaulted to the group, an operator editing
+-- one day would silently rewrite the rest of the week.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_moved int; v_kept int;
+begin
+  select moved, kept into v_moved, v_kept
+    from public.update_recurring_schedule(
+      current_setting('t.sg_lun', true)::uuid, current_setting('t.sg_ct_g1', true)::uuid,
+      '18:00'::time, 45, 24);
+  if v_moved is distinct from 2 then
+    raise exception 'SERIES FAIL(18): a single-day move reports % moved (expected the clicked weekday''s 2 classes)', v_moved;
+  end if;
+  if v_kept is distinct from 0 then raise exception 'SERIES FAIL(18): a single-day move reports % kept (expected 0)', v_kept; end if;
+end $$;
+reset role;
+
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone 'America/Mexico_City'))::date;
+  tg_mie uuid := current_setting('t.sg_mie', true)::uuid;
+  coach_g2 uuid := current_setting('t.sg_coach_g2', true)::uuid;
+  r record; v_ts timestamptz; v_coach uuid;
+begin
+  -- The clicked weekday moved…
+  select class_type_id, weekday, start_time, duration_min, capacity into r
+    from public.schedule_template where id = current_setting('t.sg_lun', true)::uuid;
+  if r.class_type_id is distinct from current_setting('t.sg_ct_g1', true)::uuid or r.weekday is distinct from 0
+     or r.start_time is distinct from '18:00'::time or r.duration_min is distinct from 45 or r.capacity is distinct from 24 then
+    raise exception 'SERIES FAIL(18): the clicked rule reads (ct % wd % t % dur % cap %)',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity;
+  end if;
+  select starts_at into v_ts from public.class_session where id = current_setting('t.sg_l2', true)::uuid;
+  if v_ts is distinct from (((v_monday + 14) + '18:00'::time) at time zone v_tz) then
+    raise exception 'SERIES FAIL(18): the clicked weekday''s class landed at %', v_ts;
+  end if;
+
+  -- …and THE SIBLING MEMBER is byte-identical, rule and classes and coaches alike: still at the values
+  -- (16) left on it.
+  select class_type_id, weekday, start_time, duration_min, capacity, is_active into r
+    from public.schedule_template where id = tg_mie;
+  if r.class_type_id is distinct from current_setting('t.sg_ct_g2', true)::uuid or r.weekday is distinct from 2
+     or r.start_time is distinct from '21:00'::time or r.duration_min is distinct from 60
+     or r.capacity is distinct from 30 or r.is_active is distinct from true then
+    raise exception 'SERIES FAIL(18): a single-day call rewrote the SIBLING rule to (ct % wd % t % dur % cap % active %)',
+      r.class_type_id, r.weekday, r.start_time, r.duration_min, r.capacity, r.is_active;
+  end if;
+  for r in select id, starts_at, class_type_id, duration_min, capacity from public.class_session
+            where id in (current_setting('t.sg_m2', true)::uuid, current_setting('t.sg_m3', true)::uuid) loop
+    if (r.starts_at at time zone v_tz)::time is distinct from '21:00'::time
+       or r.class_type_id is distinct from current_setting('t.sg_ct_g2', true)::uuid
+       or r.duration_min is distinct from 60 or r.capacity is distinct from 30 then
+      raise exception 'SERIES FAIL(18): a single-day call rewrote the sibling''s class % (% ct % dur % cap %)',
+        r.id, r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+    end if;
+  end loop;
+  select coach_id into v_coach from public.class_session_coach where session_id = current_setting('t.sg_m2', true)::uuid;
+  if v_coach is distinct from coach_g2 then
+    raise exception 'SERIES FAIL(18): a single-day call (no p_coach_ids) rewrote the sibling''s dated coach to %', v_coach;
+  end if;
+  select coach_id into v_coach from public.schedule_template_coach where template_id = tg_mie;
+  if v_coach is distinct from coach_g2 then
+    raise exception 'SERIES FAIL(18): a single-day call rewrote the sibling rule''s coach to %', v_coach;
+  end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (19) THE ALL-DAYS RETIRE — the owner's walk, in one vector. "Terminar el horario" pressed on the
+-- MIÉRCOLES card (deliberately not the first member: the anchor is whichever card was clicked) must
+-- end the whole schedule, cancel every future class of every weekday, and give every held credit back
+-- exactly once. Under the shipped single-weekday verb, Lunes went on taking bookings for a schedule
+-- the confirm dialog said had been cancelled.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_n int;
+begin
+  v_n := public.retire_recurring_schedule(current_setting('t.sg_mie', true)::uuid, p_all_days => true);
+  if v_n is distinct from 4 then
+    raise exception 'SERIES FAIL(19): the all-days retire cancelled % class(es) (expected 4 — both weekdays, two weeks each)', v_n;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  tg_lun uuid := current_setting('t.sg_lun', true)::uuid;
+  tg_mie uuid := current_setting('t.sg_mie', true)::uuid;
+  v_n int; v_active boolean; v_status text; v_cancelled timestamptz;
+begin
+  -- EVERY member retired…
+  select count(*) into v_n from public.schedule_template where id in (tg_lun, tg_mie) and is_active;
+  if v_n is distinct from 0 then
+    raise exception 'SERIES FAIL(19): % weekday(s) of the schedule are still active — the other days keep materializing', v_n;
+  end if;
+  -- …and NOTHING outside the group.
+  select is_active into v_active from public.schedule_template where id = current_setting('t.sg_block', true)::uuid;
+  if v_active is distinct from true then
+    raise exception 'SERIES FAIL(19): the all-days retire reached a template outside the schedule — it is retiring by GYM, not by group';
+  end if;
+
+  -- Every FUTURE class of every member is cancelled…
+  select count(*) into v_n from public.class_session
+   where template_id in (tg_lun, tg_mie) and starts_at > now() and cancelled_at is null;
+  if v_n is distinct from 0 then
+    raise exception 'SERIES FAIL(19): % future class(es) survived — still bookable, for a schedule that no longer exists', v_n;
+  end if;
+  select count(*) into v_n from public.class_session
+   where template_id in (tg_lun, tg_mie) and cancelled_at is not null;
+  if v_n is distinct from 4 then raise exception 'SERIES FAIL(19): % class(es) carry cancelled_at (expected exactly the 4 future ones)', v_n; end if;
+  -- …and the PAST one is not.
+  select cancelled_at into v_cancelled from public.class_session where id = current_setting('t.sg_m0', true)::uuid;
+  if v_cancelled is not null then raise exception 'SERIES FAIL(19): the retire cancelled a class that already happened'; end if;
+
+  -- THE MONEY, on BOTH weekdays: exactly +1 each, once. A loop that reached only the anchor's weekday
+  -- leaves c_ga at 4 and destroys a class the member had paid for.
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_ga', true)::uuid;
+  if v_n is distinct from 5 then
+    raise exception 'SERIES FAIL(19): the Lunes member has % (expected 4 + 1 = 5) — the hold on the OTHER weekday was never released', v_n;
+  end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gb', true)::uuid;
+  if v_n is distinct from 8 then raise exception 'SERIES FAIL(19): the Miércoles member has % (expected 7 + 1 = 8, exactly once)', v_n; end if;
+  select status into v_status from public.reservation
+   where member_id = current_setting('t.sg_c_ga', true)::uuid and class_session_id = current_setting('t.sg_l2', true)::uuid;
+  if v_status is distinct from 'cancelada' then raise exception 'SERIES FAIL(19): the Lunes booking is % (expected cancelada)', v_status; end if;
+  select status into v_status from public.reservation
+   where member_id = current_setting('t.sg_c_gb', true)::uuid and class_session_id = current_setting('t.sg_m2', true)::uuid;
+  if v_status is distinct from 'cancelada' then raise exception 'SERIES FAIL(19): the Miércoles booking is % (expected cancelada)', v_status; end if;
+end $$;
+
+-- THE SECOND TAP, all-days shape: the anchor's own gate raises ABOVE the loop, so a double-tapped
+-- confirm cannot pay anybody twice. Asserted on the BALANCES, not on the raise.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare raised boolean := false; msg text;
+begin
+  begin
+    perform public.retire_recurring_schedule(current_setting('t.sg_mie', true)::uuid, p_all_days => true);
+  exception when others then raised := true; msg := sqlerrm;
+  end;
+  if not raised then raise exception 'SERIES FAIL(19): a second all-days retire was accepted'; end if;
+  if msg is distinct from 'Horario no encontrado o ya retirado' then
+    raise exception 'SERIES FAIL(19): wrong raise on a re-retire: %', msg;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare v_n int;
+begin
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_ga', true)::uuid;
+  if v_n is distinct from 5 then raise exception 'SERIES FAIL(19): a balance moved to % after a refused re-retire — DOUBLE REFUND', v_n; end if;
+  select clases_restantes into v_n from public.clientes where id = current_setting('t.sg_c_gb', true)::uuid;
+  if v_n is distinct from 8 then raise exception 'SERIES FAIL(19): a balance moved to % after a refused re-retire — DOUBLE REFUND', v_n; end if;
+end $$;
+
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+-- (20) edit_class_session — THE TWO HOLES THE OWNER'S WALK FOUND.
+--   (a) A CANCELLED target used to be edited successfully: a stale tab wrote to a dead row and the
+--       operator was told the class had moved. The refusal has its OWN sentence, because
+--       'Sesión no encontrada' would send them looking for a class that is right there.
+--   (b) A FUTURE class could be moved to a PAST instant — probed on live at 09:45. Past the start both
+--       release paths are shut ('La clase ya comenzó'), so every hold on it becomes unrefundable by
+--       the gym and uncancellable by the member.
+--   (c) …but retro-editing a class that ALREADY passed stays legal: the desk fixes records, and those
+--       holds are already unreleasable either way.
+-- All three targets are one-offs (template_id null), so no series verb above could have touched them.
+-- ════════════════════════════════════════════════════════════════════════════════════════════════
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.sg_op_g', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone 'America/Mexico_City'))::date;
+  ct_g2 uuid := current_setting('t.sg_ct_g2', true)::uuid;
+  raised boolean; msg text;
+begin
+  -- (a) THE CANCELLED TARGET.
+  raised := false;
+  begin
+    perform public.edit_class_session(
+      current_setting('t.sg_canc', true)::uuid, ct_g2,
+      (((v_monday + 14) + 1) + '16:00'::time) at time zone v_tz, 60, 30);
+  exception when others then raised := true; msg := sqlerrm;
+  end;
+  if not raised then raise exception 'SERIES FAIL(20a): editing a CANCELLED class was accepted — the stale tab wrote to a dead row and got a receipt'; end if;
+  if msg is distinct from 'La clase ya fue cancelada' then
+    raise exception 'SERIES FAIL(20a): wrong refusal for a cancelled class: %', msg;
+  end if;
+
+  -- (b) FUTURE → PAST.
+  raised := false;
+  begin
+    perform public.edit_class_session(
+      current_setting('t.sg_fut', true)::uuid, ct_g2,
+      (((v_monday - 7) + 1) + '12:00'::time) at time zone v_tz, 60, 30);
+  exception when others then raised := true; msg := sqlerrm;
+  end;
+  if not raised then raise exception 'SERIES FAIL(20b): moving a FUTURE class to a PAST instant was accepted — every hold on it is now stranded'; end if;
+  if msg is distinct from 'No se puede mover la clase a una hora que ya pasó' then
+    raise exception 'SERIES FAIL(20b): wrong refusal for a past-instant move: %', msg;
+  end if;
+
+  -- (c) THE RETRO EDIT — a class that already passed, moved within the past. Must SUCCEED.
+  perform public.edit_class_session(
+    current_setting('t.sg_past', true)::uuid, ct_g2,
+    (((v_monday - 7) + 1) + '07:00'::time) at time zone v_tz, 60, 30);
+end $$;
+reset role;
+
+do $$
+declare
+  v_tz     text := 'America/Mexico_City';
+  v_monday date := (date_trunc('week', now() at time zone 'America/Mexico_City'))::date;
+  ct_g1 uuid := current_setting('t.sg_ct_g1', true)::uuid;
+  r record;
+begin
+  -- (a) THE CANCELLED ROW IS BYTE-IDENTICAL — the refusal is not "raised after writing".
+  select starts_at, class_type_id, duration_min, capacity, cancelled_at into r
+    from public.class_session where id = current_setting('t.sg_canc', true)::uuid;
+  if r.starts_at is distinct from ((((v_monday + 14) + 1) + '12:00'::time) at time zone v_tz)
+     or r.class_type_id is distinct from ct_g1 or r.duration_min is distinct from 45
+     or r.capacity is distinct from 24 then
+    raise exception 'SERIES FAIL(20a): the cancelled class was rewritten anyway (% ct % dur % cap %)',
+      r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+  end if;
+  if r.cancelled_at is null then raise exception 'SERIES FAIL(20a): a refused edit un-cancelled the class'; end if;
+
+  -- (b) …and so is the future one the guard refused to strand.
+  select starts_at, class_type_id, duration_min, capacity, cancelled_at into r
+    from public.class_session where id = current_setting('t.sg_fut', true)::uuid;
+  if r.starts_at is distinct from ((((v_monday + 14) + 1) + '13:00'::time) at time zone v_tz)
+     or r.class_type_id is distinct from ct_g1 or r.duration_min is distinct from 45
+     or r.capacity is distinct from 24 or r.cancelled_at is not null then
+    raise exception 'SERIES FAIL(20b): the refused move wrote the row anyway (% ct % dur % cap %)',
+      r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+  end if;
+
+  -- (c) THE RETRO EDIT LANDED. If the guard were `p_starts_at <= now()` alone, the desk could no
+  -- longer fix yesterday's record at all.
+  select starts_at, class_type_id, duration_min, capacity into r
+    from public.class_session where id = current_setting('t.sg_past', true)::uuid;
+  if r.starts_at is distinct from ((((v_monday - 7) + 1) + '07:00'::time) at time zone v_tz)
+     or r.class_type_id is distinct from current_setting('t.sg_ct_g2', true)::uuid
+     or r.duration_min is distinct from 60 or r.capacity is distinct from 30 then
+    raise exception 'SERIES FAIL(20c): the retro edit of an already-past class did not land (% ct % dur % cap %)',
+      r.starts_at, r.class_type_id, r.duration_min, r.capacity;
+  end if;
 end $$;
 
 select 'recurring series edit: OK' as result;

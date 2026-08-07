@@ -1,4 +1,5 @@
 import { antesDeVentanaArribo } from "@gym/domain/rules";
+import { parseDay } from "@gym/format";
 import type { PlantillaDTO, SesionAgendaDTO } from "@gym/data/server/agenda";
 import type { EditorAlcance, EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
 import type { VentaSugerida } from "@gym/ui/forge/agenda/session-roster";
@@ -74,6 +75,15 @@ export function toCardVM(dto: SesionAgendaDTO, hora: string): CardVM {
 
 const EMPTY_REPEAT: boolean[] = [false, false, false, false, false, false];
 
+/** A card's own weekday, Lun=0..Dom=6 (this app's indexing — WEEKDAY_TOGGLES,
+ *  `plantilla.groupDias`) — the #243 "todos los <día>" toggle label. Reads `iso`
+ *  ("YYYY-MM-DD", the DiaVM the card is rendered under) with `parseDay`'s LOCAL Y/M/D,
+ *  never `card.startsAtIso`: that is an absolute instant, and an evening class can sit
+ *  on the far side of UTC midnight from the gym's own calendar day. */
+export function diaSemanaDe(iso: string): number {
+  return (parseDay(iso).getDay() + 6) % 7;
+}
+
 /** Editor defaults for a new class (PRD #36 e): 18:00 / 45 min / cupo 24, first tipo. */
 export function createDraft(tipoInicial: string): EditorDraft {
   return {
@@ -98,21 +108,44 @@ export function createDraft(tipoInicial: string): EditorDraft {
  *  another. Seeding a wide save from such a row would push its stale hora/cupo/tipo/coaches onto
  *  the template and revert the entire series — the operator who touched only the cupo would move
  *  25 classes back to last month's hour. On an on-grid row the two seeds are identical, which is
- *  why the normal case shows no visible change when the toggle flips. */
+ *  why the normal case shows no visible change when the toggle flips.
+ *
+ *  "dia" and "horario" (#243) seed the same way — both rewrite THE RULE; only the write's blast
+ *  radius (one weekday vs the whole group) differs, and that lives in the save call, not here. */
 export function semillaAlcance(
   card: CardVM,
   alcance: EditorAlcance,
 ): Pick<EditorDraft, "tipo" | "hora" | "duracionMin" | "cupo" | "coachIds"> {
-  const regla = alcance === "serie" ? card.plantilla : null;
+  const regla = alcance !== "clase" ? card.plantilla : null;
   return regla
     ? { tipo: regla.tipo, hora: regla.hora, duracionMin: regla.duracionMin, cupo: regla.capacidad, coachIds: regla.coachIds }
     : { tipo: card.tipo, hora: card.time, duracionMin: card.mins, cupo: card.cap, coachIds: card.coachIds };
 }
 
 /**
+ * The scope-toggle re-seed (#243 defect fix). A toggle still baselines from the new scope's seed
+ * (semillaAlcance) — a wide edit has to start from the RULE, not an off-grid card — but ONLY for
+ * the fields the operator has not already touched: an hora changed BEFORE the toggle must survive
+ * it, not be silently reverted, or GUARDAR would trip `draftSinCambios`' no-op guard and close
+ * with zero feedback for a change that really happened. `touched` is the caller's own record of
+ * which draft keys it has patched outside a scope flip (agenda.tsx's EditorState).
+ */
+export function reseedAlcance(
+  card: CardVM,
+  alcance: EditorAlcance,
+  touched: ReadonlySet<keyof EditorDraft>,
+): Partial<EditorDraft> {
+  const seed = semillaAlcance(card, alcance);
+  const sinTocar = Object.fromEntries(
+    Object.entries(seed).filter(([k]) => !touched.has(k as keyof EditorDraft)),
+  ) as Partial<EditorDraft>;
+  return { ...sinTocar, alcance };
+}
+
+/**
  * Seed the editor from an existing session. `repeatDays` stays empty — the weekday
  * row is the create flow's alone — and `alcance` re-seeds to "clase" on EVERY open
- * (#243): "esta y las siguientes" is a per-open decision, never sticky, so a series
+ * (#243): the wide scope is a per-open decision, never sticky, so a "dia"/"horario"
  * edit can't leave its blast radius armed for the next card the operator taps.
  */
 export function editDraftFrom(card: CardVM): EditorDraft {
@@ -127,9 +160,12 @@ export function editDraftFrom(card: CardVM): EditorDraft {
 
 /**
  * Did the operator change ANYTHING? (#243) A narrow save runs `edit_class_session`, which clears
- * `template_id` — so opening a series class and tapping GUARDAR out of reflex buys an irreversible
- * detach in exchange for no edit at all. Compared against the scope's OWN seed, because the toggle
- * re-seeds the form: under "serie" the baseline is the rule, under "clase" it is the session.
+ * `template_id` — so opening an attached class and tapping GUARDAR out of reflex buys an
+ * irreversible detach in exchange for no edit at all. Compared against the scope's OWN seed,
+ * because the toggle re-seeds the form: under "dia"/"horario" the baseline is the rule, under
+ * "clase" it is the session. Untouched fields equal the seed by construction (agenda.tsx's
+ * `patchDraft` keeps a touched-fields set and only re-seeds the rest on a scope flip), so this
+ * still catches the reflex-GUARDAR case rather than seeing a re-seed as a real change.
  */
 export function draftSinCambios(card: CardVM, draft: EditorDraft): boolean {
   const seed = semillaAlcance(card, draft.alcance);
@@ -145,9 +181,9 @@ export function draftSinCambios(card: CardVM, draft: EditorDraft): boolean {
 }
 
 /**
- * Did the operator actually touch the coach multi-select? A series write sends `coachIds` only
- * when they did — `update_recurring_schedule` leaves the coach set alone when the argument is
- * omitted, and this is what decides to omit it. The `seed` it is measured against is the SCOPE's
+ * Did the operator actually touch the coach multi-select? A "dia"/"horario" write sends
+ * `coachIds` only when they did — `update_recurring_schedule` leaves the coach set alone when
+ * the argument is omitted, and this is what decides to omit it. The `seed` it is measured against is the SCOPE's
  * seed (semillaAlcance), i.e. the template's own coaches for a wide edit: measured against the
  * clicked session's instead, an off-grid class would report a change that isn't one and stamp its
  * substitute coach over the schedule's. Order-insensitive: the multi-select appends taps, so a
@@ -158,16 +194,19 @@ export function coachIdsCambiaron(seed: string[], actual: string[]): boolean {
 }
 
 /**
- * The "esta y las siguientes" receipt (#243 §4). The count is what the RPC actually
- * moved — and when it moved FEWER classes than the series holds, the receipt has to say
- * which one it skipped rather than leave the operator to notice. `clasesSinMover` is the
- * past-instant guard's leftover: structurally 0 or 1, because only the current week's
- * class can recompute backwards. It keeps EVERYTHING it had — hora, cupo, tipo, coaches — so
- * the receipt says "se queda como está" and not just something about its hour.
+ * The "dia"/"horario" receipt (#243 §4). The count is what the RPC actually moved — and when it
+ * moved FEWER classes than the scope holds, the receipt has to say which ones it skipped rather
+ * than leave the operator to notice. `clasesSinMover` is the past-instant guard's leftover:
+ * structurally 0 or 1 for "dia" (only the current week's class can recompute backwards), but
+ * "horario" can skip one per weekday in the group, hence the plural arm. Each skipped class keeps
+ * EVERYTHING it had — hora, cupo, tipo, coaches — so the receipt says "se queda(n) como está(n)"
+ * and not just something about its hour.
  */
 export function movidasLinea(clasesMovidas: number, clasesSinMover: number): string {
   const movidas = `${clasesMovidas} ${clasesMovidas === 1 ? "clase futura movida" : "clases futuras movidas"}`;
-  return clasesSinMover >= 1 ? `${movidas} · la de esta semana se queda como está` : movidas;
+  if (clasesSinMover === 0) return movidas;
+  if (clasesSinMover === 1) return `${movidas} · la de esta semana se queda como está`;
+  return `${movidas} · ${clasesSinMover} clases de esta semana se quedan como están`;
 }
 
 /** The "terminar el horario" receipt: every future class cancelled, every held class back. */

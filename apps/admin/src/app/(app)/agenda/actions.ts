@@ -43,7 +43,8 @@ export async function crearHorarioRecurrenteAction(
 }
 
 /** "Esta y las siguientes": move a recurring schedule's future classes in place —
- *  bookings ride along, nothing is charged or refunded (#243). */
+ *  bookings ride along, nothing is charged or refunded (#243). `todosLosDias` fans the
+ *  same edit out to every weekday sharing the template's group_id. */
 export async function actualizarHorarioRecurrenteAction(
   input: ActualizarHorarioRecurrenteInput,
 ): Promise<AgendaResultado<{ clasesMovidas: number; clasesSinMover: number }>> {
@@ -51,7 +52,8 @@ export async function actualizarHorarioRecurrenteAction(
 }
 
 /** "Terminar el horario": stop a recurring schedule and cancel its future classes,
- *  refunding every hold through the same path the single-class cancel uses (#243). */
+ *  refunding every hold through the same path the single-class cancel uses (#243).
+ *  `todosLosDias` retires every weekday sharing the template's group_id. */
 export async function retirarHorarioRecurrenteAction(
   input: RetirarHorarioRecurrenteInput,
 ): Promise<AgendaResultado<{ clasesCanceladas: number }>> {

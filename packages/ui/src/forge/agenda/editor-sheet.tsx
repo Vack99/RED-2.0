@@ -20,13 +20,28 @@ import { WheelPickerSheet } from "./wheel-picker";
 
 export const WEEKDAY_TOGGLES = ["L", "M", "Mi", "J", "V", "S"] as const;
 
-/** How wide an edit writes (#243): this dated class alone, or the rule behind it. */
-export type EditorAlcance = "clase" | "serie";
+/** How wide an edit writes (#243): this dated class alone, every future class of its
+ *  own weekday ("dia" — the renamed "serie"), or every future class of every weekday
+ *  in its schedule's group ("horario" — the whole-group verb). */
+export type EditorAlcance = "clase" | "dia" | "horario";
 
-export const ALCANCE_TOGGLES: { value: EditorAlcance; label: string }[] = [
-  { value: "clase", label: "Solo esta clase" },
-  { value: "serie", label: "Esta y las siguientes" },
-];
+/** Spanish weekday plurals, Lun=0..Sáb=5 — this app's own indexing (WEEKDAY_TOGGLES,
+ *  `plantilla.groupDias`), used to name the "dia" scope in the toggle, the cancel
+ *  label and its confirm sentence. */
+const DIAS_PLURAL = ["los lunes", "los martes", "los miércoles", "los jueves", "los viernes", "los sábados"];
+
+/** The scope options the toggle offers for THIS card: narrow always, "dia" always (the
+ *  toggle only renders at all when the card is attached, #243), "horario" only when its
+ *  schedule's group has more than one active weekday — a lone-weekday group has no
+ *  wider verb to offer. */
+export function alcanceToggles(dia: number, groupDias: number[]): { value: EditorAlcance; label: string }[] {
+  const opciones: { value: EditorAlcance; label: string }[] = [
+    { value: "clase", label: "Solo esta clase" },
+    { value: "dia", label: `Todos ${DIAS_PLURAL[dia]}` },
+  ];
+  if (groupDias.length > 1) opciones.push({ value: "horario", label: "Todo el horario" });
+  return opciones;
+}
 
 export function editorTitle(isEdit: boolean): string {
   return isEdit ? "Editar clase" : "Nueva clase";
@@ -56,27 +71,33 @@ export function especialNombre(name: string): string {
  * honesty one step further: the sheet opens freely on a class that already started, where "las
  * pasadas no se tocan" would be a promise about the class on screen.
  */
-export function alcanceCaption(alcance: EditorAlcance, esPasada: boolean): string {
+export function alcanceCaption(alcance: EditorAlcance, esPasada: boolean, dia: number): string {
   if (alcance === "clase") return "Esta clase se separa del horario. Los cambios del horario ya no la alcanzan.";
+  const alcanzados = alcance === "horario" ? "todos los días de este horario" : `${DIAS_PLURAL[dia]} de este horario`;
   return esPasada
-    ? "Cambia las clases futuras de este horario. Esta ya pasó y se queda como está. Las reservas se mueven con la clase."
-    : "Cambia las clases futuras de este horario. Las pasadas no se tocan. Las reservas se mueven con la clase.";
+    ? `Cambia las clases futuras de ${alcanzados}. Esta ya pasó y se queda como está. Las reservas se mueven con la clase.`
+    : `Cambia las clases futuras de ${alcanzados}. Las pasadas no se tocan. Las reservas se mueven con la clase.`;
 }
 
 /** The one destructive button's label — it follows the scope toggle (#243). */
-export function cancelLabel(alcance: EditorAlcance): string {
-  return alcance === "serie" ? "Terminar el horario" : "Cancelar esta clase";
+export function cancelLabel(alcance: EditorAlcance, dia: number): string {
+  if (alcance === "horario") return "Terminar todo el horario";
+  if (alcance === "dia") return `Terminar ${DIAS_PLURAL[dia]}`;
+  return "Cancelar esta clase";
 }
 
 /**
- * The confirm the wide arm must clear, or `null` to fire straight through. Only the
- * series arm is gated: cancelling one class is one class, while "Terminar el horario"
- * cancels every future class of the schedule and hands back every held class.
+ * The confirm a wide arm must clear, or `null` to fire straight through. Only "dia"
+ * and "horario" are gated: cancelling one class is one class, while "Terminar los
+ * <día>" / "Terminar todo el horario" cancels every future class of the scope and
+ * hands back every held class.
  */
-export function cancelConfirm(alcance: EditorAlcance): string | null {
-  return alcance === "serie"
-    ? "Se cancelarán todas las clases futuras de este horario y se devolverán las clases reservadas. No se puede deshacer."
-    : null;
+export function cancelConfirm(alcance: EditorAlcance, dia: number): string | null {
+  if (alcance === "clase") return null;
+  if (alcance === "horario") {
+    return "Se cancelarán todas las clases futuras de este horario en todos sus días y se devolverán las clases reservadas. No se puede deshacer.";
+  }
+  return `Se cancelarán todas las clases futuras de ${DIAS_PLURAL[dia]} de este horario y se devolverán las clases reservadas. No se puede deshacer.`;
 }
 
 /**
@@ -85,16 +106,17 @@ export function cancelConfirm(alcance: EditorAlcance): string | null {
  * blocks NEW bookings and the quick-glance already reads "Clase llena · sin lugares".
  * `null` renders nothing.
  *
- * The two arms trigger on DIFFERENT facts, because they are warning about different things.
- * Narrow: `reservas` is this class's own bookings, and the number is the point. Wide: `reservas`
- * is still only the CLICKED class's — so triggering on it would stay silent while shrinking a
- * lightly-booked card whose next-week twin is over capacity, and would quote a count that never
- * held for the series. The wide arm therefore fires on the shrink itself (`cupo` below the rule's
- * current `cupoSerie`) and drops the number, promising only what it can know: where the new cupo
- * lands, and that no existing booking is dropped.
+ * The narrow arm triggers on a DIFFERENT fact than the two wide arms, because they are warning
+ * about different things. Narrow: `reservas` is this class's own bookings, and the number is the
+ * point. Wide ("dia"/"horario"): `reservas` is still only the CLICKED class's — so triggering on
+ * it would stay silent while shrinking a lightly-booked card whose next-week twin is over
+ * capacity, and would quote a count that never held for the rule. The wide arms therefore fire
+ * on the shrink itself (`cupo` below the rule's current `cupoSerie`) and drop the number,
+ * promising only what they can know: where the new cupo lands, and that no existing booking is
+ * dropped.
  */
 export function cupoAviso(cupo: number, reservas: number, alcance: EditorAlcance, cupoSerie: number): string | null {
-  if (alcance === "serie") {
+  if (alcance !== "clase") {
     return cupo < cupoSerie ? "El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar" : null;
   }
   return reservas > cupo ? `Cupo por debajo de las ${reservas} reservas · nadie pierde su lugar` : null;
@@ -137,6 +159,13 @@ export interface EditorSheetProps {
   reservasActuales?: number;
   /** The rule's current capacity — what the WIDE cupo warning measures a shrink against. */
   cupoPlantilla?: number;
+  /** This card's own weekday (Lun=0..Sáb=5) — the toggle's "todos los <día>" label and
+   *  the destructive button's day-scoped copy (#243). Unread while `esSerie` is false,
+   *  since neither ever renders. */
+  cardDia?: number;
+  /** The schedule's group weekdays, sorted, including this card's own (#243) — gates
+   *  the "horario" scope: a lone-weekday group has no wider verb to offer. */
+  groupDias?: number[];
   /** A write is already in flight: the whole button stack goes inert. Descartar included —
    *  closing the sheet mid-save lets the operator edit a second class and land the FIRST
    *  save's toast on it. */
@@ -203,6 +232,8 @@ export function EditorSheet({
   esPasada = false,
   reservasActuales = 0,
   cupoPlantilla = 0,
+  cardDia = 0,
+  groupDias = [],
   pending = false,
   onPatch,
   onAddTipo,
@@ -216,7 +247,7 @@ export function EditorSheet({
   // The scope exists only for a generated class being edited; everything else is its
   // own scope, so the label, the caption and the confirm all read from this one value.
   const alcance: EditorAlcance = isEdit && esSerie ? draft.alcance : "clase";
-  const caption = alcanceCaption(alcance, esPasada);
+  const caption = alcanceCaption(alcance, esPasada, cardDia);
   const aviso = cupoAviso(draft.cupo, reservasActuales, alcance, cupoPlantilla);
 
   const toggleCoach = (id: string) => {
@@ -347,7 +378,7 @@ export function EditorSheet({
               Alcance del cambio
             </div>
             <div className="flex" style={{ marginTop: 9, gap: 5 }}>
-              {ALCANCE_TOGGLES.map((opt) => (
+              {alcanceToggles(cardDia, groupDias).map((opt) => (
                 <button key={opt.value} type="button" onClick={() => onPatch({ alcance: opt.value })} aria-pressed={alcance === opt.value} className="uppercase" style={toggleStyle(alcance === opt.value)}>
                   {opt.label}
                 </button>
@@ -405,14 +436,14 @@ export function EditorSheet({
             type="button"
             disabled={pending}
             onClick={() => {
-              const pregunta = cancelConfirm(alcance);
+              const pregunta = cancelConfirm(alcance, cardDia);
               if (pregunta && !window.confirm(pregunta)) return;
               onCancelClass();
             }}
             className="uppercase"
             style={{ marginTop: 10, width: "100%", padding: 14, background: "transparent", border: "1px solid color-mix(in srgb, var(--red) 35%, transparent)", color: "var(--red)", fontFamily: "inherit", fontSize: 11, fontWeight: 800, letterSpacing: 1, cursor: pending ? "default" : "pointer", opacity: pending ? 0.45 : 1 }}
           >
-            {cancelLabel(alcance)}
+            {cancelLabel(alcance, cardDia)}
           </button>
         )}
         <button

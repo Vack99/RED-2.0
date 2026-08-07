@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  ALCANCE_TOGGLES,
   WEEKDAY_TOGGLES,
   alcanceCaption,
+  alcanceToggles,
   cancelConfirm,
   cancelLabel,
   cupoAviso,
@@ -40,56 +40,82 @@ describe("especialNombre", () => {
 });
 
 /**
- * The #243 scope control. ONE toggle governs both the save path and the destructive
- * one, so these four pure functions are the whole affordance: what the operator picks
- * from, what the wide arm promises, what the destructive button says, and what it must
- * make them confirm first.
+ * The #243 scope control. ONE toggle governs both the save path and the destructive one, so
+ * these pure functions are the whole affordance: what the operator picks from, what each arm
+ * promises, what the destructive button says, and what it must make them confirm first.
  */
-describe("ALCANCE_TOGGLES", () => {
-  it("offers exactly two scopes, narrow first", () => {
-    expect(ALCANCE_TOGGLES).toEqual([
+describe("alcanceToggles", () => {
+  it("offers narrow + this weekday when the group has only one active day", () => {
+    expect(alcanceToggles(3, [3])).toEqual([
       { value: "clase", label: "Solo esta clase" },
-      { value: "serie", label: "Esta y las siguientes" },
+      { value: "dia", label: "Todos los jueves" },
     ]);
+  });
+  it("names the CARD's own weekday, not the group's first one", () => {
+    expect(alcanceToggles(0, [0, 2, 5])).toEqual([
+      { value: "clase", label: "Solo esta clase" },
+      { value: "dia", label: "Todos los lunes" },
+      { value: "horario", label: "Todo el horario" },
+    ]);
+  });
+  it("adds 'horario' only once the group spans more than one weekday", () => {
+    expect(alcanceToggles(3, [3]).map((o) => o.value)).not.toContain("horario");
+    expect(alcanceToggles(3, [1, 3]).map((o) => o.value)).toContain("horario");
   });
 });
 
 describe("alcanceCaption", () => {
-  it("claims the SCHEDULE's future classes, never 'esta' — the clicked one may be the kept one", () => {
-    expect(alcanceCaption("serie", false)).toBe(
-      "Cambia las clases futuras de este horario. Las pasadas no se tocan. Las reservas se mueven con la clase.",
+  it("names the card's own weekday for 'dia', never a generic 'este horario'", () => {
+    expect(alcanceCaption("dia", false, 3)).toBe(
+      "Cambia las clases futuras de los jueves de este horario. Las pasadas no se tocan. Las reservas se mueven con la clase.",
     );
   });
   it("never promises to move a class that already started — the sheet opens on those too", () => {
-    expect(alcanceCaption("serie", true)).toBe(
-      "Cambia las clases futuras de este horario. Esta ya pasó y se queda como está. Las reservas se mueven con la clase.",
+    expect(alcanceCaption("dia", true, 3)).toBe(
+      "Cambia las clases futuras de los jueves de este horario. Esta ya pasó y se queda como está. Las reservas se mueven con la clase.",
+    );
+  });
+  it("claims every weekday for 'horario', never just the clicked card's day", () => {
+    expect(alcanceCaption("horario", false, 3)).toBe(
+      "Cambia las clases futuras de todos los días de este horario. Las pasadas no se tocan. Las reservas se mueven con la clase.",
+    );
+    expect(alcanceCaption("horario", true, 3)).toBe(
+      "Cambia las clases futuras de todos los días de este horario. Esta ya pasó y se queda como está. Las reservas se mueven con la clase.",
     );
   });
   it("warns that the narrow scope DETACHES the class from its schedule — the silent `Única`", () => {
-    expect(alcanceCaption("clase", false)).toBe(
+    expect(alcanceCaption("clase", false, 3)).toBe(
       "Esta clase se separa del horario. Los cambios del horario ya no la alcanzan.",
     );
-    expect(alcanceCaption("clase", true)).toBe(alcanceCaption("clase", false));
+    expect(alcanceCaption("clase", true, 3)).toBe(alcanceCaption("clase", false, 3));
   });
 });
 
 describe("cancelLabel", () => {
-  it("names the schedule, not the class, when the scope is wide", () => {
-    expect(cancelLabel("serie")).toBe("Terminar el horario");
+  it("names the card's own weekday when the scope is 'dia'", () => {
+    expect(cancelLabel("dia", 3)).toBe("Terminar los jueves");
+  });
+  it("names the whole schedule when the scope is 'horario'", () => {
+    expect(cancelLabel("horario", 3)).toBe("Terminar todo el horario");
   });
   it("stays the single-class cancel when the scope is narrow", () => {
-    expect(cancelLabel("clase")).toBe("Cancelar esta clase");
+    expect(cancelLabel("clase", 3)).toBe("Cancelar esta clase");
   });
 });
 
 describe("cancelConfirm", () => {
-  it("gates the wide arm — six weeks of cancellations and refunds is not one tap", () => {
-    expect(cancelConfirm("serie")).toBe(
-      "Se cancelarán todas las clases futuras de este horario y se devolverán las clases reservadas. No se puede deshacer.",
+  it("gates 'dia' — naming the day, not a generic 'el horario'", () => {
+    expect(cancelConfirm("dia", 3)).toBe(
+      "Se cancelarán todas las clases futuras de los jueves de este horario y se devolverán las clases reservadas. No se puede deshacer.",
+    );
+  });
+  it("gates 'horario' — every day of the group, not just the clicked card's", () => {
+    expect(cancelConfirm("horario", 3)).toBe(
+      "Se cancelarán todas las clases futuras de este horario en todos sus días y se devolverán las clases reservadas. No se puede deshacer.",
     );
   });
   it("lets a single-class cancel through ungated, exactly as it shipped", () => {
-    expect(cancelConfirm("clase")).toBeNull();
+    expect(cancelConfirm("clase", 3)).toBeNull();
   });
 });
 
@@ -110,17 +136,18 @@ describe("cupoAviso", () => {
     expect(cupoAviso(24, 0, "clase", 24)).toBeNull();
   });
 
-  // The wide arm measures the SHRINK against the rule, not the clicked class's bookings —
+  // Both wide arms measure the SHRINK against the rule, not the clicked class's bookings —
   // the clicked class is one of dozens and its count says nothing about the others'.
-  it("warns on any shrink below the rule's cupo, whatever THIS class happens to hold", () => {
-    expect(cupoAviso(20, 0, "serie", 24)).toBe("El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar");
-    expect(cupoAviso(4, 9, "serie", 24)).toBe("El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar");
+  it.each(["dia", "horario"] as const)("warns on any shrink below the rule's cupo under '%s', whatever THIS class holds", (alcance) => {
+    expect(cupoAviso(20, 0, alcance, 24)).toBe("El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar");
+    expect(cupoAviso(4, 9, alcance, 24)).toBe("El nuevo cupo aplica a todas las clases futuras · nadie pierde su lugar");
   });
-  it("stays silent when the rule's cupo holds or grows", () => {
-    expect(cupoAviso(24, 9, "serie", 24)).toBeNull();
-    expect(cupoAviso(30, 9, "serie", 24)).toBeNull();
+  it.each(["dia", "horario"] as const)("stays silent under '%s' when the rule's cupo holds or grows", (alcance) => {
+    expect(cupoAviso(24, 9, alcance, 24)).toBeNull();
+    expect(cupoAviso(30, 9, alcance, 24)).toBeNull();
   });
-  it("never quotes the clicked class's booking count under the wide scope", () => {
-    expect(cupoAviso(4, 9, "serie", 24)).not.toContain("9");
+  it("never quotes the clicked class's booking count under a wide scope", () => {
+    expect(cupoAviso(4, 9, "dia", 24)).not.toContain("9");
+    expect(cupoAviso(4, 9, "horario", 24)).not.toContain("9");
   });
 });

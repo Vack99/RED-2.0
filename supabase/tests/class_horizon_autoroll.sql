@@ -102,12 +102,14 @@ begin
 
   -- Templates are inserted directly rather than through create_recurring_schedule: that RPC needs a
   -- staff JWT per gym and would itself trip on gym C's timezone, which is the thing under test.
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_a, ct_a, 0, '18:00', 45, 24) returning id into tmpl_a;   -- Lunes 18:00 local to CDMX
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_b, ct_b, 2, '07:00', 60, 20) returning id into tmpl_b;   -- Miércoles 07:00 local to Cancún
-  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity)
-    values (gym_c, ct_c, 1, '09:00', 60, 20) returning id into tmpl_c;
+  -- group_id is NOT NULL with no default since #243 slice 4 (20260806120000). Each of these is its own
+  -- schedule (different gyms), so each is a group of one.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_a, ct_a, 0, '18:00', 45, 24, gen_random_uuid()) returning id into tmpl_a;   -- Lunes 18:00 local to CDMX
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_b, ct_b, 2, '07:00', 60, 20, gen_random_uuid()) returning id into tmpl_b;   -- Miércoles 07:00 local to Cancún
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_c, ct_c, 1, '09:00', 60, 20, gen_random_uuid()) returning id into tmpl_c;
   insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_a, tmpl_a, coach_a);
 
   perform set_config('t.h_gym_a',   gym_a::text,      true);
