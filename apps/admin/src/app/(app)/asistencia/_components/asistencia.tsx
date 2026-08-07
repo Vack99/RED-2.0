@@ -25,6 +25,16 @@ import { ctxDe, LIBRE, personasEn, reciboResultado, setVisita, sugerenciaVenta, 
 // is guarded by asistencia-lockstep.test.ts, which fails if either side changes alone.
 export const DIAS_TIRA_INICIAL = 104;
 
+// How often the desk re-renders itself off the server (#231). This screen is a KIOSK — left
+// open at the counter all day — so every server-resolved instant it was handed at SSR decays
+// under it, above all `hoyIso`, which is the toggle's WRITE key. 5 minutes, not 1: the
+// rollover this exists to catch happens at an hour nobody is at the counter, and the other
+// things the tick freshens (the class pills, the ±90 preselect, the RESERVA chips) are all
+// measured against 90-minute windows, so 5 minutes of lag is inside their own resolution.
+// Each tick is a full RSC round trip (roster + marcadas + agenda + reservas); at 1 minute a
+// single open tab would pay for ~1,400 of them a day.
+const REFRESCO_MS = 5 * 60_000;
+
 /** One of today's classes, as the pill row needs it. Built server-side (page.tsx) from
  *  getAgendaDia — `hora` is the gym-local label, `tipo` the Agenda's display name for
  *  the session. The nearest-class default is resolved server-side (sesionCercana reads
@@ -113,6 +123,43 @@ export function AsistenciaScreen({
   const [selDate, setSelDate] = React.useState<Date>(() => parseDay(hoyIso));
   const [query, setQuery] = React.useState("");
   const [calOpen, setCalOpen] = React.useState(false);
+
+  // ── The kiosk outlives the day (#231) ─────────────────────────────────────────
+  // `hoyIso` is stamped ONCE, at SSR, and is the `fecha` every toggle below writes — so a
+  // tab left open past gym-local midnight goes on dating attendance YESTERDAY, silently and
+  // with no affordance that says so. The tick is what re-stamps it: a plain re-render of the
+  // route, which also brings the new day's schedule and the freshly-measured preselect and
+  // RESERVA chips (both resolved server-side against an absolute now). This is the tick
+  // agenda.tsx's `runAgregar` says it defers to.
+  React.useEffect(() => {
+    const id = setInterval(() => router.refresh(), REFRESCO_MS);
+    return () => clearInterval(id);
+  }, [router]);
+
+  // And this is the other half — WITHOUT it the tick makes midnight worse, not better.
+  // `selDate` and `ctx` are seeded state, not props, so a bare refresh advances `hoyIso`
+  // alone: `esHoy` flips false and the desk silently becomes a read-only past-day screen
+  // mid-shift. On a rollover, re-seed exactly what the new day invalidated —
+  //  • the SELECTION, but only if it was still tracking the old today. A deliberate
+  //    past-day pick (the batch-entry workflow) is the operator's; the tick must not steal
+  //    it out from under them.
+  //  • the CONTEXT, always. Its session id belongs to a schedule that no longer exists, so
+  //    a tap would write into yesterday's class — invisible while they sit on a past day
+  //    (which pins ctxSel to LIBRE), but still armed for the moment they tap HOY. Note
+  //    `ctxInicial` is read HERE and nowhere else: an ordinary tick never touches `ctx`, so
+  //    this can't fight a manually picked pill.
+  //  • today's VISIT ROWS, from the same fresh payload. An absent key means "not loaded
+  //    yet" (see the state's own comment) and the day fetch below is past-days-only, so an
+  //    unseeded new today would hang the roster on "Cargando…" forever.
+  // Adjusted during render off the prop's identity, matching `prevClientes` below — an
+  // effect would be a second commit AND is rejected outright by react-hooks/set-state-in-effect.
+  const [prevHoyIso, setPrevHoyIso] = React.useState(hoyIso);
+  if (prevHoyIso !== hoyIso) {
+    if (isoDay(selDate) === prevHoyIso) setSelDate(parseDay(hoyIso));
+    setPrevHoyIso(hoyIso);
+    setCtx(ctxInicial);
+    setVisitasPorDia((m) => ({ ...m, [hoyIso]: inicial.visitasHoy }));
+  }
 
   // A day's dot/count: a LOADED day counts its visits' distinct members (matching
   // marcadas_presencia' `count(distinct cliente_id)`), any other day falls back to the
