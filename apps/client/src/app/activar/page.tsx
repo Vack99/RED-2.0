@@ -69,16 +69,20 @@ export default async function ActivarPage({
   // the email door — bind the invite in one click. getClaims (never getSession — ADR-0001)
   // gates the short-circuit; only for a valid code with a resolved invite identity.
   let sesionActiva = false;
+  let sesionEmail: string | null = null;
   if (codigo && invitacion) {
     const { data: claims } = await (await createClient()).auth.getClaims();
     sesionActiva = Boolean(claims?.claims?.sub);
+    // #150: the vincular short-circuit needs to SHOW who is signed in — a stale session
+    // for a different account otherwise binds silently.
+    sesionEmail = claims?.claims?.email ?? null;
   }
 
   const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
   const form =
     sesionActiva && codigo && invitacion ? (
-      <VincularForm codigo={codigo} gym={invitacion.gym} />
+      <VincularForm codigo={codigo} gym={invitacion.gym} email={sesionEmail} />
     ) : (
       <ActivarForm codigo={invitacion ? codigo : null} invitacion={invitacion} correo={correo} />
     );

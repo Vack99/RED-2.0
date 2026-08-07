@@ -220,6 +220,7 @@ export const getClaseDetalleMiembro = cache(
       .from("class_session")
       .select("id, class_type_id, starts_at, duration_min, capacity, cancelled_at")
       .eq("id", rawSessionId)
+      .eq("gym_id", gymId)
       .is("cancelled_at", null)
       .maybeSingle();
     if (!sesion) return null;

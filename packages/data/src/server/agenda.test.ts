@@ -143,6 +143,7 @@ describe("getAgendaDia", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
         // materialized from a recurring schedule (#243) — templateId must survive toDTO.
         template_id: "tmpl-1",
         // …and so must the RULE's own values, which is what the wide-scope editor seeds from.
@@ -173,6 +174,7 @@ describe("getAgendaDia", () => {
         special_name: "Noche especial",
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
         // a one-off (#243) — templateId must come through as null, not undefined.
         template_id: null,
       },
@@ -187,6 +189,7 @@ describe("getAgendaDia", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
       },
       {
         // next local day — must be excluded by the window
@@ -199,6 +202,7 @@ describe("getAgendaDia", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
       },
       {
         // same day but cancelled — must be excluded
@@ -211,6 +215,7 @@ describe("getAgendaDia", () => {
         special_name: null,
         room_id: null,
         cancelled_at: "2026-06-16T00:00:00Z",
+        gym_id: "gym-1",
       },
     ],
     class_type: [
@@ -242,6 +247,25 @@ describe("getAgendaDia", () => {
     const { client } = makeFake(rowsFor());
     const dia = await getAgendaDia("2026-06-17", client);
     expect(dia.sesiones.map((s) => s.id)).toEqual(["s1", "s2"]);
+  });
+
+  it("#220: excludes a session belonging to a different gym even though it falls inside the day window (explicit filter, not RLS alone)", async () => {
+    const rows = rowsFor();
+    rows.class_session!.push({
+      id: "s-other-gym",
+      class_type_id: "ct1",
+      starts_at: iso(MIERCOLES, "10:00"),
+      duration_min: 60,
+      capacity: 20,
+      is_special: false,
+      special_name: null,
+      room_id: null,
+      cancelled_at: null,
+      gym_id: "gym-2",
+    });
+    const { client } = makeFake(rows);
+    const dia = await getAgendaDia("2026-06-17", client);
+    expect(dia.sesiones.map((s) => s.id)).not.toContain("s-other-gym");
   });
 
   it("joins class_type name and coaches per session", async () => {
@@ -329,6 +353,7 @@ describe("getAgendaDia", () => {
           special_name: null,
           room_id: null,
           cancelled_at: null,
+          gym_id: "gym-1",
           template_id: null,
         },
       ],
@@ -395,16 +420,23 @@ describe("getAgendaDia", () => {
     expect(dia.resumen).toEqual({ clases: 2, reservas: 0 });
   });
 
-  it("ensures materialization for the containing week (Monday) exactly once before reading, when the week is in range (#244 guard 3)", async () => {
+  it("#249: the current week (index 0) is inside the cron-guaranteed horizon — no materialize call on the hot path", async () => {
     // The Monday is computed from the REAL clock, not a fixed literal (MIERCOLES above is
     // deliberately far in the past for the estado-derivation tests, which the #244 clamp below
     // now refuses to materialize) — this vector needs a week guard 3 actually lets through.
     const lunesActual = inicioSemana(hoyEnZona(TZ));
     const { client, rpcCalls } = makeFake(rowsFor());
     await getAgendaDia(toIsoDay(lunesActual), client);
-    const calls = rpcCalls.filter((c) => c.name === "ensure_week_materialized");
-    expect(calls).toEqual([
-      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(lunesActual) } },
+    expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
+  });
+
+  it("#249: week index 6 (lunesActual + 6*7 days) is past the cron-guaranteed horizon (0..5) — materialize still fires (on-demand browse past week 6)", async () => {
+    const lunesActual = inicioSemana(hoyEnZona(TZ));
+    const semana6 = addDays(lunesActual, 6 * 7);
+    const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
+    await getAgendaDia(toIsoDay(semana6), client);
+    expect(rpcCalls).toEqual([
+      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(semana6) } },
     ]);
   });
 
@@ -466,6 +498,7 @@ describe("getAgendaSemana", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
       },
       {
         id: "wed1",
@@ -477,6 +510,7 @@ describe("getAgendaSemana", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
       },
       {
         // the following Monday — outside the Lun-Sáb window
@@ -489,6 +523,7 @@ describe("getAgendaSemana", () => {
         special_name: null,
         room_id: null,
         cancelled_at: null,
+        gym_id: "gym-1",
       },
     ],
     class_type: [{ id: "ct1", name: "Yoga" }],
@@ -515,14 +550,11 @@ describe("getAgendaSemana", () => {
     ]);
   });
 
-  it("ensures materialization for the week exactly once, keyed on the Monday, when the week is in range (#244 guard 3)", async () => {
+  it("#249: the current week (index 0) is inside the cron-guaranteed horizon — no materialize call on the hot path", async () => {
     const lunesActual = inicioSemana(hoyEnZona(TZ));
     const { client, rpcCalls } = makeFake(rowsFor());
     await getAgendaSemana(toIsoDay(lunesActual), client);
-    const calls = rpcCalls.filter((c) => c.name === "ensure_week_materialized");
-    expect(calls).toEqual([
-      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(lunesActual) } },
-    ]);
+    expect(rpcCalls.some((c) => c.name === "ensure_week_materialized")).toBe(false);
   });
 
   it("#244 guard 3: a past week's view still reads sessions but does not materialize (clamped) — the second caller", async () => {

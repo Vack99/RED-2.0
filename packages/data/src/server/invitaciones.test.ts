@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   construirUrlInvitacion,
@@ -383,4 +383,48 @@ describe("resendTransport — missing env is a clean failure (never a live call)
     expect(res).toEqual({ ok: false, error: "no-configurado" });
   });
 
+});
+
+describe("resendTransport — 429 error taxonomy (#151 part 1)", () => {
+  const keys = ["RESEND_API_KEY", "RESEND_FROM"] as const;
+  const OLD = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+  const originalFetch = global.fetch;
+
+  beforeEach(() => {
+    process.env.RESEND_API_KEY = "test-key";
+    process.env.RESEND_FROM = "RED <no-reply@example.com>";
+  });
+  afterEach(() => {
+    for (const k of keys) {
+      if (OLD[k] === undefined) delete process.env[k];
+      else process.env[k] = OLD[k];
+    }
+    global.fetch = originalFetch;
+  });
+
+  function stubFetch(status: number, body: unknown) {
+    global.fetch = (async () => new Response(JSON.stringify(body), { status })) as typeof fetch;
+  }
+
+  const msg: MailMessage = { to: "x@y.mx", subject: "s", html: "<p>h</p>", text: "t" };
+
+  it("surfaces 'rate_limit_exceeded' distinctly from a daily quota wall", async () => {
+    stubFetch(429, { name: "rate_limit_exceeded" });
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "rate_limit_exceeded" });
+  });
+
+  it("surfaces 'daily_quota_exceeded' distinctly from a plain rate limit", async () => {
+    stubFetch(429, { name: "daily_quota_exceeded" });
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "daily_quota_exceeded" });
+  });
+
+  it("falls back to the generic status string for an unrecognized 429 body", async () => {
+    stubFetch(429, { name: "monthly_quota_exceeded" });
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 429" });
+  });
+
+  it("still returns the generic status string for a non-429 failure (e.g. a bad address)", async () => {
+    stubFetch(400, { name: "invalid_parameter" });
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 400" });
+  });
 });

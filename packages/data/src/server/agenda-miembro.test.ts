@@ -146,6 +146,7 @@ const pastRows = (): Rows => ({
       duration_min: 45,
       capacity: 24,
       cancelled_at: null,
+      gym_id: "gym-1",
     },
     {
       id: "wed1",
@@ -154,6 +155,7 @@ const pastRows = (): Rows => ({
       duration_min: 60,
       capacity: 20,
       cancelled_at: null,
+      gym_id: "gym-1",
     },
     {
       // previous week — must be excluded from this Lun-Sáb window
@@ -163,6 +165,7 @@ const pastRows = (): Rows => ({
       duration_min: 45,
       capacity: 24,
       cancelled_at: null,
+      gym_id: "gym-1",
     },
     {
       // cancelled — excluded
@@ -172,6 +175,7 @@ const pastRows = (): Rows => ({
       duration_min: 45,
       capacity: 24,
       cancelled_at: "2020-06-16T00:00:00Z",
+      gym_id: "gym-1",
     },
   ],
   class_type: [
@@ -209,6 +213,22 @@ describe("getAgendaSemanaMiembro", () => {
     const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(pastRows()));
     const allIds = semana.dias.flatMap((d) => d.sesiones.map((s) => s.id));
     expect(allIds).toEqual(["mon1", "wed1"]);
+  });
+
+  it("#220: excludes a session belonging to a different gym even though it's in-window (explicit filter, not RLS alone)", async () => {
+    const rows = pastRows();
+    rows.class_session!.push({
+      id: "otro-gym",
+      class_type_id: "ct1",
+      starts_at: iso(MIERCOLES_PASADO, "10:00"),
+      duration_min: 45,
+      capacity: 24,
+      cancelled_at: null,
+      gym_id: "gym-2",
+    });
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(rows));
+    const allIds = semana.dias.flatMap((d) => d.sesiones.map((s) => s.id));
+    expect(allIds).not.toContain("otro-gym");
   });
 
   it("formats hora (gym tz), duración label and the coaches string", async () => {
@@ -264,8 +284,8 @@ describe("getAgendaSemanaMiembro", () => {
   it("a staff walk-in mark never flips the member-facing estado to lleno (owner ruling 2026-08-03)", async () => {
     const rows: Rows = {
       class_session: [
-        { id: "f1", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "06:15"), duration_min: 45, capacity: 24, cancelled_at: null },
-        { id: "f2", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "18:15"), duration_min: 45, capacity: 10, cancelled_at: null },
+        { id: "f1", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "06:15"), duration_min: 45, capacity: 24, cancelled_at: null, gym_id: "gym-1" },
+        { id: "f2", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "18:15"), duration_min: 45, capacity: 10, cancelled_at: null, gym_id: "gym-1" },
       ],
       class_type: [{ id: "ct1", name: "Fuerza" }],
       class_session_coach: [],
@@ -339,6 +359,7 @@ describe("getAgendaSemanaMiembro", () => {
           duration_min: 45,
           capacity: 24,
           cancelled_at: null,
+          gym_id: "gym-1",
         },
         {
           id: "f2",
@@ -347,6 +368,7 @@ describe("getAgendaSemanaMiembro", () => {
           duration_min: 45,
           capacity: 24,
           cancelled_at: null,
+          gym_id: "gym-1",
         },
       ],
       class_type: [{ id: "ct1", name: "Fuerza" }],
@@ -506,11 +528,11 @@ describe("getPerfilResumenMiembro — reservas (fetchProximasReservas embedded j
       { id: "ct2", name: "Metcon", sala: "Sala Brasa" },
     ],
     reservation: [
-      { class_session_id: "prox1", status: "reservada" },
-      { class_session_id: "prox1", status: "reservada" }, // duplicate — the dedupe guard
-      { class_session_id: "prox2", status: "reservada" },
-      { class_session_id: "cancelada", status: "reservada" },
-      { class_session_id: "pasada", status: "reservada" },
+      { class_session_id: "prox1", status: "reservada", gym_id: "gym-1" },
+      { class_session_id: "prox1", status: "reservada", gym_id: "gym-1" }, // duplicate — the dedupe guard
+      { class_session_id: "prox2", status: "reservada", gym_id: "gym-1" },
+      { class_session_id: "cancelada", status: "reservada", gym_id: "gym-1" },
+      { class_session_id: "pasada", status: "reservada", gym_id: "gym-1" },
     ],
     clientes: [],
   });
@@ -526,6 +548,14 @@ describe("getPerfilResumenMiembro — reservas (fetchProximasReservas embedded j
     expect(prox1?.tipo).toBe("Metcon");
     expect(prox1?.sala).toBe("Sala Brasa");
     expect(prox1?.hora).toBe("18:15");
+  });
+
+  it("#220: excludes a reservation belonging to a different gym (a two-gym member's own bookings don't mix)", async () => {
+    const r = rows();
+    r.class_session!.push({ id: "otro-gym-sesion", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "07:00"), duration_min: 45, cancelled_at: null });
+    r.reservation!.push({ class_session_id: "otro-gym-sesion", status: "reservada", gym_id: "gym-2" });
+    const perfil = await getPerfilResumenMiembro(makeFake(r));
+    expect(perfil.reservas.map((x) => x.sessionId)).not.toContain("otro-gym-sesion");
   });
 });
 
@@ -659,21 +689,31 @@ describe("getSaldoMiembro — host-tenant reconciliation (#74)", () => {
  * given session flips with the resolved gym. Host match wins; no host / no match → OLDEST membership.
  */
 describe("getAgendaSemanaMiembro — favorita host reconciliation (#74)", () => {
-  const dosGimnasios = (): Rows => ({
-    ...pastRows(),
-    gym_membership: [
-      { gym_id: "gym-forge", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
-      { gym_id: "gym-red", created_at: "2024-01-01T00:00:00Z" },
-    ],
-    gym: [
-      { id: "gym-forge", slug: "forge", timezone: TZ, brand_name: "Forge" },
-      { id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" },
-    ],
-    clientes: [
-      { gym_id: "gym-forge", favorite_class_type_id: "ct1" }, // Fuerza → mon1
-      { gym_id: "gym-red", favorite_class_type_id: "ct2" }, // Metcon → wed1
-    ],
-  });
+  // #220 added an explicit `.eq("gym_id", …)` filter to the session read, so the SAME
+  // calendar can no longer be shared verbatim across both gyms (as it could when RLS was
+  // the only gate) — each gym gets its own gym_id-tagged copy of the fixture sessions.
+  const dosGimnasios = (): Rows => {
+    const base = pastRows().class_session!;
+    return {
+      ...pastRows(),
+      class_session: [
+        ...base.map((s) => ({ ...s, gym_id: "gym-forge" })),
+        ...base.map((s) => ({ ...s, id: `${s.id as string}-red`, gym_id: "gym-red" })),
+      ],
+      gym_membership: [
+        { gym_id: "gym-forge", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
+        { gym_id: "gym-red", created_at: "2024-01-01T00:00:00Z" },
+      ],
+      gym: [
+        { id: "gym-forge", slug: "forge", timezone: TZ, brand_name: "Forge" },
+        { id: "gym-red", slug: "red", timezone: TZ, brand_name: "RED" },
+      ],
+      clientes: [
+        { gym_id: "gym-forge", favorite_class_type_id: "ct1" }, // Fuerza → mon1
+        { gym_id: "gym-red", favorite_class_type_id: "ct2" }, // Metcon → wed1
+      ],
+    };
+  };
 
   it("host match → favorita follows the host gym's favorite (red → Metcon/wed1)", async () => {
     const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), "red");

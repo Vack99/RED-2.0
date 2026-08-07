@@ -135,6 +135,7 @@ async function fetchSesionesEnRango(
   supabase: SupabaseServer,
   low: Date,
   high: Date,
+  gymId: string,
 ): Promise<SesionRaw[]> {
   const { data: sesiones, error } = await supabase
     .from("class_session")
@@ -143,6 +144,7 @@ async function fetchSesionesEnRango(
     .select(
       "id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id, template_id, schedule_template(class_type_id, start_time, duration_min, capacity, group_id, weekday, is_active, schedule_template_coach(coach_id))",
     )
+    .eq("gym_id", gymId)
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
     .lt("starts_at", high.toISOString())
@@ -299,6 +301,11 @@ async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, 
   const lunesActual = inicioSemana(hoyEnZona(tz));
   const horizonte = addDays(lunesActual, HORIZONTE_SEMANAS * 7);
   if (lunes.getTime() < lunesActual.getTime() || lunes.getTime() > horizonte.getTime()) return;
+  // #249: the Monday cron already materializes week indices 0..5 (this week + the next 5), i.e.
+  // through lunesActual + 5*7 days — so a read inside that horizon can skip the round trip
+  // entirely. Only a browse PAST week 5 (self-heal or on-demand deep browse) still calls the RPC.
+  const garantizada = addDays(lunesActual, 5 * 7);
+  if (lunes.getTime() <= garantizada.getTime()) return;
   await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes) });
 }
 
@@ -309,7 +316,7 @@ export const getAgendaDia = cache(
   async (fechaIso: string, client?: SupabaseServer): Promise<AgendaDiaDTO> => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
-    const { timezone: tz } = await getOperatorGym(supabase);
+    const { id: gymId, timezone: tz } = await getOperatorGym(supabase);
 
     const dia = parseDay(fechaIso);
     const lunes = inicioSemana(dia);
@@ -317,7 +324,7 @@ export const getAgendaDia = cache(
 
     const low = instanteEnZona(dia, "00:00", tz);
     const high = instanteEnZona(addDays(dia, 1), "00:00", tz);
-    const crudas = await fetchSesionesEnRango(supabase, low, high);
+    const crudas = await fetchSesionesEnRango(supabase, low, high, gymId);
 
     const ahora = new Date();
     const estados = derivarEstadosDia(crudas, ahora);
@@ -334,7 +341,7 @@ export const getAgendaSemana = cache(
   async (fechaIso: string, client?: SupabaseServer): Promise<AgendaSemanaDTO> => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
-    const { timezone: tz } = await getOperatorGym(supabase);
+    const { id: gymId, timezone: tz } = await getOperatorGym(supabase);
 
     const dia = parseDay(fechaIso);
     const lunes = inicioSemana(dia);
@@ -342,7 +349,7 @@ export const getAgendaSemana = cache(
 
     const low = instanteEnZona(lunes, "00:00", tz);
     const high = instanteEnZona(addDays(lunes, 6), "00:00", tz);
-    const crudas = await fetchSesionesEnRango(supabase, low, high);
+    const crudas = await fetchSesionesEnRango(supabase, low, high, gymId);
 
     const ahora = new Date();
     const dias = semanaLunSab(lunes).map((fechaDia) => {

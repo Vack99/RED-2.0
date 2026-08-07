@@ -65,7 +65,20 @@ export function resendTransport(): MailTransport {
             text: msg.text,
           }),
         });
-        if (!res.ok) return { ok: false, error: `resend ${res.status}` };
+        if (!res.ok) {
+          // #151 part 1: Resend's 429 body carries a `name` that distinguishes a plain rate
+          // limit (retry later) from a hard daily-quota wall (wait for the wall to clear) —
+          // surfaced as-is so the admin UI stops reading both as one opaque "resend 429". No
+          // retry here: the send rides the sale critical path under the 10s abort above, and
+          // a retry could turn an already-succeeded sale into a stuck spinner.
+          if (res.status === 429) {
+            const body: { name?: string } | null = await res.json().catch(() => null);
+            if (body?.name === "rate_limit_exceeded" || body?.name === "daily_quota_exceeded") {
+              return { ok: false, error: body.name };
+            }
+          }
+          return { ok: false, error: `resend ${res.status}` };
+        }
         return { ok: true };
       } catch (e) {
         return { ok: false, error: e instanceof Error ? e.message : "error de red" };

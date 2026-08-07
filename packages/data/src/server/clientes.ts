@@ -338,7 +338,10 @@ export const getRosterResumen = cache(
         .select(
           "id, nombre, tel, paquete_nombre, clases_restantes, vence, email, invitacion_enviada_at, auth_user_id, created_at",
         )
-        .eq("gym_id", gym.id),
+        .eq("gym_id", gym.id)
+        // #240: ordered, matching getClientesRoster's window — the two roster reads must
+        // truncate the SAME 1000-row slice at scale, not different unordered ones.
+        .order("nombre"),
       getPaseSueltoNombres(supabase),
       // #229's ONE new aggregate — the SAME asistencias_ultima_visita_por_cliente RPC
       // getClientesRoster already reads (#226): one grouped DB-side read, not a

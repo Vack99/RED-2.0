@@ -110,7 +110,7 @@ const CTID = "22222222-2222-4222-8222-222222222222";
 function detalleRows(extra: Partial<Rows> = {}): Rows {
   return {
     class_session: [
-      { id: SID, class_type_id: CTID, starts_at: iso("18:15"), duration_min: 60, capacity: 20, cancelled_at: null },
+      { id: SID, class_type_id: CTID, starts_at: iso("18:15"), duration_min: 60, capacity: 20, cancelled_at: null, gym_id: "gym-1" },
     ],
     class_type: [
       { id: CTID, name: "Metcon", sala: "Sala Brasa", level: "Alta intensidad", description: "Suda." },
@@ -201,6 +201,12 @@ describe("getClaseDetalleMiembro", () => {
     expect(await getClaseDetalleMiembro(SID, makeFake({ class_session: [] }))).toBeNull();
   });
 
+  it("#220: returns null when the session belongs to a different gym than the resolved membership (explicit filter, not RLS alone)", async () => {
+    const rows = detalleRows();
+    rows.class_session = [{ ...rows.class_session![0], gym_id: "gym-2" }];
+    expect(await getClaseDetalleMiembro(SID, makeFake(rows))).toBeNull();
+  });
+
   it("returns null for a malformed session id (no DB call)", async () => {
     expect(await getClaseDetalleMiembro("not-a-uuid", makeFake(detalleRows()))).toBeNull();
   });
@@ -246,8 +252,15 @@ describe("getConfirmacionReserva", () => {
  * no host / no match falls back to the OLDEST membership (stable, deterministic).
  */
 describe("getClaseDetalleMiembro — host-tenant reconciliation (audit #17)", () => {
+  // #220 added an explicit `.eq("gym_id", …)` filter to the session lookup, so the SAME
+  // session id now needs a row tagged for EACH gym under test — the query's `.eq("id", …)`
+  // and `.eq("gym_id", …)` intersect, so exactly one row survives per resolved host.
   const dosGimnasios = (): Rows => ({
     ...detalleRows(),
+    class_session: [
+      { ...detalleRows().class_session![0], gym_id: "gym-cua" },
+      { ...detalleRows().class_session![0], gym_id: "gym-her" },
+    ],
     gym_membership: [
       { gym_id: "gym-cua", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
       { gym_id: "gym-her", created_at: "2024-01-01T00:00:00Z" },
@@ -285,8 +298,13 @@ describe("getClaseDetalleMiembro — host-tenant reconciliation (audit #17)", ()
  * Each gym favors a different type; only the gym whose row favors the session's type flags favorita.
  */
 describe("getClaseDetalleMiembro — favorita host reconciliation (#74)", () => {
+  // #220: same dual-gym-tagged session trick as the host-tenant reconciliation block above.
   const dosGimnasios = (): Rows => ({
     ...detalleRows(),
+    class_session: [
+      { ...detalleRows().class_session![0], gym_id: "gym-cua" },
+      { ...detalleRows().class_session![0], gym_id: "gym-her" },
+    ],
     gym_membership: [
       { gym_id: "gym-cua", created_at: "2020-01-01T00:00:00Z" }, // older → the fallback
       { gym_id: "gym-her", created_at: "2024-01-01T00:00:00Z" },

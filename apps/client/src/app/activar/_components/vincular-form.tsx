@@ -2,7 +2,10 @@
 
 import Script from "next/script";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
+
+import { createClient } from "@gym/data/client";
 
 import { vincularAction, type VincularActionState } from "../actions";
 
@@ -26,9 +29,27 @@ type TurnstileWindow = typeof window & {
  * On success `vincularAction` claims the code's paid row on the current session and lands on
  * /reservar.
  */
-export function VincularForm({ codigo, gym }: { readonly codigo: string; readonly gym: string }) {
+export function VincularForm({
+  codigo,
+  gym,
+  email,
+}: {
+  readonly codigo: string;
+  readonly gym: string;
+  readonly email: string | null;
+}) {
   const [state, dispatch, pending] = useActionState(vincularAction, INICIAL);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [signingOut, setSigningOut] = useState(false);
+  const router = useRouter();
+
+  // #150: a stale session for a different account otherwise binds this invite silently.
+  // Sign out and refresh — same route, same codigo — so the email-gated door renders.
+  async function noSoyYo() {
+    setSigningOut(true);
+    await createClient().auth.signOut();
+    router.refresh();
+  }
 
   useEffect(() => {
     const w = window as TurnstileWindow;
@@ -55,7 +76,13 @@ export function VincularForm({ codigo, gym }: { readonly codigo: string; readonl
             Vincular tu cuenta
           </h1>
           <p className="mt-3.5 text-[13px] text-muted">
-            Ya iniciaste sesión. Vincula tu membresía de{" "}
+            Ya iniciaste sesión{email ? (
+              <>
+                {" "}
+                como <span className="font-semibold text-fg">{email}</span>
+              </>
+            ) : null}
+            . Vincula tu membresía de{" "}
             <span className="font-semibold text-fg">{gym}</span> a esta cuenta para reservar tus clases.
           </p>
         </div>
@@ -89,6 +116,15 @@ export function VincularForm({ codigo, gym }: { readonly codigo: string; readonl
         <Link href="/reservar" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
           Ir a mi app
         </Link>
+
+        <button
+          type="button"
+          onClick={noSoyYo}
+          disabled={signingOut}
+          className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg disabled:opacity-40"
+        >
+          {signingOut ? "Cerrando sesión…" : "No soy yo — cerrar sesión"}
+        </button>
       </form>
     </>
   );

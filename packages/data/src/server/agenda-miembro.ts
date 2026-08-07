@@ -191,6 +191,7 @@ async function fetchSesionesMiembro(
   const { data: sesiones, error } = await supabase
     .from("class_session")
     .select("id, class_type_id, starts_at, duration_min, capacity")
+    .eq("gym_id", gymId)
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
     .lt("starts_at", high.toISOString())
@@ -605,6 +606,7 @@ async function fetchProximasReservas(
   const { data: reservas, error } = await supabase
     .from("reservation")
     .select("class_session_id, class_session(id, class_type_id, starts_at, duration_min, cancelled_at)")
+    .eq("gym_id", gymId)
     .eq("status", "reservada");
   if (error) throw error;
 
