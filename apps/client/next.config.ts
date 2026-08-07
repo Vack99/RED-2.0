@@ -11,9 +11,11 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@gym/brand", "@gym/data", "@gym/format", "@gym/ui"],
   // #149 item 1a: bearer material (`codigo`/`correo`) rides these invite/confirm URLs —
   // no-referrer keeps it out of a Referer header on any outbound navigation from them.
+  // `/activar/:path*` covers both /activar and /activar/contrasena, which carries the
+  // same codigo bearer material.
   async headers() {
     return [
-      { source: "/activar", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
+      { source: "/activar/:path*", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
       { source: "/auth/confirm", headers: [{ key: "Referrer-Policy", value: "no-referrer" }] },
     ];
   },

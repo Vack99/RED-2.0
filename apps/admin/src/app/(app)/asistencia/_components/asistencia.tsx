@@ -128,11 +128,14 @@ export function AsistenciaScreen({
   // `hoyIso` is stamped ONCE, at SSR, and is the `fecha` every toggle below writes — so a
   // tab left open past gym-local midnight goes on dating attendance YESTERDAY, silently and
   // with no affordance that says so. The tick is what re-stamps it: a plain re-render of the
-  // route, which also brings the new day's schedule and the freshly-measured preselect and
-  // RESERVA chips (both resolved server-side against an absolute now). This is the tick
+  // route, which also brings the new day's schedule and RESERVA chips (both resolved
+  // server-side against an absolute now) — the ±90 preselect itself only re-applies on an
+  // actual day rollover (below), never on an ordinary same-day tick. This is the tick
   // agenda.tsx's `runAgregar` says it defers to.
   React.useEffect(() => {
-    const id = setInterval(() => router.refresh(), REFRESCO_MS);
+    const id = setInterval(() => {
+      if (inFlight.current.size === 0) router.refresh();
+    }, REFRESCO_MS);
     return () => clearInterval(id);
   }, [router]);
 

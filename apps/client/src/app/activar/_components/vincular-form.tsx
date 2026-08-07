@@ -47,8 +47,12 @@ export function VincularForm({
   // Sign out and refresh — same route, same codigo — so the email-gated door renders.
   async function noSoyYo() {
     setSigningOut(true);
-    await createClient().auth.signOut();
-    router.refresh();
+    try {
+      await createClient().auth.signOut();
+      router.refresh();
+    } catch {
+      setSigningOut(false);
+    }
   }
 
   useEffect(() => {
@@ -79,7 +83,7 @@ export function VincularForm({
             Ya iniciaste sesión{email ? (
               <>
                 {" "}
-                como <span className="font-semibold text-fg">{email}</span>
+                como <span className="break-all font-semibold text-fg">{email}</span>
               </>
             ) : null}
             . Vincula tu membresía de{" "}
@@ -107,7 +111,7 @@ export function VincularForm({
 
         <button
           type="submit"
-          disabled={!turnstileToken || pending}
+          disabled={!turnstileToken || pending || signingOut}
           className="flex w-full items-center justify-center gap-2 bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition hover:brightness-105 disabled:opacity-40"
         >
           <span>{pending ? "Vinculando…" : `Vincular ${gym} a tu cuenta`}</span>

@@ -316,6 +316,7 @@ export const getConfirmacionReserva = cache(
       .select("id")
       .eq("class_session_id", rawSessionId)
       .eq("status", "reservada")
+      .eq("gym_id", gymId)
       .maybeSingle();
     if (!reserva) return null;
 
@@ -323,6 +324,7 @@ export const getConfirmacionReserva = cache(
       .from("class_session")
       .select("id, class_type_id, starts_at, duration_min")
       .eq("id", rawSessionId)
+      .eq("gym_id", gymId)
       .is("cancelled_at", null)
       .gte("starts_at", new Date().toISOString())
       .maybeSingle();

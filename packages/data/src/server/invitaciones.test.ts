@@ -423,6 +423,11 @@ describe("resendTransport — 429 error taxonomy (#151 part 1)", () => {
     expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 429" });
   });
 
+  it("falls back to the generic status string when the 429 body isn't JSON (pins the .catch(() => null) path)", async () => {
+    global.fetch = (async () => new Response("<html>429</html>", { status: 429 })) as typeof fetch;
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 429" });
+  });
+
   it("still returns the generic status string for a non-429 failure (e.g. a bad address)", async () => {
     stubFetch(400, { name: "invalid_parameter" });
     expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 400" });

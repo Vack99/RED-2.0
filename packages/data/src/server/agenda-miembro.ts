@@ -32,10 +32,11 @@ import { createClient, type SupabaseServer } from "./supabase";
  * The MEMBER-facing agenda reader (PRD #49 S3) — the seam BESIDE the staff-gated
  * getAgendaSemana (agenda.ts). Two auth contexts, not duplication (the PRD's named
  * approved exception): this one has NO operator check and NEVER materializes (that
- * RPC is staff_gym()-gated). RLS is the only gate — the member's gym is resolved
- * from their own `gym_membership` (self-read policy, ADR-0013 §4), so an anon or
- * non-member caller reads no membership row and gets no agenda; the member reads
- * only sessions of the gym they belong to (class_session's is_member_of SELECT).
+ * RPC is staff_gym()-gated). The member's gym is resolved from their own
+ * `gym_membership` (self-read policy, ADR-0013 §4), so an anon or non-member caller
+ * reads no membership row and gets no agenda; reads are then gym_id-scoped in-query
+ * (explicit `.eq("gym_id", …)`, #220) as a belt on top of RLS — the member's own
+ * `is_member_of` SELECT on class_session.
  *
  * It reuses @gym/domain's state ladder and @gym/format wholesale. Occupancy derives
  * through the `contarActivosMiembro` seam (slice #57 repointed it from the 0-active

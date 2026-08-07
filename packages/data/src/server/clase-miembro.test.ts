@@ -219,7 +219,7 @@ describe("getClaseDetalleMiembro", () => {
 describe("getConfirmacionReserva", () => {
   it("returns the ticket for a real active future booking", async () => {
     const rows = detalleRows({
-      reservation: [{ id: "r1", class_session_id: SID, status: "reservada" }],
+      reservation: [{ id: "r1", class_session_id: SID, status: "reservada", gym_id: "gym-1" }],
     });
     const c = await getConfirmacionReserva(SID, makeFake(rows));
     expect(c).not.toBeNull();
@@ -238,7 +238,14 @@ describe("getConfirmacionReserva", () => {
 
   it("returns null when the booking is cancelled (not reservada)", async () => {
     const rows = detalleRows({
-      reservation: [{ id: "r1", class_session_id: SID, status: "cancelada" }],
+      reservation: [{ id: "r1", class_session_id: SID, status: "cancelada", gym_id: "gym-1" }],
+    });
+    expect(await getConfirmacionReserva(SID, makeFake(rows))).toBeNull();
+  });
+
+  it("returns null when the reservation belongs to a different gym than the resolved membership (explicit filter, not RLS alone)", async () => {
+    const rows = detalleRows({
+      reservation: [{ id: "r1", class_session_id: SID, status: "reservada", gym_id: "gym-2" }],
     });
     expect(await getConfirmacionReserva(SID, makeFake(rows))).toBeNull();
   });

@@ -25,9 +25,10 @@ import { createClient, type SupabaseServer } from "./supabase";
 /**
  * The Agenda DAL (PRD #36 S5): day/week readers over `class_session` (ensure-
  * materialized per ADR-0010 — never read-time recurrence expansion) + the crear/
- * editar/cancelar mutation seams over the S1 atomic RPCs. No manual `gym_id`
- * filter anywhere — isolation is RLS-by-membership (ADR-0013); tz is always the
- * operator's gym (getOperatorGym), never a fixed constant.
+ * editar/cancelar mutation seams over the S1 atomic RPCs. Reads are gym_id-scoped
+ * in-query (fetchSesionesEnRango's explicit `.eq("gym_id", …)`, #220) as a belt on
+ * top of RLS-by-membership (ADR-0013); tz is always the operator's gym
+ * (getOperatorGym), never a fixed constant.
  */
 
 // ── Readers ───────────────────────────────────────────────────────────────
@@ -290,22 +291,21 @@ export const HORIZONTE_SEMANAS = 26;
 /** #244 guard 3 (weakness 9): staff can ask the Agenda to VIEW any week via `?d=` — including a
  *  past week (the history-browsing flow is legitimate) or one decades out — but materialization
  *  WRITES permanent rows (ADR-0010: cancel is the only undo, there is no delete). So the write is
- *  clamped to [this week's Monday, +26 weeks] in the gym's own tz, independent of what week the
- *  caller asked to view. #243 slice 1 tightened this from +1 year: it is the only real bound on
- *  a series retire's blast radius (halves the worst case from 2,080 to 1,040 `clientes` row locks
- *  — browsing materializes weeks on demand, so a deep browse digs a real hole). Out of range: this
- *  returns without calling the RPC at all, and the read below still runs — an unmaterialized week
- *  just comes back with whatever sessions already exist (none, for a week nobody ever staffed; the
- *  true historical rows, for one that was). */
+ *  clamped to a single range, `(garantizada, horizonte]`: past weeks skip (already real history,
+ *  never re-written), and so does #249's cron-guaranteed window — the Monday cron already
+ *  materializes week indices 0..5 (this week + the next 5, through lunesActual + 5*7 days), so a
+ *  read inside it can skip the round trip entirely. Only a browse strictly PAST week 5 and at or
+ *  before +26 weeks still calls the RPC. #243 slice 1 tightened the upper bound from +1 year: it
+ *  is the only real bound on a series retire's blast radius (halves the worst case from 2,080 to
+ *  1,040 `clientes` row locks — browsing materializes weeks on demand, so a deep browse digs a
+ *  real hole). Out of range: this returns without calling the RPC at all, and the read below
+ *  still runs — an unmaterialized week just comes back with whatever sessions already exist
+ *  (none, for a week nobody ever staffed; the true historical rows, for one that was). */
 async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, tz: string): Promise<void> {
   const lunesActual = inicioSemana(hoyEnZona(tz));
   const horizonte = addDays(lunesActual, HORIZONTE_SEMANAS * 7);
-  if (lunes.getTime() < lunesActual.getTime() || lunes.getTime() > horizonte.getTime()) return;
-  // #249: the Monday cron already materializes week indices 0..5 (this week + the next 5), i.e.
-  // through lunesActual + 5*7 days — so a read inside that horizon can skip the round trip
-  // entirely. Only a browse PAST week 5 (self-heal or on-demand deep browse) still calls the RPC.
   const garantizada = addDays(lunesActual, 5 * 7);
-  if (lunes.getTime() <= garantizada.getTime()) return;
+  if (lunes.getTime() <= garantizada.getTime() || lunes.getTime() > horizonte.getTime()) return;
   await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes) });
 }
 
