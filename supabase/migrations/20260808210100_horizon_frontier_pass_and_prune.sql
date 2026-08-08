@@ -5,22 +5,25 @@
 --
 -- WHAT CHANGES: cron_materialize_horizon() ONLY — same signature, SECURITY DEFINER, search_path='',
 -- same per-gym BEGIN…EXCEPTION isolation, same cron_run_log summary write, same jobname
--- ('roll-class-horizon'), EXECUTE still revoked from public/anon/authenticated (re-stated below —
--- CREATE OR REPLACE preserves ACLs, but the original migration was explicit about the revoke and this
--- one stays explicit too). materialize_week_for_gym and ensure_week_materialized are NOT touched here.
+-- ('roll-class-horizon'), EXECUTE stays revoked from public/anon/authenticated (CREATE OR REPLACE
+-- preserves the ACL from 20260805100000 — not re-stated here; see 20260806130000 for the convention).
+-- materialize_week_for_gym and ensure_week_materialized are NOT touched here.
 --
--- 1. FRONTIER CATCH-UP: the inner loop stops iterating a fixed 0..5. Per gym it computes the ledger
---    frontier — min() over that gym's ACTIVE templates of each template's own max(week_start) — then
---    claims weeks from greatest(frontier + 7d, this-gym's-local-Monday) through Monday+35d, one
---    materialize_week_for_gym call per week. min(), not max(): the #136 per-gym subtransaction keeps
---    every template in lockstep (a gym's pass is all-or-nothing), so the LEAST-advanced template is the
---    one still owed weeks, and the aggregate is correct even when it is the only one behind. A gym with
---    NO ledger rows at all (never materialized) makes every per-template max() NULL, which makes the
---    overall min() NULL, which makes frontier+7 NULL — and greatest() ignores NULL arguments, so
---    v_claim_start falls through to this week's Monday and the gym gets the full 6-week horizon, same
---    as the fixed 0..5 loop gave every gym before this migration. Floored at the gym-local Monday (not
---    behind it) rather than relying on the #260 clamp to no-op a stale ask — the clamp is defense in
---    depth for OTHER callers, not something this pass should lean on for its own correctness.
+-- 1. FRONTIER CATCH-UP: the inner loop no longer derives a per-gym frontier from a min()/max() ledger
+--    aggregate — it walks the FIXED window (this-gym's-local-Monday through Monday+35d, one week at a
+--    time) and claims exactly the weeks that are missing a ledger row for SOME active template. A
+--    frontier aggregate looked sufficient but is not: the view-time entry point
+--    (packages/data/src/server/agenda.ts's ensureSemanaMaterializada, weeks strictly past index 5 and
+--    up to +26) can ask materialize_week_for_gym for ONE far week on an ordinary page browse — and
+--    materialize_week_for_gym claims a ledger row for EVERY active template of that gym at that single
+--    far week, not just the week the browse cared about. That one far claim drags every template's own
+--    max(week_start) forward, which drags a min()-across-templates frontier forward with it — so the
+--    cron would believe weeks it had never actually materialized were already covered and skip them,
+--    turning holes in the window into PERMANENT holes once the #260 backward clamp locks them out of
+--    ever being claimed again. Checking each week's own ledger state directly (not an aggregate derived
+--    from it) closes that gap, and as a side effect also fixes the old min()-skips-NULL case: a
+--    template that was NEVER materialized, hiding behind an already-materialized sibling in the same
+--    gym, no longer escapes the min().
 -- 2. LEDGER PRUNE: after the whole gym loop, OUTSIDE every per-gym subtransaction (the ledger is one
 --    global table; the cutoff is one instant for the whole run, not per gym), one set-based DELETE of
 --    schedule_template_week rows with week_start < (UTC-based current Monday − 14 days), computed once.
@@ -43,19 +46,19 @@ create or replace function public.cron_materialize_horizon()
  set search_path to ''
 as $function$
 declare
-  v_gyms          int := 0;
-  v_claims        int := 0;
-  v_created       int := 0;
-  v_errors        int := 0;
-  v_pruned        int := 0;
-  v_notes         text[] := '{}';
-  v_summary       text;
-  v_monday        date;
-  v_frontier      date;
-  v_claim_start   date;
-  v_week          date;
-  v_prune_cutoff  date;
-  g               record;
+  v_gyms            int := 0;
+  v_claims          int := 0;
+  v_created         int := 0;
+  v_errors          int := 0;
+  v_pruned          int := 0;
+  v_notes           text[] := '{}';
+  v_summary         text;
+  v_monday          date;
+  v_claims_before   int;
+  v_created_before  int;
+  v_week            date;
+  v_prune_cutoff    date;
+  g                 record;
 begin
   for g in
     select gy.id, gy.timezone
@@ -66,44 +69,60 @@ begin
     order by gy.id
   loop
     v_gyms := v_gyms + 1;
+    -- Snapshot the run-wide counters before this gym's work: if the EXCEPTION below fires, plpgsql
+    -- locals survive the subtransaction rollback, so without this the claims=/created= totals in the
+    -- summary would still count a claim this gym's own rollback undid (#7).
+    v_claims_before := v_claims;
+    v_created_before := v_created;
     begin
       -- The gym's OWN local Monday: "this week" in Chihuahua is not "this week" in Cancún, and the
       -- job fires at one absolute instant for all of them.
       v_monday := (now() at time zone g.timezone)::date;
       v_monday := v_monday - ((extract(isodow from v_monday)::int - 1));
 
-      -- Frontier: one indexed aggregate per gym. Per active template, its own max(week_start) in the
-      -- ledger (NULL if that template has never been materialized); then the MIN across templates —
-      -- the least-advanced one is what bounds the whole gym's catch-up.
-      select min(w) into v_frontier
-      from (
-        select max(stw.week_start) as w
-        from public.schedule_template st
-        left join public.schedule_template_week stw
-          on stw.gym_id = st.gym_id and stw.template_id = st.id
-        where st.gym_id = g.id and st.is_active
-        group by st.id
-      ) per_template;
-
-      v_claim_start := greatest(v_frontier + 7, v_monday);
-
-      v_week := v_claim_start;
-      while v_week <= v_monday + 35 loop
-        v_claims := v_claims + 1;
-        v_created := v_created + public.materialize_week_for_gym(g.id, v_week);
-        v_week := v_week + 7;
+      -- Claim-what's-missing: walk the fixed 0..5 week window and claim only the weeks that are
+      -- actually missing a ledger row for SOME active template of this gym (see header §1 — a min()/
+      -- max() frontier aggregate can be fooled by a view-time far-week claim into skipping real gaps).
+      -- Plain integer generate_series + date arithmetic (the same idiom the suite's own fixture already
+      -- uses for gym D's seed) rather than generate_series(date, date, step): Postgres has no
+      -- generate_series(date, date, integer) overload, and generate_series(date, date, interval) would
+      -- resolve to the timestamptz overload (date's preferred datetime cast), making the walk depend on
+      -- the session's TimeZone GUC for no reason — this stays plain integer offsets, no timezone
+      -- involved at all.
+      for o in 0..5 loop
+        v_week := v_monday + (o * 7);
+        if exists (
+          select 1 from public.schedule_template st
+          where st.gym_id = g.id and st.is_active
+            and not exists (
+              select 1 from public.schedule_template_week stw
+              where stw.template_id = st.id and stw.week_start = v_week
+            )
+        ) then
+          v_claims := v_claims + 1;
+          v_created := v_created + public.materialize_week_for_gym(g.id, v_week);
+        end if;
       end loop;
     exception when others then
       v_errors := v_errors + 1;
       v_notes := v_notes || (g.id::text || ': ' || sqlerrm);
+      v_claims := v_claims_before;
+      v_created := v_created_before;
     end;
   end loop;
 
   -- Ledger prune: set-based, outside every per-gym subtransaction, cutoff computed once for the run.
+  -- Its own BEGIN…EXCEPTION so a prune failure can't roll back every gym's materialization above, or
+  -- the cron_run_log row below — it is recorded as a note and an error count instead (#3).
   v_prune_cutoff := (now() at time zone 'UTC')::date;
   v_prune_cutoff := v_prune_cutoff - ((extract(isodow from v_prune_cutoff)::int - 1)) - 14;
-  delete from public.schedule_template_week where week_start < v_prune_cutoff;
-  get diagnostics v_pruned = row_count;
+  begin
+    delete from public.schedule_template_week where week_start < v_prune_cutoff;
+    get diagnostics v_pruned = row_count;
+  exception when others then
+    v_errors := v_errors + 1;
+    v_notes := v_notes || ('prune: ' || sqlerrm);
+  end;
 
   v_summary := format('gyms=%s claims=%s created=%s pruned=%s errors=%s%s',
     v_gyms, v_claims, v_created, v_pruned, v_errors,
@@ -117,8 +136,3 @@ begin
   return v_summary;
 end;
 $function$;
-
--- The fleet pass stays postgres-only: cron runs it, ops can run it by hand, nobody else can reach it.
--- Re-stated explicitly (CREATE OR REPLACE preserves the ACL from 20260805100000; this line just keeps
--- that fact visible in the file that actually changed the body).
-revoke execute on function public.cron_materialize_horizon() from public, anon, authenticated;

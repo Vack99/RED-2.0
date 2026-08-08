@@ -47,15 +47,20 @@
 --   #261 FRONTIER CATCH-UP (20260808210100) — gym D's ledger is pre-seeded as already claimed through
 --      "+4" (STEADY STATE): the shared first cron_materialize_horizon() call above claims exactly the
 --      one remaining week, "+5" — a new class_session + coach join for it, no duplicate claim on any
---      of the 6 already-claimed weeks. Gym E's ledger frontier is pre-seeded at "+3" (OUTAGE HEAL): the
---      same call claims BOTH "+4" and "+5" in one pass. Gym F's active template is INACTIVE so the
---      frontier loop never touches it directly — isolating the prune vector below from this one.
+--      of the 6 already-claimed weeks. Gym E's ledger has ONLY a "+3" claim, nothing earlier (OUTAGE
+--      HEAL): the claim-what's-missing pass (fix 1) claims every other missing week in the window —
+--      "+0","+1","+2","+4","+5" — proving it closes real holes instead of trusting a frontier aggregate
+--      that would have assumed "+0".."+2" were already covered just because "+3" was claimed. Gym F's
+--      active template is INACTIVE so the frontier loop never touches it directly — isolating the
+--      prune vector below from this one.
 --   #261 LEDGER PRUNE — the same cron call's set-based DELETE (outside every per-gym subtransaction)
 --      removes gym F's schedule_template_week row older than the run's cutoff (UTC Monday − 14 days),
 --      leaves the boundary row (exactly AT the cutoff — the condition is strict "<") and a newer row
---      intact, and a direct materialize_week_for_gym call for the pruned week afterward is refused by
---      the #260 clamp — 0 returned, no ledger row, no class_session row. A client DELETE on the ledger
---      is also refused (no delete policy for any client role).
+--      intact. A direct materialize_week_for_gym call for a historical week afterward is refused by the
+--      #260 clamp — 0 returned, no ledger row, no class_session row — proven on gym D, an
+--      ACTIVE-template gym (gym F's own template is inactive, so a check against gym F would pass
+--      regardless of the clamp and prove nothing about it). A client DELETE on the ledger is also
+--      refused (no delete policy for any client role).
 --
 -- NOT covered here, deliberately: that the pg_cron JOB exists and fires. cron.job is DB state, not
 -- migration state, so no suite replayed against a scratch project can prove it — verify on live with
@@ -381,18 +386,23 @@ begin
    where cs.gym_id = gym_d and cs.template_id = tmpl_d;
   if n <> 1 then raise exception 'FRONTIER FAIL(steady): gym D''s new session has % coach join(s) (expected 1)', n; end if;
 
-  -- OUTAGE HEAL — gym E's ledger frontier was "+3"; the pass claims BOTH "+4" and "+5" in one run.
+  -- OUTAGE HEAL — gym E's ledger has ONLY a "+3" claim, with nothing earlier: the claim-what's-missing
+  -- pass (fix 1) closes every real hole in the window, not just the weeks after the ledger's max() —
+  -- "+0","+1","+2","+4","+5" are all missing and all get claimed; "+3" already has a ledger row so it
+  -- is left alone (and, since the fixture wrote that row directly rather than through the RPC, it
+  -- never gets a class_session — a fixture shortcut, not something this pass is expected to backfill).
   select count(*) into n from public.schedule_template_week where gym_id = gym_e and template_id = tmpl_e;
-  if n <> 3 then raise exception 'FRONTIER FAIL(outage): gym E ledger has % rows (expected 3 = 1 pre-claimed + 2 healed)', n; end if;
+  if n <> 6 then raise exception 'FRONTIER FAIL(outage): gym E ledger has % rows (expected 6 = 1 pre-claimed + 5 healed)', n; end if;
   select count(*) into n from public.schedule_template_week
-   where gym_id = gym_e and template_id = tmpl_e and week_start in (monday + 28, monday + 35);
-  if n <> 2 then raise exception 'FRONTIER FAIL(outage): gym E is missing "+4" and/or "+5" (found % of 2)', n; end if;
+   where gym_id = gym_e and template_id = tmpl_e
+     and week_start in (monday, monday + 7, monday + 14, monday + 28, monday + 35);
+  if n <> 5 then raise exception 'FRONTIER FAIL(outage): gym E is missing one or more of "+0","+1","+2","+4","+5" (found % of 5)', n; end if;
   select count(*) into n from public.class_session where gym_id = gym_e and template_id = tmpl_e;
-  if n <> 2 then raise exception 'FRONTIER FAIL(outage): gym E has % new class_session row(s) (expected 2 — "+4" and "+5")', n; end if;
+  if n <> 5 then raise exception 'FRONTIER FAIL(outage): gym E has % new class_session row(s) (expected 5 — every missing week except the pre-claimed "+3")', n; end if;
   select count(*) into n from public.class_session cs
     join public.class_session_coach csc on csc.session_id = cs.id
    where cs.gym_id = gym_e and cs.template_id = tmpl_e;
-  if n <> 2 then raise exception 'FRONTIER FAIL(outage): gym E''s healed sessions have % coach join(s) (expected 2)', n; end if;
+  if n <> 5 then raise exception 'FRONTIER FAIL(outage): gym E''s healed sessions have % coach join(s) (expected 5)', n; end if;
 
   -- PRUNE — the run's DELETE already fired (outside every per-gym subtransaction, once for the whole
   -- table): the row older than cutoff is gone, the boundary row (exactly AT cutoff, "<" not "<=") and
@@ -407,16 +417,21 @@ begin
    where gym_id = gym_f and template_id = tmpl_f and week_start = cutoff + 7;
   if n <> 1 then raise exception 'FRONTIER FAIL(prune): the newer-than-cutoff row was pruned'; end if;
 
-  -- …and a pruned week stays un-re-claimable through the clamped RPC (#260): the row is gone from the
-  -- ledger, so a naive re-insert would have nothing to conflict with — the #260 clamp is what actually
-  -- stops it, refusing before any row is touched.
-  added := public.materialize_week_for_gym(gym_f, cutoff - 7);
-  if added <> 0 then raise exception 'FRONTIER FAIL(prune): materialize_week_for_gym resurrected the pruned week (% new)', added; end if;
+  -- …and a historical week stays un-re-claimable through the clamped RPC (#260) — proven on gym D, an
+  -- ACTIVE-template gym: gym F's own template is INACTIVE, so calling materialize_week_for_gym on gym F
+  -- would return 0 regardless of the clamp (materialize_week_for_gym's template loop is empty either
+  -- way) and would prove nothing about the clamp actually firing. cutoff - 7 predates gym D's own
+  -- ledger entirely, so a naive re-insert would have nothing to conflict with — the #260 clamp is what
+  -- actually stops it, refusing before any row is touched.
+  added := public.materialize_week_for_gym(gym_d, cutoff - 7);
+  if added <> 0 then raise exception 'FRONTIER FAIL(prune): materialize_week_for_gym resurrected a historical week for an active-template gym (% new)', added; end if;
   select count(*) into n from public.schedule_template_week
-   where gym_id = gym_f and template_id = tmpl_f and week_start = cutoff - 7;
-  if n <> 0 then raise exception 'FRONTIER FAIL(prune): the pruned week reappeared in the ledger after a direct RPC call'; end if;
-  select count(*) into n from public.class_session where gym_id = gym_f and template_id = tmpl_f;
-  if n <> 0 then raise exception 'FRONTIER FAIL(prune): the pruned week produced a class_session row via the clamped RPC'; end if;
+   where gym_id = gym_d and template_id = tmpl_d and week_start = cutoff - 7;
+  if n <> 0 then raise exception 'FRONTIER FAIL(prune): a historical week wrote a ledger row via the clamped RPC'; end if;
+  select count(*) into n from public.class_session
+   where gym_id = gym_d and template_id = tmpl_d
+     and (starts_at at time zone 'America/Mexico_City')::date = (cutoff - 7) + 4;
+  if n <> 0 then raise exception 'FRONTIER FAIL(prune): a historical week produced a class_session row via the clamped RPC'; end if;
 end $$;
 
 -- ── #260 CLAMP, direct core call — a past week writes nothing, silently ────────────────────────────
@@ -495,6 +510,8 @@ declare
   monday_a date;
   monday_b date;
   added    int;
+  n_del    int;   -- (4g) hoisted out of the nested sub-block: it was declared there but referenced
+                   -- after that sub-block's own `end;`, which is 42703 (undefined_column/variable).
 begin
   -- (4a) The fleet pass is not reachable from a staff JWT (EXECUTE revoked from authenticated).
   begin
@@ -546,8 +563,6 @@ begin
   -- (4g, #261) The ledger has no delete policy for any client role — staff can INSERT (through the
   -- RPCs above) but cannot DELETE directly, which is what keeps a pruned week pruned instead of a
   -- staff UI accidentally letting it come back.
-  declare
-    n_del int;
   begin
     delete from public.schedule_template_week where gym_id = gym_a;
     get diagnostics n_del = row_count;
@@ -600,6 +615,34 @@ begin
   select future_sessions into fs_after from public.gym_horizon_depth where gym_id = gym_a;
   if fs_after is distinct from fs_before - 1 then
     raise exception 'AUTOROLL FAIL: gym_horizon_depth counts cancelled sessions (% -> %)', fs_before, fs_after;
+  end if;
+end $$;
+
+-- ── FIX-1 REGRESSION — the poisoning state built above (gym-A staff's ensure_week_materialized(monday_a
+-- + 42), one week PAST gym A's normal 0..5 horizon) claims a ledger row for tmpl_a at that far week —
+-- exactly the shape that used to drag a min()/max() frontier aggregate forward and made the cron skip
+-- real gaps in the 0..5 window. A third fleet pass must still see that window fully claimed, with no
+-- hole introduced by the far claim. Runs as ops (postgres): cron_materialize_horizon is not reachable
+-- from the authenticated role that did the poisoning above.
+do $$
+declare
+  gym_a    uuid := current_setting('t.h_gym_a', true)::uuid;
+  tmpl_a   uuid := current_setting('t.h_tmpl_a', true)::uuid;
+  monday_a date;
+  n        int;
+  summary3 text;
+begin
+  monday_a := (now() at time zone 'America/Mexico_City')::date;
+  monday_a := monday_a - ((extract(isodow from monday_a)::int - 1));
+
+  summary3 := public.cron_materialize_horizon();
+
+  select count(distinct week_start) into n
+    from public.schedule_template_week
+   where gym_id = gym_a and template_id = tmpl_a
+     and week_start between monday_a and monday_a + 35;
+  if n <> 6 then
+    raise exception 'FRONTIER REGRESSION FAIL: gym A''s 0..5 window has % distinct claimed weeks (expected 6) after a poisoning far-claim — summary=%', n, summary3;
   end if;
 end $$;
 

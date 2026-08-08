@@ -64,9 +64,11 @@ begin
     on conflict (template_id, week_start) do nothing;
 
     if found then  -- first materialization of this template for this week
-      -- A garbage gym.timezone raises HERE, after the ledger claim. Under the cron that raise is
-      -- caught by the per-gym subtransaction below, which rolls the claim back with it — the gym
-      -- retries cleanly next week instead of carrying a poisoned "already materialized" row (#3).
+      -- A garbage gym.timezone now raises EARLIER, at the v_today cast above (before this loop even
+      -- starts, let alone before any ledger claim) — the #260 backward clamp put that cast ahead of
+      -- everything else in this function. Under the cron, that raise is still caught by the per-gym
+      -- subtransaction, which rolls back cleanly either way — the gym retries next week instead of
+      -- carrying a poisoned "already materialized" row (#3).
       v_starts := ((v_monday + t.weekday) + t.start_time) at time zone v_tz;
 
       v_session := null;
