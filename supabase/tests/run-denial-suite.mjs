@@ -44,8 +44,9 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // (epic #203 slice 4 — attendance retention), a schema-layer sibling of asistencias_unicidad proving
 // the class_session/reservation FKs now REFUSE a delete instead of cascading it away, then
 // asistencias_ultima_visita_rules (#226 — the last-consuming-visit aggregate's tenant scoping + the
-// consuming-visit/deleted_at/perdonada definition), and finally gym2_probe, the end-to-end second-gym
-// capstone.
+// consuming-visit/deleted_at/perdonada definition), then gym2_probe, the end-to-end second-gym
+// capstone, and finally aceptar_acuerdo (#253, Gate 0.1) — the click-wrap acceptance evidence RPC,
+// a standalone domain with no dependency on anything above it.
 // Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
 // A future slice adds a vector to a file here — not a second harness. Two guards in the normal
 // `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
@@ -97,6 +98,7 @@ export const SUITE = [
   'class_session_delete_restrict.sql',
   'asistencias_ultima_visita_rules.sql',
   'gym2_probe.sql',
+  'aceptar_acuerdo.sql',
 ];
 
 // QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason

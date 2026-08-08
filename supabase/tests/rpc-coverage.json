@@ -9,6 +9,7 @@
     "and what the guard cannot check, are in AGENTS.md -> 'Database RPC contract tests'."
   ],
   "coverage": {
+    "aceptar_acuerdo": { "suites": ["aceptar_acuerdo.sql"] },
     "actualizar_cliente": { "suites": ["actualizar_cliente_email_rules.sql", "actualizar_cliente_rules.sql"] },
     "actualizar_paquete": { "suites": ["actualizar_paquete_rules.sql"] },
     "actualizar_paquete_marketing": { "suites": ["paquete_marketing_rules.sql"] },
