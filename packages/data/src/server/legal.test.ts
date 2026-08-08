@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { aceptarAcuerdo, getAcuerdoAceptado } from "./legal";
+import { aceptarAcuerdo, actualizarIdentidadLegal, getAcuerdoAceptado, getIdentidadLegal } from "./legal";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -225,5 +225,246 @@ describe("aceptarAcuerdo", () => {
       expect(args.p_ip).toBe(input.ip);
       expect(args.p_user_agent).toBe(input.userAgent);
     });
+  });
+});
+
+/**
+ * The CUENTA legal-identity editor's DAL (#255): `getIdentidadLegal` (a `.rpc()` read, not a raw
+ * `.from("gym")` select — see the export's own doc comment for why) and `actualizarIdentidadLegal`
+ * (two writes: `gym.legal_name` via `.update()`, `gym_legal` via `.upsert()`). RLS/grant
+ * composition itself is proven against the real schema in
+ * supabase/tests/gym_legal_name_rules.sql; here we assert the query shape, the zod
+ * validation/blank-clears-to-null behavior, and the fail-closed read.
+ */
+
+/** A fake exposing `.auth.getClaims()` (requireOperator) + `.from("gym_membership")` (the
+ *  embedded-join `getOperatorGym` walks — mirrors about-values.test.ts's makeFake) + `.rpc()`. */
+function fakeIdentidadRead(opts: {
+  sub?: string | null;
+  rpcResult?: { data: unknown; error: unknown };
+  rpcCapture?: (name: string, args: unknown) => void;
+}): SupabaseServer {
+  const sub = opts.sub === undefined ? "op-1" : opts.sub;
+  const rpcResult = opts.rpcResult ?? { data: null, error: null };
+  const client = {
+    auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
+    from: (table: string) => {
+      if (table !== "gym_membership") throw new Error(`unexpected table ${table}`);
+      return {
+        select: () => ({
+          in: () => ({
+            order: async () => ({
+              data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+              error: null,
+            }),
+          }),
+        }),
+      };
+    },
+    rpc: (name: string, args: unknown) => {
+      opts.rpcCapture?.(name, args);
+      return { maybeSingle: async () => rpcResult };
+    },
+  };
+  return client as unknown as SupabaseServer;
+}
+
+describe("getIdentidadLegal", () => {
+  it("maps a full RPC row to the camelCased DTO", async () => {
+    const client = fakeIdentidadRead({
+      rpcResult: {
+        data: {
+          razon_social: "Gimnasio Forge, S.A. de C.V.",
+          domicilio: "Av. Siempre Viva 123",
+          email_arco: "datos@forge.mx",
+          area_datos_personales: "Departamento de Datos Personales",
+        },
+        error: null,
+      },
+    });
+    expect(await getIdentidadLegal(client)).toEqual({
+      razonSocial: "Gimnasio Forge, S.A. de C.V.",
+      domicilio: "Av. Siempre Viva 123",
+      emailArco: "datos@forge.mx",
+      areaDatosPersonales: "Departamento de Datos Personales",
+    });
+  });
+
+  it("returns an all-null DTO when no row comes back (a gym with nothing filled in yet)", async () => {
+    const client = fakeIdentidadRead({ rpcResult: { data: null, error: null } });
+    expect(await getIdentidadLegal(client)).toEqual({
+      razonSocial: null,
+      domicilio: null,
+      emailArco: null,
+      areaDatosPersonales: null,
+    });
+  });
+
+  it("calls obtener_identidad_legal with p_gym_id = the resolved operator gym's id", async () => {
+    let seen: { name: string; args: unknown } | null = null;
+    const client = fakeIdentidadRead({ rpcCapture: (name, args) => (seen = { name, args }) });
+    await getIdentidadLegal(client);
+    expect(seen).toEqual({ name: "obtener_identidad_legal", args: { p_gym_id: "gym-1" } });
+  });
+
+  it("fails closed (all-null DTO) on a read error, and logs a structured warning", async () => {
+    const client = fakeIdentidadRead({ rpcResult: { data: null, error: { message: "connection reset" } } });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await getIdentidadLegal(client)).toEqual({
+      razonSocial: null,
+      domicilio: null,
+      emailArco: null,
+      areaDatosPersonales: null,
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(warn.mock.calls[0][0] as string)).toEqual({
+      event: "identidad-legal-read-error",
+      gymId: "gym-1",
+      error: "connection reset",
+    });
+    warn.mockRestore();
+  });
+});
+
+interface ActualizarCalls {
+  gymUpdate?: { payload: Record<string, unknown>; id: string };
+  legalUpsert?: { payload: Record<string, unknown>; config: unknown };
+}
+
+function fakeActualizarIdentidad(opts: {
+  sub?: string | null;
+  gymUpdateData?: unknown[] | null;
+  gymUpdateError?: unknown;
+  legalUpsertError?: unknown;
+}): { client: SupabaseServer; calls: ActualizarCalls } {
+  const sub = opts.sub === undefined ? "op-1" : opts.sub;
+  const calls: ActualizarCalls = {};
+  const client = {
+    auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
+    from: (table: string) => {
+      if (table === "gym_membership") {
+        return {
+          select: () => ({
+            in: () => ({
+              order: async () => ({
+                data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "gym") {
+        return {
+          update: (payload: Record<string, unknown>) => ({
+            eq: (_col: string, id: string) => {
+              calls.gymUpdate = { payload, id };
+              return {
+                select: async () => ({
+                  data: opts.gymUpdateData !== undefined ? opts.gymUpdateData : [{ id }],
+                  error: opts.gymUpdateError ?? null,
+                }),
+              };
+            },
+          }),
+        };
+      }
+      if (table === "gym_legal") {
+        return {
+          upsert: (payload: Record<string, unknown>, config: unknown) => {
+            calls.legalUpsert = { payload, config };
+            return Promise.resolve({ error: opts.legalUpsertError ?? null });
+          },
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    },
+  };
+  return { client: client as unknown as SupabaseServer, calls };
+}
+
+const IDENTIDAD_INPUT = {
+  razonSocial: "Gimnasio Forge, S.A. de C.V.",
+  domicilio: "Av. Siempre Viva 123, Chihuahua, Chih.",
+  emailArco: "datos@forge.mx",
+  areaDatosPersonales: "Departamento de Datos Personales",
+};
+
+describe("actualizarIdentidadLegal", () => {
+  it("updates gym.legal_name and upserts gym_legal with the exact payloads", async () => {
+    const fake = fakeActualizarIdentidad({});
+    await actualizarIdentidadLegal(IDENTIDAD_INPUT, fake.client);
+    expect(fake.calls.gymUpdate).toEqual({ payload: { legal_name: IDENTIDAD_INPUT.razonSocial }, id: "gym-1" });
+    expect(fake.calls.legalUpsert).toEqual({
+      payload: {
+        gym_id: "gym-1",
+        domicilio: IDENTIDAD_INPUT.domicilio,
+        email_arco: IDENTIDAD_INPUT.emailArco,
+        area_datos_personales: IDENTIDAD_INPUT.areaDatosPersonales,
+      },
+      config: { onConflict: "gym_id" },
+    });
+  });
+
+  it("a blank field CLEARS to null, never an empty string (the DB CHECK rejects '')", async () => {
+    const fake = fakeActualizarIdentidad({});
+    await actualizarIdentidadLegal({ razonSocial: "  ", domicilio: "", emailArco: "", areaDatosPersonales: "   " }, fake.client);
+    expect(fake.calls.gymUpdate?.payload).toEqual({ legal_name: null });
+    expect(fake.calls.legalUpsert?.payload).toEqual({
+      gym_id: "gym-1",
+      domicilio: null,
+      email_arco: null,
+      area_datos_personales: null,
+    });
+  });
+
+  it("trims surrounding whitespace on a non-blank value", async () => {
+    const fake = fakeActualizarIdentidad({});
+    await actualizarIdentidadLegal({ ...IDENTIDAD_INPUT, razonSocial: "  Gimnasio Forge  " }, fake.client);
+    expect(fake.calls.gymUpdate?.payload.legal_name).toBe("Gimnasio Forge");
+  });
+
+  it("rejects an invalid emailArco (zod) before any write", async () => {
+    const fake = fakeActualizarIdentidad({});
+    await expect(
+      actualizarIdentidadLegal({ ...IDENTIDAD_INPUT, emailArco: "not-an-email" }, fake.client),
+    ).rejects.toThrow();
+    expect(fake.calls.gymUpdate).toBeUndefined();
+    expect(fake.calls.legalUpsert).toBeUndefined();
+  });
+
+  it("rejects an over-length domicilio (zod) before any write", async () => {
+    const fake = fakeActualizarIdentidad({});
+    await expect(
+      actualizarIdentidadLegal({ ...IDENTIDAD_INPUT, domicilio: "a".repeat(301) }, fake.client),
+    ).rejects.toThrow();
+    expect(fake.calls.gymUpdate).toBeUndefined();
+  });
+
+  it("throws 'No autenticado' when getClaims returns no sub — before any write", async () => {
+    const fake = fakeActualizarIdentidad({ sub: null });
+    await expect(actualizarIdentidadLegal(IDENTIDAD_INPUT, fake.client)).rejects.toThrow("No autenticado");
+    expect(fake.calls.gymUpdate).toBeUndefined();
+    expect(fake.calls.legalUpsert).toBeUndefined();
+  });
+
+  it("throws 'Gimnasio no encontrado' when the gym update affects 0 rows (RLS hid it)", async () => {
+    const fake = fakeActualizarIdentidad({ gymUpdateData: [] });
+    await expect(actualizarIdentidadLegal(IDENTIDAD_INPUT, fake.client)).rejects.toThrow("Gimnasio no encontrado");
+    expect(fake.calls.legalUpsert).toBeUndefined();
+  });
+
+  it("throws when the gym.legal_name update errors", async () => {
+    const fake = fakeActualizarIdentidad({ gymUpdateError: { message: "boom" } });
+    await expect(actualizarIdentidadLegal(IDENTIDAD_INPUT, fake.client)).rejects.toThrow(
+      "No se pudo guardar la razón social",
+    );
+  });
+
+  it("throws when the gym_legal upsert errors", async () => {
+    const fake = fakeActualizarIdentidad({ legalUpsertError: { message: "boom" } });
+    await expect(actualizarIdentidadLegal(IDENTIDAD_INPUT, fake.client)).rejects.toThrow(
+      "No se pudo guardar el domicilio y el contacto ARCO",
+    );
   });
 });

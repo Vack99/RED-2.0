@@ -1,9 +1,11 @@
 import "server-only";
 
 import { cache } from "react";
+import { z } from "zod";
 
 import { createClient, type SupabaseServer } from "./supabase";
 import { requireOperator } from "./_auth";
+import { getOperatorGym } from "./gym";
 
 /**
  * Gate 0.1 click-wrap DAL (issue #254) — the thin read/write seam over `acuerdo_aceptacion`
@@ -110,4 +112,106 @@ export async function aceptarAcuerdo(
     .single();
   if (error || !data) throw new Error(error?.message ?? "No se pudo registrar la aceptación");
   return { id: data.id, yaExistia: data.ya_existia, contenidoHash: data.contenido_hash };
+}
+
+/**
+ * The CUENTA legal-identity editor's DAL (issue #255) — `gym.legal_name` (razón social) plus the
+ * `gym_legal` satellite's three columns (domicilio, contacto ARCO; #253). The DTO/domain shape
+ * (`IdentidadLegalGym`, `identidadLegalCompleta`, the aviso merge/render) lives in `@gym/domain/
+ * legal`, same split as the Anexo above: identity/completeness rules are pure, this is I/O only.
+ */
+
+export interface IdentidadLegalDTO {
+  razonSocial: string | null;
+  domicilio: string | null;
+  emailArco: string | null;
+  areaDatosPersonales: string | null;
+}
+
+/** The editor's read: `gym.legal_name` + `gym_legal`'s three columns, in ONE round trip via
+ *  `obtener_identidad_legal` — a SECURITY DEFINER RPC, deliberately NOT a raw `.from("gym")`
+ *  select. `gym`'s only SELECT policy is `gym_anon_select ... using (true)` (permissive, OR-
+ *  combined with any sibling policy on the same command — ADR-0012's pre-auth host→brand lookup
+ *  needs it and it stays untouched), so a plain column grant on `legal_name` would make it
+ *  readable by ANY authenticated identity, not staff-only — denial-tested and confirmed against
+ *  `supabase/tests/gym_tenant_anon_read.sql` (#213's own regression guard) while building this
+ *  migration (20260808130000's "LIVE-MEASURED TRAP #2" comment has the full account). The RPC's
+ *  own `is_staff_of` gate is the real boundary; `gym_legal`'s three columns ride along in the same
+ *  call because that table's SELECT policy IS already staff-scoped from birth (no such workaround
+ *  needed there) and bundling saves the editor a second query. Memoized per request. */
+export const getIdentidadLegal = cache(
+  async (client?: SupabaseServer): Promise<IdentidadLegalDTO> => {
+    const supabase = client ?? (await createClient());
+    const gym = await getOperatorGym(supabase);
+    const { data, error } = await supabase
+      .rpc("obtener_identidad_legal", { p_gym_id: gym.id })
+      .maybeSingle();
+    // Fail-closed, matching getAcuerdoAceptado: an error reads as "nothing filled in yet" (the
+    // editor's own empty state), never as a thrown page. A read error must still be visible in the
+    // logs as distinct from the ordinary empty-gym case.
+    if (error) {
+      console.warn(JSON.stringify({ event: "identidad-legal-read-error", gymId: gym.id, error: error.message }));
+    }
+    return {
+      razonSocial: data?.razon_social ?? null,
+      domicilio: data?.domicilio ?? null,
+      emailArco: data?.email_arco ?? null,
+      areaDatosPersonales: data?.area_datos_personales ?? null,
+    };
+  },
+);
+
+/** A blank (empty or whitespace-only) input CLEARS the field (writes `null`), never `''` — matches
+ *  `gym_legal`'s own CHECK constraints (`domicilio`/`area_datos_personales` reject a 0-length
+ *  non-null string; `email_arco` requires >= 3 chars when not null) and the `ip`/`tel`-clearing
+ *  idiom used elsewhere in this DAL (`aceptarAcuerdo`'s `?? null`, `actualizarCliente`'s tel). */
+const campoOpcional = (max: number) =>
+  z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z.string().trim().max(max).nullable(),
+  );
+
+export const actualizarIdentidadLegalSchema = z.object({
+  razonSocial: campoOpcional(200),
+  domicilio: campoOpcional(300),
+  emailArco: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z.string().trim().max(160).email("Correo ARCO inválido").nullable(),
+  ),
+  areaDatosPersonales: campoOpcional(200),
+});
+export type ActualizarIdentidadLegalInput = z.infer<typeof actualizarIdentidadLegalSchema>;
+
+/** Save the gym's legal identity: `gym.legal_name` via a direct RLS-gated UPDATE (staff-scoped
+ *  policy, 20260808130000 — the table's FIRST update policy, nothing to OR against, so composition
+ *  IS staff-scoped on this half, unlike the read) and the `gym_legal` satellite's three columns via
+ *  upsert (staff-scoped insert/update policies, #253). Two writes to two tables, not one RPC —
+ *  both are already directly RLS-writable, so no SECURITY DEFINER bypass is needed for either.
+ *  Injectable client (ADR-0001). */
+export async function actualizarIdentidadLegal(raw: unknown, client?: SupabaseServer): Promise<void> {
+  const input = actualizarIdentidadLegalSchema.parse(raw);
+  const supabase = client ?? (await createClient());
+  await requireOperator(supabase);
+  const gym = await getOperatorGym(supabase);
+
+  const { data, error: gymError } = await supabase
+    .from("gym")
+    .update({ legal_name: input.razonSocial })
+    .eq("id", gym.id)
+    .select("id");
+  if (gymError) throw new Error("No se pudo guardar la razón social");
+  if (!data || data.length === 0) throw new Error("Gimnasio no encontrado");
+
+  const { error: legalError } = await supabase
+    .from("gym_legal")
+    .upsert(
+      {
+        gym_id: gym.id,
+        domicilio: input.domicilio,
+        email_arco: input.emailArco,
+        area_datos_personales: input.areaDatosPersonales,
+      },
+      { onConflict: "gym_id" },
+    );
+  if (legalError) throw new Error("No se pudo guardar el domicilio y el contacto ARCO");
 }

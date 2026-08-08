@@ -45,8 +45,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // the class_session/reservation FKs now REFUSE a delete instead of cascading it away, then
 // asistencias_ultima_visita_rules (#226 — the last-consuming-visit aggregate's tenant scoping + the
 // consuming-visit/deleted_at/perdonada definition), then gym2_probe, the end-to-end second-gym
-// capstone, and finally aceptar_acuerdo (#253, Gate 0.1) — the click-wrap acceptance evidence RPC,
-// a standalone domain with no dependency on anything above it.
+// capstone, then aceptar_acuerdo (#253, Gate 0.1) — the click-wrap acceptance evidence RPC, a
+// standalone domain with no dependency on anything above it — and finally gym_legal_name_rules
+// (#255, Gate 0.1), the staff-write grant+policy pair for `gym.legal_name` the CUENTA
+// legal-identity editor needs, a direct sibling of aceptar_acuerdo's gym_legal V8 vectors.
 // Each file is a self-contained BEGIN…ROLLBACK, so run order is documentation, not a dependency.
 // A future slice adds a vector to a file here — not a second harness. Two guards in the normal
 // `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
@@ -99,6 +101,7 @@ export const SUITE = [
   'asistencias_ultima_visita_rules.sql',
   'gym2_probe.sql',
   'aceptar_acuerdo.sql',
+  'gym_legal_name_rules.sql',
 ];
 
 // QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason

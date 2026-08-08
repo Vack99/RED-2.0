@@ -14,6 +14,7 @@ import {
   SectionHeader,
   Tnum,
 } from "@gym/ui/forge/ui";
+import { identidadLegalCompleta } from "@gym/domain/legal";
 import type { ResumenMes } from "@gym/domain/types";
 import type { AboutValueDTO } from "@gym/data/server/about-values";
 import type { ClassTypeDTO } from "@gym/data/server/class-type";
@@ -21,6 +22,7 @@ import type { CoachDTO } from "@gym/data/server/coach";
 import type { CobroDTO } from "@gym/data/server/cobro";
 import type { FacilityDTO } from "@gym/data/server/facilities";
 import type { FaqDTO } from "@gym/data/server/faqs";
+import type { IdentidadLegalDTO } from "@gym/data/server/legal";
 import type { MensajeDTO } from "@gym/data/server/mensajes";
 import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
@@ -33,6 +35,7 @@ import { LogoutButton } from "../../_components/logout-button";
 import { ClassTypesSheet } from "./class-types-sheet";
 import { CoachesSheet } from "./coaches-sheet";
 import { GymContentSheet } from "./gym-content-sheet";
+import { LegalIdentitySheet } from "./legal-identity-sheet";
 import { MensajesSheet } from "./mensajes-sheet";
 import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
@@ -56,6 +59,8 @@ interface CuentaScreenProps {
   mensajes: MensajeDTO[];
   /** Months-with-data for the respaldo picker, newest first (spec 2026-07-13 §2.5). */
   mesesRespaldo: MesRespaldo[];
+  /** The gym's legal identity (razón social + gym_legal's domicilio/contacto ARCO) — #255. */
+  identidadLegal: IdentidadLegalDTO;
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -114,6 +119,7 @@ export function CuentaScreen({
   faqs,
   mensajes,
   mesesRespaldo,
+  identidadLegal,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -121,6 +127,7 @@ export function CuentaScreen({
   const [classTypesOpen, setClassTypesOpen] = React.useState(false);
   const [contenidoOpen, setContenidoOpen] = React.useState(false);
   const [mensajesOpen, setMensajesOpen] = React.useState(false);
+  const [legalOpen, setLegalOpen] = React.useState(false);
   const sinLeer = mensajes.filter((m) => !m.leido).length;
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
@@ -146,6 +153,16 @@ export function CuentaScreen({
   const cobroSub = cobro
     ? `${metActivos} método${metActivos === 1 ? "" : "s"}${cobro.banco?.trim() ? " · " + cobro.banco.trim() : ""}`
     : "Próximamente";
+
+  // #255: the AJUSTES row's own status line — "listo" only once every field the aviso needs is
+  // filled in (same completeness rule the sheet's own preview gates on).
+  const legalCompleta = identidadLegalCompleta({
+    razonSocial: identidadLegal.razonSocial,
+    nombreComercial: brandName,
+    domicilio: identidadLegal.domicilio,
+    emailArco: identidadLegal.emailArco,
+    areaDatosPersonales: identidadLegal.areaDatosPersonales,
+  });
 
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
     {
@@ -183,6 +200,12 @@ export function CuentaScreen({
             : `${mensajes.length} mensaje${mensajes.length === 1 ? "" : "s"}`,
       onClick: () => setMensajesOpen(true),
     },
+    {
+      icon: "lock",
+      label: "IDENTIDAD LEGAL",
+      sub: legalCompleta ? "Aviso de privacidad listo" : "Completa tu aviso de privacidad",
+      onClick: () => setLegalOpen(true),
+    },
     { icon: "bell", label: "NOTIFICACIONES", sub: "Próximamente", onClick: () => proximamente("Notificaciones") },
     { icon: "card", label: "DATOS DE COBRO", sub: cobroSub, onClick: () => proximamente("Datos de cobro") },
     { icon: "user", label: "EDITAR PERFIL", sub: "Nombre, teléfono, contraseña", onClick: () => proximamente("Editar perfil") },
@@ -214,6 +237,13 @@ export function CuentaScreen({
       />
 
       <MensajesSheet open={mensajesOpen} onClose={() => setMensajesOpen(false)} mensajes={mensajes} />
+
+      <LegalIdentitySheet
+        open={legalOpen}
+        onClose={() => setLegalOpen(false)}
+        identidad={identidadLegal}
+        nombreComercial={brandName}
+      />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />
 

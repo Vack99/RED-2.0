@@ -239,3 +239,266 @@ El Responsable declara y garantiza que:
 
 [^3]: Referencias de apoyo: Código de Comercio, artículos 89 bis (no negación de efectos jurídicos por constar en mensaje de datos), 90 (atribución del mensaje emitido mediante claves o contraseñas del emisor), 93 (equivalencia funcional de forma escrita y de firma, condicionada a que la información se mantenga íntegra y accesible para ulterior consulta) y 97 (fiabilidad de la firma electrónica como estándar de idoneidad, no de validez). **Pendiente de verificación contra el texto primario publicado por la Cámara de Diputados**: el texto de estos artículos utilizado en la investigación previa proviene de agregadores secundarios y no fue confirmado contra fuente primaria. Ver el encargo final del brief.
 `;
+
+/**
+ * The two aviso de privacidad templates — issue #255 (Gate 0.1 CUENTA legal-identity editor).
+ * Same home and same byte-for-byte-copy discipline as the Anexo above: each constant mirrors its
+ * source .md under `docs/legal/gate0-borradores/` exactly (guarded by
+ * tools/guards/aviso-legal-drift.test.ts, the same idiom as anexo-legal-drift.test.ts), INCLUDING
+ * the drafting notes and every unresolved `{{merge_field}}` placeholder. Unlike the Anexo, these
+ * documents carry no acceptance/version-uniqueness concept (nobody clicks to accept an aviso) —
+ * the value they add here is a live PREVIEW of what a gym's members would see, built by
+ * `mergeAvisoTemplate` below. Member-facing serving is #256's slice, not this one.
+ */
+export const AVISO_PRIVACIDAD_INTEGRAL_TEXTO = `
+# AVISO DE PRIVACIDAD INTEGRAL — PLANTILLA POR GIMNASIO
+
+> **BORRADOR — PENDIENTE DE REVISIÓN POR ABOGADO MEXICANO. ESTE DOCUMENTO NO CONSTITUYE ASESORÍA LEGAL.**
+
+**Notas de redacción (eliminar antes de publicar):**
+
+1. **Titularidad del documento.** El aviso resultante es documento **del gimnasio**, no de RED. RED únicamente lo genera con los datos que el gimnasio proporciona y lo publica en una URL estable de la Plataforma. Al momento de generarlo, la aplicación debe mostrar el descargo: *"Esta plantilla no constituye asesoría legal. El gimnasio es el único responsable del contenido de su aviso de privacidad y debe revisarlo con su propio abogado."*
+2. **Alcance.** El cuerpo cubre **exactamente los seis elementos** del artículo 15 de la LFPDPPP vigente. Todo lo que exceda esos seis va en párrafos marcados como **opcionales**, para que el abogado revisor decida si se incluyen.
+3. **Las categorías de datos enumeradas son las que RED realmente trata.** Si el gimnasio recaba datos por fuera de la Plataforma (formatos en papel, videovigilancia, control de acceso de terceros), debe añadirlos por su cuenta — RED no puede conocerlos.
+
+---
+
+# AVISO DE PRIVACIDAD
+
+**\`{{nombre_comercial}}\`**
+Última actualización: \`{{fecha_actualizacion}}\`
+Versión: \`{{version_aviso}}\`
+
+## 1. Identidad y domicilio del responsable
+
+\`{{razon_social}}\`, que opera comercialmente como **\`{{nombre_comercial}}\`**, con domicilio en \`{{domicilio}}\`, es la **responsable** del tratamiento de sus datos personales, en términos de la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (la "**Ley**").
+
+Puede contactarnos en \`{{email_contacto}}\` o al teléfono \`{{telefono_contacto}}\`.
+
+## 2. Datos personales que tratamos
+
+Para las finalidades señaladas en este aviso tratamos las siguientes categorías de datos personales:
+
+- **Datos de identificación:** nombre completo y, cuando usted lo proporcione, fecha de nacimiento.
+- **Datos de contacto:** número de teléfono celular y correo electrónico.
+- **Datos de su cuenta:** correo electrónico verificado y credenciales de acceso a nuestra aplicación para personas miembros, cuando usted decida activarla.
+- **Registros de asistencia y actividad:** fecha y hora de sus visitas al gimnasio, reservas de clase, asistencias y cancelaciones.
+- **Registros de compra y membresía:** paquete adquirido, importe pagado, método de pago (efectivo, transferencia o tarjeta), fecha de compra, vigencia y clases restantes.
+
+**No tratamos datos personales sensibles.** En particular, **no recabamos datos biométricos** (huella dactilar, reconocimiento facial, iris o voz), datos de salud, información médica o de lesiones, ni ninguna otra categoría de datos personales sensibles.
+
+**No almacenamos números de tarjeta bancaria ni credenciales de banca en línea.** Del pago únicamente conservamos el registro del método utilizado y el importe.
+
+\`{{parrafo_datos_adicionales}}\`
+> *[OPCIONAL — incluir solo si el gimnasio recaba datos fuera de la plataforma: videovigilancia, contacto de emergencia, formatos en papel, etc. Redacción a cargo del gimnasio.]*
+
+## 3. Finalidades del tratamiento
+
+**Finalidades primarias.** Son necesarias para la relación jurídica que tenemos con usted; sin ellas no podríamos prestarle el servicio:
+
+- **a)** registrarlo como persona cliente y administrar su membresía;
+- **b)** venderle, renovar y controlar la vigencia de sus paquetes de clases, y llevar su saldo de clases;
+- **c)** controlar el acceso a las instalaciones y registrar su asistencia;
+- **d)** gestionar la reserva de clases y su lugar en cada sesión;
+- **e)** procesar sus pagos y emitir el comprobante o recibo correspondiente;
+- **f)** crear y administrar su cuenta en nuestra aplicación para personas miembros;
+- **g)** enviarle comunicaciones operativas sobre su membresía: confirmaciones de compra, recibos, invitación para activar su cuenta, avisos de vencimiento de su paquete, cambios o cancelaciones de clases;
+- **h)** atender sus dudas, quejas y solicitudes;
+- **i)** cumplir con las obligaciones legales, fiscales y contables a nuestro cargo.
+
+**Finalidades secundarias.** No son necesarias para la relación jurídica y **requieren su consentimiento**:
+
+- **j)** enviarle promociones, descuentos, novedades y publicidad de nuestros servicios por WhatsApp, correo electrónico o mensaje de texto;
+- **k)** invitarlo a eventos, retos y actividades del gimnasio;
+- **l)** aplicarle encuestas de satisfacción y realizar estadísticas internas para mejorar nuestro servicio.
+
+**Si usted no desea que sus datos se traten para las finalidades secundarias (incisos j, k y l), puede manifestarlo desde ahora enviando un correo a \`{{email_arco}}\` con la leyenda "NO FINALIDADES SECUNDARIAS". Su negativa no será motivo para negarle el servicio ni afectará su membresía.**
+
+## 4. Medios para limitar el uso o divulgación de sus datos
+
+Usted puede limitar el uso o divulgación de sus datos personales por cualquiera de estos medios:
+
+- **a)** enviando su solicitud a \`{{email_arco}}\`;
+- **b)** respondiendo con la palabra **BAJA** a cualquier mensaje promocional que reciba por WhatsApp o mensaje de texto, o usando el enlace de cancelación de suscripción de nuestros correos promocionales;
+- **c)** solicitándolo directamente en la recepción de \`{{domicilio}}\`.
+
+Atenderemos su solicitud y lo incorporaremos a nuestro listado de exclusión, dejando de enviarle comunicaciones promocionales. Seguirá recibiendo las comunicaciones operativas del inciso (g) de la sección 3, por ser necesarias para su membresía.
+
+\`{{parrafo_registro_publicidad}}\`
+> *[OPCIONAL — mención del Registro Público para Evitar Publicidad (PROFECO); confirmar con el abogado si procede incluirlo.]*
+
+## 5. Medios para ejercer los derechos ARCO
+
+Usted tiene derecho a **acceder** a sus datos personales, a **rectificarlos** cuando sean inexactos o incompletos, a **cancelarlos** cuando considere que no se requieren para alguna de las finalidades de este aviso, y a **oponerse** a su tratamiento para fines específicos (derechos ARCO). También puede **revocar** el consentimiento que nos haya otorgado.
+
+Para ejercerlos, envíe su solicitud a **\`{{email_arco}}\`**, dirigida a \`{{area_datos_personales}}\`, o preséntela por escrito en \`{{domicilio}}\`, incluyendo:
+
+- **a)** su nombre y un medio para comunicarle la respuesta (correo electrónico o teléfono);
+- **b)** copia de una identificación oficial vigente que acredite su identidad, o del instrumento que acredite la representación legal, en su caso;
+- **c)** la descripción clara y precisa de los datos respecto de los que ejerce el derecho y del derecho que desea ejercer;
+- **d)** cualquier documento que facilite la localización de sus datos;
+- **e)** tratándose de rectificación, la corrección solicitada y la documentación que la sustente.
+
+Le responderemos en un plazo de \`{{plazo_respuesta_arco}}\` días hábiles contados a partir de la recepción de su solicitud, y de resultar procedente la haremos efectiva dentro de los \`{{plazo_ejecucion_arco}}\` días hábiles siguientes.
+
+> **[PENDIENTE — verificar los plazos ARCO contra el texto vigente de la LFPDPPP reformada antes de publicar. Los plazos del régimen anterior (20 y 15 días hábiles) no deben asumirse vigentes sin confirmación.]**
+
+El ejercicio de los derechos ARCO es gratuito; solo deberá cubrir los gastos justificados de envío o reproducción, en su caso.
+
+Si considera que su derecho a la protección de datos personales ha sido lesionado, puede acudir ante la autoridad competente en materia de protección de datos personales.
+
+## 6. Cambios al aviso de privacidad
+
+Este aviso puede sufrir modificaciones derivadas de nuevos requerimientos legales, de nuestras propias necesidades, de cambios en nuestro modelo de negocio o de nuestras prácticas de privacidad.
+
+**Le comunicaremos cualquier cambio mediante la publicación de la versión actualizada en \`{{url_aviso_integral}}\`**, indicando en el encabezado la fecha de la última actualización, y adicionalmente \`{{canal_aviso_cambios}}\` *(por ejemplo: aviso visible en la recepción del gimnasio, notificación dentro de la aplicación y/o correo electrónico a la dirección que tengamos registrada)*. Le recomendamos consultar periódicamente dicha dirección.
+
+---
+
+## PÁRRAFO OPCIONAL — ALOJAMIENTO Y ENCARGADOS
+
+> **[PÁRRAFO OPCIONAL — PENDIENTE DE OPINIÓN DEL ABOGADO SOBRE DIVULGACIÓN DE TRANSFERENCIAS.]**
+>
+> El artículo 15 de la LFPDPPP vigente **no enumera** la divulgación de transferencias ni de encargados entre los seis elementos obligatorios del aviso de privacidad, y existe opinión de firma (Greenberg Traurig) en el sentido de que la reforma de marzo de 2025 **eliminó** esa obligación. Al no estar resuelto contra texto primario, este párrafo se ofrece como divulgación **voluntaria** —útil también como argumento de transparencia frente al titular— para que el abogado decida incluirlo, modificarlo o suprimirlo. Ver preguntas 2 y 3 del brief.
+>
+> **Texto propuesto:**
+>
+> ### Encargados del tratamiento
+>
+> Para operar el gimnasio nos apoyamos en proveedores tecnológicos que tratan sus datos personales **por nuestra cuenta y bajo nuestras instrucciones**, en calidad de **encargados**, sin utilizarlos para finalidades propias y sujetos a obligaciones contractuales de confidencialidad y seguridad. Utilizamos la plataforma de gestión de gimnasios **RED**, operada por \`{{red_razon_social}}\`, la cual se aloja en la infraestructura de **Supabase, Inc.** sobre servidores de **Amazon Web Services, Inc.** ubicados en \`{{region_supabase}}\`, por lo que sus datos se almacenan **fuera del territorio nacional**. Conforme al artículo 2, fracción XX de la Ley, la comunicación de datos personales a una persona encargada del tratamiento **no constituye una transferencia**. No vendemos, cedemos ni comercializamos sus datos personales con terceros.
+
+---
+
+## CAMPOS DE COMBINACIÓN
+
+| Campo | Origen | Ejemplo |
+|---|---|---|
+| \`{{razon_social}}\` | Alta del gimnasio | Gimnasio Forge, S.A. de C.V. |
+| \`{{nombre_comercial}}\` | Fila \`gym\` / perfil | FORGE |
+| \`{{domicilio}}\` | Alta del gimnasio | Calle, número, colonia, C.P., ciudad, estado |
+| \`{{email_contacto}}\` | Perfil del gimnasio | hola@ejemplo.mx |
+| \`{{telefono_contacto}}\` | Perfil del gimnasio | +52 55 0000 0000 |
+| \`{{email_arco}}\` | Alta del gimnasio | datos@ejemplo.mx |
+| \`{{area_datos_personales}}\` | Alta del gimnasio | "Departamento de Datos Personales" o el nombre de la persona designada |
+| \`{{url_aviso_integral}}\` | Generado por RED | https://\`{{host_gimnasio}}\`/aviso-de-privacidad |
+| \`{{fecha_actualizacion}}\` | Generado por RED | 07 de agosto de 2026 |
+| \`{{version_aviso}}\` | Generado por RED | 1.0 |
+| \`{{plazo_respuesta_arco}}\` / \`{{plazo_ejecucion_arco}}\` | Constante — **pendiente de verificación legal** | — |
+| \`{{canal_aviso_cambios}}\` | Alta del gimnasio | — |
+| \`{{region_supabase}}\` | Constante de plataforma | — |
+| \`{{red_razon_social}}\` | Constante de plataforma — **pendiente de Gate 1** | — |
+| \`{{parrafo_datos_adicionales}}\`, \`{{parrafo_registro_publicidad}}\` | Texto libre opcional del gimnasio | — |
+`;
+
+export const AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO = `
+# AVISO DE PRIVACIDAD SIMPLIFICADO — PLANTILLA POR GIMNASIO
+
+> **BORRADOR — PENDIENTE DE REVISIÓN POR ABOGADO MEXICANO. ESTE DOCUMENTO NO CONSTITUYE ASESORÍA LEGAL.**
+
+**Uso.** Modalidad simplificada prevista en el artículo 16, fracción II de la LFPDPPP, para cuando los datos personales se obtienen **por medios electrónicos**. Se renderiza **en línea, dentro del propio formulario**, antes del botón de envío, en los puntos de recolección de la Plataforma: activación de cuenta (\`/activar\`), registro de la persona miembro, formularios de alta y reserva. Debe **enlazar siempre** al aviso de privacidad integral.
+
+---
+
+## Texto (versión canónica)
+
+> **Aviso de privacidad**
+>
+> \`{{razon_social}}\`, con domicilio en \`{{domicilio}}\`, es la responsable del tratamiento de sus datos personales. Utilizamos sus datos de identificación, contacto, asistencia y compra para registrarlo como persona cliente, administrar su membresía y el saldo de su paquete, controlar su acceso y asistencia, gestionar sus reservas de clase, procesar sus pagos y emitir su recibo, administrar su cuenta en la aplicación y enviarle comunicaciones operativas sobre su membresía. **No tratamos datos personales sensibles ni datos biométricos.**
+>
+> Puede consultar el aviso de privacidad integral, que incluye las finalidades que requieren su consentimiento y los medios para ejercer sus derechos ARCO, en [\`{{url_aviso_integral}}\`](\`{{url_aviso_integral}}\`).
+
+## Texto (versión breve, para espacios reducidos)
+
+> \`{{razon_social}}\` (\`{{nombre_comercial}}\`), con domicilio en \`{{domicilio}}\`, es responsable del tratamiento de sus datos personales y los utiliza para administrar su membresía, asistencia, reservas y pagos. No tratamos datos sensibles ni biométricos. Consulte el [aviso de privacidad integral](\`{{url_aviso_integral}}\`).
+
+## Casilla de consentimiento para finalidades secundarias (opcional en el formulario)
+
+> ☐ Acepto recibir promociones, novedades e invitaciones a eventos de \`{{nombre_comercial}}\` por WhatsApp o correo electrónico.
+
+**Reglas de implementación:**
+- La casilla se presenta **desmarcada por omisión** y es **opcional**: no puede condicionar el envío del formulario ni el alta.
+- Su estado (aceptada / no aceptada), fecha, hora y versión del aviso se almacenan junto con el registro de la persona cliente.
+- El aviso simplificado se muestra **siempre**; la casilla solo cuando el gimnasio tenga activadas finalidades secundarias.
+
+## Campos de combinación
+
+| Campo | Origen |
+|---|---|
+| \`{{razon_social}}\` | Alta del gimnasio |
+| \`{{nombre_comercial}}\` | Fila \`gym\` / perfil |
+| \`{{domicilio}}\` | Alta del gimnasio |
+| \`{{url_aviso_integral}}\` | Generado por RED — URL estable por inquilino |
+`;
+
+/** The gym's legal identity as the aviso templates need it: `razonSocial` (gym.legal_name, staff
+ *  writable since #255), `nombreComercial` (gym.brand_name — already public, always present),
+ *  and the `gym_legal` satellite's three columns (#253). Every field but `nombreComercial` is
+ *  nullable — a gym starts with none of it filled in. */
+export interface IdentidadLegalGym {
+  razonSocial: string | null;
+  nombreComercial: string;
+  domicilio: string | null;
+  emailArco: string | null;
+  areaDatosPersonales: string | null;
+}
+
+/** The four staff-editable fields the aviso cannot go out without — `nombreComercial` is excluded
+ *  (gym.brand_name is never null, set at gym creation). Order matches the CUENTA editor's form. */
+const CAMPOS_REQUERIDOS: ReadonlyArray<{ campo: keyof IdentidadLegalGym; etiqueta: string }> = [
+  { campo: "razonSocial", etiqueta: "razón social" },
+  { campo: "domicilio", etiqueta: "domicilio" },
+  { campo: "emailArco", etiqueta: "correo de contacto ARCO" },
+  { campo: "areaDatosPersonales", etiqueta: "área o persona responsable de datos personales" },
+];
+
+/** Whether every field the aviso templates need from the gym is filled in (fallback ruling, Gate
+ *  0.1): an incomplete identity keeps the generic/unresolved template rather than a half-merged
+ *  one, so the CUENTA preview gates on this before rendering. */
+export function identidadLegalCompleta(identidad: IdentidadLegalGym): boolean {
+  return CAMPOS_REQUERIDOS.every(({ campo }) => !!identidad[campo]?.trim());
+}
+
+/** The human labels of whatever's still missing, in form order — what the CUENTA empty state lists
+ *  to explain why the members' aviso isn't ready yet. Empty when `identidadLegalCompleta`. */
+export function camposFaltantesIdentidadLegal(identidad: IdentidadLegalGym): string[] {
+  return CAMPOS_REQUERIDOS.filter(({ campo }) => !identidad[campo]?.trim()).map((c) => c.etiqueta);
+}
+
+/** Substitute \`{{snake_case}}\` merge fields in an aviso template with known values. A field absent
+ *  from `valores`, or whose value is blank, is left VISIBLE as the literal `{{token}}` — the
+ *  deliberate choice (Gate 0.1 fallback ruling) over silently stripping it: a preview must show
+ *  staff exactly what is still unresolved (platform-generated fields like `{{url_aviso_integral}}`
+ *  included — those are #256's job, not this one), never fabricate blank prose that reads as
+ *  finished copy. Pure — no I/O, no document identity, just string substitution. */
+export function mergeAvisoTemplate(
+  texto: string,
+  valores: Readonly<Record<string, string | null | undefined>>,
+): string {
+  return texto.replace(/\{\{(\w+)\}\}/g, (token, campo: string) => {
+    const valor = valores[campo];
+    return valor && valor.trim().length > 0 ? valor : token;
+  });
+}
+
+function valoresDesdeIdentidad(identidad: IdentidadLegalGym): Record<string, string | null> {
+  return {
+    razon_social: identidad.razonSocial,
+    nombre_comercial: identidad.nombreComercial,
+    domicilio: identidad.domicilio,
+    email_arco: identidad.emailArco,
+    area_datos_personales: identidad.areaDatosPersonales,
+  };
+}
+
+/** The integral aviso, merged with the gym's current legal identity — the CUENTA preview's main
+ *  view. Renders regardless of completeness (`identidadLegalCompleta` is the caller's gate for
+ *  whether to show this or the empty state); unresolved fields stay visible per
+ *  `mergeAvisoTemplate`'s contract. */
+export function renderAvisoIntegral(identidad: IdentidadLegalGym): string {
+  return mergeAvisoTemplate(AVISO_PRIVACIDAD_INTEGRAL_TEXTO, valoresDesdeIdentidad(identidad));
+}
+
+/** The simplificado aviso, merged the same way — the CUENTA preview's second tab. */
+export function renderAvisoSimplificado(identidad: IdentidadLegalGym): string {
+  return mergeAvisoTemplate(AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO, valoresDesdeIdentidad(identidad));
+}

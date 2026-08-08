@@ -29,6 +29,7 @@ import {
   reordenarFacilities,
 } from "@gym/data/server/facilities";
 import { actualizarFaq, crearFaq, eliminarFaq, reordenarFaqs } from "@gym/data/server/faqs";
+import { actualizarIdentidadLegal } from "@gym/data/server/legal";
 import {
   actualizarPaquete,
   actualizarPaqueteMarketing,
@@ -123,6 +124,10 @@ export async function setPlanFeaturesAction(raw: unknown): Promise<void> {
 
 export async function marcarMensajeLeidoAction(raw: unknown): Promise<void> {
   return marcarLeido(raw);
+}
+
+export async function actualizarIdentidadLegalAction(raw: unknown): Promise<void> {
+  return actualizarIdentidadLegal(raw);
 }
 
 export async function crearAboutValueAction(raw: unknown): Promise<void> {

@@ -1599,6 +1599,15 @@ export type Database = {
         }[]
       }
       next_folio: { Args: { p_gym: string }; Returns: number }
+      obtener_identidad_legal: {
+        Args: { p_gym_id: string }
+        Returns: {
+          area_datos_personales: string | null
+          domicilio: string | null
+          email_arco: string | null
+          razon_social: string | null
+        }[]
+      }
       pasar_lista_sesion: {
         Args: { p_cliente_id: string; p_session_id: string }
         Returns: {

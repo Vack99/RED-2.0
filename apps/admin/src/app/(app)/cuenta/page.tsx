@@ -5,6 +5,7 @@ import { getCobro } from "@gym/data/server/cobro";
 import { listFacilities } from "@gym/data/server/facilities";
 import { listFaqs } from "@gym/data/server/faqs";
 import { getOperatorGym } from "@gym/data/server/gym";
+import { getIdentidadLegal } from "@gym/data/server/legal";
 import { listMensajes } from "@gym/data/server/mensajes";
 import { getPlanesEditor } from "@gym/data/server/paquetes";
 import { getPerfil } from "@gym/data/server/perfil";
@@ -19,7 +20,7 @@ import { CuentaScreen } from "./_components/cuenta";
 
 export default async function Page() {
   const { timezone: tz } = await getOperatorGym();
-  const [perfil, resumen, cobro, paquetes, plantillas, coaches, classTypes, brand, aboutValues, facilities, stats, faqs, mensajes, mesesRespaldo] =
+  const [perfil, resumen, cobro, paquetes, plantillas, coaches, classTypes, brand, aboutValues, facilities, stats, faqs, mensajes, mesesRespaldo, identidadLegal] =
     await Promise.all([
       getPerfil(),
       getResumenMes(),
@@ -35,6 +36,7 @@ export default async function Page() {
       listFaqs(),
       listMensajes(),
       getMesesRespaldo(),
+      getIdentidadLegal(),
     ]);
 
   const mesLabel = fmtMesAnio(hoyEnZona(tz));
@@ -56,6 +58,7 @@ export default async function Page() {
       faqs={faqs}
       mensajes={mensajes}
       mesesRespaldo={mesesRespaldo}
+      identidadLegal={identidadLegal}
     />
   );
 }
