@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { aceptarAcuerdo, getAcuerdoAceptado } from "./legal";
 import type { SupabaseServer } from "./supabase";
@@ -13,7 +13,7 @@ import type { SupabaseServer } from "./supabase";
 
 /** A fake exposing exactly the `.from("acuerdo_aceptacion").select().eq().eq().eq().maybeSingle()`
  *  chain `getAcuerdoAceptado` walks, recording every `.eq()` call for the scoping assertion. */
-function fakeRead(row: Record<string, unknown> | null) {
+function fakeRead(row: Record<string, unknown> | null, error: { message: string } | null = null) {
   const eqCalls: [string, unknown][] = [];
   const client = {
     from: (table: string) => {
@@ -24,7 +24,7 @@ function fakeRead(row: Record<string, unknown> | null) {
           eqCalls.push([col, val]);
           return b;
         },
-        maybeSingle: async () => ({ data: row, error: null }),
+        maybeSingle: async () => ({ data: row, error }),
       };
       return b;
     },
@@ -55,6 +55,35 @@ describe("getAcuerdoAceptado", () => {
       ["documento", "anexo_tratamiento_datos"],
       ["version", "0.1-borrador"],
     ]);
+  });
+
+  // Fail-closed stays (a read error still returns `false`, matching the layout's existing
+  // getOperatorGyms().catch(() => []) posture), but review fix round 1: an outage must be
+  // DISTINGUISHABLE in the logs from "nobody has accepted yet" — a bare `false` return reads
+  // identically either way, so this asserts the one visible side effect: a structured warn line.
+  it("logs a structured warning on a read error, but still fails closed (returns false)", async () => {
+    const { client } = fakeRead(null, { message: "connection reset" });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await getAcuerdoAceptado("gym-9", "anexo_tratamiento_datos", "0.1-borrador", client)).toBe(
+      false,
+    );
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(warn.mock.calls[0][0] as string)).toEqual({
+      event: "acuerdo-aceptado-read-error",
+      gymId: "gym-9",
+      documento: "anexo_tratamiento_datos",
+      version: "0.1-borrador",
+      error: "connection reset",
+    });
+    warn.mockRestore();
+  });
+
+  it("logs NOTHING on a clean read (no per-request noise for the ordinary case)", async () => {
+    const { client } = fakeRead(null);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await getAcuerdoAceptado("gym-1", "anexo_tratamiento_datos", "0.1-borrador", client);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });
 
@@ -150,5 +179,51 @@ describe("aceptarAcuerdo", () => {
       },
     });
     await expect(aceptarAcuerdo(input, client)).rejects.toThrow("No autenticado");
+  });
+
+  // Review fix round 1: neither `ip` (column check `between 1 and 100`) nor `user_agent`
+  // (`<= 500`) is bounded by its source — a raw request header. Before this fix a long-enough
+  // header raised a check-constraint error INSIDE the RPC, which surfaced as a thrown error on
+  // the one screen with no bypass (AceptarAnexo): the owner could never get past it, forever.
+  describe("length truncation (a raw header is unbounded; the DB columns are not)", () => {
+    it("truncates a user_agent over 500 chars to exactly 500 before the RPC call", async () => {
+      let seen: { name: string; args: unknown } | null = null;
+      const client = fakeAccept({
+        capture: (name, args) => {
+          seen = { name, args };
+        },
+      });
+      const long = "M".repeat(600);
+      await aceptarAcuerdo({ ...input, userAgent: long }, client);
+      const args = seen!.args as Record<string, unknown>;
+      expect(args.p_user_agent).toBe("M".repeat(500));
+    });
+
+    it("truncates an ip (e.g. a long multi-hop x-forwarded-for) over 100 chars to exactly 100", async () => {
+      let seen: { name: string; args: unknown } | null = null;
+      const client = fakeAccept({
+        capture: (name, args) => {
+          seen = { name, args };
+        },
+      });
+      const long = "203.0.113.9, ".repeat(20); // well over 100 chars
+      await aceptarAcuerdo({ ...input, ip: long }, client);
+      const args = seen!.args as Record<string, unknown>;
+      expect(args.p_ip).toBe(long.slice(0, 100));
+      expect((args.p_ip as string).length).toBe(100);
+    });
+
+    it("leaves a short ip/userAgent untouched (truncation is a ceiling, not a rewrite)", async () => {
+      let seen: { name: string; args: unknown } | null = null;
+      const client = fakeAccept({
+        capture: (name, args) => {
+          seen = { name, args };
+        },
+      });
+      await aceptarAcuerdo(input, client);
+      const args = seen!.args as Record<string, unknown>;
+      expect(args.p_ip).toBe(input.ip);
+      expect(args.p_user_agent).toBe(input.userAgent);
+    });
   });
 });

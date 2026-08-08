@@ -56,10 +56,15 @@ export function AceptarAnexo() {
       </h1>
       <p className="mt-2 text-sm leading-relaxed text-muted">
         Antes de continuar, lee y acepta el Anexo de Tratamiento de Datos Personales de tu
-        gimnasio. Solo el dueño de la cuenta puede aceptarlo.
+        gimnasio.
       </p>
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-lg border border-line bg-surface p-4 text-xs leading-relaxed text-muted">
+      <div
+        tabIndex={0}
+        role="region"
+        aria-label="Texto del Anexo de Tratamiento de Datos Personales"
+        className="mt-4 min-h-0 flex-1 overflow-y-auto whitespace-pre-wrap rounded-lg border border-line bg-surface p-4 text-sm leading-relaxed text-fg"
+      >
         {ANEXO_TRATAMIENTO_DATOS_TEXTO}
       </div>
 
