@@ -90,6 +90,7 @@ describe("getOperatorGym", () => {
       slug: "forge",
       brandName: "Forge",
       userId: "op-1",
+      role: "owner",
     });
   });
 
@@ -101,7 +102,16 @@ describe("getOperatorGym", () => {
       slug: "forge",
       brandName: "Forge",
       userId: "op-1",
+      role: "operator",
     });
+  });
+
+  // Gate 0.1 click-wrap (#254): the layout picks the owner accept form vs. the operator
+  // block on THIS field — a wrong value would let an operator either see the accept form
+  // (unauthorized surface, even though the RPC would still refuse) or block an owner outright.
+  it("carries the role through as `role` (owner vs operator, never member — the query already filters member out)", async () => {
+    const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "operator" }] });
+    expect((await getOperatorGym(client)).role).toBe("operator");
   });
 
   it("passes gym.brand_name through as the mixed-case brandName (render sites uppercase)", async () => {

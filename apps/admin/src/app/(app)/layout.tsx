@@ -2,9 +2,13 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getAdminHosts, getOperatorGyms } from "@gym/data/server/gym";
+import { getAcuerdoAceptado } from "@gym/data/server/legal";
 import { TabBar, type TabItem } from "@gym/ui/forge/tab-bar";
+import { ANEXO_TRATAMIENTO_DATOS_DOCUMENTO, ANEXO_TRATAMIENTO_DATOS_VERSION } from "@gym/domain/legal";
 
 import { auditTenantInEffect } from "../../lib/tenant";
+import { AceptarAnexo } from "./_components/aceptar-anexo";
+import { AnexoPendiente } from "./_components/anexo-pendiente";
 import { SinGimnasio } from "./_components/sin-gimnasio";
 import { VariosGimnasios } from "./_components/varios-gimnasios";
 
@@ -35,12 +39,22 @@ const TABS: readonly TabItem[] = [
  * It is also where the tenant-in-effect reconciliation runs (#203/#212): the ONE place
  * that holds both the host-resolved tenant (`x-gym`) and the session's staff gyms. The
  * decision itself is pure and lives in `src/lib/tenant.ts`; this is the wiring.
+ *
+ * Once the tenant-in-effect is settled (`decision.kind === "render"`), it is ALSO the Gate
+ * 0.1 click-wrap gate (#254): a gym whose current Anexo de Tratamiento de Datos version is
+ * unaccepted gets a full-screen block instead of `children` — the owner sees the accept form
+ * (`AceptarAnexo`), any other staff role sees a "pídele al dueño" block (`AnexoPendiente`),
+ * same swap-the-whole-shell pattern as `SinGimnasio`/`VariosGimnasios`. This runs AFTER the
+ * tenant reconciliation on purpose: the gate is per-gym, so it needs the settled gym-in-effect,
+ * not the raw membership list.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const gyms = await getOperatorGyms().catch(() => []);
   const decision = await auditTenantInEffect(gyms);
 
   let contenido: React.ReactNode = children;
+  let mostrarTabBar = decision.kind === "render";
+
   if (decision.kind === "none") {
     contenido = <SinGimnasio />;
   } else if (decision.kind !== "render") {
@@ -62,13 +76,27 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         }))}
       />
     );
+  } else {
+    // decision.gym is the SLUG the tenant reconciliation settled on (never an id) — the same
+    // pick getOperatorGym() itself makes host-first, so `gym` here IS the gym the render-case
+    // pages resolve. #254: gate on whether THIS gym has accepted the CURRENT Anexo version.
+    const gym = gyms.find((g) => g.slug === decision.gym) ?? gyms[0];
+    const aceptado = await getAcuerdoAceptado(
+      gym.id,
+      ANEXO_TRATAMIENTO_DATOS_DOCUMENTO,
+      ANEXO_TRATAMIENTO_DATOS_VERSION,
+    );
+    if (!aceptado) {
+      mostrarTabBar = false;
+      contenido = gym.role === "owner" ? <AceptarAnexo /> : <AnexoPendiente />;
+    }
   }
 
   return (
     <div className="flex min-h-dvh w-full justify-center bg-backdrop">
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-canvas sm:max-w-[440px] sm:shadow-2xl">
         <main className="forge-scroll relative flex-1 overflow-y-auto">{contenido}</main>
-        {decision.kind === "render" && <TabBar items={TABS} />}
+        {mostrarTabBar && <TabBar items={TABS} />}
       </div>
     </div>
   );

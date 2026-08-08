@@ -49,6 +49,53 @@ export type Database = {
           },
         ]
       }
+      acuerdo_aceptacion: {
+        Row: {
+          accepted_at: string
+          accepted_by: string | null
+          accepted_by_email: string
+          contenido_hash: string
+          documento: string
+          gym_id: string
+          id: string
+          ip: string | null
+          user_agent: string | null
+          version: string
+        }
+        Insert: {
+          accepted_at?: string
+          accepted_by?: string | null
+          accepted_by_email: string
+          contenido_hash: string
+          documento: string
+          gym_id: string
+          id?: string
+          ip?: string | null
+          user_agent?: string | null
+          version: string
+        }
+        Update: {
+          accepted_at?: string
+          accepted_by?: string | null
+          accepted_by_email?: string
+          contenido_hash?: string
+          documento?: string
+          gym_id?: string
+          id?: string
+          ip?: string | null
+          user_agent?: string | null
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "acuerdo_aceptacion_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: false
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       asistencias: {
         Row: {
           class_session_id: string | null
@@ -795,6 +842,38 @@ export type Database = {
           },
         ]
       }
+      gym_legal: {
+        Row: {
+          area_datos_personales: string | null
+          domicilio: string | null
+          email_arco: string | null
+          gym_id: string
+          updated_at: string
+        }
+        Insert: {
+          area_datos_personales?: string | null
+          domicilio?: string | null
+          email_arco?: string | null
+          gym_id: string
+          updated_at?: string
+        }
+        Update: {
+          area_datos_personales?: string | null
+          domicilio?: string | null
+          email_arco?: string | null
+          gym_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gym_legal_gym_id_fkey"
+            columns: ["gym_id"]
+            isOneToOne: true
+            referencedRelation: "gym"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       gym_membership: {
         Row: {
           created_at: string
@@ -1330,6 +1409,21 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      aceptar_acuerdo: {
+        Args: {
+          p_contenido: string
+          p_documento: string
+          p_gym_id: string
+          p_ip?: string
+          p_user_agent?: string
+          p_version: string
+        }
+        Returns: {
+          contenido_hash: string
+          id: string
+          ya_existia: boolean
+        }[]
+      }
       actualizar_cliente: {
         Args: {
           p_cliente_id: string
