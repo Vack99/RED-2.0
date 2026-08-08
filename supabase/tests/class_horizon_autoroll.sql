@@ -44,6 +44,18 @@
 --      vector 4c). Proven on written rows (ledger, class_session, coach joins unchanged), not the
 --      return value alone, and proven NOT to be an exception — the current week's existing behavior
 --      (vector 4c) is unmoved by the same call path.
+--   #261 FRONTIER CATCH-UP (20260808210100) — gym D's ledger is pre-seeded as already claimed through
+--      "+4" (STEADY STATE): the shared first cron_materialize_horizon() call above claims exactly the
+--      one remaining week, "+5" — a new class_session + coach join for it, no duplicate claim on any
+--      of the 6 already-claimed weeks. Gym E's ledger frontier is pre-seeded at "+3" (OUTAGE HEAL): the
+--      same call claims BOTH "+4" and "+5" in one pass. Gym F's active template is INACTIVE so the
+--      frontier loop never touches it directly — isolating the prune vector below from this one.
+--   #261 LEDGER PRUNE — the same cron call's set-based DELETE (outside every per-gym subtransaction)
+--      removes gym F's schedule_template_week row older than the run's cutoff (UTC Monday − 14 days),
+--      leaves the boundary row (exactly AT the cutoff — the condition is strict "<") and a newer row
+--      intact, and a direct materialize_week_for_gym call for the pruned week afterward is refused by
+--      the #260 clamp — 0 returned, no ledger row, no class_session row. A client DELETE on the ledger
+--      is also refused (no delete policy for any client role).
 --
 -- NOT covered here, deliberately: that the pg_cron JOB exists and fires. cron.job is DB state, not
 -- migration state, so no suite replayed against a scratch project can prove it — verify on live with
@@ -67,6 +79,16 @@ declare
   ct_a uuid; ct_b uuid; ct_c uuid;
   coach_a uuid;
   tmpl_a uuid; tmpl_b uuid; tmpl_c uuid;
+  -- #261 fixtures — three more gyms, all sharing gym A's timezone so their Monday arithmetic lines up
+  -- with monday_a computed further down this file.
+  gym_d   uuid := gen_random_uuid();   -- STEADY STATE: ledger pre-claimed through "+4"
+  gym_e   uuid := gen_random_uuid();   -- OUTAGE HEAL: ledger frontier at "+3"
+  gym_f   uuid := gen_random_uuid();   -- PRUNE: INACTIVE template, so the cron never touches it directly
+  ct_d uuid; ct_e uuid; ct_f uuid;
+  coach_d uuid; coach_e uuid;
+  tmpl_d uuid; tmpl_e uuid; tmpl_f uuid;
+  v_monday_seed date;
+  v_cutoff_seed date;
 begin
   -- Fresh gyms, not the seeded ones: cron_materialize_horizon walks the WHOLE fleet, so the suite
   -- must own gyms whose expected counts it fully controls.
@@ -117,6 +139,62 @@ begin
   insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
     values (gym_c, ct_c, 1, '09:00', 60, 20, gen_random_uuid()) returning id into tmpl_c;
   insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_a, tmpl_a, coach_a);
+
+  -- ── #261 fixtures ──────────────────────────────────────────────────────────────────────────────
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
+    (gym_d, 'horizon-autoroll-d', 'Horizon Autoroll D', 'America/Mexico_City', 'forge'),
+    (gym_e, 'horizon-autoroll-e', 'Horizon Autoroll E', 'America/Mexico_City', 'forge'),
+    (gym_f, 'horizon-autoroll-f', 'Horizon Autoroll F', 'America/Mexico_City', 'forge');
+
+  insert into public.class_type (gym_id, name) values (gym_d, 'Funcional Horizonte D') returning id into ct_d;
+  insert into public.class_type (gym_id, name) values (gym_e, 'Funcional Horizonte E') returning id into ct_e;
+  insert into public.class_type (gym_id, name) values (gym_f, 'Funcional Horizonte F') returning id into ct_f;
+  insert into public.coach (gym_id, name, initials, role) values (gym_d, 'Coach D', 'CD', 'coach') returning id into coach_d;
+  insert into public.coach (gym_id, name, initials, role) values (gym_e, 'Coach E', 'CE', 'coach') returning id into coach_e;
+
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_d, ct_d, 4, '12:00', 45, 24, gen_random_uuid()) returning id into tmpl_d;
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, group_id)
+    values (gym_e, ct_e, 4, '12:00', 45, 24, gen_random_uuid()) returning id into tmpl_e;
+  -- gym F's template is INACTIVE from creation: it must never enter the cron's per-gym loop (the
+  -- `where ... is_active` fleet filter excludes gym F entirely), so the prune assertions are clean of
+  -- any frontier-claim interaction. The row is still a legal FK target for the direct ledger seed
+  -- below — the whole point is testing the LEDGER, not the materialization rule.
+  insert into public.schedule_template (gym_id, class_type_id, weekday, start_time, duration_min, capacity, is_active, group_id)
+    values (gym_f, ct_f, 4, '12:00', 45, 24, false, gen_random_uuid()) returning id into tmpl_f;
+  insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_d, tmpl_d, coach_d);
+  insert into public.schedule_template_coach (gym_id, template_id, coach_id) values (gym_e, tmpl_e, coach_e);
+
+  -- Ledger rows inserted DIRECTLY (bypassing every RPC — same idiom already used above for templates),
+  -- because the whole point is to seed a ledger STATE the RPC never produces alone: "already claimed
+  -- through +4" (gym D) or "frontier at +3" (gym E) or "rows straddling a prune cutoff" (gym F).
+  v_monday_seed := (now() at time zone 'America/Mexico_City')::date;
+  v_monday_seed := v_monday_seed - ((extract(isodow from v_monday_seed)::int - 1));
+
+  -- gym D: six consecutive weeks, -1..+4 — the pass below should claim exactly the one week left, +5.
+  insert into public.schedule_template_week (gym_id, template_id, week_start)
+  select gym_d, tmpl_d, v_monday_seed + (o * 7) from generate_series(-1, 4) as o;
+
+  -- gym E: ONE row at +3 — the frontier is a MAX per template, so a single row sets it.
+  insert into public.schedule_template_week (gym_id, template_id, week_start)
+    values (gym_e, tmpl_e, v_monday_seed + 21);
+
+  -- gym F: one row older than the cutoff THIS run will compute (expected pruned), one exactly AT the
+  -- cutoff (the boundary — expected to survive, since the DELETE's condition is strict "<"), one newer
+  -- (expected to survive).
+  v_cutoff_seed := (now() at time zone 'UTC')::date;
+  v_cutoff_seed := v_cutoff_seed - ((extract(isodow from v_cutoff_seed)::int - 1)) - 14;
+  insert into public.schedule_template_week (gym_id, template_id, week_start) values
+    (gym_f, tmpl_f, v_cutoff_seed - 7),
+    (gym_f, tmpl_f, v_cutoff_seed),
+    (gym_f, tmpl_f, v_cutoff_seed + 7);
+
+  perform set_config('t.h_gym_d',  gym_d::text,  true);
+  perform set_config('t.h_tmpl_d', tmpl_d::text, true);
+  perform set_config('t.h_gym_e',  gym_e::text,  true);
+  perform set_config('t.h_tmpl_e', tmpl_e::text, true);
+  perform set_config('t.h_gym_f',  gym_f::text,  true);
+  perform set_config('t.h_tmpl_f', tmpl_f::text, true);
 
   perform set_config('t.h_gym_a',   gym_a::text,      true);
   perform set_config('t.h_gym_b',   gym_b::text,      true);
@@ -267,6 +345,80 @@ begin
   end if;
 end $$;
 
+-- ── #261 FRONTIER CATCH-UP + LEDGER PRUNE, off the SAME first cron_materialize_horizon() call above
+-- — gyms D/E/F were seeded before that call ran, so its effects on them are already committed by the
+-- time this block runs. ───────────────────────────────────────────────────────────────────────────
+do $$
+declare
+  gym_d  uuid := current_setting('t.h_gym_d', true)::uuid;
+  tmpl_d uuid := current_setting('t.h_tmpl_d', true)::uuid;
+  gym_e  uuid := current_setting('t.h_gym_e', true)::uuid;
+  tmpl_e uuid := current_setting('t.h_tmpl_e', true)::uuid;
+  gym_f  uuid := current_setting('t.h_gym_f', true)::uuid;
+  tmpl_f uuid := current_setting('t.h_tmpl_f', true)::uuid;
+  monday date;
+  cutoff date;
+  n int;
+  added int;
+begin
+  monday := (now() at time zone 'America/Mexico_City')::date;
+  monday := monday - ((extract(isodow from monday)::int - 1));
+  cutoff := (now() at time zone 'UTC')::date;
+  cutoff := cutoff - ((extract(isodow from cutoff)::int - 1)) - 14;
+
+  -- STEADY STATE — gym D's ledger was pre-claimed through "+4"; the pass claims exactly ONE more week,
+  -- "+5": ledger goes from 6 to 7 rows, a new class_session (+coach join) appears for "+5", and no
+  -- duplicate claim landed on any of the 6 pre-claimed weeks.
+  select count(*) into n from public.schedule_template_week where gym_id = gym_d and template_id = tmpl_d;
+  if n <> 7 then raise exception 'FRONTIER FAIL(steady): gym D ledger has % rows (expected 7 = 6 pre-claimed + 1 new)', n; end if;
+  select count(*) into n from public.schedule_template_week
+   where gym_id = gym_d and template_id = tmpl_d and week_start = monday + 35;
+  if n <> 1 then raise exception 'FRONTIER FAIL(steady): gym D did not claim the "+5" week (%)', monday + 35; end if;
+  select count(*) into n from public.class_session where gym_id = gym_d and template_id = tmpl_d;
+  if n <> 1 then raise exception 'FRONTIER FAIL(steady): gym D has % new class_session row(s) (expected exactly 1 — only "+5" was unclaimed)', n; end if;
+  select count(*) into n from public.class_session cs
+    join public.class_session_coach csc on csc.session_id = cs.id
+   where cs.gym_id = gym_d and cs.template_id = tmpl_d;
+  if n <> 1 then raise exception 'FRONTIER FAIL(steady): gym D''s new session has % coach join(s) (expected 1)', n; end if;
+
+  -- OUTAGE HEAL — gym E's ledger frontier was "+3"; the pass claims BOTH "+4" and "+5" in one run.
+  select count(*) into n from public.schedule_template_week where gym_id = gym_e and template_id = tmpl_e;
+  if n <> 3 then raise exception 'FRONTIER FAIL(outage): gym E ledger has % rows (expected 3 = 1 pre-claimed + 2 healed)', n; end if;
+  select count(*) into n from public.schedule_template_week
+   where gym_id = gym_e and template_id = tmpl_e and week_start in (monday + 28, monday + 35);
+  if n <> 2 then raise exception 'FRONTIER FAIL(outage): gym E is missing "+4" and/or "+5" (found % of 2)', n; end if;
+  select count(*) into n from public.class_session where gym_id = gym_e and template_id = tmpl_e;
+  if n <> 2 then raise exception 'FRONTIER FAIL(outage): gym E has % new class_session row(s) (expected 2 — "+4" and "+5")', n; end if;
+  select count(*) into n from public.class_session cs
+    join public.class_session_coach csc on csc.session_id = cs.id
+   where cs.gym_id = gym_e and cs.template_id = tmpl_e;
+  if n <> 2 then raise exception 'FRONTIER FAIL(outage): gym E''s healed sessions have % coach join(s) (expected 2)', n; end if;
+
+  -- PRUNE — the run's DELETE already fired (outside every per-gym subtransaction, once for the whole
+  -- table): the row older than cutoff is gone, the boundary row (exactly AT cutoff, "<" not "<=") and
+  -- the newer row both survive.
+  select count(*) into n from public.schedule_template_week
+   where gym_id = gym_f and template_id = tmpl_f and week_start = cutoff - 7;
+  if n <> 0 then raise exception 'FRONTIER FAIL(prune): the older-than-cutoff row survived (% rows)', n; end if;
+  select count(*) into n from public.schedule_template_week
+   where gym_id = gym_f and template_id = tmpl_f and week_start = cutoff;
+  if n <> 1 then raise exception 'FRONTIER FAIL(prune): the boundary row (exactly at cutoff) was pruned'; end if;
+  select count(*) into n from public.schedule_template_week
+   where gym_id = gym_f and template_id = tmpl_f and week_start = cutoff + 7;
+  if n <> 1 then raise exception 'FRONTIER FAIL(prune): the newer-than-cutoff row was pruned'; end if;
+
+  -- …and a pruned week stays un-re-claimable through the clamped RPC (#260): the row is gone from the
+  -- ledger, so a naive re-insert would have nothing to conflict with — the #260 clamp is what actually
+  -- stops it, refusing before any row is touched.
+  added := public.materialize_week_for_gym(gym_f, cutoff - 7);
+  if added <> 0 then raise exception 'FRONTIER FAIL(prune): materialize_week_for_gym resurrected the pruned week (% new)', added; end if;
+  select count(*) into n from public.schedule_template_week
+   where gym_id = gym_f and template_id = tmpl_f and week_start = cutoff - 7;
+  if n <> 0 then raise exception 'FRONTIER FAIL(prune): the pruned week reappeared in the ledger after a direct RPC call'; end if;
+  select count(*) into n from public.class_session where gym_id = gym_f and template_id = tmpl_f;
+  if n <> 0 then raise exception 'FRONTIER FAIL(prune): the pruned week produced a class_session row via the clamped RPC'; end if;
+end $$;
+
 -- ── #260 CLAMP, direct core call — a past week writes nothing, silently ────────────────────────────
 -- gym A already has 6 real weeks (0..5) from the very first call above; a call for "-1" must not touch
 -- any of them, must not raise, and must return 0. The CURRENT week's existing (already-claimed) 0
@@ -338,6 +490,7 @@ set local role authenticated;
 
 do $$
 declare
+  gym_a    uuid := current_setting('t.h_gym_a', true)::uuid;   -- (4g, #261) the DELETE-denial vector
   gym_b    uuid := current_setting('t.h_gym_b', true)::uuid;
   monday_a date;
   monday_b date;
@@ -389,6 +542,18 @@ begin
     raise exception 'AUTOROLL FAIL: authenticated read public.cron_run_log';
   exception when insufficient_privilege then null;   -- refused at the GRANT layer, before RLS
   end;
+
+  -- (4g, #261) The ledger has no delete policy for any client role — staff can INSERT (through the
+  -- RPCs above) but cannot DELETE directly, which is what keeps a pruned week pruned instead of a
+  -- staff UI accidentally letting it come back.
+  declare
+    n_del int;
+  begin
+    delete from public.schedule_template_week where gym_id = gym_a;
+    get diagnostics n_del = row_count;
+  exception when others then n_del := 0;
+  end;
+  if n_del <> 0 then raise exception 'AUTOROLL FAIL(4g): authenticated DELETE removed % schedule_template_week row(s)', n_del; end if;
 end $$;
 reset role;
 
