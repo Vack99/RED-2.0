@@ -38,6 +38,12 @@
 --      any body runs. Neither refusal moves a row, compared against a snapshot rather than arithmetic.
 --   5) HEALTH VIEW — gym_horizon_depth excludes cancelled sessions and keeps a gym with ZERO future
 --      sessions visible (that row IS the "the cron died" alarm).
+--   #260 CLAMP (20260808210000) — a week whose Monday predates the gym-local current Monday is a
+--      silent no-op through BOTH authenticated-reachable entry points: the shared core
+--      (materialize_week_for_gym, called directly) and the staff wrapper (ensure_week_materialized,
+--      vector 4c). Proven on written rows (ledger, class_session, coach joins unchanged), not the
+--      return value alone, and proven NOT to be an exception — the current week's existing behavior
+--      (vector 4c) is unmoved by the same call path.
 --
 -- NOT covered here, deliberately: that the pg_cron JOB exists and fires. cron.job is DB state, not
 -- migration state, so no suite replayed against a scratch project can prove it — verify on live with
@@ -261,6 +267,45 @@ begin
   end if;
 end $$;
 
+-- ── #260 CLAMP, direct core call — a past week writes nothing, silently ────────────────────────────
+-- gym A already has 6 real weeks (0..5) from the very first call above; a call for "-1" must not touch
+-- any of them, must not raise, and must return 0. The CURRENT week's existing (already-claimed) 0
+-- outcome is also re-checked here, directly against the core, to pin that the clamp changes nothing
+-- about it (#260 AC: byte-for-byte unchanged).
+do $$
+declare
+  gym_a  uuid := current_setting('t.h_gym_a', true)::uuid;
+  tmpl_a uuid := current_setting('t.h_tmpl_a', true)::uuid;
+  monday date;
+  added  int;
+  sess_before   int;
+  ledger_before int;
+  coach_before  int;
+  n int;
+begin
+  monday := (now() at time zone 'America/Mexico_City')::date;
+  monday := monday - ((extract(isodow from monday)::int - 1));
+
+  select count(*) into sess_before from public.class_session where gym_id = gym_a and template_id = tmpl_a;
+  select count(*) into ledger_before from public.schedule_template_week where gym_id = gym_a and template_id = tmpl_a;
+  select count(*) into coach_before from public.class_session_coach csc
+    join public.class_session cs on cs.id = csc.session_id where cs.gym_id = gym_a and cs.template_id = tmpl_a;
+
+  added := public.materialize_week_for_gym(gym_a, monday - 7);
+  if added <> 0 then raise exception 'CLAMP FAIL: materialize_week_for_gym(past week) returned % (expected 0)', added; end if;
+
+  select count(*) into n from public.class_session where gym_id = gym_a and template_id = tmpl_a;
+  if n <> sess_before then raise exception 'CLAMP FAIL: a past-week call wrote a class_session row (% -> %)', sess_before, n; end if;
+  select count(*) into n from public.schedule_template_week where gym_id = gym_a and template_id = tmpl_a;
+  if n <> ledger_before then raise exception 'CLAMP FAIL: a past-week call wrote a schedule_template_week row (% -> %)', ledger_before, n; end if;
+  select count(*) into n from public.class_session_coach csc
+    join public.class_session cs on cs.id = csc.session_id where cs.gym_id = gym_a and cs.template_id = tmpl_a;
+  if n <> coach_before then raise exception 'CLAMP FAIL: a past-week call wrote a class_session_coach row (% -> %)', coach_before, n; end if;
+
+  added := public.materialize_week_for_gym(gym_a, monday);
+  if added <> 0 then raise exception 'CLAMP FAIL: the CURRENT week''s behavior changed (% new, expected 0 — already claimed)', added; end if;
+end $$;
+
 -- ── (6) #244 guard 2 — gym.timezone itself is validated, not just tolerated by the cron's catch ──
 -- The trigger this suite's own fixture works around above (disable/re-enable around gym C's seed) is
 -- proven directly here: a write-path attempt to set a garbage zone is refused outright, and a real
@@ -326,6 +371,11 @@ begin
   if added <> 0 then raise exception 'AUTOROLL FAIL: staff re-materialized the current week (% new)', added; end if;
   added := public.ensure_week_materialized(monday_a + 42);
   if added <> 1 then raise exception 'AUTOROLL FAIL: staff ensure_week_materialized created % for a fresh week (expected 1)', added; end if;
+
+  -- (4c-clamp, #260) The clamp reaches through the wrapper too — a past week returns 0, silently, even
+  -- though staff_gym() resolves the caller's own gym cleanly (this is NOT the 'No autorizado' path).
+  added := public.ensure_week_materialized(monday_a - 7);
+  if added <> 0 then raise exception 'CLAMP FAIL: staff ensure_week_materialized materialized a PAST week (% new)', added; end if;
 
   -- (4d) The two ops surfaces are cross-gym by construction and revoked from the client roles. The
   -- log is the sharper of the pair: its summaries carry other tenants' gym ids and their error text.
