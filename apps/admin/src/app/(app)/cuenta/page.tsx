@@ -14,7 +14,8 @@ import { listarPlantillas } from "@gym/data/server/plantillas";
 import { getMesesRespaldo } from "@gym/data/server/respaldo";
 import { getResumenMes } from "@gym/data/server/resumen";
 import { listStats } from "@gym/data/server/stats";
-import { fmtMesAnio, hoyEnZona } from "@gym/format";
+import { urlAvisoIntegralDesde } from "@gym/domain/legal";
+import { fmtMesAnio, formatTelMx, hoyEnZona } from "@gym/format";
 
 import { resolveBrand } from "../../../lib/brand";
 import { CuentaScreen } from "./_components/cuenta";
@@ -87,9 +88,9 @@ export default async function Page() {
       mensajes={mensajes}
       mesesRespaldo={mesesRespaldo}
       identidadLegal={identidadLegal}
-      telefonoContactoAviso={contacto?.whatsapp ? `+${contacto.whatsapp}` : null}
+      telefonoContactoAviso={contacto?.whatsapp ? formatTelMx(contacto.whatsapp) : null}
       emailContactoAviso={contacto?.email ?? null}
-      urlAvisoIntegral={clientHost ? `https://${clientHost}/legal` : null}
+      urlAvisoIntegral={clientHost ? urlAvisoIntegralDesde(`https://${clientHost}`) : null}
     />
   );
 }

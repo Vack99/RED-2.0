@@ -10,6 +10,7 @@ import {
   renderAvisoIntegral,
   renderAvisoSimplificado,
   tokensSinResolver,
+  urlAvisoIntegralDesde,
   type IdentidadLegalGym,
 } from "./legal";
 
@@ -231,28 +232,79 @@ describe("renderAvisoIntegral / renderAvisoSimplificado (finding 2: member-facin
     const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
     expect(integral).toContain("hola@forge.mx");
     expect(integral).toContain("https://forge.example/legal");
-    expect(integral).toContain("plazo de `20` días hábiles");
-    expect(integral).toContain("dentro de los `15` días hábiles");
+    // Plain digits, no backtick wrapping (finding 3, fix round) — depurarMarkdown strips the
+    // source .md's inline-code backticks before this reaches a member.
+    expect(integral).toContain("plazo de 20 días hábiles");
+    expect(integral).toContain("dentro de los 15 días hábiles");
     const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
     expect(simplificado).toContain("https://forge.example/legal");
   });
 
-  it("integral starts at the real heading and ends with §6's own closing sentence", () => {
+  it("integral starts at the real heading text and ends with §6's own closing sentence", () => {
     const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
-    expect(integral.startsWith("# AVISO DE PRIVACIDAD")).toBe(true);
+    // No leading "# " — depurarMarkdown strips the heading marker (finding 3, fix round).
+    expect(integral.startsWith("AVISO DE PRIVACIDAD")).toBe(true);
     expect(integral.endsWith("Le recomendamos consultar periódicamente dicha dirección.")).toBe(true);
   });
 
   it("simplificado never renders the BORRADOR banner, the 'Uso.' note, the implementation rules, or the campos table", () => {
     const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
     expect(simplificado).not.toContain("BORRADOR");
-    expect(simplificado).not.toContain("**Uso.**");
+    expect(simplificado).not.toContain("Uso.");
     expect(simplificado).not.toContain("Reglas de implementación");
     expect(simplificado).not.toContain("Campos de combinación");
   });
 
-  it("simplificado includes the consent checkbox line — it is member-facing form content", () => {
+  // Review finding 2 (fix round): the previous slice rendered THREE things in one blob — the
+  // canonical variant, the "versión breve" alternate wording, AND the "Casilla de consentimiento"
+  // block with its non-functional "☐ Acepto recibir promociones..." glyph — on the one screen
+  // whose whole purpose is capturing real consent. Now exactly the canonical variant ships; the
+  // breve wording and the casilla are gone entirely, never a raw {{token}} in their place.
+  it("simplificado renders ONLY the canonical variant — no breve alternate, no casilla block", () => {
     const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
-    expect(simplificado).toContain("Acepto recibir promociones");
+    expect(simplificado).not.toContain("versión breve");
+    expect(simplificado).not.toContain("☐");
+    expect(simplificado).not.toContain("Acepto recibir promociones");
+    expect(simplificado).not.toContain("Casilla de consentimiento");
+    // The canonical variant's own content IS present.
+    expect(simplificado).toContain("es la responsable del tratamiento de sus datos personales");
+    expect(simplificado).toContain("No tratamos datos personales sensibles ni datos biométricos");
+  });
+
+  // Review finding 1 (fix round): a completed gym's aviso was telling its OWN members that its
+  // ARCO deadlines "must not be assumed in force" (§5's PENDIENTE aside), and repeating its §6
+  // change-notification channel as a drafting-note example right after stating it for real.
+  it("integral never shows its own PENDIENTE drafting aside or the 'por ejemplo' channel example", () => {
+    for (const identidad of [IDENTIDAD_COMPLETA, IDENTIDAD_VACIA]) {
+      const integral = renderAvisoIntegral(identidad);
+      expect(integral).not.toContain("PENDIENTE");
+      expect(integral).not.toContain("por ejemplo:");
+      // The §6 sentence itself still resolves to a real (non-email) channel.
+      expect(integral).toContain("aviso visible en la recepción del gimnasio");
+      expect(integral).not.toContain("correo electrónico a la dirección de contacto que tengamos registrada");
+    }
+  });
+
+  // Review finding 3 (fix round): every render site paints this string as plain pre-wrap text —
+  // none parses Markdown — so a member must never see the source .md's own syntax characters.
+  it("neither rendered body ever shows literal Markdown syntax — no headings, bold, blockquotes, or backticked values", () => {
+    for (const render of [renderAvisoIntegral, renderAvisoSimplificado]) {
+      const cuerpo = render(IDENTIDAD_COMPLETA);
+      expect(cuerpo).not.toMatch(/^#{1,6}\s/m);
+      expect(cuerpo).not.toMatch(/^>\s?/m);
+      expect(cuerpo).not.toContain("**");
+      expect(cuerpo).not.toContain("`");
+      expect(cuerpo).not.toMatch(/\[[^\]]*\]\([^)]*\)/);
+    }
+  });
+});
+
+describe("urlAvisoIntegralDesde (review finding 5: one shared composition helper)", () => {
+  it("appends /legal to the given origin", () => {
+    expect(urlAvisoIntegralDesde("https://forge.example.mx")).toBe("https://forge.example.mx/legal");
+  });
+
+  it("does not add or assume a protocol — the caller supplies a full origin", () => {
+    expect(urlAvisoIntegralDesde("http://localhost:3000")).toBe("http://localhost:3000/legal");
   });
 });

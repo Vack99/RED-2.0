@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { foldDiacritics, isEmailValido, isTelValido, telDigits, TEL_DIGITS } from "./format";
+import { foldDiacritics, formatTelMx, isEmailValido, isTelValido, telDigits, TEL_DIGITS } from "./format";
 
 describe("foldDiacritics", () => {
   it("strips accents so an unaccented query matches an accented name (#224)", () => {
@@ -68,6 +68,29 @@ describe("isTelValido", () => {
 
   it("rejects empty input", () => {
     expect(isTelValido("")).toBe(false);
+  });
+});
+
+describe("formatTelMx (#256 review finding 5)", () => {
+  it("groups a bare 10-digit local number as +52 XX XXXX XXXX", () => {
+    expect(formatTelMx("6141234567")).toBe("+52 61 4123 4567");
+  });
+
+  it("strips a 52 country-code prefix (gym_contact.whatsapp's real stored shape)", () => {
+    expect(formatTelMx("526143704989")).toBe("+52 61 4370 4989");
+  });
+
+  it("strips a 521 WhatsApp-style mobile-marker prefix", () => {
+    expect(formatTelMx("5216140000000")).toBe("+52 61 4000 0000");
+  });
+
+  it("ignores non-digit formatting characters before grouping", () => {
+    expect(formatTelMx("+52 (614) 370-4989")).toBe("+52 61 4370 4989");
+  });
+
+  it("falls back to a bare +digits for anything that isn't a clean 10-digit MX number", () => {
+    expect(formatTelMx("123")).toBe("+123");
+    expect(formatTelMx("")).toBe("+");
   });
 });
 

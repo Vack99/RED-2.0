@@ -525,9 +525,27 @@ export const AVISO_PLAZO_EJECUCION_ARCO_DIAS = "15";
 /** The "additional channel" §6 promises alongside the URL+date header (#256): the template's own
  *  CAMPOS table marks this "Alta del gimnasio" (a future per-gym field with no schema/UI home yet
  *  — flagged in the #256 report as follow-up work), so until that exists this is a platform-wide
- *  default rather than an invented per-gym claim — verbatim one of the template's OWN parenthetical
- *  examples, not new copy. */
-export const AVISO_CANAL_CAMBIOS_ADICIONAL = "correo electrónico a la dirección de contacto que tengamos registrada";
+ *  default rather than an invented per-gym claim.
+ *
+ *  Review finding 4 (fix round): the FIRST value shipped here was "correo electrónico a la
+ *  dirección de contacto que tengamos registrada" — a promise the product cannot keep, since no
+ *  change-notification email mechanism exists anywhere in the codebase. Ruling: never email, never
+ *  an in-app push — the only channel that is actually true today is publication/signage, so this
+ *  now names the template's OWN "aviso visible en la recepción del gimnasio" example instead.
+ *  `AVISO_PLAZO_*_ARCO_DIAS` (20/15) ride as-is until #258's abogado review; the in-document
+ *  PENDIENTE marker that used to flag that gap to members is stripped from the member-facing render
+ *  (review finding 1) — this comment is now the only honesty marker left for it. */
+export const AVISO_CANAL_CAMBIOS_ADICIONAL = "aviso visible en la recepción del gimnasio";
+
+/** The aviso integral's stable public URL from a gym's client origin (review finding 5): both call
+ *  sites — the client app's own request origin (`apps/client/src/lib/aviso-legal.ts`) and the
+ *  admin CUENTA preview's resolved client host (`apps/admin/.../cuenta/page.tsx`) — independently
+ *  built `${origin}/legal`. Now the one place that string lives; `origin` already carries its own
+ *  protocol (the caller's job — a request's own `x-forwarded-proto`/`host`, or a hardcoded
+ *  `https://` for the admin preview's mapped domain), this only appends the route. */
+export function urlAvisoIntegralDesde(origin: string): string {
+  return `${origin}/legal`;
+}
 
 function valoresDesdeIdentidad(identidad: IdentidadLegalGym): Record<string, string | null> {
   return {
@@ -561,10 +579,25 @@ const BLOQUES_OPCIONALES_INTEGRAL: readonly string[] = [
   "`{{parrafo_registro_publicidad}}`\n> *[OPCIONAL — mención del Registro Público para Evitar Publicidad (PROFECO); confirmar con el abogado si procede incluirlo.]*\n\n",
 ];
 
-function despojarBloquesOpcionales(cuerpo: string): string {
-  return BLOQUES_OPCIONALES_INTEGRAL.reduce((texto, bloque) => {
+/** Drafting SCAFFOLDING inside the member-facing span that must strip unconditionally, independent
+ *  of any per-gym field — a different failure mode than the optional blocks above (review finding
+ *  1, #256 fix round): (1) §5's PENDIENTE aside, which tells the reader the template's own ARCO
+ *  deadlines "must not be assumed in force", published directly beneath the sentence that STATES
+ *  those same deadlines as the gym's commitment to the member reading it — a finished aviso was
+ *  contradicting its own promise; and (2) the drafting-note parenthetical after §6's
+ *  `{{canal_aviso_cambios}}` token, whose examples duplicate whatever the token itself resolves to
+ *  — unstripped, a member read the channel once as the real value and again as the template
+ *  author's own illustrative example. Neither is legal content the gym authors; both are notes
+ *  aimed at whoever fills in the template, never at a member. */
+const NOTAS_REDACCION_INTEGRAL: readonly string[] = [
+  "> **[PENDIENTE — verificar los plazos ARCO contra el texto vigente de la LFPDPPP reformada antes de publicar. Los plazos del régimen anterior (20 y 15 días hábiles) no deben asumirse vigentes sin confirmación.]**\n\n",
+  " *(por ejemplo: aviso visible en la recepción del gimnasio, notificación dentro de la aplicación y/o correo electrónico a la dirección que tengamos registrada)*",
+];
+
+function despojarBloques(cuerpo: string, bloques: readonly string[]): string {
+  return bloques.reduce((texto, bloque) => {
     if (!texto.includes(bloque)) {
-      throw new Error(`AVISO_PRIVACIDAD_INTEGRAL_TEXTO: optional block marker not found: ${bloque.slice(0, 40)}…`);
+      throw new Error(`AVISO_PRIVACIDAD_INTEGRAL_TEXTO: strip-block marker not found: ${bloque.slice(0, 40)}…`);
     }
     return texto.replace(bloque, "");
   }, cuerpo);
@@ -573,49 +606,89 @@ function despojarBloquesOpcionales(cuerpo: string): string {
 /** The member-facing span of the integral aviso: the real "AVISO DE PRIVACIDAD" heading (§1
  *  through §6) — never the file's own "... INTEGRAL — PLANTILLA POR GIMNASIO" title above it.
  *  Excludes the BORRADOR banner, the drafting notes, the trailing optional-paragraph draft block,
- *  the two INLINE optional-paragraph blocks inside §2/§4 (`despojarBloquesOpcionales`, #256), and
- *  the CAMPOS DE COMBINACIÓN reference table: lawyer/staff-facing scaffolding a member must never
- *  see (review finding 2 — "the owner sees exactly what members will see" means the body span, not
- *  the whole draft file). Pure slicing over the byte-for-byte TEXTO constant; the constant and its
- *  drift guard (tools/guards/aviso-legal-drift.test.ts) stay untouched — only the render path
- *  changes. */
+ *  the two INLINE optional-paragraph blocks inside §2/§4, the two drafting-note asides inside §5/§6
+ *  (`NOTAS_REDACCION_INTEGRAL`, review finding 1, #256 fix round), and the CAMPOS DE COMBINACIÓN
+ *  reference table: lawyer/staff-facing scaffolding a member must never see (review finding 2 —
+ *  "the owner sees exactly what members will see" means the body span, not the whole draft file).
+ *  Pure slicing over the byte-for-byte TEXTO constant; the constant and its drift guard
+ *  (tools/guards/aviso-legal-drift.test.ts) stay untouched — only the render path changes. */
 function cuerpoMiembroIntegral(texto: string): string {
   const inicio = texto.indexOf("\n# AVISO DE PRIVACIDAD\n");
   const fin = texto.indexOf("\n\n---\n\n## PÁRRAFO OPCIONAL — ALOJAMIENTO Y ENCARGADOS");
   if (inicio === -1 || fin === -1 || fin <= inicio) {
     throw new Error("AVISO_PRIVACIDAD_INTEGRAL_TEXTO: member-facing body markers not found");
   }
-  return despojarBloquesOpcionales(texto.slice(inicio + 1, fin).trim());
+  const cuerpo = despojarBloques(texto.slice(inicio + 1, fin).trim(), BLOQUES_OPCIONALES_INTEGRAL);
+  return despojarBloques(cuerpo, NOTAS_REDACCION_INTEGRAL);
 }
 
-/** The member-facing span of the simplificado aviso: the two renderable "Texto" variants plus the
- *  secondary-purposes checkbox — never the BORRADOR banner, the "Uso." implementation note, the
- *  "Reglas de implementación" bullets, or the Campos de combinación table. Same discipline as
- *  `cuerpoMiembroIntegral` above. */
+/** The member-facing span of the simplificado aviso: EXACTLY the canonical "Texto" variant — never
+ *  the BORRADOR banner, the "Uso." implementation note, the "## Texto (versión breve...)" alternate
+ *  wording, the "## Casilla de consentimiento..." block, the "Reglas de implementación" bullets, or
+ *  the Campos de combinación table.
+ *
+ *  Review finding 2 (fix round): the previous slice spanned ALL THREE of canónica + breve + casilla
+ *  in one blob, so a member read two differently-worded copies of the same aviso back to back, plus
+ *  a literal "☐ Acepto recibir promociones..." checkbox glyph that did nothing — on the one screen
+ *  whose entire purpose is capturing real consent. The casilla is #257's capture slice (a real
+ *  `<input type=checkbox>` with a stamp), never a static-text render; the canonical variant is the
+ *  default per the template's own "Uso." note (electronic collection at /activar, registro, alta,
+ *  reserva forms — no case there is scoped to "espacios reducidos", the ONLY condition the breve
+ *  variant's own heading names for itself), so canónica is what ships. The leading "## Texto
+ *  (versión canónica)" heading itself is excluded too (finding 3 — no literal `#`/`##` reaches a
+ *  member). Same discipline as `cuerpoMiembroIntegral` above. */
 function cuerpoMiembroSimplificado(texto: string): string {
-  const inicio = texto.indexOf("## Texto (versión canónica)");
-  const fin = texto.indexOf("**Reglas de implementación:**");
+  const marcaInicio = "## Texto (versión canónica)\n\n";
+  const inicio = texto.indexOf(marcaInicio);
+  const fin = texto.indexOf("## Texto (versión breve");
   if (inicio === -1 || fin === -1 || fin <= inicio) {
     throw new Error("AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO: member-facing body markers not found");
   }
-  return texto.slice(inicio, fin).trim();
+  return texto.slice(inicio + marcaInicio.length, fin).trim();
 }
 
-/** The integral aviso, sliced to its member-facing body and merged with the gym's current legal
- *  identity — the CUENTA preview's main tab, and (#256) the client app's `/legal` page (gated on
- *  `identidadLegalCompleta` there; an incomplete identity never reaches this call). Renders
- *  unconditionally; unresolved fields stay visible per `mergeAvisoTemplate`'s contract, and
- *  `identidadLegalCompleta` below is the honest read of whether any remain. */
+/** Strip literal Markdown syntax characters from an already-sliced-and-merged aviso body before it
+ *  reaches a member (review finding 3, #256 fix round). Every render site — `/legal`,
+ *  `aviso-simplificado-inline.tsx`, and the admin CUENTA preview — paints this string as plain
+ *  `white-space: pre-wrap` text; none of them parses Markdown, so a member was reading literal `#`/
+ *  `##` headings, `**bold**` asterisks, `> ` blockquote markers, and every merge value wrapped in
+ *  backticks (`` `Gimnasio Forge, S.A. de C.V.` ``, plazo de `` `20` `` días) as raw punctuation.
+ *
+ *  This is deliberately NOT a Markdown renderer — the templates use one small, fixed vocabulary
+ *  (headings, bold, blockquotes, inline code, one `[text](url)` link shape where text and url are
+ *  always identical), so five targeted, order-dependent replacements meet the bar with the least
+ *  machinery: collapse the markdown link to its bare text/URL FIRST (its brackets/parens would
+ *  otherwise be untouched by the rest), then heading/blockquote LINE markers, then inline `**`/`` ` ``
+ *  emphasis last (so a value that happened to end a heading or blockquote line still loses its own
+ *  wrapping). Horizontal-whitespace-only (`[ \t]`, never `\s`) after `#`/`>` so a marker at the start
+ *  of one line can never eat into a following blank line. */
+function depurarMarkdown(texto: string): string {
+  return texto
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/^#{1,6}[ \t]+/gm, "")
+    .replace(/^>[ \t]?/gm, "")
+    .replace(/\*\*/g, "")
+    .replace(/`/g, "");
+}
+
+/** The integral aviso, sliced to its member-facing body, merged with the gym's current legal
+ *  identity, and stripped of literal Markdown syntax (`depurarMarkdown`, finding 3) — the CUENTA
+ *  preview's main tab, and (#256) the client app's `/legal` page (gated on `identidadLegalCompleta`
+ *  there; an incomplete identity never reaches this call). Renders unconditionally; unresolved
+ *  fields stay visible as a bare `{{token}}` per `mergeAvisoTemplate`'s contract (untouched by the
+ *  strip — it only removes Markdown punctuation, never curly braces), and `identidadLegalCompleta`
+ *  below is the honest read of whether any remain. */
 export function renderAvisoIntegral(identidad: IdentidadLegalGym): string {
-  return mergeAvisoTemplate(cuerpoMiembroIntegral(AVISO_PRIVACIDAD_INTEGRAL_TEXTO), valoresDesdeIdentidad(identidad));
+  return depurarMarkdown(
+    mergeAvisoTemplate(cuerpoMiembroIntegral(AVISO_PRIVACIDAD_INTEGRAL_TEXTO), valoresDesdeIdentidad(identidad)),
+  );
 }
 
-/** The simplificado aviso, sliced and merged the same way — the CUENTA preview's second tab, and
- *  (#256) the inline consent-point render on `/registro` and `/activar/contrasena`. */
+/** The simplificado aviso, sliced, merged and stripped the same way — the CUENTA preview's second
+ *  tab, and (#256) the inline consent-point render on `/registro` and `/activar/contrasena`. */
 export function renderAvisoSimplificado(identidad: IdentidadLegalGym): string {
-  return mergeAvisoTemplate(
-    cuerpoMiembroSimplificado(AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO),
-    valoresDesdeIdentidad(identidad),
+  return depurarMarkdown(
+    mergeAvisoTemplate(cuerpoMiembroSimplificado(AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO), valoresDesdeIdentidad(identidad)),
   );
 }
 

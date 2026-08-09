@@ -6,11 +6,13 @@ import { resolverIdentidadLegalPublica } from "./aviso-legal";
 
 /**
  * `resolverIdentidadLegalPublica` (#256) — the composition itself: gym_contact's
- * whatsapp/email become the aviso's telefono/email_contacto (formatted with a leading `+` on the
- * phone, matching the Contacto page's own display), the request's own origin becomes the aviso's
- * URL, and every read degrades to null rather than throwing. `getIdentidadLegalPublica`/
- * `getContacto` and `identidadDesde` each have their own unit tests (packages/data,
- * packages/domain) — this file only proves the WIRING between them.
+ * whatsapp/email become the aviso's telefono/email_contacto (the phone grouped through
+ * `@gym/format`'s `formatTelMx`, review finding 5 — `+52 XX XXXX XXXX`, not a bare `+` on the raw
+ * E.164 digits), the request's own origin becomes the aviso's URL (via `@gym/domain/legal`'s
+ * `urlAvisoIntegralDesde`), and every read degrades to null rather than throwing.
+ * `getIdentidadLegalPublica`/`getContacto`, `identidadDesde` and `formatTelMx` each have their own
+ * unit tests (packages/data, packages/domain, packages/format) — this file only proves the WIRING
+ * between them.
  */
 const stubbedHeaders = new Headers();
 vi.mock("next/headers", () => ({ headers: async () => stubbedHeaders }));
@@ -68,7 +70,7 @@ describe("resolverIdentidadLegalPublica", () => {
       domicilio: "Av. Siempre Viva 123",
       emailArco: "datos@forge.mx",
       areaDatosPersonales: "Departamento de Datos Personales",
-      telefonoContacto: "+5216140000000",
+      telefonoContacto: "+52 61 4000 0000",
       emailContacto: "hola@forge.mx",
       urlAvisoIntegral: "https://forge.example.mx/legal",
     });

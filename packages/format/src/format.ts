@@ -86,3 +86,28 @@ export function waLink(tel: string, text: string): string {
   const phone = digits.startsWith("52") ? digits : "52" + digits;
   return `https://wa.me/${phone}?text=${encodeURIComponent(text)}`;
 }
+
+/**
+ * Pretty-print a raw MX phone string for DISPLAY — `+52 55 0000 0000`, not a bare `+` slapped on
+ * whatever digits arrived (#256 review finding 5: both `apps/client/src/lib/aviso-legal.ts` and
+ * the admin CUENTA preview independently did `` `+${whatsapp}` `` on `gym_contact.whatsapp`'s raw
+ * E.164 digits, so the aviso de privacidad showed a member `+5216140000000` instead of a readable
+ * number). Accepts `gym_contact.whatsapp`'s stored shape (bare 10-digit local, `52` + 10, or the
+ * WhatsApp-style `521` + 10 mobile marker) and groups the local 10 digits `XX XXXX XXXX` — the
+ * same 2-4-4 split the registro form's own phone placeholder already uses ("81 1234 5678"). Falls
+ * back to `+<digits>` (today's behavior) for anything that doesn't reduce to a clean 10-digit MX
+ * number, so a malformed value still displays rather than throwing.
+ */
+export function formatTelMx(raw: string): string {
+  const digits = telDigits(raw);
+  const local =
+    digits.length === TEL_DIGITS
+      ? digits
+      : digits.startsWith("521") && digits.length === TEL_DIGITS + 3
+        ? digits.slice(3)
+        : digits.startsWith("52") && digits.length === TEL_DIGITS + 2
+          ? digits.slice(2)
+          : null;
+  if (!local) return `+${digits}`;
+  return `+52 ${local.slice(0, 2)} ${local.slice(2, 6)} ${local.slice(6, 10)}`;
+}

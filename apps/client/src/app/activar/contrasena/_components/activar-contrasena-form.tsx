@@ -148,7 +148,6 @@ export function ActivarContrasenaForm({
             href="/legal#terminos"
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
             className="font-semibold text-fg underline"
           >
             Términos y Condiciones
@@ -158,7 +157,6 @@ export function ActivarContrasenaForm({
             href="/legal#privacidad"
             target="_blank"
             rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
             className="font-semibold text-fg underline"
           >
             Aviso de Privacidad

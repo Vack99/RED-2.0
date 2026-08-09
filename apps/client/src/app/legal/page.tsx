@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import Link from "next/link";
 
 import { getMarketingGym } from "@gym/data/server/marketing";
+import { createClient } from "@gym/data/server/supabase";
 import { identidadLegalCompleta, renderAvisoIntegral } from "@gym/domain/legal";
 
 import { resolverIdentidadLegalPublica } from "../../lib/aviso-legal";
@@ -20,6 +21,8 @@ export const metadata: Metadata = {
  * before otherwise (an unmapped host, or a gym that has not finished #255's CUENTA editor + a
  * gym_contact row). Reachable pre-login (no auth gate — legal texts are public) and, since #256,
  * from the marketing footer too — today's ONLY link was inside the post-login perfil overlay.
+ * "Volver" reflects that: it targets `/reservar` for a signed-in visitor and `/` for an anonymous
+ * one (review finding 7 — the pre-login footer route made a hard `/reservar` link a bounce).
  */
 function Seccion({ titulo, id, children }: { titulo: string; id?: string; children: React.ReactNode }) {
   return (
@@ -62,11 +65,20 @@ export default async function LegalPage() {
     if (identidadLegalCompleta(identidad)) avisoIntegral = renderAvisoIntegral(identidad);
   }
 
+  // Review finding 7: "Volver" used to hard-link to /reservar, a login-gated route — fine when
+  // this page is reached from the post-login perfil overlay, but the pre-login marketing footer
+  // (#256's own AC3) sends an anonymous visitor here too, and they'd land on a bounce. Presentation
+  // only (which affordance to show), never an authz decision — same `getClaims()` posture the root
+  // layout already uses for the public header's own signed-in swap.
+  const supabase = await createClient();
+  const { data: claims } = await supabase.auth.getClaims();
+  const signedIn = Boolean(claims?.claims?.sub);
+
   return (
     <main className="mx-auto w-full max-w-md px-6 pb-16">
       <header className="flex items-center justify-between pt-5">
         <Link
-          href="/reservar"
+          href={signedIn ? "/reservar" : "/"}
           className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted hover:text-fg"
         >
           <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
