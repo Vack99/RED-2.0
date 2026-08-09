@@ -9,6 +9,7 @@ import { Button, Eyebrow, H1, Input, SectionHeader } from "@gym/ui/forge/ui";
 import type { IdentidadLegalDTO } from "@gym/data/server/legal";
 import {
   camposFaltantesIdentidadLegal,
+  identidadDesde,
   identidadLegalCompleta,
   renderAvisoIntegral,
   renderAvisoSimplificado,
@@ -36,11 +37,16 @@ export function LegalIdentitySheet({
   onClose,
   identidad,
   nombreComercial,
+  telefonoContacto,
 }: {
   open: boolean;
   onClose: () => void;
   identidad: IdentidadLegalDTO;
   nombreComercial: string;
+  /** `perfil.tel` — the template's own CAMPOS DE COMBINACIÓN table names it as the aviso's
+   *  `{{telefono_contacto}}` source (review finding 3); read-only here, edited from "EDITAR
+   *  PERFIL" (próximamente), not this form. */
+  telefonoContacto: string | null;
 }) {
   const router = useRouter();
   const [razonSocial, setRazonSocial] = React.useState(identidad.razonSocial ?? "");
@@ -50,9 +56,12 @@ export function LegalIdentitySheet({
   const [tab, setTab] = React.useState<AvisoTab>("integral");
   const [saving, setSaving] = React.useState(false);
 
-  // Reset to the last-saved values (and the first preview tab) every time the sheet opens —
-  // matches gym-content-sheet.tsx's tab-reset effect, so a closed-without-saving edit never
-  // lingers into the next open.
+  // Reset to the last-saved values (and the first preview tab) every time the sheet OPENS —
+  // matches gym-content-sheet.tsx's tab-reset effect (`[open]` alone, not `[open, identidad]`):
+  // depending on the `identidad` object identity re-runs this on every parent re-render (e.g. a
+  // sibling sheet's router.refresh() produces a fresh object), silently discarding in-progress
+  // typing while this sheet is open (review finding 5). Reading `identidad.*` here without
+  // depending on it is intentional — the effect only needs the value at the moment `open` flips.
   React.useEffect(() => {
     if (!open) return;
     // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on open
@@ -61,7 +70,8 @@ export function LegalIdentitySheet({
     setEmailArco(identidad.emailArco ?? "");
     setAreaDatosPersonales(identidad.areaDatosPersonales ?? "");
     setTab("integral");
-  }, [open, identidad]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately `[open]` only (finding 5): reads the current identidad on open without depending on its identity, so a sibling re-render doesn't wipe in-progress typing
+  }, [open]);
 
   const razonValida = razonSocial.trim().length <= 200;
   const domicilioValido = domicilio.trim().length <= 300;
@@ -78,14 +88,19 @@ export function LegalIdentitySheet({
   const canSave = valido && dirty && !saving;
 
   // The LIVE preview identity — built from what's currently typed, not the last save, so the
-  // preview updates as the owner fills the form in.
-  const identidadActual: IdentidadLegalGym = {
-    razonSocial: razonSocial.trim() || null,
+  // preview updates as the owner fills the form in. Same shared helper cuenta.tsx's status line
+  // uses (review finding 8), so both sites source `nombreComercial` from gym.brand_name together
+  // (finding 1) and derive completeness the same way (finding 3).
+  const identidadActual: IdentidadLegalGym = identidadDesde(
+    {
+      razonSocial: razonSocial.trim() || null,
+      domicilio: domicilio.trim() || null,
+      emailArco: emailArco.trim() || null,
+      areaDatosPersonales: areaDatosPersonales.trim() || null,
+    },
     nombreComercial,
-    domicilio: domicilio.trim() || null,
-    emailArco: emailArco.trim() || null,
-    areaDatosPersonales: areaDatosPersonales.trim() || null,
-  };
+    telefonoContacto,
+  );
   const completa = identidadLegalCompleta(identidadActual);
   const faltantes = camposFaltantesIdentidadLegal(identidadActual);
 
@@ -220,11 +235,12 @@ export function LegalIdentitySheet({
             style={{ gap: 8, border: "1px dashed var(--line)", background: "var(--surface)", padding: "20px 16px" }}
           >
             <div className="font-bold uppercase" style={{ fontSize: 11.5, letterSpacing: 0.6, color: "var(--gold)" }}>
-              Completa estos datos para publicar tu aviso
+              Tu aviso de privacidad aún no está listo
             </div>
             <div style={{ fontSize: 12, lineHeight: 1.6, color: "var(--muted)" }}>
               Tus miembros necesitan ver el aviso de privacidad de tu gimnasio para registrarse.
-              Falta: {faltantes.join(", ")}.
+              Completa lo que depende de ti arriba; lo demás lo resuelve la plataforma o queda
+              pendiente de revisión legal. Falta: {faltantes.join(", ")}.
             </div>
           </div>
         </div>

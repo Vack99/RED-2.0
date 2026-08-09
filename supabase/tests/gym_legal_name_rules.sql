@@ -8,7 +8,8 @@
 -- exact leak #213 closed): staff read their own gym's bundle (legal_name + the gym_legal
 -- satellite's three columns in one call); a plain member and a cross-tenant staff caller are both
 -- refused. `gym_legal`'s own direct-RLS read/write vectors already have a full suite
--- (aceptar_acuerdo.sql V8, #253) — not duplicated here.
+-- (aceptar_acuerdo.sql V8, #253) — not duplicated here. V9 (review round 2) proves `anon` cannot
+-- write `legal_name` either — the ambient-grant landmine the same round's migration fix revoked.
 --
 -- Zero hardcoded prod UUIDs (ADR-0013 §5): two synthetic gyms, four auth.users, transaction-local
 -- (BEGIN/ROLLBACK) so the scratch project stays reusable across runs. Self-asserting: every check
@@ -141,18 +142,21 @@ end $$;
 
 -- ══ V5 — DENIAL: the new policy does NOT open any other column — a staff caller on their OWN gym ════
 -- ══ still cannot write a column that carries no UPDATE grant (privilege, not row-match, blocks it) ══
+-- Asserts the SQLSTATE (42501 = insufficient_privilege), not a bare `when others` — review finding
+-- 9: a bare catch-all would read an unrelated error as a pass too. (This one was already saved by
+-- its own paired value assertion below; asserting the code is belt-and-suspenders.)
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.owner_a', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare got_error boolean := false;
 begin
   begin
     update public.gym set owner_user_id = current_setting('t.owner_a', true)::uuid
       where id = current_setting('t.gym_a', true)::uuid;
-  exception when others then got_error := true;
+    raise exception 'V5 FAIL: owner_a updated owner_user_id — a column with no UPDATE grant, on their own gym''s row';
+  exception
+    when insufficient_privilege then null; -- expected: 42501, no UPDATE grant on this column
   end;
-  if not got_error then raise exception 'V5 FAIL: owner_a updated owner_user_id — a column with no UPDATE grant, on their own gym''s row'; end if;
 end $$;
 reset role;
 do $$
@@ -194,17 +198,20 @@ end $$;
 reset role;
 
 -- ══ V7 — DENIAL: a plain member (non-staff) is refused by the RPC — no row, no leak ═════════════════
+-- Asserts SQLSTATE P0001 (raise_exception) — the code the RPC's own `raise exception 'No
+-- autorizado'` actually raises (plpgsql's default when no ERRCODE is given) — not a bare `when
+-- others` (review finding 9: unlike V5, V7/V8 had no paired value assertion to catch a false pass).
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.member_a', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare got_error boolean := false;
 begin
   begin
     perform public.obtener_identidad_legal(current_setting('t.gym_a', true)::uuid);
-  exception when others then got_error := true;
+    raise exception 'V7 FAIL: member_a (non-staff) was not refused by obtener_identidad_legal';
+  exception
+    when raise_exception then null; -- expected: P0001, the RPC's own 'No autorizado' raise
   end;
-  if not got_error then raise exception 'V7 FAIL: member_a (non-staff) was not refused by obtener_identidad_legal'; end if;
 end $$;
 reset role;
 
@@ -213,15 +220,40 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.owner_b', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
-declare got_error boolean := false;
 begin
   begin
     perform public.obtener_identidad_legal(current_setting('t.gym_a', true)::uuid);
-  exception when others then got_error := true;
+    raise exception 'V8 FAIL: owner_b (cross-tenant) was not refused reading gym_a''s identidad legal';
+  exception
+    when raise_exception then null; -- expected: P0001, the RPC's own 'No autorizado' raise
   end;
-  if not got_error then raise exception 'V8 FAIL: owner_b (cross-tenant) was not refused reading gym_a''s identidad legal'; end if;
 end $$;
 reset role;
+
+-- ══ V9 — DENIAL: anon cannot update legal_name either — closes the SAME ambient-grant landmine ══════
+-- ══ the migration's review-round-2 fix revoked (finding 4), before #256 adds anon-facing policies ═══
+-- No jwt claims to set — matches gym_tenant_anon_read.sql's own anon block (a true anon actor
+-- carries none); the privilege check (no UPDATE grant at all for anon) fails before any RLS
+-- predicate would even look at them.
+set local role anon;
+do $$
+begin
+  begin
+    update public.gym set legal_name = 'Hacked by anon' where id = current_setting('t.gym_a', true)::uuid;
+    raise exception 'V9 FAIL: anon updated legal_name — the anon revoke did not hold';
+  exception
+    when insufficient_privilege then null; -- expected: 42501, no UPDATE grant of any kind for anon
+  end;
+end $$;
+reset role;
+do $$
+declare rec record;
+begin
+  select * into rec from public.gym where id = current_setting('t.gym_a', true)::uuid;
+  if rec.legal_name is distinct from 'Legal Name Suite A Renombrada, S.A. de C.V.' then
+    raise exception 'V9 FAIL: legal_name was changed by anon (got %)', rec.legal_name;
+  end if;
+end $$;
 
 select 'gym legal_name staff-write suite: OK' as result;
 rollback;

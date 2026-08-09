@@ -1,20 +1,25 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  AVISO_PRIVACIDAD_FECHA_ACTUALIZACION,
+  AVISO_PRIVACIDAD_VERSION,
   camposFaltantesIdentidadLegal,
+  identidadDesde,
   identidadLegalCompleta,
   mergeAvisoTemplate,
   renderAvisoIntegral,
   renderAvisoSimplificado,
+  tokensSinResolver,
   type IdentidadLegalGym,
 } from "./legal";
 
 /**
- * `mergeAvisoTemplate` + its `IdentidadLegalGym` callers (#255, Gate 0.1 CUENTA preview). Byte-
- * for-byte fidelity of the two TEXTO constants against their source .md is tools/guards/
- * aviso-legal-drift.test.ts's job, not this file's — these tests exercise the pure merge/
- * completeness logic against small literal templates, so they stay readable and don't silently
- * start asserting real legal prose.
+ * `mergeAvisoTemplate` + its `IdentidadLegalGym` callers (#255, Gate 0.1 CUENTA preview; review
+ * round 2 findings 1/3/8). Byte-for-byte fidelity of the two TEXTO constants against their source
+ * .md is tools/guards/aviso-legal-drift.test.ts's job, not this file's — these tests exercise the
+ * pure merge/slice/completeness logic, some against small literal templates (so they stay readable
+ * and don't silently start asserting real legal prose) and some against the real constants (where
+ * the point IS the real, currently-irreducible gap — finding 3).
  */
 
 const IDENTIDAD_COMPLETA: IdentidadLegalGym = {
@@ -23,6 +28,7 @@ const IDENTIDAD_COMPLETA: IdentidadLegalGym = {
   domicilio: "Av. Siempre Viva 123, Chihuahua, Chih.",
   emailArco: "datos@forge.mx",
   areaDatosPersonales: "Departamento de Datos Personales",
+  telefonoContacto: "+52 614 000 0000",
 };
 
 const IDENTIDAD_VACIA: IdentidadLegalGym = {
@@ -31,6 +37,7 @@ const IDENTIDAD_VACIA: IdentidadLegalGym = {
   domicilio: null,
   emailArco: null,
   areaDatosPersonales: null,
+  telefonoContacto: null,
 };
 
 describe("mergeAvisoTemplate", () => {
@@ -70,52 +77,98 @@ describe("mergeAvisoTemplate", () => {
   });
 });
 
-describe("identidadLegalCompleta / camposFaltantesIdentidadLegal", () => {
-  it("a full identity is complete, with nothing missing", () => {
-    expect(identidadLegalCompleta(IDENTIDAD_COMPLETA)).toBe(true);
-    expect(camposFaltantesIdentidadLegal(IDENTIDAD_COMPLETA)).toEqual([]);
+describe("tokensSinResolver", () => {
+  it("returns nothing for a fully-resolved body", () => {
+    expect(tokensSinResolver("Responsable: Gimnasio Forge, en Chihuahua.")).toEqual([]);
   });
 
-  it("an empty identity is incomplete, and lists all four required fields", () => {
-    expect(identidadLegalCompleta(IDENTIDAD_VACIA)).toBe(false);
-    expect(camposFaltantesIdentidadLegal(IDENTIDAD_VACIA)).toEqual([
-      "razón social",
-      "domicilio",
-      "correo de contacto ARCO",
-      "área o persona responsable de datos personales",
-    ]);
-  });
-
-  it("a partially-filled identity is still incomplete, and lists only what's missing", () => {
-    const parcial: IdentidadLegalGym = { ...IDENTIDAD_VACIA, razonSocial: "Gimnasio Forge" };
-    expect(identidadLegalCompleta(parcial)).toBe(false);
-    expect(camposFaltantesIdentidadLegal(parcial)).toEqual([
-      "domicilio",
-      "correo de contacto ARCO",
-      "área o persona responsable de datos personales",
-    ]);
-  });
-
-  it("whitespace-only values count as missing, not filled in", () => {
-    const parcial: IdentidadLegalGym = { ...IDENTIDAD_COMPLETA, domicilio: "   " };
-    expect(identidadLegalCompleta(parcial)).toBe(false);
-    expect(camposFaltantesIdentidadLegal(parcial)).toEqual(["domicilio"]);
-  });
-
-  it("nombreComercial is never in the required set — it is always present (gym.brand_name)", () => {
-    // Even with every OTHER field null, an identity missing only what brand_name can never be
-    // missing (it's non-nullable at the DB) never lists "nombre comercial" as a gap.
-    expect(camposFaltantesIdentidadLegal(IDENTIDAD_VACIA)).not.toContain("nombre comercial");
+  it("returns each unresolved token name once, de-duplicated, first-seen order", () => {
+    const cuerpo = "{{razon_social}} ... {{email_arco}} ... {{razon_social}} again.";
+    expect(tokensSinResolver(cuerpo)).toEqual(["razon_social", "email_arco"]);
   });
 });
 
-describe("renderAvisoIntegral / renderAvisoSimplificado", () => {
+describe("identidadDesde", () => {
+  it("combines the gym_legal-backed DTO, the brand name, and the perfil phone into one identity", () => {
+    const dto = {
+      razonSocial: "Gimnasio Forge, S.A. de C.V.",
+      domicilio: "Av. Siempre Viva 123",
+      emailArco: "datos@forge.mx",
+      areaDatosPersonales: "Departamento de Datos Personales",
+    };
+    expect(identidadDesde(dto, "Forge", "+52 614 000 0000")).toEqual({
+      razonSocial: dto.razonSocial,
+      nombreComercial: "Forge",
+      domicilio: dto.domicilio,
+      emailArco: dto.emailArco,
+      areaDatosPersonales: dto.areaDatosPersonales,
+      telefonoContacto: "+52 614 000 0000",
+    });
+  });
+
+  it("carries a null telefonoContacto through unchanged (perfil.tel not filled in)", () => {
+    const dto = { razonSocial: null, domicilio: null, emailArco: null, areaDatosPersonales: null };
+    expect(identidadDesde(dto, "Forge", null).telefonoContacto).toBeNull();
+  });
+});
+
+describe("identidadLegalCompleta / camposFaltantesIdentidadLegal (review finding 3)", () => {
+  // The old hand-maintained 4-field check said IDENTIDAD_COMPLETA was "listo". It never was: the
+  // real templates still show ~15 unresolved platform/legal-pending tokens (contact email, ARCO
+  // response windows, the aviso's own future URL, …) even with every gym-editable field filled in.
+  // This is the honest, currently-irreducible state — not a bug in the test.
+  it("even a fully staff-filled identity is NOT complete — real platform/legal gaps remain", () => {
+    expect(identidadLegalCompleta(IDENTIDAD_COMPLETA)).toBe(false);
+    const faltantes = camposFaltantesIdentidadLegal(IDENTIDAD_COMPLETA);
+    expect(faltantes.length).toBeGreaterThan(0);
+    // Every STAFF-editable + platform-constant field IS resolved — none of their labels appear.
+    expect(faltantes).not.toContain("razón social");
+    expect(faltantes).not.toContain("domicilio");
+    expect(faltantes).not.toContain("correo de contacto ARCO");
+    expect(faltantes).not.toContain("área o persona responsable de datos personales");
+    expect(faltantes).not.toContain("teléfono de contacto");
+    expect(faltantes).not.toContain("versión del aviso");
+    expect(faltantes).not.toContain("fecha de la última actualización");
+    // The genuinely unresolvable-today gaps ARE named, explicitly (not silently swallowed).
+    expect(faltantes).toContain("correo de contacto general (sin fuente hoy)");
+    expect(faltantes).toContain("URL pública del aviso (la publica la plataforma — #256)");
+  });
+
+  it("an empty identity lists every gym-editable field as missing, on top of the platform gaps", () => {
+    const faltantes = camposFaltantesIdentidadLegal(IDENTIDAD_VACIA);
+    expect(faltantes).toEqual(
+      expect.arrayContaining([
+        "razón social",
+        "domicilio",
+        "correo de contacto ARCO",
+        "área o persona responsable de datos personales",
+        "teléfono de contacto",
+      ]),
+    );
+  });
+
+  it("nombreComercial is never in the missing list — it is always present (gym.brand_name)", () => {
+    expect(camposFaltantesIdentidadLegal(IDENTIDAD_VACIA)).not.toContain("nombre comercial");
+  });
+
+  it("an unrecognized token would fall back to its raw name (no label = no silent hiding)", () => {
+    // Structural proof, not a real scenario: tokensSinResolver has no notion of "known" fields,
+    // so a template edit that adds a field ETIQUETAS_CAMPOS hasn't heard of yet still surfaces —
+    // it just won't have a pretty label until one is added.
+    expect(tokensSinResolver("{{campo_nuevo_sin_etiqueta}}")).toEqual(["campo_nuevo_sin_etiqueta"]);
+  });
+});
+
+describe("renderAvisoIntegral / renderAvisoSimplificado (finding 2: member-facing body only)", () => {
   it("render against the real templates without throwing, and substitute the gym's known fields", () => {
     const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
     const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
     expect(integral).toContain("Gimnasio Forge, S.A. de C.V.");
     expect(integral).toContain("Av. Siempre Viva 123, Chihuahua, Chih.");
     expect(integral).toContain("datos@forge.mx");
+    expect(integral).toContain("+52 614 000 0000");
+    expect(integral).toContain(AVISO_PRIVACIDAD_VERSION);
+    expect(integral).toContain(AVISO_PRIVACIDAD_FECHA_ACTUALIZACION);
     expect(simplificado).toContain("Gimnasio Forge, S.A. de C.V.");
     expect(simplificado).toContain("Forge");
   });
@@ -125,5 +178,38 @@ describe("renderAvisoIntegral / renderAvisoSimplificado", () => {
     expect(integral).toContain("{{razon_social}}");
     expect(integral).toContain("{{domicilio}}");
     expect(integral).toContain("{{email_arco}}");
+  });
+
+  it("never renders the BORRADOR banner or the drafting notes — those precede the sliced body", () => {
+    const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
+    expect(integral).not.toContain("BORRADOR");
+    expect(integral).not.toContain("Notas de redacción");
+    expect(integral).not.toContain("AVISO DE PRIVACIDAD INTEGRAL — PLANTILLA POR GIMNASIO");
+  });
+
+  it("never renders the optional-paragraph draft block or the CAMPOS DE COMBINACIÓN table — those follow §6", () => {
+    const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
+    expect(integral).not.toContain("PÁRRAFO OPCIONAL");
+    expect(integral).not.toContain("CAMPOS DE COMBINACIÓN");
+    expect(integral).not.toContain("Encargados del tratamiento");
+  });
+
+  it("integral starts at the real heading and ends with §6's own closing sentence", () => {
+    const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
+    expect(integral.startsWith("# AVISO DE PRIVACIDAD")).toBe(true);
+    expect(integral.endsWith("Le recomendamos consultar periódicamente dicha dirección.")).toBe(true);
+  });
+
+  it("simplificado never renders the BORRADOR banner, the 'Uso.' note, the implementation rules, or the campos table", () => {
+    const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
+    expect(simplificado).not.toContain("BORRADOR");
+    expect(simplificado).not.toContain("**Uso.**");
+    expect(simplificado).not.toContain("Reglas de implementación");
+    expect(simplificado).not.toContain("Campos de combinación");
+  });
+
+  it("simplificado includes the consent checkbox line — it is member-facing form content", () => {
+    const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
+    expect(simplificado).toContain("Acepto recibir promociones");
   });
 });

@@ -14,7 +14,7 @@ import {
   SectionHeader,
   Tnum,
 } from "@gym/ui/forge/ui";
-import { identidadLegalCompleta } from "@gym/domain/legal";
+import { identidadDesde, identidadLegalCompleta } from "@gym/domain/legal";
 import type { ResumenMes } from "@gym/domain/types";
 import type { AboutValueDTO } from "@gym/data/server/about-values";
 import type { ClassTypeDTO } from "@gym/data/server/class-type";
@@ -52,6 +52,10 @@ interface CuentaScreenProps {
   mesLabel: string;
   /** Resolved marca name — the "negocio" fallback when the perfil row has none (grill lock (c)). */
   brandName: string;
+  /** The gym's OWN legal/commercial name (gym.brand_name), distinct from `brandName` above (a
+   *  per-brand-module literal shared by every gym on that module) — the identidad-legal path needs
+   *  the per-gym value; review finding 1. */
+  gymBrandName: string;
   aboutValues: AboutValueDTO[];
   facilities: FacilityDTO[];
   stats: StatDTO[];
@@ -113,6 +117,7 @@ export function CuentaScreen({
   classTypes,
   mesLabel,
   brandName,
+  gymBrandName,
   aboutValues,
   facilities,
   stats,
@@ -154,15 +159,12 @@ export function CuentaScreen({
     ? `${metActivos} método${metActivos === 1 ? "" : "s"}${cobro.banco?.trim() ? " · " + cobro.banco.trim() : ""}`
     : "Próximamente";
 
-  // #255: the AJUSTES row's own status line — "listo" only once every field the aviso needs is
-  // filled in (same completeness rule the sheet's own preview gates on).
-  const legalCompleta = identidadLegalCompleta({
-    razonSocial: identidadLegal.razonSocial,
-    nombreComercial: brandName,
-    domicilio: identidadLegal.domicilio,
-    emailArco: identidadLegal.emailArco,
-    areaDatosPersonales: identidadLegal.areaDatosPersonales,
-  });
+  // #255: the AJUSTES row's own status line — "listo" only once the rendered aviso has zero
+  // unresolved merge-field tokens (review finding 3), via the SAME shared helper the sheet's own
+  // preview uses (review finding 8) — never a second hand-built identity object.
+  const legalCompleta = identidadLegalCompleta(
+    identidadDesde(identidadLegal, gymBrandName, perfil?.tel ?? null),
+  );
 
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
     {
@@ -242,7 +244,8 @@ export function CuentaScreen({
         open={legalOpen}
         onClose={() => setLegalOpen(false)}
         identidad={identidadLegal}
-        nombreComercial={brandName}
+        nombreComercial={gymBrandName}
+        telefonoContacto={perfil?.tel ?? null}
       />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />

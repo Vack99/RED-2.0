@@ -62,6 +62,21 @@
 revoke update on table public.gym from authenticated;
 grant update (legal_name) on public.gym to authenticated;
 
+-- ── Close the REST of the same ambient-grant landmine while we're here (review round 2, #255) ────
+-- TRAP #1 above only measured and closed the `authenticated` UPDATE grant (the command this
+-- migration's new policy needed to be safe). The SAME schema-wide `GRANT ALL ON TABLES` scaffold
+-- also still leaves `anon` holding every command on `gym` (INSERT/UPDATE/DELETE included — only
+-- SELECT was ever narrowed, by 20260713190100), and leaves `authenticated` holding INSERT/DELETE.
+-- Neither opens anything TODAY: `gym` carries no INSERT/DELETE policy for either role, and
+-- `authenticated`'s only UPDATE policy (just above) is staff-scoped — RLS default-deny still blocks
+-- every one of these commands regardless of the grant. But #256 is about to add gym-facing policies
+-- for the public aviso URL, and an inert ambient grant sitting unexamined is exactly what TRAP #1
+-- already burned once elsewhere on this same table. Revoking now, before any policy exists to
+-- compose with it, means the next person who adds one starts from a clean slate instead of having
+-- to rediscover this.
+revoke insert, update, delete on table public.gym from anon;
+revoke insert, delete on table public.gym from authenticated;
+
 drop policy if exists "gym_staff_update" on public.gym;
 create policy "gym_staff_update" on public.gym for update to authenticated
   using ((select public.is_staff_of(id))) with check ((select public.is_staff_of(id)));

@@ -19,7 +19,12 @@ import { resolveBrand } from "../../../lib/brand";
 import { CuentaScreen } from "./_components/cuenta";
 
 export default async function Page() {
-  const { timezone: tz } = await getOperatorGym();
+  // `brandName` here is the per-GYM legal name (gym.brand_name — packages/domain/src/legal.ts's
+  // own doc comment names it `nombreComercial`'s real source), NOT `brand.copy.name` below (a
+  // per-BRAND-MODULE literal shared by every gym on that module — review finding 1: passing the
+  // latter into a legal document naming the responsable rendered the same commercial name for
+  // every gym sharing a brand).
+  const { timezone: tz, brandName: gymBrandName } = await getOperatorGym();
   const [perfil, resumen, cobro, paquetes, plantillas, coaches, classTypes, brand, aboutValues, facilities, stats, faqs, mensajes, mesesRespaldo, identidadLegal] =
     await Promise.all([
       getPerfil(),
@@ -52,6 +57,7 @@ export default async function Page() {
       classTypes={classTypes}
       mesLabel={mesLabel}
       brandName={brand.copy.name}
+      gymBrandName={gymBrandName}
       aboutValues={aboutValues}
       facilities={facilities}
       stats={stats}

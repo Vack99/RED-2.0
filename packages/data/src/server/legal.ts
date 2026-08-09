@@ -174,10 +174,11 @@ const campoOpcional = (max: number) =>
 export const actualizarIdentidadLegalSchema = z.object({
   razonSocial: campoOpcional(200),
   domicilio: campoOpcional(300),
-  emailArco: z.preprocess(
-    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
-    z.string().trim().max(160).email("Correo ARCO inválido").nullable(),
-  ),
+  // Same blank→null body as every other field (campoOpcional), plus a format check: a blank/null
+  // value skips it (nothing to validate), a non-blank one must be a real email.
+  emailArco: campoOpcional(160).refine((v) => v === null || z.string().email().safeParse(v).success, {
+    message: "Correo ARCO inválido",
+  }),
   areaDatosPersonales: campoOpcional(200),
 });
 export type ActualizarIdentidadLegalInput = z.infer<typeof actualizarIdentidadLegalSchema>;
