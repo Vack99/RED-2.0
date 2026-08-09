@@ -51,8 +51,9 @@
 --      HEAL): the claim-what's-missing pass (fix 1) claims every other missing week in the window —
 --      "+0","+1","+2","+4","+5" — proving it closes real holes instead of trusting a frontier aggregate
 --      that would have assumed "+0".."+2" were already covered just because "+3" was claimed. Gym F's
---      active template is INACTIVE so the frontier loop never touches it directly — isolating the
---      prune vector below from this one.
+--      active template is INACTIVE so the cron's per-week claim-what's-missing loop never touches it
+--      directly (the `is_active` fleet filter excludes it) — isolating the prune vector below from
+--      this one.
 --   #261 LEDGER PRUNE — the same cron call's set-based DELETE (outside every per-gym subtransaction)
 --      removes gym F's schedule_template_week row older than the run's cutoff (UTC Monday − 14 days),
 --      leaves the boundary row (exactly AT the cutoff — the condition is strict "<") and a newer row
@@ -87,7 +88,7 @@ declare
   -- #261 fixtures — three more gyms, all sharing gym A's timezone so their Monday arithmetic lines up
   -- with monday_a computed further down this file.
   gym_d   uuid := gen_random_uuid();   -- STEADY STATE: ledger pre-claimed through "+4"
-  gym_e   uuid := gen_random_uuid();   -- OUTAGE HEAL: ledger frontier at "+3"
+  gym_e   uuid := gen_random_uuid();   -- OUTAGE HEAL: ledger holds only a "+3" claim, rest missing
   gym_f   uuid := gen_random_uuid();   -- PRUNE: INACTIVE template, so the cron never touches it directly
   ct_d uuid; ct_e uuid; ct_f uuid;
   coach_d uuid; coach_e uuid;
@@ -180,7 +181,9 @@ begin
   insert into public.schedule_template_week (gym_id, template_id, week_start)
   select gym_d, tmpl_d, v_monday_seed + (o * 7) from generate_series(-1, 4) as o;
 
-  -- gym E: ONE row at +3 — the frontier is a MAX per template, so a single row sets it.
+  -- gym E: ONE row at +3 — the cron's claim-what's-missing loop checks each week 0..5 independently
+  -- against the ledger, so the other five (missing) weeks get claimed regardless of where this one
+  -- row sits.
   insert into public.schedule_template_week (gym_id, template_id, week_start)
     values (gym_e, tmpl_e, v_monday_seed + 21);
 
@@ -619,11 +622,19 @@ begin
 end $$;
 
 -- ── FIX-1 REGRESSION — the poisoning state built above (gym-A staff's ensure_week_materialized(monday_a
--- + 42), one week PAST gym A's normal 0..5 horizon) claims a ledger row for tmpl_a at that far week —
--- exactly the shape that used to drag a min()/max() frontier aggregate forward and made the cron skip
--- real gaps in the 0..5 window. A third fleet pass must still see that window fully claimed, with no
--- hole introduced by the far claim. Runs as ops (postgres): cron_materialize_horizon is not reachable
--- from the authenticated role that did the poisoning above.
+-- + 42), one week PAST gym A's normal 0..5 horizon) claims a ledger row for tmpl_a at that far week.
+-- What this proves: under the REMOVED min()/max() frontier design, that poisoned frontier (monday_a+42)
+-- would push the next claim start to frontier + 1 week = monday_a+49 — past monday_a+35, the top of the
+-- 0..5 window — so a frontier-driven pass would claim nothing inside the window at all, and any real
+-- hole already there would fail the assertion below (and stay unhealed permanently, once the #260 clamp
+-- locks a past week out). Asserting the window's claim count alone is NOT enough to prove this: nothing
+-- removes a row from 0..5 between the first cron run and here, so "6 distinct claimed weeks" would hold
+-- even if this third run did nothing at all. So this block first punches a genuine hole itself — DELETE
+-- gym A's ledger row at week_start = monday_a + 14 (mid-window), leaving the +42 poisoning row in place —
+-- then runs cron_materialize_horizon() a third time and asserts the +14 row is BACK: the shipped
+-- claim-what's-missing loop checks each week's own ledger state directly, not an aggregate, so it heals
+-- the hole regardless of what the poisoned frontier would have said. Runs as ops (postgres):
+-- cron_materialize_horizon is not reachable from the authenticated role that did the poisoning above.
 do $$
 declare
   gym_a    uuid := current_setting('t.h_gym_a', true)::uuid;
@@ -635,7 +646,20 @@ begin
   monday_a := (now() at time zone 'America/Mexico_City')::date;
   monday_a := monday_a - ((extract(isodow from monday_a)::int - 1));
 
+  -- Punch the mid-window hole the first two cron runs had already closed, while the +42 poisoning
+  -- claim (outside the window) stays untouched.
+  delete from public.schedule_template_week
+   where gym_id = gym_a and template_id = tmpl_a and week_start = monday_a + 14;
+
   summary3 := public.cron_materialize_horizon();
+
+  -- The hole is healed: the +14 claim is back.
+  select count(*) into n
+    from public.schedule_template_week
+   where gym_id = gym_a and template_id = tmpl_a and week_start = monday_a + 14;
+  if n <> 1 then
+    raise exception 'FRONTIER REGRESSION FAIL: gym A''s +14 hole was not healed after a poisoning far-claim — summary=%', summary3;
+  end if;
 
   select count(distinct week_start) into n
     from public.schedule_template_week
