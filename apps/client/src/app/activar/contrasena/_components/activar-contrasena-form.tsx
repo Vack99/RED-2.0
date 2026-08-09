@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { startTransition, useActionState, useState, type FormEvent } from "react";
 
+import { AvisoSimplificadoInline } from "../../../_components/aviso-simplificado-inline";
 import { validarPasswordNueva } from "../../../../lib/auth-validacion";
 import { activarContrasenaAction, type ActivarContrasenaActionState } from "../actions";
 
@@ -19,10 +20,14 @@ const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] text-muted t
 export function ActivarContrasenaForm({
   email,
   codigo,
+  avisoSimplificado,
 }: {
   readonly email: string;
   /** The code threaded from the door, claimed after the password is set; null = none. */
   readonly codigo?: string | null;
+  /** The gym's rendered simplificado aviso (#256), or null for the generic fallback —
+   *  `AvisoSimplificadoInline` renders either. Resolved server-side (activar/contrasena/page.tsx). */
+  readonly avisoSimplificado: string | null;
 }) {
   const [state, dispatch, pending] = useActionState(activarContrasenaAction, INICIAL);
   const [password, setPassword] = useState("");
@@ -127,6 +132,8 @@ export function ActivarContrasenaForm({
         {errConfirmar && <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errConfirmar}</p>}
       </div>
 
+      <AvisoSimplificadoInline cuerpo={avisoSimplificado} />
+
       <label className="flex cursor-pointer items-start gap-3 text-[12.5px] text-muted">
         <input
           name="acepta"
@@ -136,8 +143,27 @@ export function ActivarContrasenaForm({
           className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
         />
         <span>
-          Acepto los <span className="font-semibold text-fg">Términos y Condiciones</span> y el{" "}
-          <span className="font-semibold text-fg">Aviso de Privacidad</span>.
+          Acepto los{" "}
+          <Link
+            href="/legal#terminos"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="font-semibold text-fg underline"
+          >
+            Términos y Condiciones
+          </Link>{" "}
+          y el{" "}
+          <Link
+            href="/legal#privacidad"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="font-semibold text-fg underline"
+          >
+            Aviso de Privacidad
+          </Link>
+          .
         </span>
       </label>
 

@@ -10,7 +10,12 @@
 --
 -- Since 20260713190100 (D3): anon's `gym` read is COLUMN-granted — the brand-seam columns only.
 -- The anon block additionally proves the granted list still serves the pre-auth lookup and that
--- `legal_name`/`owner_user_id` raise 42501 for anon.
+-- `owner_user_id` raises 42501 for anon.
+--
+-- Since 20260808140000 (#256): `legal_name` FLIPPED — anon can now read it (the client app's
+-- per-tenant aviso de privacidad is public-by-law content), unscoped by row like every other
+-- brand-seam column. The anon block below asserts the read succeeds; `authenticated` (#213, just
+-- below) still gets 42501 on it — #255's staff-only design for that role is untouched.
 --
 -- Since 20260802120000 (#213): the SAME narrowing now applies to `authenticated`. That role held
 -- the table-wide grant until 2026-08-02 — so a membership-less identity read every gym's
@@ -87,17 +92,22 @@ begin
           about_story, about_pull_quote, about_tagline
     from public.gym;
 
-  -- …and NOT the owner PII: legal_name / owner_user_id must 42501 for anon.
-  begin
-    perform legal_name from public.gym;
-    raise exception 'DENIAL FAIL: anon read gym.legal_name — the column revoke did not hold';
-  exception when insufficient_privilege then null;  -- 42501 = correct
-  end;
+  -- …and NOT owner_user_id: that PII must still 42501 for anon.
   begin
     perform owner_user_id from public.gym;
     raise exception 'DENIAL FAIL: anon read gym.owner_user_id — the column revoke did not hold';
   exception when insufficient_privilege then null;
   end;
+
+  -- legal_name is the ONE deliberate exception (#256, 20260808140000): the aviso de privacidad
+  -- is public-by-law content, so anon CAN read razón social — flat, unscoped by row, same as
+  -- brand_name above. Same proof shape as the brand-seam columns just above: a missing grant
+  -- raises insufficient_privilege here, a present one does not — the absence of an exception IS
+  -- the assertion (no fixture dependency: this suite reads whatever gym rows already exist, most
+  -- of which have a null legal_name, so a row-count/value check would be vacuous either way).
+  -- This says nothing about `authenticated`, which the block below proves separately stays
+  -- denied (#255's design: no member/staff grant on this column).
+  perform legal_name from public.gym;
 
   -- WRITE: INSERT denied (default-deny, no policy → error)
   n := 1;

@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { aceptarAcuerdo, actualizarIdentidadLegal, getAcuerdoAceptado, getIdentidadLegal } from "./legal";
+import {
+  aceptarAcuerdo,
+  actualizarIdentidadLegal,
+  getAcuerdoAceptado,
+  getIdentidadLegal,
+  getIdentidadLegalPublica,
+} from "./legal";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -465,6 +471,89 @@ describe("actualizarIdentidadLegal", () => {
     const fake = fakeActualizarIdentidad({ legalUpsertError: { message: "boom" } });
     await expect(actualizarIdentidadLegal(IDENTIDAD_INPUT, fake.client)).rejects.toThrow(
       "No se pudo guardar el domicilio y el contacto ARCO",
+    );
+  });
+});
+
+/**
+ * getIdentidadLegalPublica (#256) — the PUBLIC anon-scoped read `/legal`, `/registro` and
+ * `/activar/contrasena` use, as opposed to `getIdentidadLegal` above (staff-only, via
+ * obtener_identidad_legal). Two plain `.from().select().eq().maybeSingle()` reads, no auth
+ * plumbing (no requireOperator, no getOperatorGym) — RLS/grant composition itself is proven
+ * against the real schema in supabase/tests/gym_tenant_anon_read.sql (`legal_name`) and
+ * anon_catalog_read.sql (`gym_legal`); here we assert the query shape and the camelCase mapping.
+ */
+function fakeIdentidadPublica(opts: {
+  gymRow?: Record<string, unknown> | null;
+  legalRow?: Record<string, unknown> | null;
+}) {
+  const eqCalls: [string, string, unknown][] = [];
+  const client = {
+    from: (table: string) => {
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: (col: string, val: unknown) => {
+          eqCalls.push([table, col, val]);
+          return b;
+        },
+        maybeSingle: async () => {
+          if (table === "gym") return { data: opts.gymRow ?? null, error: null };
+          if (table === "gym_legal") return { data: opts.legalRow ?? null, error: null };
+          throw new Error(`unexpected table ${table}`);
+        },
+      };
+      return b;
+    },
+  };
+  return { client: client as unknown as SupabaseServer, eqCalls };
+}
+
+describe("getIdentidadLegalPublica", () => {
+  it("maps both rows to the camelCased DTO", async () => {
+    const { client } = fakeIdentidadPublica({
+      gymRow: { legal_name: "Gimnasio Forge, S.A. de C.V." },
+      legalRow: {
+        domicilio: "Av. Siempre Viva 123",
+        email_arco: "datos@forge.mx",
+        area_datos_personales: "Departamento de Datos Personales",
+      },
+    });
+    expect(await getIdentidadLegalPublica("gym-1", client)).toEqual({
+      razonSocial: "Gimnasio Forge, S.A. de C.V.",
+      domicilio: "Av. Siempre Viva 123",
+      emailArco: "datos@forge.mx",
+      areaDatosPersonales: "Departamento de Datos Personales",
+    });
+  });
+
+  it("returns an all-null DTO when neither row exists (identity not filled in yet)", async () => {
+    const { client } = fakeIdentidadPublica({});
+    expect(await getIdentidadLegalPublica("gym-1", client)).toEqual({
+      razonSocial: null,
+      domicilio: null,
+      emailArco: null,
+      areaDatosPersonales: null,
+    });
+  });
+
+  it("degrades gracefully when only ONE side resolves (e.g. legal_name set, no gym_legal row yet)", async () => {
+    const { client } = fakeIdentidadPublica({ gymRow: { legal_name: "Gimnasio Forge" }, legalRow: null });
+    expect(await getIdentidadLegalPublica("gym-1", client)).toEqual({
+      razonSocial: "Gimnasio Forge",
+      domicilio: null,
+      emailArco: null,
+      areaDatosPersonales: null,
+    });
+  });
+
+  it("scopes both reads to the gym id: gym.id and gym_legal.gym_id", async () => {
+    const { client, eqCalls } = fakeIdentidadPublica({});
+    await getIdentidadLegalPublica("gym-1", client);
+    expect(eqCalls).toEqual(
+      expect.arrayContaining([
+        ["gym", "id", "gym-1"],
+        ["gym_legal", "gym_id", "gym-1"],
+      ]),
     );
   });
 });

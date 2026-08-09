@@ -17,9 +17,10 @@
 --       grant copied a PRD table list, not the pages that shipped. 20260807120000 dropped those
 --       five anon policies, so the SAME seeds that used to prove the read now prove the denial.
 --   (c) NO OTHER anon widening exists — the authoritative machine check: the exact set of tables
---       carrying an anon-role SELECT policy equals the allowlist (11 since #250: `gym` + 9
---       decision-(b) + gym_contact, the #53 public Contacto surface), and no anon WRITE policy
---       exists.
+--       carrying an anon-role SELECT policy equals the allowlist (12 since #256: `gym` + 9
+--       decision-(b) + gym_contact (#53) + gym_legal (#256's per-tenant aviso de privacidad —
+--       domicilio/contacto ARCO, public-by-law content, request-scoped like gym_contact), and no
+--       anon WRITE policy exists.
 --   (d)-(f) #215: one anonymous call cannot span gyms. The decision-(b) policies stopped being
 --       `using (true)` and now key on the gym the REQUEST names (x-gym-id → `request.headers` →
 --       public.gym_en_peticion()). A second gym is seeded so "gym B is invisible while naming gym
@@ -72,6 +73,8 @@ begin
   insert into public.plan_feature (gym_id, plan_id, label, orden) values (gym_a, pkg, 'Acceso a la clase', 0);
   insert into public.about_value (gym_id, title, description) values (gym_a, 'Comunidad', 'Entrenamos juntos.');
   insert into public.gym_contact (gym_id, address_line) values (gym_a, 'Av. Probe 1');
+  insert into public.gym_legal (gym_id, domicilio, email_arco, area_datos_personales)
+    values (gym_a, 'Av. Probe Legal 1', 'datos@anon-catalog-gym-a.local', 'Departamento de Datos Personales');
   insert into public.facility (gym_id, name, description) values (gym_a, 'Área de pesas', 'Equipo completo.');
   insert into public.stat (gym_id, label, value) values (gym_a, 'Miembros activos', '500+');
   insert into public.faq (gym_id, question, answer) values (gym_a, '¿Necesito membresía anual?', 'No.');
@@ -98,13 +101,15 @@ begin
   insert into public.paquetes (gym_id, nombre, clases, precio, vigencia_tipo, vigencia_dias, popular, orden)
     values (gym_b, 'AnonProbeB-' || substr(gen_random_uuid()::text, 1, 8), 5, 100, 'dias', 20, false, 999);
   insert into public.gym_contact (gym_id, address_line) values (gym_b, 'Av. Probe B 2');
+  insert into public.gym_legal (gym_id, domicilio, email_arco, area_datos_personales)
+    values (gym_b, 'Av. Probe Legal B 2', 'datos@anon-catalog-gym-b.local', 'Departamento de Datos Personales');
 
   -- Carried out of this block so the anon section can stamp them as the request's gym.
   perform set_config('test.gym_a', gym_a::text, true);
   perform set_config('test.gym_b', gym_b::text, true);
 end $$;
 
--- ── (c) Authoritative: the anon-SELECT table set == the 11-table allowlist, and NO anon write ─────
+-- ── (c) Authoritative: the anon-SELECT table set == the 12-table allowlist, and NO anon write ─────
 do $$
 declare
   expected text[] := array[
@@ -115,7 +120,7 @@ declare
     -- LEFT OUT since #250 for the same kind of reason: no anon reader ever existed. Either name
     -- reappearing here means a public policy landed ahead of the page that needs it.
     'about_value','class_session','class_type','coach','faq','facility','gym','gym_contact',
-    'paquetes','plan_feature','stat'
+    'gym_legal','paquetes','plan_feature','stat'
   ];
   got     text[];
   extra   text[];
@@ -152,7 +157,9 @@ set local role anon;
 select set_config('request.headers', json_build_object('x-gym-id', current_setting('test.gym_a'))::text, true);
 
 do $$
-declare n int;
+declare
+  n int;
+  v_domicilio text;
 begin
   -- (a) succeeds on every decision-(b) table that has a reader (each seeded with >= 1 row)
   select count(*) into n from public.coach;                  if n < 1 then raise exception 'ANON READ FAIL: coach % rows', n; end if;
@@ -165,6 +172,23 @@ begin
   select count(*) into n from public.stat;                   if n < 1 then raise exception 'ANON READ FAIL: stat % rows', n; end if;
   select count(*) into n from public.faq;                    if n < 1 then raise exception 'ANON READ FAIL: faq % rows', n; end if;
   select count(*) into n from public.gym_contact;            if n < 1 then raise exception 'ANON READ FAIL: gym_contact % rows', n; end if;
+
+  -- gym_legal (#256): anon reads the aviso's three columns, and the VALUE round-trips (not just
+  -- a row count) — the non-vacuous proof the brief asks for.
+  select count(*) into n from public.gym_legal; if n < 1 then raise exception 'ANON READ FAIL: gym_legal % rows', n; end if;
+  select domicilio into v_domicilio from public.gym_legal where gym_id = current_setting('test.gym_a')::uuid;
+  if v_domicilio is distinct from 'Av. Probe Legal 1' then
+    raise exception 'ANON READ FAIL: gym_legal.domicilio = % (expected the seeded value)', v_domicilio;
+  end if;
+
+  -- gym_legal's grant is COLUMN-narrowed (20260808140000): anon reads gym_id/domicilio/
+  -- email_arco/area_datos_personales but NOT updated_at — the ambient default-grant landmine the
+  -- migration's revoke-then-grant-columns closes. Same proof shape as gym.legal_name above.
+  begin
+    perform updated_at from public.gym_legal;
+    raise exception 'DENIAL FAIL: anon read gym_legal.updated_at — the column revoke did not hold';
+  exception when insufficient_privilege then null;  -- 42501 = correct
+  end;
 
   -- (b) denied on the excluded sibling + the member-owned table (both seeded — non-vacuous)
   select count(*) into n from public.schedule_template_coach;
@@ -198,6 +222,8 @@ begin
   if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s paquetes rows', n; end if;
   select count(*) into n from public.gym_contact  where gym_id = current_setting('test.gym_b')::uuid;
   if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s gym_contact rows', n; end if;
+  select count(*) into n from public.gym_legal    where gym_id = current_setting('test.gym_b')::uuid;
+  if n <> 0 then raise exception 'CROSS-GYM FAIL: anon named gym A and read % of gym B''s gym_legal rows', n; end if;
 end $$;
 
 -- (e) The other direction — proves the scoping FOLLOWS the request rather than pinning one

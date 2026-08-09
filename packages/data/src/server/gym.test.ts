@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { getAdminHosts, getOperatorGym, getOperatorGyms } from "./gym";
+import { getAdminHosts, getClientHost, getOperatorGym, getOperatorGyms } from "./gym";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -234,5 +234,87 @@ describe("getAdminHosts", () => {
   it("omits a gym with no admin host — the chooser renders it without a link", async () => {
     const { client } = makeFake({ dominios: [] });
     expect(await getAdminHosts(["gym-a"], client)).toEqual({});
+  });
+});
+
+/**
+ * getClientHost — the CUENTA legal-identity preview's aviso-URL source (#256): the singular,
+ * app='client' twin of getAdminHosts above. Its `.limit(1).maybeSingle()` shape differs from
+ * getAdminHosts' array read, so it gets its own small chain-recording fake rather than reusing
+ * `makeFake` above (which resolves via a bare `.then()`, never `.maybeSingle()`).
+ */
+function makeClientHostFake(dominios: Record<string, unknown>[]) {
+  let list = [...dominios];
+  const eqCalls: [string, unknown][] = [];
+  const notCalls: [string, string, unknown][] = [];
+  const orderCalls: string[] = [];
+  let limitCall: number | null = null;
+  const client = {
+    from: (table: string) => {
+      if (table !== "gym_domain") throw new Error(`unexpected table ${table}`);
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: (col: string, val: unknown) => {
+          eqCalls.push([col, val]);
+          list = list.filter((r) => r[col] === val);
+          return b;
+        },
+        not: (col: string, op: string, val: unknown) => {
+          notCalls.push([col, op, val]);
+          list = list.filter((r) => !String(r[col]).endsWith("localhost"));
+          return b;
+        },
+        order: (col: string) => {
+          orderCalls.push(col);
+          list = [...list].sort((a, bb) => String(a[col]).localeCompare(String(bb[col])));
+          return b;
+        },
+        limit: (n: number) => {
+          limitCall = n;
+          list = list.slice(0, n);
+          return b;
+        },
+        maybeSingle: async () => ({ data: list[0] ?? null, error: null }),
+      };
+      return b;
+    },
+  };
+  return { client: client as unknown as SupabaseServer, eqCalls, notCalls, orderCalls, limitCall: () => limitCall };
+}
+
+describe("getClientHost", () => {
+  it("returns the gym's client hostname", async () => {
+    const { client } = makeClientHostFake([
+      { gym_id: "gym-a", hostname: "app.forge.mx", app: "client", created_at: "2024-01-01" },
+    ]);
+    expect(await getClientHost("gym-a", client)).toBe("app.forge.mx");
+  });
+
+  it("scopes to the gym id, to app='client', and drops the dev-only .localhost row", async () => {
+    const { client, eqCalls, notCalls } = makeClientHostFake([
+      { gym_id: "gym-a", hostname: "app.forge.localhost", app: "client", created_at: "2020-01-01" },
+      { gym_id: "gym-a", hostname: "app.forge.mx", app: "client", created_at: "2024-01-01" },
+    ]);
+    expect(await getClientHost("gym-a", client)).toBe("app.forge.mx");
+    expect(eqCalls).toEqual([
+      ["gym_id", "gym-a"],
+      ["app", "client"],
+    ]);
+    expect(notCalls).toEqual([["hostname", "like", "%localhost"]]);
+  });
+
+  it("first-wins on created_at when a gym maps several client hosts (dev mirror + live)", async () => {
+    const { client, orderCalls, limitCall } = makeClientHostFake([
+      { gym_id: "gym-a", hostname: "nuevo.forge.mx", app: "client", created_at: "2026-01-01" },
+      { gym_id: "gym-a", hostname: "app.forge.mx", app: "client", created_at: "2020-01-01" },
+    ]);
+    expect(await getClientHost("gym-a", client)).toBe("app.forge.mx");
+    expect(orderCalls).toEqual(["created_at"]);
+    expect(limitCall()).toBe(1);
+  });
+
+  it("returns null for a gym with no mapped client host — the caller's merge field stays unresolved, never fabricated", async () => {
+    const { client } = makeClientHostFake([]);
+    expect(await getClientHost("gym-a", client)).toBeNull();
   });
 });

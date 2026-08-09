@@ -138,6 +138,14 @@ export default async function Home() {
           >
             Contacto
           </Link>
+          {/* #256: the aviso de privacidad's ONE pre-login entry point — before this, the legal
+              page was only reachable from inside the post-login perfil overlay. */}
+          <Link
+            href="/legal"
+            className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted hover:text-fg"
+          >
+            Privacidad
+          </Link>
         </div>
       </footer>
     </main>

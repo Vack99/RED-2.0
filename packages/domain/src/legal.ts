@@ -432,12 +432,21 @@ export const AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO = `
 
 /** The gym's legal identity as the aviso templates need it: `razonSocial` (gym.legal_name, staff
  *  writable since #255), `nombreComercial` (gym.brand_name — already public, always present),
- *  the `gym_legal` satellite's three columns (#253), and `telefonoContacto` (`perfil.tel` — the
- *  template's own CAMPOS DE COMBINACIÓN table names "Perfil del gimnasio" as its source; wired
- *  review round 2, finding 3). Every field but `nombreComercial` is nullable — a gym starts with
- *  none of it filled in. `email_contacto` has NO real source today (`perfil` carries no email
- *  column) — deliberately absent here, so it stays an unresolved merge field until a future slice
- *  adds one; `identidadLegalCompleta` below will keep saying so. */
+ *  the `gym_legal` satellite's three columns (#253). Every field but `nombreComercial` is
+ *  nullable — a gym starts with none of it filled in.
+ *
+ *  `telefonoContacto`/`emailContacto` (#256 correction): the template's own CAMPOS DE COMBINACIÓN
+ *  table names "Perfil del gimnasio" as their source, which #255 wired as `perfil.tel` — but
+ *  `perfil` is a row per OPERATOR, not per gym (a gym with several staff has several `perfil.tel`
+ *  values, none of them "the gym's" phone), and it is never anon-readable by design (it is not
+ *  gym-scoped data), so a member reading the public aviso could NEVER see a resolved phone that
+ *  way. `gym_contact` (domicilio/whatsapp/email, #53) is the gym-scoped, already-public
+ *  equivalent — this is now that column's job, sourced by the caller (packages/data/src/server/
+ *  marketing.ts's `getContacto`), not perfil's.
+ *
+ *  `urlAvisoIntegral` (#256): the aviso's own stable public URL — "Generado por RED" per the
+ *  template's CAMPOS table, so the caller supplies it (the client app derives it from the current
+ *  request's origin; the admin preview resolves the gym's mapped client host). */
 export interface IdentidadLegalGym {
   razonSocial: string | null;
   nombreComercial: string;
@@ -445,13 +454,16 @@ export interface IdentidadLegalGym {
   emailArco: string | null;
   areaDatosPersonales: string | null;
   telefonoContacto: string | null;
+  emailContacto: string | null;
+  urlAvisoIntegral: string | null;
 }
 
-/** Assemble the `IdentidadLegalGym` the aviso needs from its three separate sources: the
- *  gym_legal-backed DTO (razón social + gym_legal's three columns), the gym's brand name, and the
- *  perfil's phone. Both CUENTA call sites need the exact same shape — the AJUSTES status line
- *  (from the last-saved DTO) and the editor sheet's live preview (from whatever's currently typed)
- *  — so neither re-assembles the object by hand (review finding 8). */
+/** Assemble the `IdentidadLegalGym` the aviso needs from its sources: the gym_legal-backed DTO
+ *  (razón social + gym_legal's three columns), the gym's brand name, and the platform/gym_contact
+ *  values (#256) the caller resolved separately. Every CUENTA/client call site needs the exact
+ *  same shape — the CUENTA AJUSTES status line, the editor sheet's live preview, and the client
+ *  app's /legal + registro + activar renders — so none of them re-assembles the object by hand
+ *  (review finding 8, extended by #256). */
 export function identidadDesde(
   dto: {
     razonSocial: string | null;
@@ -461,6 +473,8 @@ export function identidadDesde(
   },
   nombreComercial: string,
   telefonoContacto: string | null,
+  emailContacto: string | null,
+  urlAvisoIntegral: string | null,
 ): IdentidadLegalGym {
   return {
     razonSocial: dto.razonSocial,
@@ -469,15 +483,16 @@ export function identidadDesde(
     emailArco: dto.emailArco,
     areaDatosPersonales: dto.areaDatosPersonales,
     telefonoContacto,
+    emailContacto,
+    urlAvisoIntegral,
   };
 }
 
 /** Substitute \`{{snake_case}}\` merge fields in an aviso template with known values. A field absent
  *  from `valores`, or whose value is blank, is left VISIBLE as the literal `{{token}}` — the
  *  deliberate choice (Gate 0.1 fallback ruling) over silently stripping it: a preview must show
- *  staff exactly what is still unresolved (platform-generated fields like `{{url_aviso_integral}}`
- *  included — those are #256's job, not this one), never fabricate blank prose that reads as
- *  finished copy. Pure — no I/O, no document identity, just string substitution. */
+ *  staff exactly what is still unresolved, never fabricate blank prose that reads as finished
+ *  copy. Pure — no I/O, no document identity, just string substitution. */
 export function mergeAvisoTemplate(
   texto: string,
   valores: Readonly<Record<string, string | null | undefined>>,
@@ -497,6 +512,23 @@ export function mergeAvisoTemplate(
 export const AVISO_PRIVACIDAD_VERSION = "0.1-borrador";
 export const AVISO_PRIVACIDAD_FECHA_ACTUALIZACION = "07 de agosto de 2026";
 
+/** The ARCO response/execution windows the template's own CAMPOS DE COMBINACIÓN table marks
+ *  "Constante — pendiente de verificación legal" (#256): the design already calls for a platform
+ *  constant here, just not yet a legally-confirmed one. Values are the template's OWN drafting
+ *  note ("Los plazos del régimen anterior (20 y 15 días hábiles) no deben asumirse vigentes sin
+ *  confirmación") — the best available placeholder it names, not an invented number — carrying the
+ *  same "borrador, pending review" posture as `AVISO_PRIVACIDAD_VERSION`. Bump alongside a real
+ *  legal ruling, same discipline as every other version-pinned constant in this file. */
+export const AVISO_PLAZO_RESPUESTA_ARCO_DIAS = "20";
+export const AVISO_PLAZO_EJECUCION_ARCO_DIAS = "15";
+
+/** The "additional channel" §6 promises alongside the URL+date header (#256): the template's own
+ *  CAMPOS table marks this "Alta del gimnasio" (a future per-gym field with no schema/UI home yet
+ *  — flagged in the #256 report as follow-up work), so until that exists this is a platform-wide
+ *  default rather than an invented per-gym claim — verbatim one of the template's OWN parenthetical
+ *  examples, not new copy. */
+export const AVISO_CANAL_CAMBIOS_ADICIONAL = "correo electrónico a la dirección de contacto que tengamos registrada";
+
 function valoresDesdeIdentidad(identidad: IdentidadLegalGym): Record<string, string | null> {
   return {
     razon_social: identidad.razonSocial,
@@ -505,17 +537,46 @@ function valoresDesdeIdentidad(identidad: IdentidadLegalGym): Record<string, str
     email_arco: identidad.emailArco,
     area_datos_personales: identidad.areaDatosPersonales,
     telefono_contacto: identidad.telefonoContacto,
+    email_contacto: identidad.emailContacto,
+    url_aviso_integral: identidad.urlAvisoIntegral,
     version_aviso: AVISO_PRIVACIDAD_VERSION,
     fecha_actualizacion: AVISO_PRIVACIDAD_FECHA_ACTUALIZACION,
+    plazo_respuesta_arco: AVISO_PLAZO_RESPUESTA_ARCO_DIAS,
+    plazo_ejecucion_arco: AVISO_PLAZO_EJECUCION_ARCO_DIAS,
+    canal_aviso_cambios: AVISO_CANAL_CAMBIOS_ADICIONAL,
   };
+}
+
+/** The two inline "optional paragraph" draft blocks §2 and §4 of the integral template embed —
+ *  each a `{{token}}` line immediately followed by an italic "> *[OPCIONAL — …]*" instructional
+ *  note aimed at the abogado/owner filling the CUENTA form, never at a member (#256 fix: the
+ *  slice boundary in `cuerpoMiembroIntegral` below only ever excluded the TRAILING optional block
+ *  — "PÁRRAFO OPCIONAL — ALOJAMIENTO Y ENCARGADOS" — sitting AFTER §6; these two sit INSIDE §2/§4,
+ *  so they rode through unstripped, both the raw token and the staff-facing note). Neither field
+ *  has a per-gym source anywhere in the product today (no schema column, no admin form), so the
+ *  right member-facing behavior is not "raw {{token}}" but NOTHING — the whole two-line block
+ *  disappears, the same as any other admin form field left blank. */
+const BLOQUES_OPCIONALES_INTEGRAL: readonly string[] = [
+  "`{{parrafo_datos_adicionales}}`\n> *[OPCIONAL — incluir solo si el gimnasio recaba datos fuera de la plataforma: videovigilancia, contacto de emergencia, formatos en papel, etc. Redacción a cargo del gimnasio.]*\n\n",
+  "`{{parrafo_registro_publicidad}}`\n> *[OPCIONAL — mención del Registro Público para Evitar Publicidad (PROFECO); confirmar con el abogado si procede incluirlo.]*\n\n",
+];
+
+function despojarBloquesOpcionales(cuerpo: string): string {
+  return BLOQUES_OPCIONALES_INTEGRAL.reduce((texto, bloque) => {
+    if (!texto.includes(bloque)) {
+      throw new Error(`AVISO_PRIVACIDAD_INTEGRAL_TEXTO: optional block marker not found: ${bloque.slice(0, 40)}…`);
+    }
+    return texto.replace(bloque, "");
+  }, cuerpo);
 }
 
 /** The member-facing span of the integral aviso: the real "AVISO DE PRIVACIDAD" heading (§1
  *  through §6) — never the file's own "... INTEGRAL — PLANTILLA POR GIMNASIO" title above it.
- *  Excludes the BORRADOR banner, the drafting notes, the optional-paragraph draft block, and the
- *  CAMPOS DE COMBINACIÓN reference table: lawyer/staff-facing scaffolding a member must never see
- *  (review finding 2 — "the owner sees exactly what members will see" means the body span, not the
- *  whole draft file). Pure slicing over the byte-for-byte TEXTO constant; the constant and its
+ *  Excludes the BORRADOR banner, the drafting notes, the trailing optional-paragraph draft block,
+ *  the two INLINE optional-paragraph blocks inside §2/§4 (`despojarBloquesOpcionales`, #256), and
+ *  the CAMPOS DE COMBINACIÓN reference table: lawyer/staff-facing scaffolding a member must never
+ *  see (review finding 2 — "the owner sees exactly what members will see" means the body span, not
+ *  the whole draft file). Pure slicing over the byte-for-byte TEXTO constant; the constant and its
  *  drift guard (tools/guards/aviso-legal-drift.test.ts) stay untouched — only the render path
  *  changes. */
 function cuerpoMiembroIntegral(texto: string): string {
@@ -524,7 +585,7 @@ function cuerpoMiembroIntegral(texto: string): string {
   if (inicio === -1 || fin === -1 || fin <= inicio) {
     throw new Error("AVISO_PRIVACIDAD_INTEGRAL_TEXTO: member-facing body markers not found");
   }
-  return texto.slice(inicio + 1, fin).trim();
+  return despojarBloquesOpcionales(texto.slice(inicio + 1, fin).trim());
 }
 
 /** The member-facing span of the simplificado aviso: the two renderable "Texto" variants plus the
@@ -541,14 +602,16 @@ function cuerpoMiembroSimplificado(texto: string): string {
 }
 
 /** The integral aviso, sliced to its member-facing body and merged with the gym's current legal
- *  identity — the CUENTA preview's main tab. Renders unconditionally; unresolved fields stay
- *  visible per `mergeAvisoTemplate`'s contract, and `identidadLegalCompleta` below is the honest
- *  read of whether any remain. */
+ *  identity — the CUENTA preview's main tab, and (#256) the client app's `/legal` page (gated on
+ *  `identidadLegalCompleta` there; an incomplete identity never reaches this call). Renders
+ *  unconditionally; unresolved fields stay visible per `mergeAvisoTemplate`'s contract, and
+ *  `identidadLegalCompleta` below is the honest read of whether any remain. */
 export function renderAvisoIntegral(identidad: IdentidadLegalGym): string {
   return mergeAvisoTemplate(cuerpoMiembroIntegral(AVISO_PRIVACIDAD_INTEGRAL_TEXTO), valoresDesdeIdentidad(identidad));
 }
 
-/** The simplificado aviso, sliced and merged the same way — the CUENTA preview's second tab. */
+/** The simplificado aviso, sliced and merged the same way — the CUENTA preview's second tab, and
+ *  (#256) the inline consent-point render on `/registro` and `/activar/contrasena`. */
 export function renderAvisoSimplificado(identidad: IdentidadLegalGym): string {
   return mergeAvisoTemplate(
     cuerpoMiembroSimplificado(AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO),
@@ -576,24 +639,27 @@ const ETIQUETAS_CAMPOS: Readonly<Record<string, string>> = {
   domicilio: "domicilio",
   email_arco: "correo de contacto ARCO",
   area_datos_personales: "área o persona responsable de datos personales",
-  telefono_contacto: "teléfono de contacto",
-  email_contacto: "correo de contacto general (sin fuente hoy)",
+  telefono_contacto: "teléfono de contacto (gym_contact.whatsapp)",
+  email_contacto: "correo de contacto general (gym_contact.email)",
   fecha_actualizacion: "fecha de la última actualización",
   version_aviso: "versión del aviso",
-  url_aviso_integral: "URL pública del aviso (la publica la plataforma — #256)",
+  url_aviso_integral: "URL pública del aviso",
   canal_aviso_cambios: "canal adicional de aviso de cambios",
   plazo_respuesta_arco: "plazo de respuesta ARCO (pendiente de verificación legal)",
   plazo_ejecucion_arco: "plazo de ejecución ARCO (pendiente de verificación legal)",
-  parrafo_datos_adicionales: "párrafo opcional de datos recabados fuera de la plataforma",
-  parrafo_registro_publicidad: "párrafo opcional del Registro Público para Evitar Publicidad",
+  // parrafo_datos_adicionales / parrafo_registro_publicidad carry NO label: despojarBloquesOpcionales
+  // strips both from the rendered body before tokensSinResolver ever runs (#256), so neither token can
+  // reach this map — a label here would be dead code pretending a case that can't happen still can.
 };
 
 /** The human labels of every merge field still unresolved across BOTH rendered aviso bodies,
  *  deduplicated — what the CUENTA empty state and the AJUSTES status line list. Some are
- *  staff-editable right now (the CUENTA form above); others are platform- or legal-pending and
- *  outside this editor's reach until a later slice (#256's aviso URL, the legal team's ARCO
- *  plazos) — listed either way, undifferentiated, because in both cases the document is not yet
- *  what a member would actually see. Empty exactly when `identidadLegalCompleta`. */
+ *  staff-editable right now (the CUENTA form above); others are resolved by the CALLER supplying
+ *  platform/gym_contact context (#256's `identidadDesde` params) — a caller that omits one (e.g.
+ *  an unmapped client host, or a gym with no gym_contact row yet) still lists it here rather than
+ *  silently reading as "listo". Listed either way, undifferentiated, because in both cases the
+ *  document is not yet what a member would actually see. Empty exactly when
+ *  `identidadLegalCompleta`. */
 export function camposFaltantesIdentidadLegal(identidad: IdentidadLegalGym): string[] {
   const tokens = new Set([
     ...tokensSinResolver(renderAvisoIntegral(identidad)),
@@ -608,7 +674,12 @@ export function camposFaltantesIdentidadLegal(identidad: IdentidadLegalGym): str
  *  raw `{{tokens}}` in it (contact email, ARCO response windows, the aviso's own future URL, …) —
  *  fields the list had never heard of. This derives the answer from the rendered text itself, so
  *  it cannot go stale that way again: a template edit that adds a new merge field is caught
- *  automatically, with no second list to keep in sync. */
+ *  automatically, with no second list to keep in sync.
+ *
+ *  #256 closed the last of those gaps (url_aviso_integral, email/telefono_contacto via
+ *  gym_contact, the ARCO plazos, canal_aviso_cambios), so this can now genuinely be `true`: a gym
+ *  with its CUENTA legal identity filled in (#255) AND a gym_contact row (#53's schema — no admin
+ *  editor for it yet, a follow-up gap noted in the #256 report) reaches "listo". */
 export function identidadLegalCompleta(identidad: IdentidadLegalGym): boolean {
   return camposFaltantesIdentidadLegal(identidad).length === 0;
 }

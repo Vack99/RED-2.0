@@ -4,6 +4,7 @@ import Script from "next/script";
 import Link from "next/link";
 import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
 
+import { AvisoSimplificadoInline } from "../../_components/aviso-simplificado-inline";
 import {
   validarCorreo,
   validarNombreCompleto,
@@ -43,7 +44,15 @@ const HELP = "mt-1.5 text-[10.5px] text-muted";
  * valid submit `new FormData(form)` carries the token to the action's server-side verifier. No prefilled
  * credentials, no dead controls (the terms/privacy names are emphasized text, not stub links).
  */
-export function RegistroForm({ brandName }: { readonly brandName: string }) {
+export function RegistroForm({
+  brandName,
+  avisoSimplificado,
+}: {
+  readonly brandName: string;
+  /** The gym's rendered simplificado aviso (#256), or null for the generic fallback —
+   *  `AvisoSimplificadoInline` renders either. Resolved server-side (registro/page.tsx). */
+  readonly avisoSimplificado: string | null;
+}) {
   const [state, dispatch, pending] = useActionState(registrarAction, INICIAL);
 
   const [nombre, setNombre] = useState("");
@@ -232,6 +241,8 @@ export function RegistroForm({ brandName }: { readonly brandName: string }) {
           )}
         </div>
 
+        <AvisoSimplificadoInline cuerpo={avisoSimplificado} />
+
         <label className="flex cursor-pointer items-start gap-3 text-[12.5px] text-muted">
           <input
             name="acepta"
@@ -241,8 +252,27 @@ export function RegistroForm({ brandName }: { readonly brandName: string }) {
             className="mt-0.5 size-4 shrink-0 accent-[var(--accent)]"
           />
           <span>
-            Acepto los <span className="font-semibold text-fg">Términos y Condiciones</span> y el{" "}
-            <span className="font-semibold text-fg">Aviso de Privacidad</span>.
+            Acepto los{" "}
+            <Link
+              href="/legal#terminos"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="font-semibold text-fg underline"
+            >
+              Términos y Condiciones
+            </Link>{" "}
+            y el{" "}
+            <Link
+              href="/legal#privacidad"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className="font-semibold text-fg underline"
+            >
+              Aviso de Privacidad
+            </Link>
+            .
           </span>
         </label>
 

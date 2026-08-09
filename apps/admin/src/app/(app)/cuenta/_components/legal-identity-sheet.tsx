@@ -38,15 +38,24 @@ export function LegalIdentitySheet({
   identidad,
   nombreComercial,
   telefonoContacto,
+  emailContacto,
+  urlAvisoIntegral,
 }: {
   open: boolean;
   onClose: () => void;
   identidad: IdentidadLegalDTO;
   nombreComercial: string;
-  /** `perfil.tel` — the template's own CAMPOS DE COMBINACIÓN table names it as the aviso's
-   *  `{{telefono_contacto}}` source (review finding 3); read-only here, edited from "EDITAR
-   *  PERFIL" (próximamente), not this form. */
+  /** `gym_contact.whatsapp` (#256 correction of review finding 3's original `perfil.tel`: that
+   *  source is per-OPERATOR, not per-gym, and is never anon-readable, so a member could never see
+   *  it on the public aviso). Read-only here, edited from "CONTENIDO DEL GIMNASIO" → Contacto
+   *  (#53) — no admin editor for that section exists yet, a follow-up gap noted in the #256
+   *  report, not this form's. */
   telefonoContacto: string | null;
+  /** `gym_contact.email` (#256) — same read-only, same editor-gap note as `telefonoContacto`. */
+  emailContacto: string | null;
+  /** The aviso's own stable public URL on this gym's mapped CLIENT host (#256) — null when
+   *  unmapped, in which case the preview below still lists it as missing, honestly. */
+  urlAvisoIntegral: string | null;
 }) {
   const router = useRouter();
   const [razonSocial, setRazonSocial] = React.useState(identidad.razonSocial ?? "");
@@ -100,6 +109,8 @@ export function LegalIdentitySheet({
     },
     nombreComercial,
     telefonoContacto,
+    emailContacto,
+    urlAvisoIntegral,
   );
   const completa = identidadLegalCompleta(identidadActual);
   const faltantes = camposFaltantesIdentidadLegal(identidadActual);

@@ -30,7 +30,7 @@
   "anonReadable": {
     "gym": {
       "scope": "all-gyms",
-      "reason": "The pre-auth host->brand lookup runs before any session exists (resolveTenant reads id/slug/brand_module_id). Narrowed at the COLUMN grant instead of the policy: anon and, since #213, authenticated both hold only the 9 brand-seam columns — legal_name, owner_user_id and created_at raise 42501."
+      "reason": "The pre-auth host->brand lookup runs before any session exists (resolveTenant reads id/slug/brand_module_id). Narrowed at the COLUMN grant instead of the policy: anon holds the 9 brand-seam columns plus, since #256, legal_name (the aviso's razon social -- public-by-law content, deliberately unscoped by row, same flat surface as brand_name). authenticated (since #213) still holds only the 9 brand-seam columns -- legal_name, owner_user_id and created_at raise 42501 for that role."
     },
     "gym_contact": {
       "scope": "scoped",
@@ -71,6 +71,10 @@
     "faq": {
       "scope": "scoped",
       "reason": "Public precios/contacto page content. Scoped per gym since #215: the policy is gym_id = (select public.gym_en_peticion()), which reads the x-gym-id request header createAnonClient(gymId) sets. No header (unmapped host) -> zero rows, never an error."
+    },
+    "gym_legal": {
+      "scope": "scoped",
+      "reason": "The client app's per-tenant aviso de privacidad (#256) renders domicilio + the ARCO contact channel -- public-by-law content (LFPDPPP art. 15), not a leak. Scoped per gym via gym_id = (select public.gym_en_peticion()), same as gym_contact; column-narrowed too (20260808140000 revokes the ambient default grant and re-grants only gym_id/domicilio/email_arco/area_datos_personales -- updated_at stays closed). No header (unmapped host) -> zero rows, never an error."
     }
   }
 }

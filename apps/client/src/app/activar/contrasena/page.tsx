@@ -1,8 +1,12 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { getMarketingGym } from "@gym/data/server/marketing";
 import { parseCodigoInvitacion } from "@gym/data/server/registro";
 import { createClient } from "@gym/data/server/supabase";
+import { identidadLegalCompleta, renderAvisoSimplificado } from "@gym/domain/legal";
 
+import { resolverIdentidadLegalPublica } from "../../../lib/aviso-legal";
 import { resolveBrand } from "../../../lib/brand";
 import { AuthShell } from "../../_components/auth-shell";
 import { ActivarContrasenaForm } from "./_components/activar-contrasena-form";
@@ -31,9 +35,20 @@ export default async function ActivarContrasenaPage({
     redirect(codigo ? `/activar?codigo=${codigo}` : "/entrar");
   }
 
+  // #256: the simplified aviso, read via the ANON-scoped host lookup regardless of the live
+  // session above — the aviso is public content, and this member has no gym_membership row yet
+  // at this step anyway (activation sets the password FIRST, claims the paid row after).
+  const hostGym = (await headers()).get("x-gym");
+  const gym = hostGym ? await getMarketingGym(hostGym) : null;
+  let avisoSimplificado: string | null = null;
+  if (gym) {
+    const identidad = await resolverIdentidadLegalPublica(gym);
+    if (identidadLegalCompleta(identidad)) avisoSimplificado = renderAvisoSimplificado(identidad);
+  }
+
   const brand = await resolveBrand();
   const LoginHero = brand.loginAnimation;
-  const form = <ActivarContrasenaForm email={email} codigo={codigo} />;
+  const form = <ActivarContrasenaForm email={email} codigo={codigo} avisoSimplificado={avisoSimplificado} />;
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>{form}</LoginHero>

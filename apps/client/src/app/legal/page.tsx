@@ -1,28 +1,67 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import Link from "next/link";
+
+import { getMarketingGym } from "@gym/data/server/marketing";
+import { identidadLegalCompleta, renderAvisoIntegral } from "@gym/domain/legal";
+
+import { resolverIdentidadLegalPublica } from "../../lib/aviso-legal";
 
 export const metadata: Metadata = {
   title: "Términos y privacidad",
-  description: "Términos y condiciones y aviso de privacidad del estudio.",
+  description: "Términos y condiciones y aviso de privacidad.",
 };
 
 /**
- * Términos y privacidad (slice #62) — the real, reachable legal texts the perfil hub's
- * "Términos y privacidad" row links to. Static content (no CMS), brand-neutral: paint is
- * token-driven, and the texts speak of "el estudio" / "la plataforma" so every gym on the
- * platform renders the same reachable notice without a per-brand string. A plain server
- * page; no auth gate (legal texts are public).
+ * Términos y privacidad (slice #62; per-tenant aviso #256). Static, brand-neutral chrome
+ * (paint via token-driven CSS) around two sections: "Términos y condiciones" — untouched, out of
+ * Gate 0.1 scope per the #256 brief — and "Aviso de privacidad", now the gym's REAL per-tenant
+ * integral aviso when its legal identity is complete, the SAME generic "el estudio" text as
+ * before otherwise (an unmapped host, or a gym that has not finished #255's CUENTA editor + a
+ * gym_contact row). Reachable pre-login (no auth gate — legal texts are public) and, since #256,
+ * from the marketing footer too — today's ONLY link was inside the post-login perfil overlay.
  */
-function Seccion({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+function Seccion({ titulo, id, children }: { titulo: string; id?: string; children: React.ReactNode }) {
   return (
-    <section className="mt-9">
+    <section id={id} className="mt-9 scroll-mt-8">
       <h2 className="text-lg font-extrabold uppercase tracking-tight text-fg">{titulo}</h2>
       <div className="mt-3 space-y-3 text-[13px] leading-relaxed text-muted">{children}</div>
     </section>
   );
 }
 
-export default function LegalPage() {
+function AvisoGenerico() {
+  return (
+    <>
+      <p>
+        El estudio es responsable del tratamiento de tus datos personales. Recabamos tu nombre, teléfono
+        y correo para administrar tu membresía, confirmar tus reservas y enviarte avisos operativos sobre
+        tus clases.
+      </p>
+      <p>
+        Usamos tus datos únicamente para prestarte el servicio. No los vendemos ni los compartimos con
+        terceros con fines comerciales; solo con los proveedores que hacen funcionar la plataforma, bajo
+        obligación de confidencialidad.
+      </p>
+      <p>
+        Puedes acceder, rectificar o cancelar tus datos, así como oponerte a su uso, escribiendo al
+        estudio por los canales de la sección Ayuda y contacto. Tus preferencias de notificación las
+        controlas desde tu perfil en cualquier momento.
+      </p>
+    </>
+  );
+}
+
+export default async function LegalPage() {
+  const slug = (await headers()).get("x-gym");
+  const gym = slug ? await getMarketingGym(slug) : null;
+
+  let avisoIntegral: string | null = null;
+  if (gym) {
+    const identidad = await resolverIdentidadLegalPublica(gym);
+    if (identidadLegalCompleta(identidad)) avisoIntegral = renderAvisoIntegral(identidad);
+  }
+
   return (
     <main className="mx-auto w-full max-w-md px-6 pb-16">
       <header className="flex items-center justify-between pt-5">
@@ -43,7 +82,7 @@ export default function LegalPage() {
         Términos y privacidad
       </h1>
 
-      <Seccion titulo="Términos y condiciones">
+      <Seccion titulo="Términos y condiciones" id="terminos">
         <p>
           Al crear una cuenta y reservar clases aceptas estos términos. Tu membresía es personal e
           intransferible: las clases y el saldo de tu plan solo los usas tú.
@@ -64,22 +103,8 @@ export default function LegalPage() {
         </p>
       </Seccion>
 
-      <Seccion titulo="Aviso de privacidad">
-        <p>
-          El estudio es responsable del tratamiento de tus datos personales. Recabamos tu nombre, teléfono
-          y correo para administrar tu membresía, confirmar tus reservas y enviarte avisos operativos sobre
-          tus clases.
-        </p>
-        <p>
-          Usamos tus datos únicamente para prestarte el servicio. No los vendemos ni los compartimos con
-          terceros con fines comerciales; solo con los proveedores que hacen funcionar la plataforma, bajo
-          obligación de confidencialidad.
-        </p>
-        <p>
-          Puedes acceder, rectificar o cancelar tus datos, así como oponerte a su uso, escribiendo al
-          estudio por los canales de la sección Ayuda y contacto. Tus preferencias de notificación las
-          controlas desde tu perfil en cualquier momento.
-        </p>
+      <Seccion titulo="Aviso de privacidad" id="privacidad">
+        {avisoIntegral ? <div className="whitespace-pre-wrap">{avisoIntegral}</div> : <AvisoGenerico />}
       </Seccion>
     </main>
   );

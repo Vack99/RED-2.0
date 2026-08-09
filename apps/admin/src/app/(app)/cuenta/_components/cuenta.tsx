@@ -65,6 +65,15 @@ interface CuentaScreenProps {
   mesesRespaldo: MesRespaldo[];
   /** The gym's legal identity (razón social + gym_legal's domicilio/contacto ARCO) — #255. */
   identidadLegal: IdentidadLegalDTO;
+  /** The aviso's real telefono/email source (#256 correction): `gym_contact`'s whatsapp/email,
+   *  NOT `perfil?.tel` below (the profile header's own, unrelated, per-OPERATOR display) —
+   *  `perfil.tel` is never anon-readable and isn't gym-scoped, so a member could never see it on
+   *  the public aviso; gym_contact is both. See `identidadDesde`'s own doc comment. */
+  telefonoContactoAviso: string | null;
+  emailContactoAviso: string | null;
+  /** The aviso's own stable public URL on this gym's mapped CLIENT host — null when unmapped
+   *  (#256). */
+  urlAvisoIntegral: string | null;
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -125,6 +134,9 @@ export function CuentaScreen({
   mensajes,
   mesesRespaldo,
   identidadLegal,
+  telefonoContactoAviso,
+  emailContactoAviso,
+  urlAvisoIntegral,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -159,11 +171,12 @@ export function CuentaScreen({
     ? `${metActivos} método${metActivos === 1 ? "" : "s"}${cobro.banco?.trim() ? " · " + cobro.banco.trim() : ""}`
     : "Próximamente";
 
-  // #255: the AJUSTES row's own status line — "listo" only once the rendered aviso has zero
+  // #255/#256: the AJUSTES row's own status line — "listo" only once the rendered aviso has zero
   // unresolved merge-field tokens (review finding 3), via the SAME shared helper the sheet's own
-  // preview uses (review finding 8) — never a second hand-built identity object.
+  // preview uses (review finding 8) — never a second hand-built identity object. telefono/email
+  // come from gym_contact (#256), never `perfil?.tel` (the header's own, unrelated display below).
   const legalCompleta = identidadLegalCompleta(
-    identidadDesde(identidadLegal, gymBrandName, perfil?.tel ?? null),
+    identidadDesde(identidadLegal, gymBrandName, telefonoContactoAviso, emailContactoAviso, urlAvisoIntegral),
   );
 
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
@@ -245,7 +258,9 @@ export function CuentaScreen({
         onClose={() => setLegalOpen(false)}
         identidad={identidadLegal}
         nombreComercial={gymBrandName}
-        telefonoContacto={perfil?.tel ?? null}
+        telefonoContacto={telefonoContactoAviso}
+        emailContacto={emailContactoAviso}
+        urlAvisoIntegral={urlAvisoIntegral}
       />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />

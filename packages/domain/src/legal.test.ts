@@ -29,6 +29,8 @@ const IDENTIDAD_COMPLETA: IdentidadLegalGym = {
   emailArco: "datos@forge.mx",
   areaDatosPersonales: "Departamento de Datos Personales",
   telefonoContacto: "+52 614 000 0000",
+  emailContacto: "hola@forge.mx",
+  urlAvisoIntegral: "https://forge.example/legal",
 };
 
 const IDENTIDAD_VACIA: IdentidadLegalGym = {
@@ -38,6 +40,8 @@ const IDENTIDAD_VACIA: IdentidadLegalGym = {
   emailArco: null,
   areaDatosPersonales: null,
   telefonoContacto: null,
+  emailContacto: null,
+  urlAvisoIntegral: null,
 };
 
 describe("mergeAvisoTemplate", () => {
@@ -89,52 +93,58 @@ describe("tokensSinResolver", () => {
 });
 
 describe("identidadDesde", () => {
-  it("combines the gym_legal-backed DTO, the brand name, and the perfil phone into one identity", () => {
+  it("combines the gym_legal-backed DTO, the brand name, and the platform/gym_contact context into one identity", () => {
     const dto = {
       razonSocial: "Gimnasio Forge, S.A. de C.V.",
       domicilio: "Av. Siempre Viva 123",
       emailArco: "datos@forge.mx",
       areaDatosPersonales: "Departamento de Datos Personales",
     };
-    expect(identidadDesde(dto, "Forge", "+52 614 000 0000")).toEqual({
+    expect(
+      identidadDesde(dto, "Forge", "+52 614 000 0000", "hola@forge.mx", "https://forge.example/legal"),
+    ).toEqual({
       razonSocial: dto.razonSocial,
       nombreComercial: "Forge",
       domicilio: dto.domicilio,
       emailArco: dto.emailArco,
       areaDatosPersonales: dto.areaDatosPersonales,
       telefonoContacto: "+52 614 000 0000",
+      emailContacto: "hola@forge.mx",
+      urlAvisoIntegral: "https://forge.example/legal",
     });
   });
 
-  it("carries a null telefonoContacto through unchanged (perfil.tel not filled in)", () => {
+  it("carries null telefono/email/url context through unchanged (nothing resolved yet)", () => {
     const dto = { razonSocial: null, domicilio: null, emailArco: null, areaDatosPersonales: null };
-    expect(identidadDesde(dto, "Forge", null).telefonoContacto).toBeNull();
+    const identidad = identidadDesde(dto, "Forge", null, null, null);
+    expect(identidad.telefonoContacto).toBeNull();
+    expect(identidad.emailContacto).toBeNull();
+    expect(identidad.urlAvisoIntegral).toBeNull();
   });
 });
 
-describe("identidadLegalCompleta / camposFaltantesIdentidadLegal (review finding 3)", () => {
-  // The old hand-maintained 4-field check said IDENTIDAD_COMPLETA was "listo". It never was: the
-  // real templates still show ~15 unresolved platform/legal-pending tokens (contact email, ARCO
-  // response windows, the aviso's own future URL, …) even with every gym-editable field filled in.
-  // This is the honest, currently-irreducible state — not a bug in the test.
-  it("even a fully staff-filled identity is NOT complete — real platform/legal gaps remain", () => {
-    expect(identidadLegalCompleta(IDENTIDAD_COMPLETA)).toBe(false);
-    const faltantes = camposFaltantesIdentidadLegal(IDENTIDAD_COMPLETA);
-    expect(faltantes.length).toBeGreaterThan(0);
-    // Every STAFF-editable + platform-constant field IS resolved — none of their labels appear.
-    expect(faltantes).not.toContain("razón social");
-    expect(faltantes).not.toContain("domicilio");
-    expect(faltantes).not.toContain("correo de contacto ARCO");
-    expect(faltantes).not.toContain("área o persona responsable de datos personales");
-    expect(faltantes).not.toContain("teléfono de contacto");
-    expect(faltantes).not.toContain("versión del aviso");
-    expect(faltantes).not.toContain("fecha de la última actualización");
-    // The genuinely unresolvable-today gaps ARE named, explicitly (not silently swallowed).
-    expect(faltantes).toContain("correo de contacto general (sin fuente hoy)");
-    expect(faltantes).toContain("URL pública del aviso (la publica la plataforma — #256)");
+describe("identidadLegalCompleta / camposFaltantesIdentidadLegal (review finding 3; #256 closes the gap)", () => {
+  // #255 shipped with a hand-maintained 4-field check that claimed "listo" over a document that
+  // still had ~15 unresolved platform/legal-pending tokens. #256 wires the rest (url_aviso_integral,
+  // email/telefono_contacto via gym_contact, the ARCO plazos, canal_aviso_cambios) — so a caller
+  // that supplies every field, staff-editable AND platform-context, now genuinely reaches "listo".
+  it("a fully staff-filled identity WITH platform/gym_contact context IS complete — listo is reachable", () => {
+    expect(identidadLegalCompleta(IDENTIDAD_COMPLETA)).toBe(true);
+    expect(camposFaltantesIdentidadLegal(IDENTIDAD_COMPLETA)).toEqual([]);
   });
 
-  it("an empty identity lists every gym-editable field as missing, on top of the platform gaps", () => {
+  it("missing only the platform-supplied context (url/email/telefono) still blocks completeness", () => {
+    const identidad: IdentidadLegalGym = { ...IDENTIDAD_COMPLETA, urlAvisoIntegral: null, emailContacto: null };
+    const faltantes = camposFaltantesIdentidadLegal(identidad);
+    expect(identidadLegalCompleta(identidad)).toBe(false);
+    expect(faltantes).toContain("URL pública del aviso");
+    expect(faltantes).toContain("correo de contacto general (gym_contact.email)");
+    // Everything ELSE stayed resolved — this is a targeted gap, not a regression to "nothing works".
+    expect(faltantes).not.toContain("razón social");
+    expect(faltantes).not.toContain("teléfono de contacto (gym_contact.whatsapp)");
+  });
+
+  it("an empty identity lists every gym-editable AND platform-context field as missing", () => {
     const faltantes = camposFaltantesIdentidadLegal(IDENTIDAD_VACIA);
     expect(faltantes).toEqual(
       expect.arrayContaining([
@@ -142,9 +152,17 @@ describe("identidadLegalCompleta / camposFaltantesIdentidadLegal (review finding
         "domicilio",
         "correo de contacto ARCO",
         "área o persona responsable de datos personales",
-        "teléfono de contacto",
+        "teléfono de contacto (gym_contact.whatsapp)",
+        "correo de contacto general (gym_contact.email)",
+        "URL pública del aviso",
       ]),
     );
+    // The platform CONSTANTS (version/fecha/plazos ARCO/canal) are never missing — identidadDesde
+    // never leaves them to the caller, so an empty gym still resolves them.
+    expect(faltantes).not.toContain("versión del aviso");
+    expect(faltantes).not.toContain("fecha de la última actualización");
+    expect(faltantes).not.toContain("plazo de respuesta ARCO (pendiente de verificación legal)");
+    expect(faltantes).not.toContain("canal adicional de aviso de cambios");
   });
 
   it("nombreComercial is never in the missing list — it is always present (gym.brand_name)", () => {
@@ -192,6 +210,31 @@ describe("renderAvisoIntegral / renderAvisoSimplificado (finding 2: member-facin
     expect(integral).not.toContain("PÁRRAFO OPCIONAL");
     expect(integral).not.toContain("CAMPOS DE COMBINACIÓN");
     expect(integral).not.toContain("Encargados del tratamiento");
+  });
+
+  // #256 fix: cuerpoMiembroIntegral's own contract claimed to exclude every optional-paragraph
+  // draft block, but the slice boundary only ever reached the TRAILING one — these two sit INSIDE
+  // §2/§4 and rode through unstripped (both the raw token AND its staff-facing "OPCIONAL" note)
+  // until despojarBloquesOpcionales. Neither field has a per-gym source, so both must vanish
+  // entirely — never a raw {{token}}, never the instructional note — regardless of identity.
+  it("never renders the two INLINE optional-paragraph blocks (§2/§4) or their staff-facing notes", () => {
+    for (const identidad of [IDENTIDAD_COMPLETA, IDENTIDAD_VACIA]) {
+      const integral = renderAvisoIntegral(identidad);
+      expect(integral).not.toContain("parrafo_datos_adicionales");
+      expect(integral).not.toContain("parrafo_registro_publicidad");
+      expect(integral).not.toContain("Redacción a cargo del gimnasio");
+      expect(integral).not.toContain("Registro Público para Evitar Publicidad");
+    }
+  });
+
+  it("renders the platform-supplied merge fields #256 wires: email/telefono via gym_contact, the aviso URL, the ARCO plazos", () => {
+    const integral = renderAvisoIntegral(IDENTIDAD_COMPLETA);
+    expect(integral).toContain("hola@forge.mx");
+    expect(integral).toContain("https://forge.example/legal");
+    expect(integral).toContain("plazo de `20` días hábiles");
+    expect(integral).toContain("dentro de los `15` días hábiles");
+    const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
+    expect(simplificado).toContain("https://forge.example/legal");
   });
 
   it("integral starts at the real heading and ends with §6's own closing sentence", () => {

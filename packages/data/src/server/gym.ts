@@ -148,3 +148,25 @@ export async function getAdminHosts(
   for (const row of data ?? []) hosts[row.gym_id] ??= row.hostname;
   return hosts;
 }
+
+/**
+ * `gym_id → client hostname` for ONE gym (#256) — the aviso's `{{url_aviso_integral}}` merge
+ * field needs the client app's REAL host to preview accurately from the admin app (a different
+ * host than the member ever sees it on). Singular sibling of `getAdminHosts` above: same
+ * dev-host exclusion and `created_at` tie-break, `app='client'` instead of `'admin'`, one gym
+ * because the CUENTA preview only ever needs its OWN. `null` when unmapped — the merge field
+ * then stays visibly unresolved in the preview rather than a fabricated URL.
+ */
+export async function getClientHost(gymId: string, client?: SupabaseServer): Promise<string | null> {
+  const supabase = client ?? (await createClient());
+  const { data } = await supabase
+    .from("gym_domain")
+    .select("hostname")
+    .eq("gym_id", gymId)
+    .eq("app", "client")
+    .not("hostname", "like", "%localhost")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  return data?.hostname ?? null;
+}

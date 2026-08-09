@@ -3,7 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { createClient, type SupabaseServer } from "./supabase";
+import { createAnonClient, createClient, type SupabaseServer } from "./supabase";
 import { requireOperator } from "./_auth";
 import { getOperatorGym } from "./gym";
 
@@ -216,3 +216,44 @@ export async function actualizarIdentidadLegal(raw: unknown, client?: SupabaseSe
     );
   if (legalError) throw new Error("No se pudo guardar el domicilio y el contacto ARCO");
 }
+
+/**
+ * The PUBLIC legal-identity read (issue #256) — the client app's `/legal`, `/registro` and
+ * `/activar/contrasena` pages read through this, never `getIdentidadLegal` above (that one is
+ * staff-gated via `obtener_identidad_legal`, the opposite shape: this table's row is public-by-law
+ * content, so it is a plain anon-scoped read, same posture as every reader in
+ * packages/data/src/server/marketing.ts). `20260808140000` is the migration this reads against:
+ * `gym.legal_name` via an incremental anon column grant (flat, unscoped by row — brand-seam
+ * columns already work this way), `gym_legal`'s three columns via a request-scoped anon policy
+ * (`gym_id = gym_en_peticion()`, the SAME per-gym scoping every other satellite in marketing.ts
+ * uses, read through `createAnonClient(gymId)`'s `x-gym-id` header).
+ */
+export interface IdentidadLegalPublicaDTO {
+  razonSocial: string | null;
+  domicilio: string | null;
+  emailArco: string | null;
+  areaDatosPersonales: string | null;
+}
+
+/** The gym's public legal identity, anon + gym-scoped. Two independent reads (a `gym` row keyed
+ *  by id, a `gym_legal` row keyed by the SAME id) rather than one join: `gym`'s anon read is flat
+ *  (`using (true)`) while `gym_legal`'s is request-scoped, so they are two different grant/policy
+ *  stories that happen to share a primary key — bundling them the way `obtener_identidad_legal`
+ *  does would need a SECURITY DEFINER function, and there is no staff-authority reason for one
+ *  here (unlike that RPC's whole point). Best-effort: a missing/errored row on either side reads
+ *  as null fields, matching every other marketing reader's degrade-to-empty posture — never a
+ *  thrown page for an incomplete or unmapped gym. Memoized per request. */
+export const getIdentidadLegalPublica = cache(
+  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<IdentidadLegalPublicaDTO> => {
+    const [{ data: gymRow }, { data: legalRow }] = await Promise.all([
+      client.from("gym").select("legal_name").eq("id", gymId).maybeSingle(),
+      client.from("gym_legal").select("domicilio, email_arco, area_datos_personales").eq("gym_id", gymId).maybeSingle(),
+    ]);
+    return {
+      razonSocial: gymRow?.legal_name ?? null,
+      domicilio: legalRow?.domicilio ?? null,
+      emailArco: legalRow?.email_arco ?? null,
+      areaDatosPersonales: legalRow?.area_datos_personales ?? null,
+    };
+  },
+);
