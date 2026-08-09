@@ -108,8 +108,9 @@ describe("resolverIdentidadLegalPublica", () => {
  * must reflect whether the member ACTUALLY saw the real aviso — never unconditional. Recomputes
  * completeness from the same public reader `resolverIdentidadLegalPublica` uses, so these three
  * cases (complete → the version string, incomplete → null, no gym → null) are the ones every
- * form-adjacent claim call site (`/auth/confirm`'s two branches, `activar/contrasena/actions.ts`)
- * relies on.
+ * form-adjacent claim call site (`/auth/confirm`'s plain-signup branch, `activar/contrasena/actions.ts`)
+ * relies on. `/auth/confirm`'s `codigo` branch stamps an honest null unconditionally — that rail
+ * (the magic-link existing-account door) renders no aviso upstream, so there is nothing to recompute.
  */
 describe("avisoVersionParaGym", () => {
   it("returns the version string when the gym's legal identity is complete", async () => {

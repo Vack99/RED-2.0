@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getMarketingGym } from "@gym/data/server/marketing";
 import {
-  invitacionInfo,
   parseCodigoInvitacion,
   reclamarCliente,
   reclamarPorCodigo,
@@ -46,18 +45,15 @@ async function finalizarAuth(
       // Invite-token claim: bind the login to the code's exact paid row + gym. The firma
       // is READ FROM THE URL and forwarded UNVERIFIED — the RPC verifies it (audit §3 H2):
       // an attacker-appended `&codigo=` on a recovery link carries no matching firma, so
-      // the RPC refuses and writes nothing. Legit links (the magic-link existing-account
-      // rail with `next=/reservar`, and the `/registro` signup confirmation) carry a valid
-      // `firma` minted server-side after the app-tier gates. Runs even when `next` is set.
+      // the RPC refuses and writes nothing. The only legit link that reaches this branch
+      // is the magic-link existing-account rail (`activar/actions.ts`'s `cuenta_existente`
+      // case, `next=/reservar`), whose firma is minted server-side after the app-tier
+      // gates. Runs even when `next` is set.
       //
-      // Final review round, Important 1: the aviso version is recomputed for THIS code's
-      // gym (never stamped unconditionally) — the code names the row, the row names the
-      // gym (`invitacionInfo`, the same lookup /activar's own door already uses), and
-      // `avisoVersionParaGym` degrades to `null` on a dead/unresolved code exactly like an
-      // incomplete identity would.
-      const info = await invitacionInfo(codigo).catch(() => null);
-      const gym = info ? await getMarketingGym(info.gym_slug) : null;
-      await reclamarPorCodigo(codigo, firma ?? "", await avisoVersionParaGym(gym), supabase);
+      // Re-review: this rail renders no aviso anywhere upstream (the magic-link existing-
+      // account rail — no consent UI, `ActivarForm` shows only email + Turnstile), so it
+      // stamps an honest null, matching reservar/page.tsx and activar/actions.ts.
+      await reclamarPorCodigo(codigo, firma ?? "", null, supabase);
     } else if (!next) {
       // Fallback: claim (or create) the cliente by verified email in the host gym. Never
       // on a bare `next` recovery (a plain password reset must not claim a membership).
