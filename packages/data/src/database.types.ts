@@ -429,6 +429,7 @@ export type Database = {
           paquete_nombre: string | null
           phone_e164: string | null
           privacy_accepted_at: string | null
+          privacy_aviso_version: string | null
           tel: string | null
           terms_accepted_at: string | null
           vence: string | null
@@ -449,6 +450,7 @@ export type Database = {
           paquete_nombre?: string | null
           phone_e164?: string | null
           privacy_accepted_at?: string | null
+          privacy_aviso_version?: string | null
           tel?: string | null
           terms_accepted_at?: string | null
           vence?: string | null
@@ -469,6 +471,7 @@ export type Database = {
           paquete_nombre?: string | null
           phone_e164?: string | null
           privacy_accepted_at?: string | null
+          privacy_aviso_version?: string | null
           tel?: string | null
           terms_accepted_at?: string | null
           vence?: string | null
@@ -1630,14 +1633,14 @@ export type Database = {
         }[]
       }
       reclamar_o_crear_cliente: {
-        Args: { p_firma: string; p_gym_id: string }
+        Args: { p_aviso_version?: string; p_firma: string; p_gym_id: string }
         Returns: {
           cliente_id: string
           reclamado: boolean
         }[]
       }
       reclamar_por_codigo: {
-        Args: { p_codigo: string; p_firma: string }
+        Args: { p_aviso_version?: string; p_codigo: string; p_firma: string }
         Returns: {
           gym_slug: string
         }[]

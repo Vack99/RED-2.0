@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { completarActivacion } from "@gym/data/server/activacion";
 import { parseCodigoInvitacion } from "@gym/data/server/registro";
+import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
 
 /**
  * Finish activation (issue #133): validate the intake (8-char password + confirm match
@@ -40,7 +41,7 @@ export async function activarContrasenaAction(
     return { status: "error", error: "Esta invitación ya no es válida. Contacta a tu gimnasio." };
   }
 
-  const result = await completarActivacion({ password, codigo });
+  const result = await completarActivacion({ password, codigo, avisoVersion: AVISO_PRIVACIDAD_VERSION });
   if (!result.ok) {
     if (result.error === "sin_sesion") {
       redirect(`/activar?codigo=${codigo}`);

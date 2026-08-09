@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { iniciarActivacion } from "@gym/data/server/activacion";
 import { firmaCodigo, parseCodigoInvitacion, reclamarPorCodigo } from "@gym/data/server/registro";
 import { enviarMagicLink } from "@gym/data/server/sesion";
+import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
 
 import { verificarTurnstile } from "../../lib/turnstile";
 
@@ -122,7 +123,7 @@ export async function vincularAction(
   }
 
   try {
-    await reclamarPorCodigo(codigo, firmaCodigo(codigo));
+    await reclamarPorCodigo(codigo, firmaCodigo(codigo), AVISO_PRIVACIDAD_VERSION);
   } catch {
     // Swallowed (mirrors finalizarAuth): the member is logged in; a dead/already-owned
     // code must not strand them — they reach the app either way.

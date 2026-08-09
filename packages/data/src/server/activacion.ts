@@ -141,9 +141,12 @@ export type CompletarActivacionResultado =
  * and is swallowed here, exactly like `/auth/confirm`'s `finalizarAuth`: the member is
  * logged in, so a claim hiccup must never strand them (an operator reconciles; the RPC
  * is idempotent). Re-entry with an already-claimed code is therefore a success path.
+ *
+ * `avisoVersion` (#257) is forwarded to `reclamarPorCodigo` untouched — the action layer
+ * resolves it from `@gym/domain/legal`'s `AVISO_PRIVACIDAD_VERSION`, this DAL never invents it.
  */
 export async function completarActivacion(
-  input: { password: string; codigo: string },
+  input: { password: string; codigo: string; avisoVersion: string },
   opts: { client?: SupabaseServer } = {},
 ): Promise<CompletarActivacionResultado> {
   const supabase = opts.client ?? (await createClient());
@@ -156,7 +159,7 @@ export async function completarActivacion(
   if (!set.ok) return { ok: false, error: set.error };
 
   try {
-    await reclamarPorCodigo(input.codigo, firmaCodigo(input.codigo), supabase);
+    await reclamarPorCodigo(input.codigo, firmaCodigo(input.codigo), input.avisoVersion, supabase);
   } catch {
     // Swallowed — the member is logged in; a dead/already-claimed code must not strand
     // them (mirrors finalizarAuth). Redirect in regardless.

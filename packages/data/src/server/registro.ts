@@ -120,9 +120,16 @@ function firmaTenant(userId: string, gymId: string): string {
  * accompanied by the server-only tenant firma the RPC verifies. The RPC re-checks
  * `email_confirmed_at` (defense-in-depth), matches on VERIFIED email only (phone
  * never claims; ambiguous → create), and commits the member membership atomically.
+ *
+ * `avisoVersion` (#257) is the aviso de privacidad version the caller ACTUALLY rendered
+ * to the member (the caller must pass `AVISO_PRIVACIDAD_VERSION` from `@gym/domain/legal`
+ * — never a hardcoded string here) — the RPC stamps it onto `clientes.privacy_aviso_version`
+ * alongside `privacy_accepted_at`. There is no terms-of-service version (Gate 0.1 scope
+ * cut): `terms_accepted_at` stays a bare timestamp.
  */
 export async function reclamarCliente(
   gymId: string,
+  avisoVersion: string,
   client?: SupabaseServer,
 ): Promise<ReclamoCliente> {
   const supabase = client ?? (await createClient());
@@ -130,7 +137,11 @@ export async function reclamarCliente(
   const uid = claims?.claims?.sub;
   if (!uid) throw new Error("No autenticado");
   const { data, error } = await supabase
-    .rpc("reclamar_o_crear_cliente", { p_gym_id: gymId, p_firma: firmaTenant(uid, gymId) })
+    .rpc("reclamar_o_crear_cliente", {
+      p_gym_id: gymId,
+      p_firma: firmaTenant(uid, gymId),
+      p_aviso_version: avisoVersion,
+    })
     .single();
   if (error || !data) {
     throw new Error(error?.message ?? "No se pudo completar el registro");
@@ -169,15 +180,21 @@ export function firmaCodigo(codigo: string): string {
  * email, clears the code, and upserts membership; it THROWS on a bad firma / dead code /
  * already-owned row, so the caller (confirm route) swallows to keep a verified account
  * from stranding.
+ *
+ * `avisoVersion` (#257) is the aviso de privacidad version the caller ACTUALLY rendered
+ * to the member (`AVISO_PRIVACIDAD_VERSION` from `@gym/domain/legal` — never hardcoded
+ * here), stamped onto `clientes.privacy_aviso_version` alongside `privacy_accepted_at`.
+ * No terms-of-service version exists (Gate 0.1 scope cut): `terms_accepted_at` stays bare.
  */
 export async function reclamarPorCodigo(
   codigo: string,
   firma: string,
+  avisoVersion: string,
   client?: SupabaseServer,
 ): Promise<ReclamoPorCodigo> {
   const supabase = client ?? (await createClient());
   const { data, error } = await supabase
-    .rpc("reclamar_por_codigo", { p_codigo: codigo, p_firma: firma })
+    .rpc("reclamar_por_codigo", { p_codigo: codigo, p_firma: firma, p_aviso_version: avisoVersion })
     .single();
   if (error || !data) {
     throw new Error(error?.message ?? "No se pudo reclamar la invitación");

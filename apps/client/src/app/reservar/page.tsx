@@ -11,6 +11,7 @@ import {
 import { reclamarCliente } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { createClient } from "@gym/data/server/supabase";
+import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
 
 import { ReservarSemana } from "./_components/reservar-semana";
 import { SinMembresia } from "./_components/sin-membresia";
@@ -60,7 +61,7 @@ export default async function ReservarPage({
     const tenant = await resolveTenant((await headers()).get("host"), null);
     if (tenant) {
       try {
-        await reclamarCliente(tenant.id, supabase);
+        await reclamarCliente(tenant.id, AVISO_PRIVACIDAD_VERSION, supabase);
         esMiembro = await getEsMiembro(supabase);
       } catch {
         // Still no membership (no matching invite/sale to claim in this gym) —

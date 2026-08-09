@@ -118,22 +118,22 @@ describe("firmaCodigo — activation firma (audit 2026-07-22 §3)", () => {
 });
 
 describe("reclamarPorCodigo", () => {
-  it("forwards the code + firma as p_codigo/p_firma and returns the gym slug row", async () => {
+  it("forwards the code + firma + aviso version as p_codigo/p_firma/p_aviso_version and returns the gym slug row", async () => {
     let seen: { name: string; args: unknown } | null = null;
     const client = fakeRpc({ data: { gym_slug: "forge" }, error: null }, (name, args) => {
       seen = { name, args };
     });
-    const result = await reclamarPorCodigo("ABCD2345", "firma-x", client);
+    const result = await reclamarPorCodigo("ABCD2345", "firma-x", "0.1-borrador", client);
     expect(result.gym_slug).toBe("forge");
     expect(seen).toEqual({
       name: "reclamar_por_codigo",
-      args: { p_codigo: "ABCD2345", p_firma: "firma-x" },
+      args: { p_codigo: "ABCD2345", p_firma: "firma-x", p_aviso_version: "0.1-borrador" },
     });
   });
 
   it("throws the RPC error message (bad firma / dead code / already-owned row)", async () => {
     const client = fakeRpc({ data: null, error: { message: "Código de invitación inválido o ya utilizado" } });
-    await expect(reclamarPorCodigo("ZZZZZZZZ", "firma-x", client)).rejects.toThrow(
+    await expect(reclamarPorCodigo("ZZZZZZZZ", "firma-x", "0.1-borrador", client)).rejects.toThrow(
       "Código de invitación inválido o ya utilizado",
     );
   });
@@ -157,17 +157,17 @@ describe("reclamarCliente — tenant firma (spec 2026-07-13 §1.5, D2 binding)",
     } as unknown as SupabaseServer;
   }
 
-  it("sends p_gym_id plus the server-side firma over uid:gym", async () => {
+  it("sends p_gym_id plus the server-side firma over uid:gym plus p_aviso_version", async () => {
     vi.stubEnv("TENANT_ASSERTION_KEY", "test-key");
     let seen: { name: string; args: unknown } | null = null;
     const client = fakeAuthRpc((name, args) => {
       seen = { name, args };
     });
-    const result = await reclamarCliente("g-1", client);
+    const result = await reclamarCliente("g-1", "0.1-borrador", client);
     expect(result).toEqual({ cliente_id: "c-1", reclamado: true });
     expect(seen).toEqual({
       name: "reclamar_o_crear_cliente",
-      args: { p_gym_id: "g-1", p_firma: FIRMA_PINNED },
+      args: { p_gym_id: "g-1", p_firma: FIRMA_PINNED, p_aviso_version: "0.1-borrador" },
     });
     vi.unstubAllEnvs();
   });
@@ -177,7 +177,7 @@ describe("reclamarCliente — tenant firma (spec 2026-07-13 §1.5, D2 binding)",
     const client = fakeAuthRpc(() => {
       throw new Error("RPC must not be called without a firma");
     });
-    await expect(reclamarCliente("g-1", client)).rejects.toThrow("TENANT_ASSERTION_KEY");
+    await expect(reclamarCliente("g-1", "0.1-borrador", client)).rejects.toThrow("TENANT_ASSERTION_KEY");
     vi.unstubAllEnvs();
   });
 });

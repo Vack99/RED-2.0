@@ -7,6 +7,9 @@
 --     over `activar:v1:${codigo}` with the Vault `tenant_assertion_key`), verified BEFORE any read/write,
 --     so a direct PostgREST caller (H1) or an attacker-appended `&codigo=` with no matching firma (H2)
 --     fails CLOSED and writes nothing. Every claim vector below signs its call via pg_temp.firma_codigo().
+--     (V1, #257) the RPC now also takes `p_aviso_version default null`: V1 passes an explicit version
+--     and asserts it lands on `clientes.privacy_aviso_version`; V9 OMITS it and asserts the column
+--     stays null — a caller with no version to report must never have one fabricated for it (AC3).
 --   • registrar_venta — the NEW-cliente path mints an 8-char A-Z/2-9 claim_code inline.
 --   • invitacion_info — the pre-signup {gym, nombre} projection; and DENIAL rows proving neither anon nor a
 --     member can ever read clientes.claim_code (it is a bearer credential for a paid balance).
@@ -32,11 +35,13 @@ declare
   u_owns   uuid := gen_random_uuid();    -- verified, ALREADY owns a row in gym_inv
   u_unver  uuid := gen_random_uuid();    -- UNVERIFIED, must be rejected
   u_firma  uuid := gen_random_uuid();    -- verified, probes the firma gate (V8)
+  u_noversion uuid := gen_random_uuid(); -- verified, claims with NO p_aviso_version (V9, #257)
   c_invite uuid;                          -- unclaimed paid row carrying the claim code
   c_owned  uuid;                          -- row already owned by u_owns
   c_other  uuid;                          -- a second unclaimed coded row (u_owns tries to claim it)
   c_denial uuid;                          -- an unclaimed coded row used by the denial vectors
   c_firma  uuid;                          -- an unclaimed coded row the firma-denial vector must leave untouched
+  c_noversion uuid;                       -- an unclaimed coded row for the no-version claim (V9, #257)
   paq_inv  uuid;                          -- gym_inv paquete: the sole package input to the V5 sale (C13)
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
@@ -58,7 +63,8 @@ begin
     ('00000000-0000-0000-0000-000000000000', u_dead,  'authenticated','authenticated','dead@x.mx',         now(), '{"full_name":"Dan Dead","phone_e164":"+526142223344"}'),
     ('00000000-0000-0000-0000-000000000000', u_owns,  'authenticated','authenticated','owns@x.mx',         now(), '{"full_name":" Owns","phone_e164":"+526143334455"}'),
     ('00000000-0000-0000-0000-000000000000', u_unver, 'authenticated','authenticated','unver@x.mx',        null,  '{"full_name":"Ulla Unver","phone_e164":"+526144445566"}'),
-    ('00000000-0000-0000-0000-000000000000', u_firma, 'authenticated','authenticated','firma@x.mx',        now(), '{"full_name":"Fina Firma","phone_e164":"+526145556677"}');
+    ('00000000-0000-0000-0000-000000000000', u_firma, 'authenticated','authenticated','firma@x.mx',        now(), '{"full_name":"Fina Firma","phone_e164":"+526145556677"}'),
+    ('00000000-0000-0000-0000-000000000000', u_noversion, 'authenticated','authenticated','noversion@x.mx', now(), '{"full_name":"Nadia Noversion","phone_e164":"+526145559999"}');
 
   -- op_user is an OWNER of gym_inv so staff_gym()/is_staff_of() resolve for the code-gen sale.
   insert into public.gym_membership (user_id, gym_id, role) values (op_user, gym_inv, 'owner');
@@ -84,6 +90,11 @@ begin
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, claim_code, auth_user_id)
     values (gym_inv, 'Firma Guard', '6145550000', 4, 'firma-typed@old.mx', 'FIRM2345', null)
     returning id into c_firma;
+  -- An unclaimed coded row the no-version vector (V9, #257) claims by OMITTING p_aviso_version —
+  -- proves the honest-null path (AC3): no version passed, none fabricated.
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, email, claim_code, auth_user_id)
+    values (gym_inv, 'Sin Version', '6145559999', 6, 'noversion-typed@old.mx', 'NOVR2345', null)
+    returning id into c_noversion;
   -- gym_inv paquete for the V5 staff sale (C13: the sale re-derives from this row).
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
     values (gym_inv, '8 clases', 8, 'dias', 30, 800) returning id into paq_inv;
@@ -96,10 +107,12 @@ begin
   perform set_config('t.u_owns',   u_owns::text,   true);
   perform set_config('t.u_unver',  u_unver::text,  true);
   perform set_config('t.u_firma',  u_firma::text,  true);
+  perform set_config('t.u_noversion', u_noversion::text, true);
   perform set_config('t.c_invite', c_invite::text, true);
   perform set_config('t.c_other',  c_other::text,  true);
   perform set_config('t.c_denial', c_denial::text, true);
   perform set_config('t.c_firma',  c_firma::text,  true);
+  perform set_config('t.c_noversion', c_noversion::text, true);
 end $$;
 
 -- The signing helper every claim vector uses (temp schema — vanishes with the session; callable by the
@@ -122,14 +135,17 @@ declare
   uc  uuid := current_setting('t.u_claim', true)::uuid;
   v_slug text; rec record; n int;
 begin
-  select gym_slug into v_slug from public.reclamar_por_codigo('ABCD2345', pg_temp.firma_codigo('ABCD2345'));
+  -- #257: p_aviso_version rides the SAME call — the version the caller actually rendered to the
+  -- member (never fabricated in SQL).
+  select gym_slug into v_slug from public.reclamar_por_codigo(
+    'ABCD2345', pg_temp.firma_codigo('ABCD2345'), '0.1-borrador');
   if v_slug is distinct from 'reclamar-codigo-suite-gym' then
     raise exception 'V1 FAIL: expected the gym slug returned, got %', v_slug;
   end if;
-  -- The claim UPDATE writes SIX columns; assert every one of them (#80 AC4 — an RPC's return value is
-  -- not its contract, the rows it writes are). phone_e164 + both consent stamps were previously written
-  -- and never read back: exactly the identity-vs-payload seam #78 shipped through.
-  select auth_user_id, email, clases_restantes, claim_code, phone_e164, terms_accepted_at, privacy_accepted_at
+  -- The claim UPDATE writes SEVEN columns; assert every one of them (#80 AC4 — an RPC's return value
+  -- is not its contract, the rows it writes are). phone_e164 + both consent stamps were previously
+  -- written and never read back: exactly the identity-vs-payload seam #78 shipped through.
+  select auth_user_id, email, clases_restantes, claim_code, phone_e164, terms_accepted_at, privacy_accepted_at, privacy_aviso_version
     into rec from public.clientes where id = ci;
   if rec.auth_user_id is distinct from uc then raise exception 'V1 FAIL: invited row not bound to the claimant (got %)', rec.auth_user_id; end if;
   if rec.email is distinct from 'real@new.mx' then raise exception 'V1 FAIL: email not overwritten with the verified login email (%)', rec.email; end if;
@@ -137,6 +153,8 @@ begin
   if rec.claim_code is not null then raise exception 'V1 FAIL: claim_code not cleared (%)', rec.claim_code; end if;
   -- c_invite is seeded with no phone; u_claim's verified metadata carries one → coalesce writes it.
   if rec.phone_e164 is distinct from '+526141112233' then raise exception 'V1 FAIL: phone_e164 = % (expected the claimant''s verified metadata phone)', rec.phone_e164; end if;
+  -- #257: the exact version string passed is the one written — never re-derived, never guessed.
+  if rec.privacy_aviso_version is distinct from '0.1-borrador' then raise exception 'V1 FAIL: privacy_aviso_version = % (expected the passed version)', rec.privacy_aviso_version; end if;
   if rec.terms_accepted_at is null then raise exception 'V1 FAIL: terms_accepted_at not stamped on claim'; end if;
   if rec.privacy_accepted_at is null then raise exception 'V1 FAIL: privacy_accepted_at not stamped on claim'; end if;
   select count(*) into n from public.gym_membership where user_id = uc and gym_id = g and role = 'member';
@@ -308,6 +326,35 @@ begin
   select count(*) into n from public.gym_membership where user_id = uf;
   if n <> 0 then raise exception 'V8 FAIL: a rejected firma wrote % membership rows', n; end if;
 end $$;
+
+-- ══ V9 — a claim that OMITS p_aviso_version writes NULL, never a fabricated value (#257 AC3) ══════════
+-- The RPC signature's `p_aviso_version default null` exists for exactly this: a caller that has no
+-- version to report (or hasn't been updated to pass one) must stamp an honest null, not invent one.
+-- Every OTHER write the claim makes (balance, email, membership) still happens normally.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.u_noversion', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  cn uuid := current_setting('t.c_noversion', true)::uuid;
+  un uuid := current_setting('t.u_noversion', true)::uuid;
+  v_slug text; rec record;
+begin
+  select gym_slug into v_slug from public.reclamar_por_codigo('NOVR2345', pg_temp.firma_codigo('NOVR2345'));
+  if v_slug is distinct from 'reclamar-codigo-suite-gym' then
+    raise exception 'V9 FAIL: expected the gym slug returned, got %', v_slug;
+  end if;
+  select auth_user_id, clases_restantes, terms_accepted_at, privacy_accepted_at, privacy_aviso_version
+    into rec from public.clientes where id = cn;
+  if rec.auth_user_id is distinct from un then raise exception 'V9 FAIL: row not bound to the claimant (got %)', rec.auth_user_id; end if;
+  if rec.clases_restantes is distinct from 6 then raise exception 'V9 FAIL: paid balance not intact (%)', rec.clases_restantes; end if;
+  if rec.terms_accepted_at is null then raise exception 'V9 FAIL: terms_accepted_at not stamped on claim'; end if;
+  if rec.privacy_accepted_at is null then raise exception 'V9 FAIL: privacy_accepted_at not stamped on claim'; end if;
+  if rec.privacy_aviso_version is not null then
+    raise exception 'V9 FAIL: an omitted version was fabricated as % instead of staying null', rec.privacy_aviso_version;
+  end if;
+end $$;
+reset role;
 
 select 'reclamar_por_codigo suite: OK' as result;
 rollback;

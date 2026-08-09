@@ -8,6 +8,7 @@ import {
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { confirmarCodigo, confirmarTokenHash } from "@gym/data/server/sesion";
 import { createClient, type SupabaseServer } from "@gym/data/server/supabase";
+import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
 
 /**
  * Email confirmation / recovery landing (ADR-0009 / ADR-0015). The confirmation
@@ -45,13 +46,13 @@ async function finalizarAuth(
       // the RPC refuses and writes nothing. Legit links (the magic-link existing-account
       // rail with `next=/reservar`, and the `/registro` signup confirmation) carry a valid
       // `firma` minted server-side after the app-tier gates. Runs even when `next` is set.
-      await reclamarPorCodigo(codigo, firma ?? "", supabase);
+      await reclamarPorCodigo(codigo, firma ?? "", AVISO_PRIVACIDAD_VERSION, supabase);
     } else if (!next) {
       // Fallback: claim (or create) the cliente by verified email in the host gym. Never
       // on a bare `next` recovery (a plain password reset must not claim a membership).
       const tenant = await resolveTenant(request.headers.get("host"), null);
       if (tenant) {
-        await reclamarCliente(tenant.id, supabase);
+        await reclamarCliente(tenant.id, AVISO_PRIVACIDAD_VERSION, supabase);
       }
     }
   } catch {

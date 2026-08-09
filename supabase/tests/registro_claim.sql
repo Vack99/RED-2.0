@@ -21,9 +21,15 @@
 -- Fixtures seed a transaction-local key (update-or-create, rolled back); every vector signs its
 -- call via pg_temp.firma(); V9 proves a forged and a cross-gym firma are rejected and write nothing.
 --
--- Nine named vectors: claim-on-verified-match, create-on-no-match, create-on-phone-only,
+-- AVISO VERSION (#257): the RPC also takes `p_aviso_version default null`, stamped onto the new
+-- `clientes.privacy_aviso_version` on BOTH the claim (UPDATE) and create (INSERT) branches — never
+-- on `terms_accepted_at`, which has no version machinery (Gate 0.1 scope cut) and keeps its bare
+-- timestamp. V1 and V2 pass an explicit version and assert it lands on each branch respectively;
+-- V10 OMITS it on the create branch and asserts the column stays null, not fabricated (AC3).
+--
+-- Ten named vectors: claim-on-verified-match, create-on-no-match, create-on-phone-only,
 -- email-unique-index-guard + claim-on-now-unique-match, unverified-rejected, membership-atomicity,
--- cross-gym-claim-denied, member-scoped-read, forged-firma-rejected.
+-- cross-gym-claim-denied, member-scoped-read, forged-firma-rejected, no-aviso-version-writes-null.
 --
 -- Zero hardcoded prod UUIDs (ADR-0013 §5): gym A is looked up by slug from the spine seeds; a synthetic
 -- gym B, all auth.users, and all pre-seeded clientes are minted with gen_random_uuid(). Fixtures are
@@ -53,6 +59,7 @@ declare
   u_atomic  uuid := gen_random_uuid();
   u_cross   uuid := gen_random_uuid();
   u_forge   uuid := gen_random_uuid();   -- V9: attacker probing the tenant binding
+  u_noversion uuid := gen_random_uuid(); -- V10 (#257): create path, OMITS p_aviso_version
   -- pre-seeded UNCLAIMED clientes
   c_match   uuid;
   c_phone   uuid;
@@ -85,7 +92,8 @@ begin
     ('00000000-0000-0000-0000-000000000000', u_unverif, 'authenticated','authenticated','sin@x.mx',           null,  '{"full_name":"Uma Unverif","phone_e164":"+526145556677"}'),
     ('00000000-0000-0000-0000-000000000000', u_atomic,  'authenticated','authenticated','atom@x.mx',          now(), '{"full_name":"Ato Mic","phone_e164":"+526146667788"}'),
     ('00000000-0000-0000-0000-000000000000', u_cross,   'authenticated','authenticated','cross@x.mx',         now(), '{"full_name":"Cris Cross","phone_e164":"+526147778899"}'),
-    ('00000000-0000-0000-0000-000000000000', u_forge,   'authenticated','authenticated','forja@x.mx',         now(), '{"full_name":"Fabián Forja","phone_e164":"+526148889900"}');
+    ('00000000-0000-0000-0000-000000000000', u_forge,   'authenticated','authenticated','forja@x.mx',         now(), '{"full_name":"Fabián Forja","phone_e164":"+526148889900"}'),
+    ('00000000-0000-0000-0000-000000000000', u_noversion, 'authenticated','authenticated','noversion@x.mx',   now(), '{"full_name":"Noa Version","phone_e164":"+526149990000"}');
 
   -- Pre-seeded operator CRM rows (auth_user_id NULL). c_match's email matches u_match (→ claim);
   -- c_phone shares u_phone's PHONE but has a DIFFERENT email (→ phone must NOT claim); c_dup carries
@@ -126,6 +134,7 @@ begin
   perform set_config('t.u_atomic',  u_atomic::text,  true);
   perform set_config('t.u_cross',   u_cross::text,   true);
   perform set_config('t.u_forge',   u_forge::text,   true);
+  perform set_config('t.u_noversion', u_noversion::text, true);
   perform set_config('t.c_match',   c_match::text,   true);
   perform set_config('t.c_phone',   c_phone::text,   true);
   perform set_config('t.c_dup',     c_dup::text,     true);
@@ -151,8 +160,10 @@ declare
   um  uuid := current_setting('t.u_match', true)::uuid;
   r   record;
   n   int;
+  v_ver text;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(um, g));
+  -- #257: p_aviso_version rides the SAME call, on the CLAIM (UPDATE) branch.
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(um, g), '0.1-borrador');
   if not r.reclamado then raise exception 'V1 FAIL: expected reclamado=true (a verified-email match)'; end if;
   if r.cliente_id <> cm then raise exception 'V1 FAIL: claimed % but expected the matched cliente %', r.cliente_id, cm; end if;
   -- Balance carried over untouched (ADR-0009): the operator-tracked 5 clases survive the claim.
@@ -161,6 +172,11 @@ begin
   -- Membership committed in the SAME transaction as the claim.
   select count(*) into n from public.gym_membership where user_id = um and gym_id = g and role = 'member';
   if n <> 1 then raise exception 'V1 FAIL: gym_membership(member) row missing (count=%)', n; end if;
+  -- #257: the exact version string passed is the one written on the claim (UPDATE) branch.
+  select privacy_aviso_version into v_ver from public.clientes where id = cm;
+  if v_ver is distinct from '0.1-borrador' then
+    raise exception 'V1 FAIL: privacy_aviso_version = % (expected the passed version)', v_ver;
+  end if;
 end $$;
 reset role;
 
@@ -177,12 +193,13 @@ declare
   v_auth_email text;
   n  int;
 begin
-  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(un, g));
+  -- #257: p_aviso_version rides the SAME call, on the CREATE (INSERT) branch this time.
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(un, g), '0.1-borrador');
   if r.reclamado then raise exception 'V2 FAIL: no matching email should NOT claim'; end if;
   -- Assert the WRITTEN row, not just which row (the #78 lesson): an RPC's return value is not its
   -- contract — the row it writes is. #78 dropped `email` from exactly this create-path INSERT and
   -- every self-registrant landed with clientes.email = NULL, invisible to a which-row-only test.
-  select nombre, tel, gym_id, auth_user_id, clases_restantes, email, terms_accepted_at, privacy_accepted_at
+  select nombre, tel, gym_id, auth_user_id, clases_restantes, email, terms_accepted_at, privacy_accepted_at, privacy_aviso_version
     into rec from public.clientes where id = r.cliente_id;
   if rec.auth_user_id <> un then raise exception 'V2 FAIL: fresh cliente not owned by the registrant'; end if;
   if rec.gym_id <> g then raise exception 'V2 FAIL: fresh cliente not scoped to the resolved gym'; end if;
@@ -199,6 +216,10 @@ begin
   -- Consent stamps written at create time (the RPC sets both to now()).
   if rec.terms_accepted_at is null then raise exception 'V2 FAIL: terms_accepted_at not stamped on the fresh row'; end if;
   if rec.privacy_accepted_at is null then raise exception 'V2 FAIL: privacy_accepted_at not stamped on the fresh row'; end if;
+  -- #257: the exact version string passed is the one written on the create (INSERT) branch.
+  if rec.privacy_aviso_version is distinct from '0.1-borrador' then
+    raise exception 'V2 FAIL: privacy_aviso_version = % (expected the passed version)', rec.privacy_aviso_version;
+  end if;
   -- Membership upserted in the SAME transaction (no half-registered state on the create path).
   select count(*) into n from public.gym_membership where user_id = un and gym_id = g and role = 'member';
   if n <> 1 then raise exception 'V2 FAIL: gym_membership(member) not written on create (count=%)', n; end if;
@@ -419,6 +440,33 @@ begin
   select count(*) into n from public.gym_membership where user_id = uf;
   if n <> 0 then raise exception 'V9 FAIL: a rejected firma still created % membership row(s)', n; end if;
 end $$;
+
+-- ══ V10 — a create that OMITS p_aviso_version writes NULL, never a fabricated value (#257 AC3) ════════
+-- The RPC signature's `p_aviso_version default null` exists for exactly this: a caller with no
+-- version to report must stamp an honest null on the CREATE (INSERT) branch, not invent one. Every
+-- OTHER write the create makes (identity, balance, membership) still happens normally.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.u_noversion', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  g  uuid := current_setting('t.gym_a', true)::uuid;
+  un uuid := current_setting('t.u_noversion', true)::uuid;
+  r  record;
+  rec record;
+begin
+  select * into r from public.reclamar_o_crear_cliente(g, pg_temp.firma(un, g));
+  if r.reclamado then raise exception 'V10 FAIL: no matching email should NOT claim'; end if;
+  select auth_user_id, terms_accepted_at, privacy_accepted_at, privacy_aviso_version
+    into rec from public.clientes where id = r.cliente_id;
+  if rec.auth_user_id <> un then raise exception 'V10 FAIL: fresh cliente not owned by the registrant'; end if;
+  if rec.terms_accepted_at is null then raise exception 'V10 FAIL: terms_accepted_at not stamped on the fresh row'; end if;
+  if rec.privacy_accepted_at is null then raise exception 'V10 FAIL: privacy_accepted_at not stamped on the fresh row'; end if;
+  if rec.privacy_aviso_version is not null then
+    raise exception 'V10 FAIL: an omitted version was fabricated as % instead of staying null', rec.privacy_aviso_version;
+  end if;
+end $$;
+reset role;
 
 select 'registro claim suite: OK' as result;
 rollback;
