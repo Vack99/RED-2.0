@@ -143,10 +143,12 @@ export type CompletarActivacionResultado =
  * is idempotent). Re-entry with an already-claimed code is therefore a success path.
  *
  * `avisoVersion` (#257) is forwarded to `reclamarPorCodigo` untouched — the action layer
- * resolves it from `@gym/domain/legal`'s `AVISO_PRIVACIDAD_VERSION`, this DAL never invents it.
+ * resolves it from `@gym/domain/legal`'s `AVISO_PRIVACIDAD_VERSION`, or `null` when no aviso
+ * was actually rendered / the gym's legal identity was incomplete (final review round,
+ * Important 1) — this DAL never invents either value.
  */
 export async function completarActivacion(
-  input: { password: string; codigo: string; avisoVersion: string },
+  input: { password: string; codigo: string; avisoVersion: string | null },
   opts: { client?: SupabaseServer } = {},
 ): Promise<CompletarActivacionResultado> {
   const supabase = opts.client ?? (await createClient());

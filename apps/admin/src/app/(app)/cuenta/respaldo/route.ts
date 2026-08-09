@@ -22,7 +22,11 @@
 // data, so the acceptance check is re-run HERE, explicitly — the same cached reader the
 // layout uses (`getAcuerdoAceptado`, React `cache()`-memoized, so this costs nothing extra
 // when the layout already resolved it this request). ANY future Route Handler under `(app)`
-// needs this SAME check copied in — the layout gate does not reach it.
+// needs this SAME check copied in — the layout gate does not reach it. Server Actions are the
+// SAME un-gated class for the SAME reason (they are directly POST-reachable independent of
+// which page tree rendered the form that normally calls them): any future Server Action doing
+// a comparably sensitive read/write under `(app)` needs its own explicit `getAcuerdoAceptado`
+// check too, not just Route Handlers.
 
 import { requireOperator } from "@gym/data/server/_auth";
 import { getOperatorGym } from "@gym/data/server/gym";

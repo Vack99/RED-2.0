@@ -53,6 +53,30 @@ drop policy if exists "gym_legal_anon_select" on public.gym_legal;
 create policy "gym_legal_anon_select" on public.gym_legal for select to anon
   using (gym_id = (select public.gym_en_peticion()));
 
+-- ── authenticated: close the SAME ambient-grant landmine's DDL-adjacent commands ──────────────────
+-- (final review round, finding 8). The close above narrowed `anon`; `authenticated`'s copy of the
+-- SAME project-wide `GRANT ALL ON TABLES` scaffold was left untouched — worth composing through
+-- explicitly, not assuming, per 20260808130000's own discipline.
+--
+-- COMPOSITION for authenticated's four DML commands: `gym_legal_staff_{select,insert,update,delete}`
+-- (20260808120000) already gate EVERY ONE of them with `is_staff_of(gym_id)` — unlike `gym_legal`'s
+-- SELECT grant before this migration (which had NO anon policy to compose with, hence the anon
+-- revoke-then-grant-columns above), authenticated already had a policy on all four commands before
+-- this migration ever ran. So SELECT/INSERT/UPDATE/DELETE stay on the ambient grant: narrowing any
+-- of them would break the staff editor (`actualizarIdentidadLegal`) for no safety gain — the row
+-- filter already does the real work, proven cross-tenant in supabase/tests/aceptar_acuerdo.sql V8.
+--
+-- What is genuinely "beyond what its policies need": TRUNCATE, REFERENCES and TRIGGER are part of
+-- the SAME `GRANT ALL ON TABLES` scaffold but are NEVER filtered by row-level security, for ANY
+-- table, with ANY policy — Postgres does not consult RLS for them at all (unlike SELECT/INSERT/
+-- UPDATE/DELETE/MERGE). So no `is_staff_of` policy, however complete, can ever compose with them:
+-- the ambient grant hands `authenticated` a bare TRUNCATE that bypasses staff-scoping outright (ANY
+-- signed-in identity — staff of any gym or none — could truncate every gym's legal-identity row).
+-- Revoked for symmetry with the anon close above; PostgREST exposes no TRUNCATE/DDL surface today,
+-- so this is defense-in-depth, not a behavior change (same posture as the anon insert/update/delete
+-- revoke above).
+revoke truncate, references, trigger on table public.gym_legal from authenticated;
+
 -- Expand-only (grant/revoke + one new policy, no existing object altered), idempotent
 -- (grant/revoke re-apply cleanly; the policy is drop-if-exists/create), safe out-of-order on the
 -- live project.

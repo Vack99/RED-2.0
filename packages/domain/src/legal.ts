@@ -625,7 +625,9 @@ function cuerpoMiembroIntegral(texto: string): string {
 /** The member-facing span of the simplificado aviso: EXACTLY the canonical "Texto" variant — never
  *  the BORRADOR banner, the "Uso." implementation note, the "## Texto (versión breve...)" alternate
  *  wording, the "## Casilla de consentimiento..." block, the "Reglas de implementación" bullets, or
- *  the Campos de combinación table.
+ *  the Campos de combinación table — and (final review round, finding 6) never the trailing
+ *  "Puede consultar..." paragraph either, since its own [texto](url) link to the integral aviso is
+ *  what that paragraph exists for.
  *
  *  Review finding 2 (fix round): the previous slice spanned ALL THREE of canónica + breve + casilla
  *  in one blob, so a member read two differently-worded copies of the same aviso back to back, plus
@@ -636,15 +638,26 @@ function cuerpoMiembroIntegral(texto: string): string {
  *  reserva forms — no case there is scoped to "espacios reducidos", the ONLY condition the breve
  *  variant's own heading names for itself), so canónica is what ships. The leading "## Texto
  *  (versión canónica)" heading itself is excluded too (finding 3 — no literal `#`/`##` reaches a
- *  member). Same discipline as `cuerpoMiembroIntegral` above. */
+ *  member). Same discipline as `cuerpoMiembroIntegral` above.
+ *
+ *  Review finding 6 (final round): `depurarMarkdown` collapses a `[texto](url)` link to bare text —
+ *  correct for every OTHER markdown construct in these templates, but it means the canonical body's
+ *  own link to the integral aviso rendered as inert plain text inside `white-space: pre-wrap`, never
+ *  clickable (only the caller's brand-neutral FALLBACK text had a real `<Link>`). Rather than teach
+ *  `depurarMarkdown` a special case for exactly one link (it would still need to hand a URL to
+ *  something that can render an anchor, which a plain string cannot do — this module stays pure, no
+ *  JSX), the body now stops BEFORE that paragraph; the calling component renders a real `<Link>` in
+ *  its place (`aviso-simplificado-inline.tsx`). Everything up to that point is still the pinned
+ *  template prose verbatim — only the link's own paragraph moves out of the string. */
 function cuerpoMiembroSimplificado(texto: string): string {
   const marcaInicio = "## Texto (versión canónica)\n\n";
   const inicio = texto.indexOf(marcaInicio);
-  const fin = texto.indexOf("## Texto (versión breve");
-  if (inicio === -1 || fin === -1 || fin <= inicio) {
+  const variante = texto.indexOf("## Texto (versión breve");
+  const enlace = texto.indexOf("\n>\n> Puede consultar el aviso de privacidad integral");
+  if (inicio === -1 || variante === -1 || enlace === -1 || variante <= inicio || enlace <= inicio) {
     throw new Error("AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO: member-facing body markers not found");
   }
-  return texto.slice(inicio + marcaInicio.length, fin).trim();
+  return texto.slice(inicio + marcaInicio.length, enlace).trim();
 }
 
 /** Strip literal Markdown syntax characters from an already-sliced-and-merged aviso body before it
@@ -712,8 +725,8 @@ const ETIQUETAS_CAMPOS: Readonly<Record<string, string>> = {
   domicilio: "domicilio",
   email_arco: "correo de contacto ARCO",
   area_datos_personales: "área o persona responsable de datos personales",
-  telefono_contacto: "teléfono de contacto (gym_contact.whatsapp)",
-  email_contacto: "correo de contacto general (gym_contact.email)",
+  telefono_contacto: "teléfono de contacto",
+  email_contacto: "correo de contacto general",
   fecha_actualizacion: "fecha de la última actualización",
   version_aviso: "versión del aviso",
   url_aviso_integral: "URL pública del aviso",

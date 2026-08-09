@@ -386,5 +386,32 @@ begin
   end if;
 end $$;
 
+-- ══ V9 — DENIAL: even a caller with a passing is_staff_of on THEIR OWN gym cannot TRUNCATE ═════════
+-- ══ gym_legal — the ambient-grant landmine 20260808140000's review-round fix (finding 8) revoked ═══
+-- Distinct from V8 above: V8 proves the ROW filter (cross-tenant staff denied); this proves the
+-- COMMAND grant on a command RLS can never filter at all (TRUNCATE has no row to filter — Postgres
+-- does not consult row-level security for it). owner_a legitimately passes is_staff_of(gym_a) and
+-- can SELECT/INSERT/UPDATE/DELETE their own gym's row (proven above) — TRUNCATE must still fail on
+-- privilege alone, not on a row match, and gym_a's row must survive the attempt.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.owner_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+begin
+  begin
+    truncate public.gym_legal;
+    raise exception 'V9 FAIL: owner_a (staff of gym_a) truncated gym_legal — the authenticated revoke did not hold';
+  exception
+    when insufficient_privilege then null; -- expected: 42501, no TRUNCATE grant for authenticated
+  end;
+end $$;
+reset role;
+do $$
+declare rec record;
+begin
+  select * into rec from public.gym_legal where gym_id = current_setting('t.gym_a', true)::uuid;
+  if rec.gym_id is null then raise exception 'V9 FAIL: gym_a''s gym_legal row is gone after the TRUNCATE probe'; end if;
+end $$;
+
 select 'aceptar_acuerdo suite: OK' as result;
 rollback;

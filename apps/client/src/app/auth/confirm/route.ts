@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { getMarketingGym } from "@gym/data/server/marketing";
 import {
+  invitacionInfo,
   parseCodigoInvitacion,
   reclamarCliente,
   reclamarPorCodigo,
@@ -8,7 +10,8 @@ import {
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { confirmarCodigo, confirmarTokenHash } from "@gym/data/server/sesion";
 import { createClient, type SupabaseServer } from "@gym/data/server/supabase";
-import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
+
+import { avisoVersionParaGym } from "../../../lib/aviso-legal";
 
 /**
  * Email confirmation / recovery landing (ADR-0009 / ADR-0015). The confirmation
@@ -46,13 +49,26 @@ async function finalizarAuth(
       // the RPC refuses and writes nothing. Legit links (the magic-link existing-account
       // rail with `next=/reservar`, and the `/registro` signup confirmation) carry a valid
       // `firma` minted server-side after the app-tier gates. Runs even when `next` is set.
-      await reclamarPorCodigo(codigo, firma ?? "", AVISO_PRIVACIDAD_VERSION, supabase);
+      //
+      // Final review round, Important 1: the aviso version is recomputed for THIS code's
+      // gym (never stamped unconditionally) — the code names the row, the row names the
+      // gym (`invitacionInfo`, the same lookup /activar's own door already uses), and
+      // `avisoVersionParaGym` degrades to `null` on a dead/unresolved code exactly like an
+      // incomplete identity would.
+      const info = await invitacionInfo(codigo).catch(() => null);
+      const gym = info ? await getMarketingGym(info.gym_slug) : null;
+      await reclamarPorCodigo(codigo, firma ?? "", await avisoVersionParaGym(gym), supabase);
     } else if (!next) {
       // Fallback: claim (or create) the cliente by verified email in the host gym. Never
       // on a bare `next` recovery (a plain password reset must not claim a membership).
       const tenant = await resolveTenant(request.headers.get("host"), null);
       if (tenant) {
-        await reclamarCliente(tenant.id, AVISO_PRIVACIDAD_VERSION, supabase);
+        // Final review round, Important 1: this is the continuation of /registro's own
+        // form, which rendered the real simplificado only when the gym's identity was
+        // complete — recompute that here (never trust a stale render-time flag) so the
+        // stamped version matches what THIS request's gym actually shows.
+        const gym = await getMarketingGym(tenant.slug);
+        await reclamarCliente(tenant.id, await avisoVersionParaGym(gym), supabase);
       }
     }
   } catch {

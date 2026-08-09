@@ -6,6 +6,7 @@ import {
   iniciarActivacion,
   type ErrorActivacion,
 } from "./activacion";
+import { firmaCodigo } from "./registro";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -229,5 +230,30 @@ describe("completarActivacion", () => {
     );
     expect(res).toEqual({ ok: false, error: "weak password" });
     expect(orden).toEqual(["password"]); // bailed before the claim
+  });
+
+  it("forwards a null aviso version to reclamarPorCodigo (no aviso rendered / incomplete identity)", async () => {
+    let seenArgs: unknown = null;
+    const client = {
+      auth: {
+        getClaims: async () => ({ data: { claims: { sub: "u-1" } } }),
+        updateUser: async () => ({ error: null }),
+      },
+      rpc: (_name: string, args: unknown) => {
+        seenArgs = args;
+        return { single: async () => ({ data: { gym_slug: "forge" }, error: null }) };
+      },
+    } as unknown as SupabaseServer;
+
+    const res = await completarActivacion(
+      { password: "unbuenpass", codigo: "ABCD2345", avisoVersion: null },
+      { client },
+    );
+    expect(res).toEqual({ ok: true });
+    expect(seenArgs).toEqual({
+      p_codigo: "ABCD2345",
+      p_firma: firmaCodigo("ABCD2345"),
+      p_aviso_version: undefined,
+    });
   });
 });

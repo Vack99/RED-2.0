@@ -231,6 +231,23 @@ describe("aceptarAcuerdo", () => {
       expect(args.p_ip).toBe(input.ip);
       expect(args.p_user_agent).toBe(input.userAgent);
     });
+
+    // Minor 4 (final review round): `ip`'s check constraint is `between 1 and 100` — a `''`
+    // fails it just as surely as it needs no truncation. The one real caller (apps/admin's
+    // aceptarAnexoAction) already collapses empty→null before calling in, but this function's
+    // own contract must hold for ANY caller, so an empty string passed straight through here
+    // must not reach the RPC either.
+    it("collapses an empty-string ip to null before the RPC call — never lets '' hit the check constraint", async () => {
+      let seen: { name: string; args: unknown } | null = null;
+      const client = fakeAccept({
+        capture: (name, args) => {
+          seen = { name, args };
+        },
+      });
+      await aceptarAcuerdo({ ...input, ip: "" }, client);
+      const args = seen!.args as Record<string, unknown>;
+      expect(args.p_ip).toBeUndefined(); // p_ip: null ?? undefined — the RPC's own optional-arg shape
+    });
   });
 });
 
@@ -486,6 +503,8 @@ describe("actualizarIdentidadLegal", () => {
 function fakeIdentidadPublica(opts: {
   gymRow?: Record<string, unknown> | null;
   legalRow?: Record<string, unknown> | null;
+  gymError?: { message: string } | null;
+  legalError?: { message: string } | null;
 }) {
   const eqCalls: [string, string, unknown][] = [];
   const client = {
@@ -497,8 +516,8 @@ function fakeIdentidadPublica(opts: {
           return b;
         },
         maybeSingle: async () => {
-          if (table === "gym") return { data: opts.gymRow ?? null, error: null };
-          if (table === "gym_legal") return { data: opts.legalRow ?? null, error: null };
+          if (table === "gym") return { data: opts.gymRow ?? null, error: opts.gymError ?? null };
+          if (table === "gym_legal") return { data: opts.legalRow ?? null, error: opts.legalError ?? null };
           throw new Error(`unexpected table ${table}`);
         },
       };
@@ -555,5 +574,49 @@ describe("getIdentidadLegalPublica", () => {
         ["gym_legal", "gym_id", "gym-1"],
       ]),
     );
+  });
+
+  // Minor 3 (final review round): fail-soft is unchanged (still degrades to incomplete), but a
+  // read error must be distinguishable in the logs from the ordinary "not filled in yet" case —
+  // same posture + shape as getAcuerdoAceptado's own warn line above.
+  it("logs a structured warning when the gym read errors, but still degrades to null", async () => {
+    const { client } = fakeIdentidadPublica({ gymError: { message: "connection reset" }, legalRow: null });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await getIdentidadLegalPublica("gym-9", client)).toEqual({
+      razonSocial: null,
+      domicilio: null,
+      emailArco: null,
+      areaDatosPersonales: null,
+    });
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(warn.mock.calls[0][0] as string)).toEqual({
+      event: "identidad-legal-publica-read-error",
+      table: "gym",
+      gymId: "gym-9",
+      error: "connection reset",
+    });
+    warn.mockRestore();
+  });
+
+  it("logs a structured warning when the gym_legal read errors, but still degrades to null", async () => {
+    const { client } = fakeIdentidadPublica({ legalError: { message: "timeout" }, gymRow: null });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await getIdentidadLegalPublica("gym-9", client);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(warn.mock.calls[0][0] as string)).toEqual({
+      event: "identidad-legal-publica-read-error",
+      table: "gym_legal",
+      gymId: "gym-9",
+      error: "timeout",
+    });
+    warn.mockRestore();
+  });
+
+  it("logs NOTHING on a clean read (no per-request noise for the ordinary case)", async () => {
+    const { client } = fakeIdentidadPublica({});
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await getIdentidadLegalPublica("gym-1", client);
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 });

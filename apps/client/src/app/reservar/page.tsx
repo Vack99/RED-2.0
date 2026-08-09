@@ -11,7 +11,6 @@ import {
 import { reclamarCliente } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { createClient } from "@gym/data/server/supabase";
-import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
 
 import { ReservarSemana } from "./_components/reservar-semana";
 import { SinMembresia } from "./_components/sin-membresia";
@@ -61,7 +60,10 @@ export default async function ReservarPage({
     const tenant = await resolveTenant((await headers()).get("host"), null);
     if (tenant) {
       try {
-        await reclamarCliente(tenant.id, AVISO_PRIVACIDAD_VERSION, supabase);
+        // Final review round, Important 1: no aviso is rendered on this page — this is a
+        // silent defense-in-depth retry for a dropped claim, not a consent screen — so this
+        // stamps null rather than a version the member never saw.
+        await reclamarCliente(tenant.id, null, supabase);
         esMiembro = await getEsMiembro(supabase);
       } catch {
         // Still no membership (no matching invite/sale to claim in this gym) —

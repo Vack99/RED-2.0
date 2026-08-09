@@ -6,7 +6,7 @@ Next session executes the Gate 0.1 slices. This file carries everything that ses
 
 | Commit | What |
 |---|---|
-| `161f996` | docs batch incl. `docs/gates/gates-0-to-5` (the gate ladder) |
+| `161f996` | docs batch incl. `docs/gates/gates-0-to-5.md` (the gate ladder; renamed with the `.md` extension in the final fix wave) |
 | `b169d50` | `docs/Context/2026-08-07-gate0-privacy-pure-online-research.md` — 12-agent verified research |
 | `7aedec7` | `docs/legal/gate0-borradores/` — anexo + 2 aviso templates + brief-abogado (all "BORRADOR, pendiente de abogado") |
 

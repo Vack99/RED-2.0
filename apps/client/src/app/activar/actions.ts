@@ -6,7 +6,6 @@ import { redirect } from "next/navigation";
 import { iniciarActivacion } from "@gym/data/server/activacion";
 import { firmaCodigo, parseCodigoInvitacion, reclamarPorCodigo } from "@gym/data/server/registro";
 import { enviarMagicLink } from "@gym/data/server/sesion";
-import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
 
 import { verificarTurnstile } from "../../lib/turnstile";
 
@@ -123,7 +122,10 @@ export async function vincularAction(
   }
 
   try {
-    await reclamarPorCodigo(codigo, firmaCodigo(codigo), AVISO_PRIVACIDAD_VERSION);
+    // Final review round, Important 1: no aviso is rendered on this page at all — the
+    // one-click bind is a bare button, no consent text, no checkbox — so this stamps null
+    // rather than a version the member never saw.
+    await reclamarPorCodigo(codigo, firmaCodigo(codigo), null);
   } catch {
     // Swallowed (mirrors finalizarAuth): the member is logged in; a dead/already-owned
     // code must not strand them — they reach the app either way.

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MarketingGym } from "@gym/data/server/marketing";
 
-import { resolverIdentidadLegalPublica } from "./aviso-legal";
+import { avisoVersionParaGym, resolverIdentidadLegalPublica } from "./aviso-legal";
 
 /**
  * `resolverIdentidadLegalPublica` (#256) — the composition itself: gym_contact's
@@ -100,5 +100,51 @@ describe("resolverIdentidadLegalPublica", () => {
     identidadPublica.mockResolvedValue({ razonSocial: null, domicilio: null, emailArco: null, areaDatosPersonales: null });
     contacto.mockResolvedValue(null);
     expect((await resolverIdentidadLegalPublica(GYM)).urlAvisoIntegral).toBe("http://localhost:3000/legal");
+  });
+});
+
+/**
+ * `avisoVersionParaGym` (final review round, Important 1): the version stamped onto a claim RPC
+ * must reflect whether the member ACTUALLY saw the real aviso — never unconditional. Recomputes
+ * completeness from the same public reader `resolverIdentidadLegalPublica` uses, so these three
+ * cases (complete → the version string, incomplete → null, no gym → null) are the ones every
+ * form-adjacent claim call site (`/auth/confirm`'s two branches, `activar/contrasena/actions.ts`)
+ * relies on.
+ */
+describe("avisoVersionParaGym", () => {
+  it("returns the version string when the gym's legal identity is complete", async () => {
+    setHeaders({ "x-forwarded-proto": "https", host: "forge.example.mx" });
+    identidadPublica.mockResolvedValue({
+      razonSocial: "Gimnasio Forge, S.A. de C.V.",
+      domicilio: "Av. Siempre Viva 123",
+      emailArco: "datos@forge.mx",
+      areaDatosPersonales: "Departamento de Datos Personales",
+    });
+    contacto.mockResolvedValue({
+      addressLine: null,
+      addressNote: null,
+      latitude: null,
+      longitude: null,
+      whatsapp: "5216140000000",
+      email: "hola@forge.mx",
+      instagram: null,
+      horarios: [],
+    });
+
+    expect(await avisoVersionParaGym(GYM)).toBe("0.1-borrador");
+  });
+
+  it("returns null when the gym's legal identity is incomplete — never fabricates a version", async () => {
+    setHeaders({ host: "forge.example.mx" });
+    identidadPublica.mockResolvedValue({ razonSocial: null, domicilio: null, emailArco: null, areaDatosPersonales: null });
+    contacto.mockResolvedValue(null);
+
+    expect(await avisoVersionParaGym(GYM)).toBeNull();
+  });
+
+  it("returns null for a null gym (unmapped host / unresolved invite code) without reading identity", async () => {
+    expect(await avisoVersionParaGym(null)).toBeNull();
+    expect(identidadPublica).not.toHaveBeenCalled();
+    expect(contacto).not.toHaveBeenCalled();
   });
 });

@@ -123,13 +123,18 @@ function firmaTenant(userId: string, gymId: string): string {
  *
  * `avisoVersion` (#257) is the aviso de privacidad version the caller ACTUALLY rendered
  * to the member (the caller must pass `AVISO_PRIVACIDAD_VERSION` from `@gym/domain/legal`
- * — never a hardcoded string here) — the RPC stamps it onto `clientes.privacy_aviso_version`
- * alongside `privacy_accepted_at`. There is no terms-of-service version (Gate 0.1 scope
- * cut): `terms_accepted_at` stays a bare timestamp.
+ * — never a hardcoded string here), or `null` when no aviso was rendered / the gym's legal
+ * identity wasn't complete at render time (final review round, Important 1 — stamping the
+ * constant unconditionally would fabricate consent evidence for text the member never saw).
+ * The RPC stamps whichever value onto `clientes.privacy_aviso_version` alongside
+ * `privacy_accepted_at`. There is no terms-of-service version (Gate 0.1 scope cut):
+ * `terms_accepted_at` stays a bare timestamp. `?? undefined` at the RPC boundary: the
+ * generated `p_aviso_version` arg type is optional-only (no `| null`), the same shape
+ * `aceptarAcuerdo`'s `p_ip`/`p_user_agent` already use for a nullable optional param.
  */
 export async function reclamarCliente(
   gymId: string,
-  avisoVersion: string,
+  avisoVersion: string | null,
   client?: SupabaseServer,
 ): Promise<ReclamoCliente> {
   const supabase = client ?? (await createClient());
@@ -140,7 +145,7 @@ export async function reclamarCliente(
     .rpc("reclamar_o_crear_cliente", {
       p_gym_id: gymId,
       p_firma: firmaTenant(uid, gymId),
-      p_aviso_version: avisoVersion,
+      p_aviso_version: avisoVersion ?? undefined,
     })
     .single();
   if (error || !data) {
@@ -183,18 +188,19 @@ export function firmaCodigo(codigo: string): string {
  *
  * `avisoVersion` (#257) is the aviso de privacidad version the caller ACTUALLY rendered
  * to the member (`AVISO_PRIVACIDAD_VERSION` from `@gym/domain/legal` — never hardcoded
- * here), stamped onto `clientes.privacy_aviso_version` alongside `privacy_accepted_at`.
+ * here), or `null` when no aviso was rendered on this rail (final review round, Important 1)
+ * — stamped onto `clientes.privacy_aviso_version` alongside `privacy_accepted_at`.
  * No terms-of-service version exists (Gate 0.1 scope cut): `terms_accepted_at` stays bare.
  */
 export async function reclamarPorCodigo(
   codigo: string,
   firma: string,
-  avisoVersion: string,
+  avisoVersion: string | null,
   client?: SupabaseServer,
 ): Promise<ReclamoPorCodigo> {
   const supabase = client ?? (await createClient());
   const { data, error } = await supabase
-    .rpc("reclamar_por_codigo", { p_codigo: codigo, p_firma: firma, p_aviso_version: avisoVersion })
+    .rpc("reclamar_por_codigo", { p_codigo: codigo, p_firma: firma, p_aviso_version: avisoVersion ?? undefined })
     .single();
   if (error || !data) {
     throw new Error(error?.message ?? "No se pudo reclamar la invitación");

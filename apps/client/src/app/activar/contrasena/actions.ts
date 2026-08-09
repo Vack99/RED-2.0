@@ -1,10 +1,13 @@
 "use server";
 
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { completarActivacion } from "@gym/data/server/activacion";
+import { getMarketingGym } from "@gym/data/server/marketing";
 import { parseCodigoInvitacion } from "@gym/data/server/registro";
-import { AVISO_PRIVACIDAD_VERSION } from "@gym/domain/legal";
+
+import { avisoVersionParaGym } from "../../../lib/aviso-legal";
 
 /**
  * Finish activation (issue #133): validate the intake (8-char password + confirm match
@@ -41,7 +44,13 @@ export async function activarContrasenaAction(
     return { status: "error", error: "Esta invitación ya no es válida. Contacta a tu gimnasio." };
   }
 
-  const result = await completarActivacion({ password, codigo, avisoVersion: AVISO_PRIVACIDAD_VERSION });
+  // Final review round, Important 1: this page rendered the real simplificado only when the
+  // gym's legal identity was complete (activar/contrasena/page.tsx) — recompute that here
+  // (never trust a stale render-time flag) via the same host lookup the page itself used, so
+  // the stamped version matches what THIS request's gym actually showed.
+  const hostGym = (await headers()).get("x-gym");
+  const gym = hostGym ? await getMarketingGym(hostGym) : null;
+  const result = await completarActivacion({ password, codigo, avisoVersion: await avisoVersionParaGym(gym) });
   if (!result.ok) {
     if (result.error === "sin_sesion") {
       redirect(`/activar?codigo=${codigo}`);

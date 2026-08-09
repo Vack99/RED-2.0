@@ -139,10 +139,10 @@ describe("identidadLegalCompleta / camposFaltantesIdentidadLegal (review finding
     const faltantes = camposFaltantesIdentidadLegal(identidad);
     expect(identidadLegalCompleta(identidad)).toBe(false);
     expect(faltantes).toContain("URL pública del aviso");
-    expect(faltantes).toContain("correo de contacto general (gym_contact.email)");
+    expect(faltantes).toContain("correo de contacto general");
     // Everything ELSE stayed resolved — this is a targeted gap, not a regression to "nothing works".
     expect(faltantes).not.toContain("razón social");
-    expect(faltantes).not.toContain("teléfono de contacto (gym_contact.whatsapp)");
+    expect(faltantes).not.toContain("teléfono de contacto");
   });
 
   it("an empty identity lists every gym-editable AND platform-context field as missing", () => {
@@ -153,8 +153,8 @@ describe("identidadLegalCompleta / camposFaltantesIdentidadLegal (review finding
         "domicilio",
         "correo de contacto ARCO",
         "área o persona responsable de datos personales",
-        "teléfono de contacto (gym_contact.whatsapp)",
-        "correo de contacto general (gym_contact.email)",
+        "teléfono de contacto",
+        "correo de contacto general",
         "URL pública del aviso",
       ]),
     );
@@ -236,8 +236,6 @@ describe("renderAvisoIntegral / renderAvisoSimplificado (finding 2: member-facin
     // source .md's inline-code backticks before this reaches a member.
     expect(integral).toContain("plazo de 20 días hábiles");
     expect(integral).toContain("dentro de los 15 días hábiles");
-    const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
-    expect(simplificado).toContain("https://forge.example/legal");
   });
 
   it("integral starts at the real heading text and ends with §6's own closing sentence", () => {
@@ -283,6 +281,18 @@ describe("renderAvisoIntegral / renderAvisoSimplificado (finding 2: member-facin
       expect(integral).toContain("aviso visible en la recepción del gimnasio");
       expect(integral).not.toContain("correo electrónico a la dirección de contacto que tengamos registrada");
     }
+  });
+
+  // Review finding 6 (final round): `depurarMarkdown` collapses a [texto](url) link to inert plain
+  // text inside `white-space: pre-wrap` — so the canonical body's own link to the integral aviso
+  // was never clickable. The body now stops BEFORE that trailing paragraph entirely; the calling
+  // component (aviso-simplificado-inline.tsx) renders a real <Link> in its place.
+  it("simplificado never renders its own trailing link paragraph or the bare URL — the caller renders a real Link instead", () => {
+    const simplificado = renderAvisoSimplificado(IDENTIDAD_COMPLETA);
+    expect(simplificado).not.toContain("Puede consultar");
+    expect(simplificado).not.toContain(IDENTIDAD_COMPLETA.urlAvisoIntegral);
+    // The body still ends with the sentence right before the stripped link paragraph.
+    expect(simplificado.endsWith("No tratamos datos personales sensibles ni datos biométricos.")).toBe(true);
   });
 
   // Review finding 3 (fix round): every render site paints this string as plain pre-wrap text —

@@ -93,12 +93,15 @@ export async function aceptarAcuerdo(
 ): Promise<AceptarAcuerdoResult> {
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
-  // Truncate AFTER the caller's `|| null` empty-string collapse: `ip`'s check constraint is
-  // `between 1 and 100` (so a real, non-empty value must survive) and `user_agent`'s is `<= 500`
-  // (no minimum). A multi-hop x-forwarded-for or a verbose browser UA string is otherwise
-  // unbounded — truncating here (once, in the DAL) means every future caller of this function
-  // inherits the safety, not just #254's action.
-  const ip = input.ip?.slice(0, 100) ?? null;
+  // Truncate, THEN collapse empty→null with `||` (final review round, minor 4): `ip`'s check
+  // constraint is `between 1 and 100` (a real, non-empty value must survive), so a `''` — not
+  // just `null`/`undefined` — must never reach the RPC. The caller's own `|| null` collapse
+  // (apps/admin's aceptarAnexoAction) already guards the one caller that exists today, but this
+  // function's OWN contract must hold for any future caller too — `input.ip?.slice(0, 100) ?? null`
+  // only replaces `null`/`undefined`, so `input.ip === ''` (or a value that slices down to `''`)
+  // rode through unchanged and would raise the check constraint. `user_agent`'s check is `<= 500`
+  // with NO minimum, so an empty string there is not a bug — `?? null` stays correct for it.
+  const ip = input.ip?.slice(0, 100) || null;
   const userAgent = input.userAgent?.slice(0, 500) ?? null;
   const { data, error } = await supabase
     .rpc("aceptar_acuerdo", {
@@ -245,10 +248,22 @@ export interface IdentidadLegalPublicaDTO {
  *  thrown page for an incomplete or unmapped gym. Memoized per request. */
 export const getIdentidadLegalPublica = cache(
   async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<IdentidadLegalPublicaDTO> => {
-    const [{ data: gymRow }, { data: legalRow }] = await Promise.all([
+    const [{ data: gymRow, error: gymError }, { data: legalRow, error: legalError }] = await Promise.all([
       client.from("gym").select("legal_name").eq("id", gymId).maybeSingle(),
       client.from("gym_legal").select("domicilio, email_arco, area_datos_personales").eq("gym_id", gymId).maybeSingle(),
     ]);
+    // Fail-soft is unchanged (still degrades to incomplete, never a thrown page) — but a read
+    // error must be visible in the logs as distinct from the ordinary "gym hasn't filled this in
+    // yet" empty case, same posture as every sibling reader in this module (getAcuerdoAceptado,
+    // getIdentidadLegal). Two independent reads, so each gets its own event name.
+    if (gymError) {
+      console.warn(JSON.stringify({ event: "identidad-legal-publica-read-error", table: "gym", gymId, error: gymError.message }));
+    }
+    if (legalError) {
+      console.warn(
+        JSON.stringify({ event: "identidad-legal-publica-read-error", table: "gym_legal", gymId, error: legalError.message }),
+      );
+    }
     return {
       razonSocial: gymRow?.legal_name ?? null,
       domicilio: legalRow?.domicilio ?? null,

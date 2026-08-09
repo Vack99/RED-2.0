@@ -4,7 +4,13 @@ import { headers } from "next/headers";
 
 import { getIdentidadLegalPublica } from "@gym/data/server/legal";
 import { getContacto, type MarketingGym } from "@gym/data/server/marketing";
-import { identidadDesde, urlAvisoIntegralDesde, type IdentidadLegalGym } from "@gym/domain/legal";
+import {
+  AVISO_PRIVACIDAD_VERSION,
+  identidadDesde,
+  identidadLegalCompleta,
+  urlAvisoIntegralDesde,
+  type IdentidadLegalGym,
+} from "@gym/domain/legal";
 import { formatTelMx } from "@gym/format";
 
 /**
@@ -49,4 +55,19 @@ export async function resolverIdentidadLegalPublica(gym: MarketingGym): Promise<
     contacto?.email ?? null,
     url,
   );
+}
+
+/** The aviso version to stamp on a claim RPC for THIS gym (final review round, Important 1):
+ *  a member only actually saw the real simplificado when the gym's legal identity was
+ *  COMPLETE at render time — the form-adjacent claim rails (the /registro confirm continuation,
+ *  the /activar/contrasena set-password step) must recompute that here, at claim time, rather
+ *  than trust a stale flag from an earlier render, so a version never gets stamped for text a
+ *  member didn't actually see. `gym: null` (unmapped host, dead/unresolved invite code) has no
+ *  identity to check — also `null`, same as an incomplete one. Shared so the three call sites
+ *  (`/auth/confirm`'s two claim branches, `activar/contrasena/actions.ts`) don't each re-derive
+ *  the same ternary. */
+export async function avisoVersionParaGym(gym: MarketingGym | null): Promise<string | null> {
+  if (!gym) return null;
+  const identidad = await resolverIdentidadLegalPublica(gym);
+  return identidadLegalCompleta(identidad) ? AVISO_PRIVACIDAD_VERSION : null;
 }

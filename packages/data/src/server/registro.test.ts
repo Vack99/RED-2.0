@@ -137,6 +137,18 @@ describe("reclamarPorCodigo", () => {
       "Código de invitación inválido o ya utilizado",
     );
   });
+
+  it("forwards a null aviso version as undefined (no aviso rendered / incomplete identity)", async () => {
+    let seen: { name: string; args: unknown } | null = null;
+    const client = fakeRpc({ data: { gym_slug: "forge" }, error: null }, (name, args) => {
+      seen = { name, args };
+    });
+    await reclamarPorCodigo("ABCD2345", "firma-x", null, client);
+    expect(seen).toEqual({
+      name: "reclamar_por_codigo",
+      args: { p_codigo: "ABCD2345", p_firma: "firma-x", p_aviso_version: undefined },
+    });
+  });
 });
 
 describe("reclamarCliente — tenant firma (spec 2026-07-13 §1.5, D2 binding)", () => {
@@ -178,6 +190,20 @@ describe("reclamarCliente — tenant firma (spec 2026-07-13 §1.5, D2 binding)",
       throw new Error("RPC must not be called without a firma");
     });
     await expect(reclamarCliente("g-1", "0.1-borrador", client)).rejects.toThrow("TENANT_ASSERTION_KEY");
+    vi.unstubAllEnvs();
+  });
+
+  it("forwards a null aviso version as undefined (no aviso rendered / incomplete identity)", async () => {
+    vi.stubEnv("TENANT_ASSERTION_KEY", "test-key");
+    let seen: { name: string; args: unknown } | null = null;
+    const client = fakeAuthRpc((name, args) => {
+      seen = { name, args };
+    });
+    await reclamarCliente("g-1", null, client);
+    expect(seen).toEqual({
+      name: "reclamar_o_crear_cliente",
+      args: { p_gym_id: "g-1", p_firma: FIRMA_PINNED, p_aviso_version: undefined },
+    });
     vi.unstubAllEnvs();
   });
 });

@@ -8,17 +8,25 @@ import { describe, expect, it } from "vitest";
 import {
   AVISO_PRIVACIDAD_INTEGRAL_TEXTO,
   AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO,
+  AVISO_PRIVACIDAD_VERSION,
 } from "../../packages/domain/src/legal";
 
 // Gate 0.1 evidentiary guard (#255), same idiom as anexo-legal-drift.test.ts (#254). The CUENTA
 // preview's `mergeAvisoTemplate` runs against `AVISO_PRIVACIDAD_INTEGRAL_TEXTO` /
 // `AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO` — hand-copied mirrors of
 // docs/legal/gate0-borradores/aviso-privacidad-{integral,simplificado}-template.md — and until this
-// guard nothing machine-checked the two staying identical. Unlike the Anexo, these documents carry
-// no acceptance/version concept (nobody clicks to accept an aviso, so there is no
-// `(gym, documento, version)` uniqueness to protect and no version constant to pin) — the failure
-// mode this closes is narrower: the .md changes and the constant is not re-copied, so the CUENTA
-// preview would keep rendering stale text forever, silently.
+// guard nothing machine-checked the two staying identical. The failure mode this closes: the .md
+// changes and the constant is not re-copied, so the CUENTA preview (and, since #257, the member
+// claim RPCs) would keep rendering/stamping stale text forever, silently.
+//
+// Final review round, Important 2: as written above through #256, this comment said these
+// documents "carry no acceptance/version concept ... no version constant to pin" — true THEN, but
+// #257 made it false: `AVISO_PRIVACIDAD_VERSION` is now stamped onto `clientes.privacy_aviso_version`
+// as consent EVIDENCE (final review round, Important 1 — a member's stamped row is a claim about
+// which exact text they saw). A text edit to either TEXTO constant with no matching version bump
+// would silently make every earlier stamped row a false record of the NEW text. So this constant is
+// now pinned too, same discipline as `ANEXO_TRATAMIENTO_DATOS_VERSION` below it: bump it in the SAME
+// commit that changes either TEXTO constant's substance and re-copies the source .md.
 //
 // Lives in tools/guards/ (not packages/domain/) for the same reason anexo-legal-drift.test.ts does:
 // this is the repo's home for "cross-check a non-code source file against derived repo state" (see
@@ -58,5 +66,16 @@ describe("the aviso simplificado domain constant never drifts from its source .m
   it("the pinned content hash matches the constant — a text change must touch this pin", () => {
     const actual = createHash("sha256").update(AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO, "utf8").digest("hex");
     expect(actual).toBe(PINNED_SHA256_SIMPLIFICADO);
+  });
+});
+
+describe("the aviso version constant carries evidentiary weight since #257 — a bump is deliberate", () => {
+  it("AVISO_PRIVACIDAD_VERSION is still the pre-1.0 borrador tag", () => {
+    // "1.0" is reserved for the abogado-reviewed text (owner's #258 rollout call), same posture as
+    // ANEXO_TRATAMIENTO_DATOS_VERSION. This is not meant to stay green forever: when either TEXTO
+    // constant's substance changes, update this literal in the SAME commit that updates the two
+    // PINNED_SHA256_* constants above and the source .md files — a text edit now carries consent
+    // evidence (clientes.privacy_aviso_version, #257), so it must never land as a silent byproduct.
+    expect(AVISO_PRIVACIDAD_VERSION).toBe("0.1-borrador");
   });
 });
