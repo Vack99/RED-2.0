@@ -1,9 +1,8 @@
 /**
  * The two aviso de privacidad templates — issue #255 (Gate 0.1 CUENTA legal-identity editor).
- * Same home and same byte-for-byte-copy discipline as the Anexo above: each constant mirrors its
- * source .md under `docs/legal/gate0-borradores/` exactly (guarded by
- * tools/guards/aviso-legal-drift.test.ts, the same idiom as anexo-legal-drift.test.ts), INCLUDING
- * the drafting notes and every unresolved `{{merge_field}}` placeholder. Unlike the Anexo, these
+ * Byte-for-byte-copy discipline: each constant mirrors its source .md under
+ * `docs/legal/gate0-borradores/` exactly (guarded by tools/guards/aviso-legal-drift.test.ts),
+ * INCLUDING the drafting notes and every unresolved `{{merge_field}}` placeholder. These
  * documents carry no acceptance/version-uniqueness concept (nobody clicks to accept an aviso) —
  * the value they add here is a live PREVIEW of what a gym's members would see, built by
  * `mergeAvisoTemplate` below. Member-facing serving is #256's slice, not this one.
@@ -265,8 +264,8 @@ export function mergeAvisoTemplate(
  *  iBookit" — supplied truthfully (review finding 3) rather than left as raw tokens. `FECHA_ACTUALIZACION`
  *  is the templates' real authoring date (commit dbbe722, 2026-08-07 — the table's own example row
  *  even uses this exact value), not a placeholder; bump both together whenever the TEXTO constants'
- *  substance changes, same discipline as `ANEXO_TRATAMIENTO_DATOS_VERSION`. "0.1-borrador" is
- *  reserved the same way: "1.0" is for the abogado-reviewed text (#258). */
+ *  substance changes. "0.1-borrador" is reserved for exactly that: "1.0" is for the
+ *  abogado-reviewed text (#258). */
 export const AVISO_PRIVACIDAD_VERSION = "0.1-borrador";
 export const AVISO_PRIVACIDAD_FECHA_ACTUALIZACION = "07 de agosto de 2026";
 

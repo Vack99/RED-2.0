@@ -95,11 +95,11 @@ export async function aceptarAcuerdo(
   await requireOperator(supabase);
   // Truncate, THEN collapse empty→null with `||` (final review round, minor 4): `ip`'s check
   // constraint is `between 1 and 100` (a real, non-empty value must survive), so a `''` — not
-  // just `null`/`undefined` — must never reach the RPC. The caller's own `|| null` collapse
-  // (apps/admin's aceptarAnexoAction) already guards the one caller that exists today, but this
-  // function's OWN contract must hold for any future caller too — `input.ip?.slice(0, 100) ?? null`
-  // only replaces `null`/`undefined`, so `input.ip === ''` (or a value that slices down to `''`)
-  // rode through unchanged and would raise the check constraint. `user_agent`'s check is `<= 500`
+  // just `null`/`undefined` — must never reach the RPC. This DAL function has no production
+  // caller today, so its OWN contract is the only thing standing between a `''` and the check
+  // constraint — `input.ip?.slice(0, 100) ?? null` alone only replaces `null`/`undefined`, so
+  // `input.ip === ''` (or a value that slices down to `''`) would ride through unchanged and
+  // raise the check constraint on whatever caller arrives next. `user_agent`'s check is `<= 500`
   // with NO minimum, so an empty string there is not a bug — `?? null` stays correct for it.
   const ip = input.ip?.slice(0, 100) || null;
   const userAgent = input.userAgent?.slice(0, 500) ?? null;

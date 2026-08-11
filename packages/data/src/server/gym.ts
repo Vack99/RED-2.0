@@ -17,11 +17,6 @@ export interface OperatorGym {
    *  returned. Carried so the tenant-crossing log line (#204) can name WHO crossed
    *  without a second `getClaims()` round trip. */
   userId: string;
-  /** This session's role on THIS gym — `owner` or `operator` (the query's `.in()` filter
-   *  already excludes `member`, so no third value reaches here). Carried for the Gate 0.1
-   *  click-wrap gate (#254): only an owner may accept the Anexo, and the layout needs to
-   *  know which before it can pick the accept form vs. the "pídele al dueño" block. */
-  role: "owner" | "operator";
 }
 
 /**
@@ -56,7 +51,7 @@ const resolveOperatorGyms = cache(
     // single object per row, never an array (the shape `resolverMiembroGym` reads).
     const { data: memberships } = await supabase
       .from("gym_membership")
-      .select("gym_id, role, gym(timezone, slug, brand_name)")
+      .select("gym_id, gym(timezone, slug, brand_name)")
       .in("role", ["owner", "operator"])
       .order("gym_id");
 
@@ -69,7 +64,6 @@ const resolveOperatorGyms = cache(
               slug: m.gym.slug,
               brandName: m.gym.brand_name,
               userId,
-              role: m.role as "owner" | "operator",
             },
           ]
         : [],
