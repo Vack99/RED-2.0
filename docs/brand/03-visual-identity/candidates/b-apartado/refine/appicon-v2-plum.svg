@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#8A4A6C"/>
+  <g transform="translate(8 7) scale(0.8333)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+</svg>

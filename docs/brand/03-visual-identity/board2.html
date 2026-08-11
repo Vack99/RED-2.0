@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iBookit &mdash; refinamiento B</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--canvas:#FAF8F4;--surface:#FFFFFF;--ink:#201B14;--muted:#6B6257;--canvas-dark:#16130E;--ink-dark:#F2EDE5;--muted-dark:#A79B8C;--line:rgba(32,27,20,.10);}
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--canvas);color:var(--ink);font-family:'Hanken Grotesk',sans-serif;-webkit-font-smoothing:antialiased;}
+  main{max-width:1220px;margin:0 auto;padding:0 40px;}
+  header{padding:56px 40px 28px;max-width:1220px;margin:0 auto;}
+  .kicker{margin:0;font-size:13px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  section{padding:56px 0;border-top:1px solid var(--line);}
+  .concept-head{display:flex;align-items:flex-start;gap:16px;margin-bottom:32px;}
+  .concept-letter{flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:var(--accent);color:var(--canvas);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:15px;}
+  .concept-head h2{margin:0 0 6px;font-size:28px;font-weight:600;letter-spacing:-0.01em;}
+  .rationale{margin:0;font-size:15px;color:var(--muted);display:flex;align-items:center;gap:8px;}
+  .rationale .dot{width:8px;height:8px;border-radius:50%;background:var(--accent);flex:0 0 auto;}
+  .group-label{margin:0 0 14px;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+  .card-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:stretch;margin-bottom:36px;}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:0 1px 2px rgba(32,27,20,.04);display:flex;flex-direction:column;gap:16px;}
+  @media (max-width:820px){.card-row{grid-template-columns:minmax(0,1fr);}}
+  .card.on-dark{background:var(--canvas-dark);border-color:rgba(242,237,229,.10);box-shadow:none;}
+  .card-label{margin:0;font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+  .card.on-dark .card-label{color:var(--muted-dark);}
+  .lockup-frame{width:100%;align-self:center;}
+  .lockup-frame svg{display:block;width:100%;height:auto;}
+  .lockup-frame.v1 svg{width:auto;height:150px;max-width:100%;}
+  .lockup-frame.v2 svg{width:auto;height:138px;max-width:100%;}
+  .ladder-strip{border-radius:12px;padding:18px 16px;display:flex;flex-direction:column;gap:12px;}
+  .ladder-strip.light{background:var(--surface);border:1px solid var(--line);}
+  .ladder-strip.dark{background:var(--canvas-dark);}
+  .strip-tag{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);}
+  .ladder-strip.dark .strip-tag{color:var(--muted-dark);}
+  .ladder-row{display:flex;align-items:flex-end;gap:20px;}
+  .mark-cell{margin:0;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .mark-cell svg{display:block;width:100%;height:100%;}
+  .mark-cell figcaption{font-size:10px;color:var(--muted);}
+  .ladder-strip.dark .mark-cell figcaption{color:var(--muted-dark);}
+  .size-64{width:64px;height:64px;}
+  .size-32{width:32px;height:32px;}
+  .size-16{width:16px;height:16px;}
+  .icon-row{display:flex;align-items:flex-end;gap:24px;}
+  .icon-cell{margin:0;display:flex;flex-direction:column;align-items:center;gap:8px;}
+  .icon-cell svg{display:block;width:100%;height:100%;}
+  .icon-cell figcaption{font-size:10px;color:var(--muted);}
+  .icon-180{width:180px;height:180px;}
+  .icon-32{width:32px;height:32px;}
+  .risk{margin:4px 0 0;font-size:13px;font-style:italic;color:var(--muted);max-width:820px;}
+  .risk strong{font-style:normal;font-weight:600;}
+  footer{padding:32px 0 56px;}
+  .footer-wrap{max-width:1220px;margin:0 auto;padding:0 40px;}
+  footer p{margin:0 0 4px;font-size:12px;color:var(--muted);font-family:ui-monospace,monospace;}
+</style>
+</head>
+<body>
+<header><p class="kicker">iBookit &middot; refinamiento B &middot; CP3b &middot; 2026-08-11</p></header>
+<main>
+  <section style="--accent:#5560A8;">
+    <div class="concept-head"><span class="concept-letter">1</span><div><h2>La i equilibrada</h2>
+      <p class="rationale"><span class="dot"></span>el contador dibuja una i min&uacute;scula: el punto y el list&oacute;n, sobre un mismo eje</p></div></div>
+      <p class="group-label">&Iacute;ndigo c&aacute;lido</p>
+      <div class="card-row">
+        <div class="card lockup-card"><p class="card-label">Lockup en claro</p><div class="lockup-frame v1"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218 74" width="218" height="74" role="img" aria-label="iBookit">
+  <g transform="translate(0.63 10.17) scale(0.5694)">
+    <path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+  <text x="59" y="58" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">iBookit</text>
+</svg>
+</div></div>
+        <div class="card lockup-card on-dark"><p class="card-label">Lockup en oscuro</p><div class="lockup-frame v1"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218 74" width="218" height="74" role="img" aria-label="iBookit">
+  <g transform="translate(0.63 10.17) scale(0.5694)">
+    <path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+  <text x="59" y="58" fill="#F2EDE5" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">iBookit</text>
+</svg>
+</div></div>
+        <div class="card"><p class="card-label">Escala del simbolo</p>
+        <div class="ladder-strip light"><span class="strip-tag">sobre claro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        <div class="ladder-strip dark"><span class="strip-tag">sobre oscuro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        </div>
+        <div class="card"><p class="card-label">Icono de app</p><div class="icon-row"><figure class="icon-cell icon-180"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#5560A8"/>
+  <g transform="translate(7.1 6.17) scale(0.8611)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+</svg>
+<figcaption>180</figcaption></figure><figure class="icon-cell icon-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#5560A8"/>
+  <g transform="translate(7.1 6.17) scale(0.8611)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+</svg>
+<figcaption>32</figcaption></figure></div></div>
+      </div>
+      <p class="group-label">Ciruela</p>
+      <div class="card-row">
+        <div class="card lockup-card"><p class="card-label">Lockup en claro</p><div class="lockup-frame v1"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218 74" width="218" height="74" role="img" aria-label="iBookit">
+  <g transform="translate(0.63 10.17) scale(0.5694)">
+    <path fill="#8A4A6C" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+  <text x="59" y="58" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">iBookit</text>
+</svg>
+</div></div>
+        <div class="card lockup-card on-dark"><p class="card-label">Lockup en oscuro</p><div class="lockup-frame v1"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 218 74" width="218" height="74" role="img" aria-label="iBookit">
+  <g transform="translate(0.63 10.17) scale(0.5694)">
+    <path fill="#C287A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+  <text x="59" y="58" fill="#F2EDE5" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">iBookit</text>
+</svg>
+</div></div>
+        <div class="card"><p class="card-label">Escala del simbolo</p>
+        <div class="ladder-strip light"><span class="strip-tag">sobre claro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#8A4A6C" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#8A4A6C" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#8A4A6C" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        <div class="ladder-strip dark"><span class="strip-tag">sobre oscuro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#C287A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#C287A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#C287A8" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        </div>
+        <div class="card"><p class="card-label">Icono de app</p><div class="icon-row"><figure class="icon-cell icon-180"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#8A4A6C"/>
+  <g transform="translate(7.1 6.17) scale(0.8611)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+</svg>
+<figcaption>180</figcaption></figure><figure class="icon-cell icon-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#8A4A6C"/>
+  <g transform="translate(7.1 6.17) scale(0.8611)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M29 12H48C56 12 66 18 66 27C66 32 64 36 60 39C65 42 68 48 68 58V66C68 76 63 84 56 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM39 31A8 8 0 1 0 55 31A8 8 0 1 0 39 31ZM42 50H53A3 3 0 0 1 56 53V70.5Q56 73 54.38 71.1L49.41 65.24Q47.5 63 45.59 65.24L40.62 71.1Q39 73 39 70.5V53A3 3 0 0 1 42 50Z"/>
+  </g>
+</svg>
+<figcaption>32</figcaption></figure></div></div>
+      </div>
+    <p class="risk">Proporciones tomadas de Hanken Grotesk 600 medida al pixel: punto de 16 de di&aacute;metro sobre list&oacute;n de 17 de ancho (la i real de Hanken es 1.09&times;). El costo: la B queda angosta, 0.57 de la altura de caja.</p>
+  </section>
+
+  <section style="--accent:#8A4A6C;">
+    <div class="concept-head"><span class="concept-letter">2</span><div><h2>B(i)ookit integrado</h2>
+      <p class="rationale"><span class="dot"></span>la i vive dentro de la B &mdash; iBookit = i + Bookit</p></div></div>
+      <p class="group-label">&Iacute;ndigo c&aacute;lido</p>
+      <div class="card-row">
+        <div class="card lockup-card"><p class="card-label">Lockup en claro</p><div class="lockup-frame v2"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 161 68" width="161" height="68" role="img" aria-label="iBookit">
+  <g transform="translate(5.27 12.8) scale(0.46667)">
+    <path fill="#5560A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+  <text x="41.2" y="52" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">ookit</text>
+</svg>
+</div></div>
+        <div class="card lockup-card on-dark"><p class="card-label">Lockup en oscuro</p><div class="lockup-frame v2"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 161 68" width="161" height="68" role="img" aria-label="iBookit">
+  <g transform="translate(5.27 12.8) scale(0.46667)">
+    <path fill="#98A2E0" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+  <text x="41.2" y="52" fill="#F2EDE5" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">ookit</text>
+</svg>
+</div></div>
+        <div class="card"><p class="card-label">Escala del simbolo</p>
+        <div class="ladder-strip light"><span class="strip-tag">sobre claro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#5560A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#5560A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#5560A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        <div class="ladder-strip dark"><span class="strip-tag">sobre oscuro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#98A2E0" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#98A2E0" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#98A2E0" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        </div>
+        <div class="card"><p class="card-label">Icono de app</p><div class="icon-row"><figure class="icon-cell icon-180"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#5560A8"/>
+  <g transform="translate(8 7) scale(0.8333)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+</svg>
+<figcaption>180</figcaption></figure><figure class="icon-cell icon-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#5560A8"/>
+  <g transform="translate(8 7) scale(0.8333)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+</svg>
+<figcaption>32</figcaption></figure></div></div>
+      </div>
+      <p class="group-label">Ciruela</p>
+      <div class="card-row">
+        <div class="card lockup-card"><p class="card-label">Lockup en claro</p><div class="lockup-frame v2"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 161 68" width="161" height="68" role="img" aria-label="iBookit">
+  <g transform="translate(5.27 12.8) scale(0.46667)">
+    <path fill="#8A4A6C" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+  <text x="41.2" y="52" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">ookit</text>
+</svg>
+</div></div>
+        <div class="card lockup-card on-dark"><p class="card-label">Lockup en oscuro</p><div class="lockup-frame v2"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 161 68" width="161" height="68" role="img" aria-label="iBookit">
+  <g transform="translate(5.27 12.8) scale(0.46667)">
+    <path fill="#C287A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+  <text x="41.2" y="52" fill="#F2EDE5" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">ookit</text>
+</svg>
+</div></div>
+        <div class="card"><p class="card-label">Escala del simbolo</p>
+        <div class="ladder-strip light"><span class="strip-tag">sobre claro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#8A4A6C" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#8A4A6C" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#8A4A6C" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        <div class="ladder-strip dark"><span class="strip-tag">sobre oscuro</span><div class="ladder-row"><figure class="mark-cell size-64"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#C287A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>64</figcaption></figure><figure class="mark-cell size-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#C287A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>32</figcaption></figure><figure class="mark-cell size-16"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img"><title>iBookit</title><path fill="#C287A8" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/></svg><figcaption>16</figcaption></figure></div></div>
+        </div>
+        <div class="card"><p class="card-label">Icono de app</p><div class="icon-row"><figure class="icon-cell icon-180"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#8A4A6C"/>
+  <g transform="translate(8 7) scale(0.8333)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+</svg>
+<figcaption>180</figcaption></figure><figure class="icon-cell icon-32"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" width="96" height="96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#8A4A6C"/>
+  <g transform="translate(8 7) scale(0.8333)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M25 12H52C60 12 66 17.5 66 26C66 31.5 64.5 34.5 61 37.5C66.5 40.5 73 47 73 57V66C73 76.5 67 84 58 84H25C23.9 84 23 83.1 23 82V14C23 12.9 23.9 12 25 12ZM39.5 29.5A7.5 7.5 0 1 0 54.5 29.5A7.5 7.5 0 1 0 39.5 29.5ZM38 47H56A3 3 0 0 1 59 50V70.5Q59 73 57.16 71.31L48.69 63.55Q47 62 45.31 63.55L36.84 71.31Q35 73 35 70.5V50A3 3 0 0 1 38 47Z"/>
+  </g>
+</svg>
+<figcaption>32</figcaption></figure></div></div>
+      </div>
+    <p class="risk"><strong>Riesgo de nombre:</strong> el lockup se lee &laquo;Bookit&raquo;. La i solo existe como contraforma, as&iacute; que se pierde al leerlo en voz alta, en monocromo colapsado o sin el s&iacute;mbolo. Altura de caja, grosor de asta y barra igualados a Hanken 600; el espacio B&rarr;o es el natural de Hanken (0.068em) abierto ~0.02em.</p>
+  </section>
+</main>
+<footer><div class="footer-wrap">
+  <p>docs/brand/03-visual-identity/candidates/b-apartado/refine/</p>
+  <p>Hanken Grotesk 600 &middot; indigo #5560A8 / #98A2E0 &middot; ciruela #8A4A6C / #C287A8</p>
+</div></footer>
+</body>
+</html>
