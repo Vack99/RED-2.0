@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" width="240" height="64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#201B14" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3"/>
+    <rect x="26" y="6" width="12" height="12" rx="3"/>
+    <rect x="46" y="6" width="12" height="12" rx="3"/>
+    <rect x="6" y="26" width="12" height="12" rx="3"/>
+    <rect x="26" y="26" width="12" height="12" rx="3"/>
+    <rect x="6" y="46" width="12" height="12" rx="3"/>
+    <rect x="26" y="46" width="12" height="12" rx="3"/>
+    <rect x="46" y="46" width="12" height="12" rx="3"/>
+  </g>
+  <path fill="#5560A8" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/>
+  <text x="80" y="47" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-size="43" font-weight="600" letter-spacing="-0.86">i<tspan dx="0.9">Bookit</tspan></text>
+</svg>
