@@ -15,9 +15,9 @@ export const AVISO_PRIVACIDAD_INTEGRAL_TEXTO = `
 
 **Notas de redacción (eliminar antes de publicar):**
 
-1. **Titularidad del documento.** El aviso resultante es documento **del gimnasio**, no de RED. RED únicamente lo genera con los datos que el gimnasio proporciona y lo publica en una URL estable de la Plataforma. Al momento de generarlo, la aplicación debe mostrar el descargo: *"Esta plantilla no constituye asesoría legal. El gimnasio es el único responsable del contenido de su aviso de privacidad y debe revisarlo con su propio abogado."*
+1. **Titularidad del documento.** El aviso resultante es documento **del gimnasio**, no de iBookit. iBookit únicamente lo genera con los datos que el gimnasio proporciona y lo publica en una URL estable de la Plataforma. Al momento de generarlo, la aplicación debe mostrar el descargo: *"Esta plantilla no constituye asesoría legal. El gimnasio es el único responsable del contenido de su aviso de privacidad y debe revisarlo con su propio abogado."*
 2. **Alcance.** El cuerpo cubre **exactamente los seis elementos** del artículo 15 de la LFPDPPP vigente. Todo lo que exceda esos seis va en párrafos marcados como **opcionales**, para que el abogado revisor decida si se incluyen.
-3. **Las categorías de datos enumeradas son las que RED realmente trata.** Si el gimnasio recaba datos por fuera de la Plataforma (formatos en papel, videovigilancia, control de acceso de terceros), debe añadirlos por su cuenta — RED no puede conocerlos.
+3. **Las categorías de datos enumeradas son las que iBookit realmente trata.** Si el gimnasio recaba datos por fuera de la Plataforma (formatos en papel, videovigilancia, control de acceso de terceros), debe añadirlos por su cuenta — iBookit no puede conocerlos.
 
 ---
 
@@ -123,7 +123,7 @@ Este aviso puede sufrir modificaciones derivadas de nuevos requerimientos legale
 >
 > ### Encargados del tratamiento
 >
-> Para operar el gimnasio nos apoyamos en proveedores tecnológicos que tratan sus datos personales **por nuestra cuenta y bajo nuestras instrucciones**, en calidad de **encargados**, sin utilizarlos para finalidades propias y sujetos a obligaciones contractuales de confidencialidad y seguridad. Utilizamos la plataforma de gestión de gimnasios **RED**, operada por \`{{red_razon_social}}\`, la cual se aloja en la infraestructura de **Supabase, Inc.** sobre servidores de **Amazon Web Services, Inc.** ubicados en \`{{region_supabase}}\`, por lo que sus datos se almacenan **fuera del territorio nacional**. Conforme al artículo 2, fracción XX de la Ley, la comunicación de datos personales a una persona encargada del tratamiento **no constituye una transferencia**. No vendemos, cedemos ni comercializamos sus datos personales con terceros.
+> Para operar el gimnasio nos apoyamos en proveedores tecnológicos que tratan sus datos personales **por nuestra cuenta y bajo nuestras instrucciones**, en calidad de **encargados**, sin utilizarlos para finalidades propias y sujetos a obligaciones contractuales de confidencialidad y seguridad. Utilizamos la plataforma de gestión de gimnasios **iBookit**, operada por \`{{red_razon_social}}\`, la cual se aloja en la infraestructura de **Supabase, Inc.** sobre servidores de **Amazon Web Services, Inc.** ubicados en \`{{region_supabase}}\`, por lo que sus datos se almacenan **fuera del territorio nacional**. Conforme al artículo 2, fracción XX de la Ley, la comunicación de datos personales a una persona encargada del tratamiento **no constituye una transferencia**. No vendemos, cedemos ni comercializamos sus datos personales con terceros.
 
 ---
 
@@ -138,9 +138,9 @@ Este aviso puede sufrir modificaciones derivadas de nuevos requerimientos legale
 | \`{{telefono_contacto}}\` | Perfil del gimnasio | +52 55 0000 0000 |
 | \`{{email_arco}}\` | Alta del gimnasio | datos@ejemplo.mx |
 | \`{{area_datos_personales}}\` | Alta del gimnasio | "Departamento de Datos Personales" o el nombre de la persona designada |
-| \`{{url_aviso_integral}}\` | Generado por RED | https://\`{{host_gimnasio}}\`/aviso-de-privacidad |
-| \`{{fecha_actualizacion}}\` | Generado por RED | 07 de agosto de 2026 |
-| \`{{version_aviso}}\` | Generado por RED | 1.0 |
+| \`{{url_aviso_integral}}\` | Generado por iBookit | https://\`{{host_gimnasio}}\`/aviso-de-privacidad |
+| \`{{fecha_actualizacion}}\` | Generado por iBookit | 07 de agosto de 2026 |
+| \`{{version_aviso}}\` | Generado por iBookit | 1.0 |
 | \`{{plazo_respuesta_arco}}\` / \`{{plazo_ejecucion_arco}}\` | Constante — **pendiente de verificación legal** | — |
 | \`{{canal_aviso_cambios}}\` | Alta del gimnasio | — |
 | \`{{region_supabase}}\` | Constante de plataforma | — |
@@ -185,7 +185,7 @@ export const AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO = `
 | \`{{razon_social}}\` | Alta del gimnasio |
 | \`{{nombre_comercial}}\` | Fila \`gym\` / perfil |
 | \`{{domicilio}}\` | Alta del gimnasio |
-| \`{{url_aviso_integral}}\` | Generado por RED — URL estable por inquilino |
+| \`{{url_aviso_integral}}\` | Generado por iBookit — URL estable por inquilino |
 `;
 
 /** The gym's legal identity as the aviso templates need it: `razonSocial` (gym.legal_name, staff
@@ -202,7 +202,7 @@ export const AVISO_PRIVACIDAD_SIMPLIFICADO_TEXTO = `
  *  equivalent — this is now that column's job, sourced by the caller (packages/data/src/server/
  *  marketing.ts's `getContacto`), not perfil's.
  *
- *  `urlAvisoIntegral` (#256): the aviso's own stable public URL — "Generado por RED" per the
+ *  `urlAvisoIntegral` (#256): the aviso's own stable public URL — "Generado por iBookit" per the
  *  template's CAMPOS table, so the caller supplies it (the client app derives it from the current
  *  request's origin; the admin preview resolves the gym's mapped client host). */
 export interface IdentidadLegalGym {
@@ -262,7 +262,7 @@ export function mergeAvisoTemplate(
 }
 
 /** Platform-owned merge fields the templates' own CAMPOS DE COMBINACIÓN table marks "Generado por
- *  RED" — supplied truthfully (review finding 3) rather than left as raw tokens. `FECHA_ACTUALIZACION`
+ *  iBookit" — supplied truthfully (review finding 3) rather than left as raw tokens. `FECHA_ACTUALIZACION`
  *  is the templates' real authoring date (commit dbbe722, 2026-08-07 — the table's own example row
  *  even uses this exact value), not a placeholder; bump both together whenever the TEXTO constants'
  *  substance changes, same discipline as `ANEXO_TRATAMIENTO_DATOS_VERSION`. "0.1-borrador" is

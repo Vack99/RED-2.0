@@ -18,7 +18,7 @@ describe("buildIcs", () => {
     expect(ics).toContain("BEGIN:VEVENT");
     expect(ics).toContain("DTSTART:20260617T181500Z");
     expect(ics).toContain("DTEND:20260617T191500Z");
-    expect(ics).toContain("UID:sess-1@red");
+    expect(ics).toContain("UID:sess-1@ibookit");
     expect(ics).toContain("SUMMARY:Metcon");
     expect(ics).toContain("LOCATION:Estudio A");
   });

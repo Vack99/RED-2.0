@@ -34,4 +34,4 @@
 | `{{razon_social}}` | Alta del gimnasio |
 | `{{nombre_comercial}}` | Fila `gym` / perfil |
 | `{{domicilio}}` | Alta del gimnasio |
-| `{{url_aviso_integral}}` | Generado por RED — URL estable por inquilino |
+| `{{url_aviso_integral}}` | Generado por iBookit — URL estable por inquilino |

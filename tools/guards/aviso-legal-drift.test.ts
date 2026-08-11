@@ -38,8 +38,8 @@ const SIMPLIFICADO_MD = join(REPO, "docs/legal/gate0-borradores/aviso-privacidad
 
 // PINNED literals — NOT recomputed from the constants. If either TEXTO constant changes for any
 // reason, its hash stops matching and the fix requires a deliberate edit to that pin.
-const PINNED_SHA256_INTEGRAL = "c8d690f2ecf5c48848a1c94492840b04d06c08395c1c96c4d2f0b474eadaebcd";
-const PINNED_SHA256_SIMPLIFICADO = "10bd2ee3a8cea4b71a900c5093cd21ad0b4ab28a2a11fada497c8f3bf9f224d9";
+const PINNED_SHA256_INTEGRAL = "ef265399fe2ac41903be14c97f6d0991aea9095862a80de117fa8356e077c497";
+const PINNED_SHA256_SIMPLIFICADO = "d5dbfc29f3ef3dfb5ce96dd5087f4da9f997716a278e42d7fde6881fcb44d505";
 
 describe("the aviso integral domain constant never drifts from its source .md unnoticed", () => {
   it("AVISO_PRIVACIDAD_INTEGRAL_TEXTO is byte-for-byte the .md source", () => {

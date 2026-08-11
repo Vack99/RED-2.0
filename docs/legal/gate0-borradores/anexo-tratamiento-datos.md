@@ -1,11 +1,11 @@
 # ACUERDO DE TRATAMIENTO DE DATOS PERSONALES
-## (Anexo de Encargado al Contrato de Prestación de Servicios de la Plataforma RED)
+## (Anexo de Encargado al Contrato de Prestación de Servicios de la Plataforma iBookit)
 
 > **BORRADOR — PENDIENTE DE REVISIÓN POR ABOGADO MEXICANO. ESTE DOCUMENTO NO CONSTITUYE ASESORÍA LEGAL.**
 
 **Notas de redacción (eliminar antes de publicar):**
 
-1. **Identidad legal de RED pendiente.** A la fecha de este borrador el titular del proyecto no ha constituido la persona moral que prestará el servicio. Todos los campos `{{red_*}}` deben llenarse una vez constituida la entidad (dependencia de Gate 1). Si el servicio se prestara inicialmente por persona física con actividad empresarial, sustitúyanse "razón social" y "representante legal" por nombre y firma del propio titular.
+1. **Identidad legal de iBookit pendiente.** A la fecha de este borrador el titular del proyecto no ha constituido la persona moral que prestará el servicio. Todos los campos `{{red_*}}` deben llenarse una vez constituida la entidad (dependencia de Gate 1). Si el servicio se prestara inicialmente por persona física con actividad empresarial, sustitúyanse "razón social" y "representante legal" por nombre y firma del propio titular.
 2. **Autosuficiencia.** Este Anexo está redactado para ser aceptable de forma autónoma (por clic, hoy) **y** para incorporarse por referencia al futuro Contrato de Prestación de Servicios (Gate 2). Al existir dicho Contrato, la Cláusula Tercera (Objeto) y la Décima Octava (Ley aplicable) se subordinan a él sin necesidad de re-aceptación.
 3. **Vigilancia normativa.** El Reglamento de la LFPDPPP reformada no ha sido publicado. Ver Cláusula Décima Séptima (versiones) y la nota al pie [^2].
 
@@ -24,15 +24,15 @@ Celebran el presente Acuerdo de Tratamiento de Datos Personales (el "**Anexo**")
 
 **I. EL RESPONSABLE.** `{{razon_social}}`, que opera comercialmente como `{{nombre_comercial}}`, con Registro Federal de Contribuyentes `{{rfc}}` y domicilio en `{{domicilio}}`, representada en este acto por `{{representante_legal}}` (el "**Responsable**" o el "**Gimnasio**").
 
-**II. LA ENCARGADA.** `{{red_razon_social}}`, con Registro Federal de Contribuyentes `{{red_rfc}}` y domicilio en `{{red_domicilio}}`, representada por `{{red_representante_legal}}`, titular y operadora de la plataforma de gestión de gimnasios "RED" (la "**Plataforma**"; en lo sucesivo, la "**Encargada**" o "**RED**").
+**II. LA ENCARGADA.** `{{red_razon_social}}`, con Registro Federal de Contribuyentes `{{red_rfc}}` y domicilio en `{{red_domicilio}}`, representada por `{{red_representante_legal}}`, titular y operadora de la plataforma de gestión de gimnasios "iBookit" (la "**Plataforma**"; en lo sucesivo, la "**Encargada**" o "**iBookit**").
 
 Conjuntamente, las "**Partes**".
 
 **Reparto de roles.** Las Partes reconocen expresamente que:
 
-- **a)** Respecto de los datos personales de las personas clientes, prospectos, personal y demás titulares que el Gimnasio recabe, cargue o genere a través de la Plataforma (los "**Datos del Gimnasio**"), **el Gimnasio es el responsable** y **RED es persona encargada del tratamiento** en términos del artículo 2, fracción XII de la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (la "**LFPDPPP**"), es decir, persona jurídica que trata datos personales **por cuenta del Responsable**.
-- **b)** RED **no** determina las finalidades ni los medios esenciales del tratamiento de los Datos del Gimnasio, y no los tratará para finalidades propias.
-- **c)** Respecto de los datos que RED recaba **para sí misma** —datos de la cuenta administrativa del Gimnasio, datos de contacto de su personal usuario, datos de facturación, registros de uso, bitácoras técnicas y el registro de aceptación de este Anexo (los "**Datos de la Cuenta**")— **RED actúa como responsable**, con su propio aviso de privacidad publicado en `{{red_url_aviso}}`.
+- **a)** Respecto de los datos personales de las personas clientes, prospectos, personal y demás titulares que el Gimnasio recabe, cargue o genere a través de la Plataforma (los "**Datos del Gimnasio**"), **el Gimnasio es el responsable** y **iBookit es persona encargada del tratamiento** en términos del artículo 2, fracción XII de la Ley Federal de Protección de Datos Personales en Posesión de los Particulares (la "**LFPDPPP**"), es decir, persona jurídica que trata datos personales **por cuenta del Responsable**.
+- **b)** iBookit **no** determina las finalidades ni los medios esenciales del tratamiento de los Datos del Gimnasio, y no los tratará para finalidades propias.
+- **c)** Respecto de los datos que iBookit recaba **para sí misma** —datos de la cuenta administrativa del Gimnasio, datos de contacto de su personal usuario, datos de facturación, registros de uso, bitácoras técnicas y el registro de aceptación de este Anexo (los "**Datos de la Cuenta**")— **iBookit actúa como responsable**, con su propio aviso de privacidad publicado en `{{red_url_aviso}}`.
 - **d)** La comunicación de los Datos del Gimnasio del Responsable a la Encargada no constituye **transferencia**, por así excluirlo el artículo 2, fracción XX de la LFPDPPP, que define transferencia como toda comunicación de datos realizada "a persona distinta de la titular, del responsable **o de la persona encargada del tratamiento**", dentro o fuera del territorio mexicano.[^1]
 
 ## CLÁUSULA SEGUNDA — DEFINICIONES
@@ -41,33 +41,33 @@ Los términos "datos personales", "datos personales sensibles", "titular", "resp
 
 ## CLÁUSULA TERCERA — OBJETO
 
-Este Anexo regula el tratamiento que RED realiza de los Datos del Gimnasio con el único fin de prestar los servicios de la Plataforma, y establece las obligaciones, garantías e instrucciones aplicables a dicho tratamiento. Su contenido se detalla en el **Anexo A** (descripción del tratamiento).
+Este Anexo regula el tratamiento que iBookit realiza de los Datos del Gimnasio con el único fin de prestar los servicios de la Plataforma, y establece las obligaciones, garantías e instrucciones aplicables a dicho tratamiento. Su contenido se detalla en el **Anexo A** (descripción del tratamiento).
 
 ## CLÁUSULA CUARTA — VIGENCIA
 
-Este Anexo entra en vigor en la fecha de su aceptación conforme a la Cláusula Décima Sexta y permanece vigente mientras RED trate Datos del Gimnasio por cuenta del Responsable, es decir, mientras subsista la cuenta del Gimnasio en la Plataforma y durante el periodo de conservación posterior previsto en la Cláusula Décima Tercera. Su terminación no libera a RED de las obligaciones de confidencialidad, que subsisten indefinidamente.
+Este Anexo entra en vigor en la fecha de su aceptación conforme a la Cláusula Décima Sexta y permanece vigente mientras iBookit trate Datos del Gimnasio por cuenta del Responsable, es decir, mientras subsista la cuenta del Gimnasio en la Plataforma y durante el periodo de conservación posterior previsto en la Cláusula Décima Tercera. Su terminación no libera a iBookit de las obligaciones de confidencialidad, que subsisten indefinidamente.
 
 ## CLÁUSULA QUINTA — TRATAMIENTO CONFORME A INSTRUCCIONES
 
-RED tratará los Datos del Gimnasio **únicamente conforme a las instrucciones documentadas del Responsable**. Constituyen instrucciones documentadas: (i) este Anexo y su Anexo A; (ii) el uso que el Responsable y sus personas usuarias autorizadas hagan de las funciones de la Plataforma; y (iii) cualquier instrucción adicional que el Responsable comunique por escrito o por medios electrónicos a `{{red_email_privacidad}}` y que sea técnicamente ejecutable en la Plataforma.
+iBookit tratará los Datos del Gimnasio **únicamente conforme a las instrucciones documentadas del Responsable**. Constituyen instrucciones documentadas: (i) este Anexo y su Anexo A; (ii) el uso que el Responsable y sus personas usuarias autorizadas hagan de las funciones de la Plataforma; y (iii) cualquier instrucción adicional que el Responsable comunique por escrito o por medios electrónicos a `{{red_email_privacidad}}` y que sea técnicamente ejecutable en la Plataforma.
 
-RED no tratará los Datos del Gimnasio para finalidades propias, no los cederá ni comercializará, y no los usará para entrenar modelos de inteligencia artificial ni para elaborar productos de datos, ni siquiera en forma agregada, salvo autorización expresa y por separado del Responsable.
+iBookit no tratará los Datos del Gimnasio para finalidades propias, no los cederá ni comercializará, y no los usará para entrenar modelos de inteligencia artificial ni para elaborar productos de datos, ni siquiera en forma agregada, salvo autorización expresa y por separado del Responsable.
 
-Si RED considera que una instrucción del Responsable infringe la normativa aplicable, lo notificará al Responsable y podrá suspender su ejecución hasta que aquél la confirme o modifique.
+Si iBookit considera que una instrucción del Responsable infringe la normativa aplicable, lo notificará al Responsable y podrá suspender su ejecución hasta que aquél la confirme o modifique.
 
-RED tratará los Datos del Gimnasio en cumplimiento de un requerimiento de autoridad competente cuando esté legalmente obligada a ello, y en tal caso informará previamente al Responsable, salvo que la ley se lo prohíba.
+iBookit tratará los Datos del Gimnasio en cumplimiento de un requerimiento de autoridad competente cuando esté legalmente obligada a ello, y en tal caso informará previamente al Responsable, salvo que la ley se lo prohíba.
 
 ## CLÁUSULA SEXTA — AISLAMIENTO POR INQUILINO
 
-RED mantendrá los Datos del Gimnasio lógicamente aislados de los datos de los demás gimnasios usuarios de la Plataforma mediante controles de acceso a nivel de registro asociados a la membresía de cada persona usuaria. Ningún personal del Responsable podrá acceder a datos de otro gimnasio, ni viceversa.
+iBookit mantendrá los Datos del Gimnasio lógicamente aislados de los datos de los demás gimnasios usuarios de la Plataforma mediante controles de acceso a nivel de registro asociados a la membresía de cada persona usuaria. Ningún personal del Responsable podrá acceder a datos de otro gimnasio, ni viceversa.
 
 ## CLÁUSULA SÉPTIMA — CONFIDENCIALIDAD
 
-RED guardará confidencialidad respecto de los Datos del Gimnasio y garantizará que toda persona autorizada para tratarlos —empleados, prestadores de servicios y subencargados— quede sujeta a un deber de confidencialidad de alcance equivalente, subsistente aun después de terminada su relación con RED. RED limitará el acceso a los Datos del Gimnasio al personal que lo requiera para prestar el servicio o atender un incidente.
+iBookit guardará confidencialidad respecto de los Datos del Gimnasio y garantizará que toda persona autorizada para tratarlos —empleados, prestadores de servicios y subencargados— quede sujeta a un deber de confidencialidad de alcance equivalente, subsistente aun después de terminada su relación con iBookit. iBookit limitará el acceso a los Datos del Gimnasio al personal que lo requiera para prestar el servicio o atender un incidente.
 
 ## CLÁUSULA OCTAVA — MEDIDAS DE SEGURIDAD
 
-RED mantendrá medidas de seguridad administrativas, físicas y técnicas razonables y apropiadas al riesgo, que incluirán al menos:
+iBookit mantendrá medidas de seguridad administrativas, físicas y técnicas razonables y apropiadas al riesgo, que incluirán al menos:
 
 - **a)** cifrado de los datos en tránsito (TLS) y en reposo;
 - **b)** autenticación de personas usuarias y control de acceso por rol y por gimnasio;
@@ -76,62 +76,62 @@ RED mantendrá medidas de seguridad administrativas, físicas y técnicas razona
 - **e)** registro de auditoría de accesos y operaciones relevantes;
 - **f)** gestión de vulnerabilidades y actualización del software de terceros que integra la Plataforma.
 
-RED podrá modificar estas medidas siempre que el nivel de seguridad resultante no disminuya. A solicitud razonable y no más de una vez por año, RED proporcionará al Responsable la información documental de que disponga sobre sus medidas de seguridad y las de sus subencargados. Las Partes acuerdan que este derecho de información sustituye cualquier auditoría presencial en las instalaciones o infraestructura de RED o de sus subencargados.
+iBookit podrá modificar estas medidas siempre que el nivel de seguridad resultante no disminuya. A solicitud razonable y no más de una vez por año, iBookit proporcionará al Responsable la información documental de que disponga sobre sus medidas de seguridad y las de sus subencargados. Las Partes acuerdan que este derecho de información sustituye cualquier auditoría presencial en las instalaciones o infraestructura de iBookit o de sus subencargados.
 
 ## CLÁUSULA NOVENA — ASISTENCIA EN DERECHOS ARCO, REVOCACIÓN Y AVISO DE PRIVACIDAD
 
 **9.1.** El Responsable es el único obligado frente a los titulares a poner a disposición el aviso de privacidad, obtener el consentimiento cuando proceda y atender el ejercicio de los derechos de acceso, rectificación, cancelación y oposición, así como la revocación del consentimiento y la limitación del uso o divulgación.
 
-**9.2.** RED pondrá a disposición del Responsable, dentro de la propia Plataforma, las funciones técnicas necesarias para consultar, corregir, suprimir y exportar los Datos del Gimnasio, de modo que el Responsable pueda atender por sí mismo las solicitudes ARCO.
+**9.2.** iBookit pondrá a disposición del Responsable, dentro de la propia Plataforma, las funciones técnicas necesarias para consultar, corregir, suprimir y exportar los Datos del Gimnasio, de modo que el Responsable pueda atender por sí mismo las solicitudes ARCO.
 
-**9.3.** Cuando una solicitud ARCO no pueda atenderse con dichas funciones, RED prestará al Responsable asistencia razonable dentro de los `{{plazo_asistencia_arco}}` días hábiles siguientes a su requerimiento.
+**9.3.** Cuando una solicitud ARCO no pueda atenderse con dichas funciones, iBookit prestará al Responsable asistencia razonable dentro de los `{{plazo_asistencia_arco}}` días hábiles siguientes a su requerimiento.
 
-**9.4.** Si un titular dirige una solicitud ARCO directamente a RED, ésta se abstendrá de atenderla, la remitirá al Responsable sin dilación y le informará de dicha remisión.
+**9.4.** Si un titular dirige una solicitud ARCO directamente a iBookit, ésta se abstendrá de atenderla, la remitirá al Responsable sin dilación y le informará de dicha remisión.
 
-**9.5.** RED pone a disposición del Responsable, como cortesía y sin que ello implique asesoría legal, plantillas de aviso de privacidad integral y simplificado. El Responsable es el único autor y responsable del contenido del aviso de privacidad que adopte, incluida la exactitud de su identidad, domicilio, finalidades y mecanismos ARCO.
+**9.5.** iBookit pone a disposición del Responsable, como cortesía y sin que ello implique asesoría legal, plantillas de aviso de privacidad integral y simplificado. El Responsable es el único autor y responsable del contenido del aviso de privacidad que adopte, incluida la exactitud de su identidad, domicilio, finalidades y mecanismos ARCO.
 
 ## CLÁUSULA DÉCIMA — VULNERACIONES DE SEGURIDAD
 
-RED notificará al Responsable **sin dilación indebida y en todo caso dentro de las `{{plazo_notificacion_vulneracion}}` horas** siguientes a que tenga conocimiento de una vulneración de seguridad que afecte a los Datos del Gimnasio, al correo de contacto que el Responsable mantenga registrado en la Plataforma.
+iBookit notificará al Responsable **sin dilación indebida y en todo caso dentro de las `{{plazo_notificacion_vulneracion}}` horas** siguientes a que tenga conocimiento de una vulneración de seguridad que afecte a los Datos del Gimnasio, al correo de contacto que el Responsable mantenga registrado en la Plataforma.
 
-La notificación incluirá, en la medida en que RED disponga de ello: la naturaleza del incidente, las categorías y el volumen aproximado de datos y titulares afectados, las consecuencias probables, las medidas adoptadas o propuestas para atenderlo y mitigarlo, y un punto de contacto. Si la información no está disponible de inmediato, RED la proporcionará por etapas.
+La notificación incluirá, en la medida en que iBookit disponga de ello: la naturaleza del incidente, las categorías y el volumen aproximado de datos y titulares afectados, las consecuencias probables, las medidas adoptadas o propuestas para atenderlo y mitigarlo, y un punto de contacto. Si la información no está disponible de inmediato, iBookit la proporcionará por etapas.
 
-**El Responsable conserva la obligación de comunicar la vulneración a los titulares afectados**, en términos del artículo 19 de la LFPDPPP, así como a la autoridad competente cuando proceda. RED cooperará razonablemente con el Responsable para ello.
+**El Responsable conserva la obligación de comunicar la vulneración a los titulares afectados**, en términos del artículo 19 de la LFPDPPP, así como a la autoridad competente cuando proceda. iBookit cooperará razonablemente con el Responsable para ello.
 
 ## CLÁUSULA DÉCIMA PRIMERA — SUBENCARGADOS
 
-**11.1. Autorización general.** El Responsable **autoriza de forma general** a RED para apoyarse en subencargados en la prestación del servicio. Los subencargados vigentes a la fecha de esta versión son los listados en el **Anexo B**.
+**11.1. Autorización general.** El Responsable **autoriza de forma general** a iBookit para apoyarse en subencargados en la prestación del servicio. Los subencargados vigentes a la fecha de esta versión son los listados en el **Anexo B**.
 
-**11.2. Condiciones.** RED impondrá a cada subencargado, por contrato o por sus términos de servicio aplicables, obligaciones de protección de datos sustancialmente equivalentes a las de este Anexo, y **responderá frente al Responsable de los actos y omisiones de sus subencargados como si fueran propios**.
+**11.2. Condiciones.** iBookit impondrá a cada subencargado, por contrato o por sus términos de servicio aplicables, obligaciones de protección de datos sustancialmente equivalentes a las de este Anexo, y **responderá frente al Responsable de los actos y omisiones de sus subencargados como si fueran propios**.
 
-**11.3. Aviso de cambio y objeción.** RED notificará al Responsable la incorporación o sustitución de un subencargado con al menos **`{{plazo_aviso_subencargado}}` días naturales de anticipación**, mediante correo electrónico a la dirección registrada y publicación en `{{url_subencargados}}`. El Responsable podrá objetar por motivos razonables y fundados en protección de datos dentro de los `{{plazo_objecion_subencargado}}` días naturales siguientes al aviso; de no alcanzarse una solución, el Responsable podrá dar por terminado el servicio sin penalidad, siendo ésta su única vía de reparación por dicho cambio.
+**11.3. Aviso de cambio y objeción.** iBookit notificará al Responsable la incorporación o sustitución de un subencargado con al menos **`{{plazo_aviso_subencargado}}` días naturales de anticipación**, mediante correo electrónico a la dirección registrada y publicación en `{{url_subencargados}}`. El Responsable podrá objetar por motivos razonables y fundados en protección de datos dentro de los `{{plazo_objecion_subencargado}}` días naturales siguientes al aviso; de no alcanzarse una solución, el Responsable podrá dar por terminado el servicio sin penalidad, siendo ésta su única vía de reparación por dicho cambio.
 
 **11.4. Alojamiento.** El Responsable reconoce y acepta que la Plataforma se aloja en la infraestructura de **Supabase, Inc.**, la cual a su vez se ejecuta sobre **Amazon Web Services, Inc.** en la región `{{region_supabase}}`, y que por lo tanto los Datos del Gimnasio se almacenan y procesan **fuera del territorio nacional**. Las Partes reconocen que, conforme al artículo 2, fracción XX de la LFPDPPP, la comunicación de datos a la persona encargada no constituye transferencia "dentro o fuera del territorio mexicano".[^1]
 
 ## CLÁUSULA DÉCIMA SEGUNDA — PROHIBICIÓN DE DATOS SENSIBLES Y BIOMÉTRICOS
 
-**12.1.** La Plataforma **no está diseñada ni autorizada para el tratamiento de datos personales sensibles**. RED no recaba, almacena ni procesa datos biométricos de ningún tipo.
+**12.1.** La Plataforma **no está diseñada ni autorizada para el tratamiento de datos personales sensibles**. iBookit no recaba, almacena ni procesa datos biométricos de ningún tipo.
 
 **12.2.** El Responsable se obliga a **abstenerse de introducir en la Plataforma** —por captura, carga de archivos, importación, integración con terceros o por cualquier otro medio, incluidos los campos de texto libre— datos personales sensibles, entendiendo comprendidos de manera enunciativa y no limitativa: **datos biométricos** (huella dactilar, geometría facial, iris, voz), datos de salud, información médica o de lesiones, origen racial o étnico, creencias religiosas, filosóficas o morales, afiliación sindical, opiniones políticas y preferencia sexual.
 
-**12.3.** El incumplimiento de esta cláusula es imputable exclusivamente al Responsable. RED podrá suprimir dicha información sin responsabilidad y, en caso de incumplimiento reiterado, suspender o terminar el servicio.
+**12.3.** El incumplimiento de esta cláusula es imputable exclusivamente al Responsable. iBookit podrá suprimir dicha información sin responsabilidad y, en caso de incumplimiento reiterado, suspender o terminar el servicio.
 
-**12.4.** El Responsable mantendrá a RED en paz y a salvo de cualquier reclamación, sanción o indemnización derivada de la introducción de datos sensibles en la Plataforma en contravención de esta cláusula.
+**12.4.** El Responsable mantendrá a iBookit en paz y a salvo de cualquier reclamación, sanción o indemnización derivada de la introducción de datos sensibles en la Plataforma en contravención de esta cláusula.
 
 ## CLÁUSULA DÉCIMA TERCERA — DEVOLUCIÓN Y SUPRESIÓN AL TÉRMINO
 
-Al terminar la prestación del servicio, RED, a elección del Responsable manifestada dentro de los `{{plazo_eleccion_devolucion}}` días naturales siguientes a la terminación: (i) pondrá a disposición del Responsable los Datos del Gimnasio en un formato estructurado y de uso común, mediante la función de exportación de la Plataforma; y/o (ii) los suprimirá.
+Al terminar la prestación del servicio, iBookit, a elección del Responsable manifestada dentro de los `{{plazo_eleccion_devolucion}}` días naturales siguientes a la terminación: (i) pondrá a disposición del Responsable los Datos del Gimnasio en un formato estructurado y de uso común, mediante la función de exportación de la Plataforma; y/o (ii) los suprimirá.
 
-Transcurrido dicho plazo sin manifestación del Responsable, RED conservará los Datos del Gimnasio durante un periodo de gracia de `{{plazo_gracia_supresion}}` días naturales y, vencido éste, procederá a su supresión, incluidas las copias de respaldo conforme al ciclo de rotación de éstas, salvo que la conservación sea exigida por una disposición legal, en cuyo caso subsistirán las obligaciones de confidencialidad y seguridad de este Anexo respecto de los datos conservados.
+Transcurrido dicho plazo sin manifestación del Responsable, iBookit conservará los Datos del Gimnasio durante un periodo de gracia de `{{plazo_gracia_supresion}}` días naturales y, vencido éste, procederá a su supresión, incluidas las copias de respaldo conforme al ciclo de rotación de éstas, salvo que la conservación sea exigida por una disposición legal, en cuyo caso subsistirán las obligaciones de confidencialidad y seguridad de este Anexo respecto de los datos conservados.
 
 ## CLÁUSULA DÉCIMA CUARTA — OBLIGACIONES DEL RESPONSABLE
 
 El Responsable declara y garantiza que:
 
 - **a)** recaba los Datos del Gimnasio conforme a la LFPDPPP, poniendo a disposición de los titulares el aviso de privacidad y obteniendo el consentimiento cuando la ley lo exija;
-- **b)** sus instrucciones a RED no infringen la normativa aplicable;
+- **b)** sus instrucciones a iBookit no infringen la normativa aplicable;
 - **c)** es exacta y está actualizada la información de identidad, domicilio, finalidades y contacto ARCO que proporcione para la generación de sus avisos de privacidad;
-- **d)** administra con diligencia las cuentas y credenciales de su personal usuario, y notificará a RED sin dilación cualquier acceso no autorizado que detecte del lado del Responsable;
+- **d)** administra con diligencia las cuentas y credenciales de su personal usuario, y notificará a iBookit sin dilación cualquier acceso no autorizado que detecte del lado del Responsable;
 - **e)** no introducirá datos personales sensibles en la Plataforma, conforme a la Cláusula Décima Segunda.
 
 ## CLÁUSULA DÉCIMA QUINTA — RESPONSABILIDAD
@@ -150,7 +150,7 @@ El Responsable declara y garantiza que:
 
 **16.2.** **Las Partes convienen expresamente que la aceptación mediante clic en dicha casilla, realizada desde una cuenta autenticada del Responsable, surtirá los mismos efectos jurídicos que la firma autógrafa** y bastará para tener por celebrado y perfeccionado el presente Anexo, sin que se requiera contrafirma, ejemplar impreso ni acto posterior alguno.[^3]
 
-**16.3.** Al momento de la aceptación, RED conservará como constancia, cuando menos: la identificación de la cuenta y de la persona usuaria aceptante, la fecha y hora, la dirección IP de origen, la versión del documento y la huella criptográfica (SHA-256) de su texto íntegro. RED conservará dicha constancia y el texto aceptado de forma íntegra, inalterada y accesible para su ulterior consulta durante toda la vigencia de este Anexo y por `{{plazo_conservacion_constancia}}` años posteriores, y la pondrá a disposición del Responsable a solicitud de éste.
+**16.3.** Al momento de la aceptación, iBookit conservará como constancia, cuando menos: la identificación de la cuenta y de la persona usuaria aceptante, la fecha y hora, la dirección IP de origen, la versión del documento y la huella criptográfica (SHA-256) de su texto íntegro. iBookit conservará dicha constancia y el texto aceptado de forma íntegra, inalterada y accesible para su ulterior consulta durante toda la vigencia de este Anexo y por `{{plazo_conservacion_constancia}}` años posteriores, y la pondrá a disposición del Responsable a solicitud de éste.
 
 **16.4.** Las Partes reconocen que el mensaje de datos así generado es atribuible al Responsable por haberse emitido mediante los medios de identificación (credenciales) de su cuenta.[^3]
 
@@ -160,7 +160,7 @@ El Responsable declara y garantiza que:
 
 **17.1.** Este Anexo se identifica por número de versión, fecha y huella criptográfica de su texto, conforme al encabezado del documento. La versión vigente se publica permanentemente en `{{url_anexo}}` junto con el historial de versiones anteriores y sus respectivas huellas.
 
-**17.2.** RED podrá modificar este Anexo cuando lo exija un cambio normativo, la incorporación de un subencargado o una modificación material del servicio. RED notificará la nueva versión con al menos **`{{plazo_aviso_version}}` días naturales de anticipación**, mediante correo electrónico a la dirección registrada del Responsable y aviso dentro de la aplicación administrativa.
+**17.2.** iBookit podrá modificar este Anexo cuando lo exija un cambio normativo, la incorporación de un subencargado o una modificación material del servicio. iBookit notificará la nueva versión con al menos **`{{plazo_aviso_version}}` días naturales de anticipación**, mediante correo electrónico a la dirección registrada del Responsable y aviso dentro de la aplicación administrativa.
 
 **17.3.** Transcurrido dicho plazo, la nueva versión se tendrá por aceptada mediante la aceptación expresa del Responsable en la aplicación o, en su defecto, por el uso continuado del servicio. El Responsable que no esté conforme podrá dar por terminado el servicio sin penalidad antes de la fecha de entrada en vigor de la nueva versión.
 
@@ -182,7 +182,7 @@ El Responsable declara y garantiza que:
 
 | Concepto | Contenido |
 |---|---|
-| **Objeto** | Prestación del servicio de software de gestión de gimnasios RED (alta y directorio de personas clientes, venta y renovación de paquetes, control de asistencia, agenda y reserva de clases, recibos, comunicaciones operativas y aplicación para la persona miembro). |
+| **Objeto** | Prestación del servicio de software de gestión de gimnasios iBookit (alta y directorio de personas clientes, venta y renovación de paquetes, control de asistencia, agenda y reserva de clases, recibos, comunicaciones operativas y aplicación para la persona miembro). |
 | **Duración** | La vigencia del servicio, más los plazos de la Cláusula Décima Tercera. |
 | **Naturaleza y finalidad** | Almacenamiento, consulta, organización, modificación, supresión y comunicación de los Datos del Gimnasio, por cuenta y bajo instrucciones del Responsable, con el fin exclusivo de operar la Plataforma. |
 | **Categorías de titulares** | Personas clientes y prospectos del Gimnasio; personal del Gimnasio con cuenta de usuario. |
@@ -204,7 +204,7 @@ El Responsable declara y garantiza que:
 
 ## NOTAS AL PIE
 
-[^1]: LFPDPPP (reformada, DOF 20-mar-2025, en vigor 21-mar-2025), artículo 2, fracción XX. Nota para el abogado revisor: **no está resuelto** si la cadena de subencargo RED → Supabase → AWS queda igualmente comprendida en esta exclusión, o si Supabase debe reputarse "tercero" (artículo 35) y por tanto su intervención constituir una transferencia. Ver pregunta 2 del brief.
+[^1]: LFPDPPP (reformada, DOF 20-mar-2025, en vigor 21-mar-2025), artículo 2, fracción XX. Nota para el abogado revisor: **no está resuelto** si la cadena de subencargo iBookit → Supabase → AWS queda igualmente comprendida en esta exclusión, o si Supabase debe reputarse "tercero" (artículo 35) y por tanto su intervención constituir una transferencia. Ver pregunta 2 del brief.
 
 [^2]: La supervivencia del Reglamento de la LFPDPPP de 2011 —y con él la obligación de contrato escrito responsable–encargado de sus artículos 49 a 51— frente a la reforma de marzo de 2025 es una cuestión abierta: la Ley vigente no contiene cláusula de continuidad ni de abrogación al respecto, y el Reglamento de la nueva Ley no ha sido publicado. Este Anexo se redacta para cumplir con esa obligación en caso de que subsista, sin reconocer que exista. Ver pregunta 1 del brief.
 

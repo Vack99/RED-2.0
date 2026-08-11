@@ -1,10 +1,10 @@
-# BRIEF PARA ABOGADO — PROTECCIÓN DE DATOS PERSONALES (RED)
+# BRIEF PARA ABOGADO — PROTECCIÓN DE DATOS PERSONALES (iBookit)
 
 > **BORRADOR — PENDIENTE DE REVISIÓN POR ABOGADO MEXICANO. ESTE DOCUMENTO NO CONSTITUYE ASESORÍA LEGAL.**
 
 ## Contexto (2 líneas)
 
-RED es un SaaS multi-inquilino de gestión de gimnasios (México): cada gimnasio es **responsable** de los datos de sus miembros y RED es **encargada**; RED se aloja en Supabase, Inc. sobre AWS (`{{region_supabase}}`) y **no** trata datos biométricos ni sensibles.
+iBookit es un SaaS multi-inquilino de gestión de gimnasios (México): cada gimnasio es **responsable** de los datos de sus miembros y iBookit es **encargada**; iBookit se aloja en Supabase, Inc. sobre AWS (`{{region_supabase}}`) y **no** trata datos biométricos ni sensibles.
 El objetivo es escalar a ~3,000 gimnasios con **trabajo legal marginal cero por gimnasio**: todo debe ejecutarse en línea —anexo de encargado aceptado por *click-wrap* al primer acceso y aviso de privacidad generado por gimnasio— sin papel ni firma autógrafa por cliente.
 
 ## Documentos adjuntos para revisión y corrección
@@ -27,9 +27,9 @@ Base normativa utilizada: LFPDPPP reformada (DOF 20-mar-2025, en vigor 21-mar-20
 
 ### 2. Subencargo transfronterizo: ¿Supabase/AWS es "encargado" o "tercero"?
 
-El art. 2-XX excluye de la definición de *transferencia* la comunicación hecha "a la persona encargada del tratamiento", expresamente "dentro o fuera del territorio mexicano". La cadena real es **gimnasio (responsable) → RED (encargada) → Supabase, Inc. (subencargada) → AWS (infraestructura)**.
+El art. 2-XX excluye de la definición de *transferencia* la comunicación hecha "a la persona encargada del tratamiento", expresamente "dentro o fuera del territorio mexicano". La cadena real es **gimnasio (responsable) → iBookit (encargada) → Supabase, Inc. (subencargada) → AWS (infraestructura)**.
 
-**¿La exclusión del art. 2-XX cubre a los subencargados de RED, o Supabase debe reputarse "tercero" en términos del art. 35 —convirtiendo el alojamiento en una transferencia internacional con sus consecuencias de consentimiento y divulgación?** ¿Cambia la respuesta si la región de AWS es México (Querétaro) en lugar de Estados Unidos?
+**¿La exclusión del art. 2-XX cubre a los subencargados de iBookit, o Supabase debe reputarse "tercero" en términos del art. 35 —convirtiendo el alojamiento en una transferencia internacional con sus consecuencias de consentimiento y divulgación?** ¿Cambia la respuesta si la región de AWS es México (Querétaro) en lugar de Estados Unidos?
 
 ### 3. ¿Debe el aviso de privacidad divulgar transferencias y encargados?
 
@@ -50,4 +50,4 @@ El Reglamento de la Ley reformada está vencido desde ~jun-2025 (plazo transitor
 - **Revisar y corregir los tres borradores adjuntos**, en particular: el reparto de roles, la cláusula de subencargados con autorización general y aviso de cambio, la prohibición contractual de introducir datos sensibles/biométricos, y la cláusula de responsabilidad frente a la solidaridad del art. 53.
 - **Verificar contra texto primario** (Cámara de Diputados / DOF) los artículos **89 bis, 90, 93 y 97 del Código de Comercio**, y **confirmar la validez del esquema de aceptación electrónica en relación B2B**: casilla de aceptación expresa desde cuenta autenticada, con conservación de identidad de la persona usuaria, fecha y hora, IP, versión del documento y huella SHA-256 del texto íntegro, accesible para ulterior consulta. ¿Basta la cláusula pactada de equivalencia ("la aceptación mediante clic surtirá los mismos efectos que la firma autógrafa") o conviene una constancia de conservación NOM-151-SCFI-2016 emitida por un PSC acreditado?
 - **Confirmar los plazos ARCO** aplicables bajo la Ley vigente (respuesta y ejecución), marcados como pendientes en la plantilla integral.
-- **Confirmar si los datos biométricos están enumerados como datos personales sensibles** en la definición del art. 2 de la Ley vigente (las fuentes secundarias se contradicen). RED no los trata y los prohíbe contractualmente; la respuesta solo afecta la redacción de la cláusula.
+- **Confirmar si los datos biométricos están enumerados como datos personales sensibles** en la definición del art. 2 de la Ley vigente (las fuentes secundarias se contradicen). iBookit no los trata y los prohíbe contractualmente; la respuesta solo afecta la redacción de la cláusula.

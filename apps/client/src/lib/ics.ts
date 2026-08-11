@@ -29,10 +29,10 @@ export function buildIcs(evento: IcsEvento): string {
   const lines = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//RED//Reservas//ES",
+    "PRODID:-//iBookit//Reservas//ES",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
-    `UID:${evento.uid}@red`,
+    `UID:${evento.uid}@ibookit`,
     `DTSTAMP:${icsStamp(new Date().toISOString())}`,
     `DTSTART:${icsStamp(evento.inicioIso)}`,
     `DTEND:${icsStamp(evento.finIso)}`,
