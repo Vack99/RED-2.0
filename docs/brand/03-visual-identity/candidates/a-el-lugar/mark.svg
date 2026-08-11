@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#201B14" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#8A4A6C" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>

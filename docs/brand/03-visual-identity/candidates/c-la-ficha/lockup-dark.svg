@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 428 140" width="428" height="140" role="img" aria-labelledby="lockup-dark-title">
+  <title id="lockup-dark-title">iBookit</title>
+  <g transform="translate(13.92 15.84) scale(0.42)">
+    <path fill="#F2EDE5" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+    <path fill="#E0906E" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+  </g>
+  <text x="139" y="112" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="80" letter-spacing="-1.6" fill="#F2EDE5">iBookit</text>
+</svg>

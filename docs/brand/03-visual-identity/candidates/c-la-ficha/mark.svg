@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="ficha-title">
+  <title id="ficha-title">iBookit — la ficha</title>
+  <path fill="#201B14" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>

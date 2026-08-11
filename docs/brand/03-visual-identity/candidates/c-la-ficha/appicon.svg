@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-labelledby="appicon-title">
+  <title id="appicon-title">iBookit</title>
+  <rect width="256" height="256" rx="56" fill="#A9502F"/>
+  <g transform="translate(31.6 25.9) scale(0.76)">
+    <path fill="#FAF8F4" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46Z"/>
+    <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+  </g>
+</svg>
