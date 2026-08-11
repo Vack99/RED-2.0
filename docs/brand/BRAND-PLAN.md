@@ -62,7 +62,14 @@ Decisions recorded (reversible at CP1):
 - `base` module = the house identity of brief §4.1, evolved under rule 5 — not replaced by
   corporate colours.
 
-Open → CP1: reference brands (admire/avoid); any committed assets.
+CP1 rulings (owner, 2026-08-10):
+
+- No named reference brands, no committed assets — clean slate; only the locked name + domain
+  constrain the identity.
+- Register: **minimal, modern, clean, warm** — and above all **recessive**: the brand must
+  never get in the way of a client's business. A brandless client buys "just a package", and
+  that staying-out-of-the-way is itself the differentiator to build Phase B around.
+- Avoid: flashy, big-image, high-impact identity of any kind.
 
 ## B — Strategy
 
