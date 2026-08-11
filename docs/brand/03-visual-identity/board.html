@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iBookit — candidatos de identidad</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&family=Figtree:wght@400;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --canvas:#FAF8F4; --surface:#FFFFFF; --ink:#201B14; --muted:#6B6257;
+    --canvas-dark:#16130E; --surface-dark:#1E1A14; --ink-dark:#F2EDE5; --muted-dark:#A79B8C;
+    --line: rgba(32,27,20,.10);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--canvas); color:var(--ink);
+    font-family:'Hanken Grotesk', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  main{max-width:1220px; margin:0 auto; padding:0 40px;}
+
+  header{padding:56px 40px 28px; max-width:1220px; margin:0 auto;}
+  .kicker{margin:0; font-size:13px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+
+  section{padding:56px 0; border-top:1px solid var(--line);}
+  section.concept:first-of-type{border-top:1px solid var(--line);}
+
+  .concept-head{display:flex; align-items:flex-start; gap:16px; margin-bottom:32px;}
+  .concept-letter{
+    flex:0 0 auto; width:40px; height:40px; border-radius:50%;
+    background:var(--accent); color:var(--canvas);
+    display:flex; align-items:center; justify-content:center;
+    font-weight:700; font-size:15px;
+  }
+  .concept-head h2{margin:0 0 6px; font-size:28px; font-weight:600; letter-spacing:-0.01em;}
+  .rationale{margin:0; font-size:15px; color:var(--muted); display:flex; align-items:center; gap:8px;}
+  .rationale .dot{width:8px; height:8px; border-radius:50%; background:var(--accent); flex:0 0 auto;}
+
+  .card-row{display:flex; flex-wrap:wrap; gap:20px; align-items:stretch;}
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:16px;
+    padding:24px; box-shadow:0 1px 2px rgba(32,27,20,.04);
+    flex:1 1 260px; display:flex; flex-direction:column; gap:16px;
+  }
+  .card.lockup-card{flex:1 1 340px;}
+  .card.on-dark{background:var(--canvas-dark); border-color:rgba(242,237,229,.10); box-shadow:none;}
+  .card-label{margin:0; font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);}
+  .card.on-dark .card-label{color:var(--muted-dark);}
+
+  .lockup-frame{width:100%; align-self:center;}
+  .lockup-frame svg{display:block; width:100%; height:auto;}
+
+  .ladder-strip{border-radius:12px; padding:18px 16px; display:flex; flex-direction:column; gap:12px;}
+  .ladder-strip.light{background:var(--surface); border:1px solid var(--line);}
+  .ladder-strip.dark{background:var(--canvas-dark);}
+  .strip-tag{font-size:10px; font-weight:600; letter-spacing:.06em; text-transform:uppercase; color:var(--muted);}
+  .ladder-strip.dark .strip-tag{color:var(--muted-dark);}
+  .ladder-row{display:flex; align-items:flex-end; gap:20px;}
+  .mark-cell{margin:0; display:flex; flex-direction:column; align-items:center; gap:8px;}
+  .mark-cell svg{display:block; width:100%; height:100%;}
+  .mark-cell figcaption{font-size:10px; color:var(--muted);}
+  .ladder-strip.dark .mark-cell figcaption{color:var(--muted-dark);}
+  .size-64{width:64px; height:64px;}
+  .size-32{width:32px; height:32px;}
+  .size-16{width:16px; height:16px;}
+
+  .icon-row{display:flex; align-items:flex-end; gap:24px;}
+  .icon-cell{margin:0; display:flex; flex-direction:column; align-items:center; gap:8px;}
+  .icon-cell svg{display:block; width:100%; height:100%;}
+  .icon-cell figcaption{font-size:10px; color:var(--muted);}
+  .icon-180{width:180px; height:180px; border-radius:22%; overflow:hidden;}
+  .icon-32{width:32px; height:32px; border-radius:22%; overflow:hidden;}
+
+  .risk{margin:20px 0 0; font-size:13px; font-style:italic; color:var(--muted);}
+  .risk strong{font-style:normal; font-weight:600;}
+
+  section.palette h2, section.type h2{margin:0 0 32px; font-size:24px; font-weight:600; letter-spacing:-0.01em;}
+  .chip-group{margin-bottom:28px;}
+  .group-label{margin:0 0 14px; font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);}
+  .chip-row{display:flex; flex-wrap:wrap; gap:24px;}
+  .chip{display:flex; flex-direction:column; gap:8px;}
+  .swatch{width:96px; height:72px; border-radius:12px; border:1px solid var(--line);}
+  .chip-name{font-size:13px; font-weight:600;}
+  .chip-hex{font-size:12px; color:var(--muted); font-variant-numeric:tabular-nums;}
+  .accent-pairs{display:flex; flex-wrap:wrap; gap:40px;}
+  .accent-pair-group{display:flex; flex-direction:column; gap:10px;}
+  .accent-pair-name{font-size:12px; font-weight:600; color:var(--muted);}
+  .accent-pair-chips{display:flex; gap:16px;}
+  .note{margin:8px 0 0; font-size:13px; color:var(--muted);}
+
+  .type-block{margin-bottom:36px;}
+  .type-label{margin:0 0 14px; font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted);}
+  .display{margin:0 0 14px; font-size:40px; font-weight:600; letter-spacing:-0.01em; line-height:1.15;}
+  .body-copy{margin:0 0 10px; font-size:16px; font-weight:400; line-height:1.65; max-width:680px;}
+  .tabular{margin:0; font-size:16px; font-variant-numeric:tabular-nums; color:var(--muted);}
+  .type-alt-row{display:flex; flex-wrap:wrap; gap:56px; margin-top:8px;}
+  .type-alt-row .type-block{margin-bottom:0; flex:1 1 320px;}
+  .ff-hanken{font-family:'Hanken Grotesk', sans-serif;}
+  .ff-figtree{font-family:'Figtree', sans-serif;}
+  .ff-source{font-family:'Source Sans 3', sans-serif;}
+
+  footer{padding:32px 0 56px;}
+  .footer-wrap{max-width:1220px; margin:0 auto; padding:0 40px;}
+  footer p{margin:0 0 4px; font-size:12px; color:var(--muted); font-family: ui-monospace, 'Source Sans 3', monospace;}
+</style>
+</head>
+<body>
+
+<header>
+  <p class="kicker">iBookit — candidatos de identidad · C2 · 2026-08-11</p>
+</header>
+
+<main>
+
+  <!-- ============ CONCEPT A — EL LUGAR ============ -->
+  <section class="concept" style="--accent:#8A4A6C;">
+    <div class="concept-head">
+      <span class="concept-letter">A</span>
+      <div>
+        <h2>El lugar</h2>
+        <p class="rationale"><span class="dot"></span>tu lugar apartado en la semana</p>
+      </div>
+    </div>
+
+    <div class="card-row">
+
+      <div class="card lockup-card on-light">
+        <p class="card-label">Lockup en claro</p>
+        <div class="lockup-frame">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#201B14" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#8A4A6C" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+  <text x="80" y="47" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-size="43" font-weight="600" letter-spacing="-0.86">i<tspan dx="0.9">Bookit</tspan></text>
+</svg>
+        </div>
+      </div>
+
+      <div class="card lockup-card on-dark">
+        <p class="card-label">Lockup en oscuro</p>
+        <div class="lockup-frame">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#F2EDE5" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#C287A8" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+  <text x="80" y="47" fill="#F2EDE5" font-family="Hanken Grotesk, Arial, sans-serif" font-size="43" font-weight="600" letter-spacing="-0.86">i<tspan dx="0.9">Bookit</tspan></text>
+</svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Escala del símbolo</p>
+        <div class="ladder-strip light">
+          <span class="strip-tag">sobre claro</span>
+          <div class="ladder-row">
+            <figure class="mark-cell size-64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#201B14" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#8A4A6C" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>
+              <figcaption>64</figcaption>
+            </figure>
+            <figure class="mark-cell size-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#201B14" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#8A4A6C" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>
+              <figcaption>32</figcaption>
+            </figure>
+            <figure class="mark-cell size-16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#201B14" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#8A4A6C" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>
+              <figcaption>16</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div class="ladder-strip dark">
+          <span class="strip-tag">sobre oscuro</span>
+          <div class="ladder-row">
+            <figure class="mark-cell size-64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#F2EDE5" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#C287A8" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>
+              <figcaption>64</figcaption>
+            </figure>
+            <figure class="mark-cell size-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#F2EDE5" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#C287A8" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>
+              <figcaption>32</figcaption>
+            </figure>
+            <figure class="mark-cell size-16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img"><title>iBookit</title>
+  <g fill="none" stroke="#F2EDE5" stroke-width="2.5">
+    <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+    <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+    <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+  </g>
+  <path fill="#C287A8" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+</svg>
+              <figcaption>16</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Ícono de app</p>
+        <div class="icon-row">
+          <figure class="icon-cell icon-180">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img"><title>iBookit</title>
+  <rect width="512" height="512" rx="112" fill="#8A4A6C"/>
+  <g transform="translate(64 64) scale(6)">
+    <g fill="none" stroke="#FAF8F4" stroke-width="2.5">
+      <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+      <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+      <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+      <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+      <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+      <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+      <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+      <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+    </g>
+    <path fill="#FAF8F4" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+  </g>
+</svg>
+            <figcaption>180px</figcaption>
+          </figure>
+          <figure class="icon-cell icon-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img"><title>iBookit</title>
+  <rect width="512" height="512" rx="112" fill="#8A4A6C"/>
+  <g transform="translate(64 64) scale(6)">
+    <g fill="none" stroke="#FAF8F4" stroke-width="2.5">
+      <rect x="6" y="6" width="12" height="12" rx="3.5"/>
+      <rect x="26" y="6" width="12" height="12" rx="3.5"/>
+      <rect x="46" y="6" width="12" height="12" rx="3.5"/>
+      <rect x="6" y="26" width="12" height="12" rx="3.5"/>
+      <rect x="26" y="26" width="12" height="12" rx="3.5"/>
+      <rect x="6" y="46" width="12" height="12" rx="3.5"/>
+      <rect x="26" y="46" width="12" height="12" rx="3.5"/>
+      <rect x="46" y="46" width="12" height="12" rx="3.5"/>
+    </g>
+    <path fill="#FAF8F4" d="M45.5 25.5H55A3.5 3.5 0 0 1 58.5 29V35A3.5 3.5 0 0 1 55 38.5H49A3.5 3.5 0 0 1 45.5 35V25.5Z"/>
+  </g>
+</svg>
+            <figcaption>32px · favicon</figcaption>
+          </figure>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="risk"><strong>riesgo:</strong> el grid 3×3 redondeado ya es vecino de cualquier ícono de apps.</p>
+  </section>
+
+  <!-- ============ CONCEPT B — APARTADO ============ -->
+  <section class="concept" style="--accent:#5560A8;">
+    <div class="concept-head">
+      <span class="concept-letter">B</span>
+      <div>
+        <h2>Apartado</h2>
+        <p class="rationale"><span class="dot"></span>la B que guarda tu lugar</p>
+      </div>
+    </div>
+
+    <div class="card-row">
+
+      <div class="card lockup-card on-light">
+        <p class="card-label">Lockup en claro</p>
+        <div class="lockup-frame">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 231 74" role="img" aria-label="iBookit">
+  <g transform="translate(0.25 9) scale(0.58333)">
+    <path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+  </g>
+  <text x="60" y="58" fill="#201B14" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">iBookit</text>
+</svg>
+        </div>
+      </div>
+
+      <div class="card lockup-card on-dark">
+        <p class="card-label">Lockup en oscuro</p>
+        <div class="lockup-frame">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 231 74" role="img" aria-label="iBookit">
+  <g transform="translate(0.25 9) scale(0.58333)">
+    <path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+  </g>
+  <text x="60" y="58" fill="#F2EDE5" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="48" letter-spacing="-0.96">iBookit</text>
+</svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Escala del símbolo</p>
+        <div class="ladder-strip light">
+          <span class="strip-tag">sobre claro</span>
+          <div class="ladder-row">
+            <figure class="mark-cell size-64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+</svg>
+              <figcaption>64</figcaption>
+            </figure>
+            <figure class="mark-cell size-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+</svg>
+              <figcaption>32</figcaption>
+            </figure>
+            <figure class="mark-cell size-16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <path fill="#5560A8" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+</svg>
+              <figcaption>16</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div class="ladder-strip dark">
+          <span class="strip-tag">sobre oscuro</span>
+          <div class="ladder-row">
+            <figure class="mark-cell size-64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+</svg>
+              <figcaption>64</figcaption>
+            </figure>
+            <figure class="mark-cell size-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+</svg>
+              <figcaption>32</figcaption>
+            </figure>
+            <figure class="mark-cell size-16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <path fill="#98A2E0" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+</svg>
+              <figcaption>16</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Ícono de app</p>
+        <div class="icon-row">
+          <figure class="icon-cell icon-180">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#5560A8"/>
+  <g transform="translate(5.81 5.67) scale(0.8611)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+  </g>
+</svg>
+            <figcaption>180px</figcaption>
+          </figure>
+          <figure class="icon-cell icon-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 96 96" role="img" aria-label="iBookit">
+  <rect width="96" height="96" rx="21" fill="#5560A8"/>
+  <g transform="translate(5.81 5.67) scale(0.8611)">
+    <path fill="#FAF8F4" fill-rule="evenodd" d="M29 12H48C56.3 12 63 18.3 63 26C63 31 61.5 34 58 37C63 40 71 46 71 57V66C71 76 65 84 58 84H29C27.9 84 27 83.1 27 82V14C27 12.9 27.9 12 29 12ZM43 23H48A4 4 0 0 1 52 27V32A4 4 0 0 1 48 36H43A4 4 0 0 1 39 32V27A4 4 0 0 1 43 23ZM43 47H56A4 4 0 0 1 60 51V70.5Q60 73 58.28 71.2L51.31 63.89Q49.5 62 47.69 63.89L40.72 71.2Q39 73 39 70.5V51A4 4 0 0 1 43 47Z"/>
+  </g>
+</svg>
+            <figcaption>32px · favicon</figcaption>
+          </figure>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="risk"><strong>riesgo:</strong> bajo 28px la cola se aplana: vuelve a ser una B simple.</p>
+  </section>
+
+  <!-- ============ CONCEPT C — LA FICHA ============ -->
+  <section class="concept" style="--accent:#A9502F;">
+    <div class="concept-head">
+      <span class="concept-letter">C</span>
+      <div>
+        <h2>La ficha</h2>
+        <p class="rationale"><span class="dot"></span>la tarjeta del mostrador</p>
+      </div>
+    </div>
+
+    <div class="card-row">
+
+      <div class="card lockup-card on-light">
+        <p class="card-label">Lockup en claro</p>
+        <div class="lockup-frame">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 428 140" role="img" aria-labelledby="lockup-light-title">
+  <title id="lockup-light-title">iBookit</title>
+  <g transform="translate(13.92 15.84) scale(0.42)">
+    <path fill="#201B14" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+    <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+  </g>
+  <text x="139" y="112" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="80" letter-spacing="-1.6" fill="#201B14">iBookit</text>
+</svg>
+        </div>
+      </div>
+
+      <div class="card lockup-card on-dark">
+        <p class="card-label">Lockup en oscuro</p>
+        <div class="lockup-frame">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 428 140" role="img" aria-labelledby="lockup-dark-title">
+  <title id="lockup-dark-title">iBookit</title>
+  <g transform="translate(13.92 15.84) scale(0.42)">
+    <path fill="#F2EDE5" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+    <path fill="#E0906E" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+  </g>
+  <text x="139" y="112" font-family="Hanken Grotesk, Arial, sans-serif" font-weight="600" font-size="80" letter-spacing="-1.6" fill="#F2EDE5">iBookit</text>
+</svg>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Escala del símbolo</p>
+        <div class="ladder-strip light">
+          <span class="strip-tag">sobre claro</span>
+          <div class="ladder-row">
+            <figure class="mark-cell size-64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="ficha-title-l64">
+  <title id="ficha-title-l64">iBookit — la ficha</title>
+  <path fill="#201B14" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>
+              <figcaption>64</figcaption>
+            </figure>
+            <figure class="mark-cell size-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="ficha-title-l32">
+  <title id="ficha-title-l32">iBookit — la ficha</title>
+  <path fill="#201B14" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>
+              <figcaption>32</figcaption>
+            </figure>
+            <figure class="mark-cell size-16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="ficha-title-l16">
+  <title id="ficha-title-l16">iBookit — la ficha</title>
+  <path fill="#201B14" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>
+              <figcaption>16</figcaption>
+            </figure>
+          </div>
+        </div>
+        <div class="ladder-strip dark">
+          <span class="strip-tag">sobre oscuro</span>
+          <div class="ladder-row">
+            <figure class="mark-cell size-64">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="ficha-title-d64">
+  <title id="ficha-title-d64">iBookit — la ficha</title>
+  <path fill="#F2EDE5" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#E0906E" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>
+              <figcaption>64</figcaption>
+            </figure>
+            <figure class="mark-cell size-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="ficha-title-d32">
+  <title id="ficha-title-d32">iBookit — la ficha</title>
+  <path fill="#F2EDE5" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#E0906E" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>
+              <figcaption>32</figcaption>
+            </figure>
+            <figure class="mark-cell size-16">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="ficha-title-d16">
+  <title id="ficha-title-d16">iBookit — la ficha</title>
+  <path fill="#F2EDE5" fill-rule="evenodd" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46ZM40 64V212A2 2 0 0 0 42 214H214A2 2 0 0 0 216 212V64A2 2 0 0 0 214 62H42A2 2 0 0 0 40 64Z"/>
+  <path fill="#E0906E" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+</svg>
+              <figcaption>16</figcaption>
+            </figure>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <p class="card-label">Ícono de app</p>
+        <div class="icon-row">
+          <figure class="icon-cell icon-180">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="appicon-title-180">
+  <title id="appicon-title-180">iBookit</title>
+  <rect width="256" height="256" rx="56" fill="#A9502F"/>
+  <g transform="translate(31.6 25.9) scale(0.76)">
+    <path fill="#FAF8F4" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46Z"/>
+    <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+  </g>
+</svg>
+            <figcaption>180px</figcaption>
+          </figure>
+          <figure class="icon-cell icon-32">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="appicon-title-32">
+  <title id="appicon-title-32">iBookit</title>
+  <rect width="256" height="256" rx="56" fill="#A9502F"/>
+  <g transform="translate(31.6 25.9) scale(0.76)">
+    <path fill="#FAF8F4" d="M42 46H52A6 6 0 0 0 58 40V35A7 7 0 0 1 65 28H119A7 7 0 0 1 126 35V40A6 6 0 0 0 132 46H214A18 18 0 0 1 232 64V212A18 18 0 0 1 214 230H42A18 18 0 0 1 24 212V64A18 18 0 0 1 42 46Z"/>
+    <path fill="#A9502F" d="M66 102H118A8 8 0 0 1 118 118H66A8 8 0 0 1 66 102Z"/>
+  </g>
+</svg>
+            <figcaption>32px · favicon</figcaption>
+          </figure>
+        </div>
+      </div>
+
+    </div>
+
+    <p class="risk"><strong>riesgo:</strong> vive o muere por la geometría de la pestaña — fácil de perder.</p>
+  </section>
+
+  <!-- ============ PALETA ============ -->
+  <section class="palette">
+    <h2>Paleta</h2>
+
+    <div class="chip-group">
+      <p class="group-label">Neutros — claro</p>
+      <div class="chip-row">
+        <div class="chip"><div class="swatch" style="background:#FAF8F4;"></div><span class="chip-name">lienzo</span><span class="chip-hex">#FAF8F4</span></div>
+        <div class="chip"><div class="swatch" style="background:#FFFFFF;"></div><span class="chip-name">superficie</span><span class="chip-hex">#FFFFFF</span></div>
+        <div class="chip"><div class="swatch" style="background:#201B14;"></div><span class="chip-name">tinta</span><span class="chip-hex">#201B14</span></div>
+        <div class="chip"><div class="swatch" style="background:#6B6257;"></div><span class="chip-name">tenue</span><span class="chip-hex">#6B6257</span></div>
+      </div>
+    </div>
+
+    <div class="chip-group">
+      <p class="group-label">Neutros — oscuro</p>
+      <div class="chip-row">
+        <div class="chip"><div class="swatch" style="background:#16130E;"></div><span class="chip-name">lienzo</span><span class="chip-hex">#16130E</span></div>
+        <div class="chip"><div class="swatch" style="background:#1E1A14;"></div><span class="chip-name">superficie</span><span class="chip-hex">#1E1A14</span></div>
+        <div class="chip"><div class="swatch" style="background:#F2EDE5;"></div><span class="chip-name">tinta</span><span class="chip-hex">#F2EDE5</span></div>
+        <div class="chip"><div class="swatch" style="background:#A79B8C;"></div><span class="chip-name">tenue</span><span class="chip-hex">#A79B8C</span></div>
+      </div>
+    </div>
+
+    <div class="chip-group">
+      <p class="group-label">Acentos</p>
+      <div class="accent-pairs">
+        <div class="accent-pair-group">
+          <span class="accent-pair-name">Plum — A</span>
+          <div class="accent-pair-chips">
+            <div class="chip"><div class="swatch" style="background:#8A4A6C;"></div><span class="chip-name">base</span><span class="chip-hex">#8A4A6C</span></div>
+            <div class="chip"><div class="swatch" style="background:#C287A8;"></div><span class="chip-name">claro</span><span class="chip-hex">#C287A8</span></div>
+          </div>
+        </div>
+        <div class="accent-pair-group">
+          <span class="accent-pair-name">Índigo — B</span>
+          <div class="accent-pair-chips">
+            <div class="chip"><div class="swatch" style="background:#5560A8;"></div><span class="chip-name">base</span><span class="chip-hex">#5560A8</span></div>
+            <div class="chip"><div class="swatch" style="background:#98A2E0;"></div><span class="chip-name">claro</span><span class="chip-hex">#98A2E0</span></div>
+          </div>
+        </div>
+        <div class="accent-pair-group">
+          <span class="accent-pair-name">Arcilla — C</span>
+          <div class="accent-pair-chips">
+            <div class="chip"><div class="swatch" style="background:#A9502F;"></div><span class="chip-name">base</span><span class="chip-hex">#A9502F</span></div>
+            <div class="chip"><div class="swatch" style="background:#E0906E;"></div><span class="chip-name">claro</span><span class="chip-hex">#E0906E</span></div>
+          </div>
+        </div>
+      </div>
+      <p class="note">El acento es independiente del símbolo — cualquier marca puede vestir cualquier acento.</p>
+    </div>
+  </section>
+
+  <!-- ============ TIPOGRAFÍA ============ -->
+  <section class="type">
+    <h2>Tipografía</h2>
+
+    <div class="type-block">
+      <p class="type-label">Hanken Grotesk — principal</p>
+      <p class="display ff-hanken" style="font-weight:600;">El sistema de tu recepción</p>
+      <p class="body-copy ff-hanken" style="font-weight:400;">¿Quién vino hoy? Ya lo sabes. Ábaco, ñandú, pingüino — $1,299.00 · 8 clases · vence 15/09/2026</p>
+      <p class="tabular ff-hanken">0123456789 · 11:11 · 999</p>
+    </div>
+
+    <div class="type-alt-row">
+      <div class="type-block">
+        <p class="type-label">Figtree — alterna</p>
+        <p class="display ff-figtree" style="font-weight:600;">El sistema de tu recepción</p>
+        <p class="body-copy ff-figtree" style="font-weight:400;">¿Quién vino hoy? Ya lo sabes. Ábaco, ñandú, pingüino — $1,299.00 · 8 clases · vence 15/09/2026</p>
+      </div>
+      <div class="type-block">
+        <p class="type-label">Source Sans 3 — alterna</p>
+        <p class="display ff-source" style="font-weight:600;">El sistema de tu recepción</p>
+        <p class="body-copy ff-source" style="font-weight:400;">¿Quién vino hoy? Ya lo sabes. Ábaco, ñandú, pingüino — $1,299.00 · 8 clases · vence 15/09/2026</p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="footer-wrap">
+    <p>docs/brand/03-visual-identity/candidates/a-el-lugar</p>
+    <p>docs/brand/03-visual-identity/candidates/b-apartado</p>
+    <p>docs/brand/03-visual-identity/candidates/c-la-ficha</p>
+  </div>
+</footer>
+
+</body>
+</html>
