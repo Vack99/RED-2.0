@@ -90,12 +90,19 @@ corporate/house split; type intent (display/body/mono, web-embeddable, variable 
 full es-MX diacritics); iconography + imagery direction; 3–5 reference brands with what to
 take from each; anti-patterns.
 
-## C2 — Visual execution
+## C2 — Visual execution (DONE 2026-08-11 · CP3 PASSED)
 
 Wordmark + mark, app icon, favicon set (16/32/180/192/512), OG template, final palette + type
 — chosen together, tested at favicon size and on dark. Must fill every BrandModule slot.
 Tools: brandkit skill / image generation; escalate to a human designer if output misses the
 bar.
+
+CP3 rulings (owner, 2026-08-11): mark = **"El lugar"** (3×3 cell grid, one filled cell =
+tu lugar apartado) · accent = **ciruela/plum** `#8A4A6C`/`#C287A8` · type = **Hanken
+Grotesk** · concept B ("Apartado") and the integrated "B(i)ookit" wordmark REJECTED — the
+latter renames the product; noted, do not revive. Canonical assets:
+`03-visual-identity/final/` + `03-visual-identity/IDENTITY.md`. Favicon PNG exports are a
+build step of the consuming app (SVG is source of truth).
 
 ## D — Fable prompt
 
