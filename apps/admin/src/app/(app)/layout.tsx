@@ -1,12 +1,8 @@
 import { headers } from "next/headers";
-import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { getAdminHosts, getOperatorGyms } from "@gym/data/server/gym";
-import { getAcuerdoAceptado } from "@gym/data/server/legal";
-import { Icon } from "@gym/ui/forge/icon";
 import { TabBar, type TabItem } from "@gym/ui/forge/tab-bar";
-import { ANEXO_TRATAMIENTO_DATOS_DOCUMENTO, ANEXO_TRATAMIENTO_DATOS_VERSION } from "@gym/domain/legal";
 
 import { auditTenantInEffect } from "../../lib/tenant";
 import { SinGimnasio } from "./_components/sin-gimnasio";
@@ -39,22 +35,12 @@ const TABS: readonly TabItem[] = [
  * It is also where the tenant-in-effect reconciliation runs (#203/#212): the ONE place
  * that holds both the host-resolved tenant (`x-gym`) and the session's staff gyms. The
  * decision itself is pure and lives in `src/lib/tenant.ts`; this is the wiring.
- *
- * Once the tenant-in-effect is settled (`decision.kind === "render"`), it also drives the Gate
- * 0.1 click-wrap NOTICE (#254, demoted to non-blocking by owner ruling 2026-08-10 pending #258's
- * abogado review of the draft text): a gym whose current Anexo de Tratamiento de Datos version
- * is unaccepted no longer loses `children` — the OWNER (the only role `aceptar_acuerdo` accepts
- * from) sees a slim banner above the page linking to the accept form at `/cuenta/anexo`; any
- * other staff role sees nothing, since they can't act on it anyway. This runs AFTER the tenant
- * reconciliation on purpose: the gate is per-gym, so it needs the settled gym-in-effect, not the
- * raw membership list.
  */
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const gyms = await getOperatorGyms().catch(() => []);
   const decision = await auditTenantInEffect(gyms);
 
   let contenido: React.ReactNode = children;
-  let mostrarAnexoBanner = false;
   const mostrarTabBar = decision.kind === "render";
 
   if (decision.kind === "none") {
@@ -78,38 +64,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         }))}
       />
     );
-  } else {
-    // decision.gym is the SLUG the tenant reconciliation settled on (never an id) — the same
-    // pick getOperatorGym() itself makes host-first, so `gym` here IS the gym the render-case
-    // pages resolve. #254: whether THIS gym has accepted the CURRENT Anexo version now only
-    // decides the banner, never whether `children` renders.
-    const gym = gyms.find((g) => g.slug === decision.gym) ?? gyms[0];
-    const aceptado = await getAcuerdoAceptado(
-      gym.id,
-      ANEXO_TRATAMIENTO_DATOS_DOCUMENTO,
-      ANEXO_TRATAMIENTO_DATOS_VERSION,
-    );
-    mostrarAnexoBanner = !aceptado && gym.role === "owner";
   }
 
   return (
     <div className="flex min-h-dvh w-full justify-center bg-backdrop">
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-canvas sm:max-w-[440px] sm:shadow-2xl">
-        {mostrarAnexoBanner && (
-          <Link
-            href="/cuenta/anexo"
-            className="flex shrink-0 items-center"
-            style={{ gap: 8, padding: "10px 16px", background: "var(--yellow-soft)", borderBottom: "1px solid var(--yellow)" }}
-          >
-            <Icon name="alert" size={14} color="var(--gold)" />
-            <span className="min-w-0 flex-1 truncate" style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)" }}>
-              Anexo de Tratamiento de Datos pendiente
-            </span>
-            <span className="shrink-0 uppercase font-bold" style={{ fontSize: 10.5, letterSpacing: 0.6, color: "var(--gold)" }}>
-              Revisar y aceptar
-            </span>
-          </Link>
-        )}
         <main className="forge-scroll relative flex-1 overflow-y-auto">{contenido}</main>
         {mostrarTabBar && <TabBar items={TABS} />}
       </div>

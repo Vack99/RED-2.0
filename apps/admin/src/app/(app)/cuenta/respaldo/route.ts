@@ -14,13 +14,6 @@
 // already gates authed routes. requireOperator (getClaims()-based, never
 // getSession()) throws on a missing operator claim; we wrap it so an auth failure
 // is a clean 401 ("No autenticado"), not a 500.
-//
-// Gate 0.1 click-wrap (#254): this route used to re-run `getAcuerdoAceptado` and 403 an
-// unaccepted gym here, since Route Handlers don't execute the `(app)` layout's gate. The gate
-// itself is now non-blocking (owner ruling 2026-08-10, pending #258's abogado review of the
-// draft text) — the layout only shows a banner, never withholds `children` — so this route no
-// longer withholds the export either. The check's shape (and the "future Route Handler /
-// Server Action needs its own copy" reasoning) is in git history if #258 re-arms the gate.
 
 import { requireOperator } from "@gym/data/server/_auth";
 import { getOperatorGym } from "@gym/data/server/gym";
