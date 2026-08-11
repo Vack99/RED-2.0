@@ -15,30 +15,19 @@
 // getSession()) throws on a missing operator claim; we wrap it so an auth failure
 // is a clean 401 ("No autenticado"), not a 500.
 //
-// Gate 0.1 click-wrap (#254 review fix round 1): Route Handlers do NOT execute the `(app)`
-// layout — that gate only runs for the page tree, so a plain URL to this route reached the
-// most personal export in the product (the whole gym record) while the gym's Anexo de
-// Tratamiento de Datos sat unaccepted. The Anexo is the consent instrument for exactly this
-// data, so the acceptance check is re-run HERE, explicitly — the same cached reader the
-// layout uses (`getAcuerdoAceptado`, React `cache()`-memoized, so this costs nothing extra
-// when the layout already resolved it this request). ANY future Route Handler under `(app)`
-// needs this SAME check copied in — the layout gate does not reach it. Server Actions are the
-// SAME un-gated class for the SAME reason (they are directly POST-reachable independent of
-// which page tree rendered the form that normally calls them): any future Server Action doing
-// a comparably sensitive read/write under `(app)` needs its own explicit `getAcuerdoAceptado`
-// check too, not just Route Handlers.
+// Gate 0.1 click-wrap (#254): this route used to re-run `getAcuerdoAceptado` and 403 an
+// unaccepted gym here, since Route Handlers don't execute the `(app)` layout's gate. The gate
+// itself is now non-blocking (owner ruling 2026-08-10, pending #258's abogado review of the
+// draft text) — the layout only shows a banner, never withholds `children` — so this route no
+// longer withholds the export either. The check's shape (and the "future Route Handler /
+// Server Action needs its own copy" reasoning) is in git history if #258 re-arms the gate.
 
 import { requireOperator } from "@gym/data/server/_auth";
 import { getOperatorGym } from "@gym/data/server/gym";
-import { getAcuerdoAceptado } from "@gym/data/server/legal";
 import { getRespaldoData } from "@gym/data/server/respaldo";
 import { buildRespaldoSheets } from "@gym/data/server/export/rows";
 import { buildRespaldoWorkbook } from "@gym/data/server/export/workbook";
 import { createClient } from "@gym/data/server/supabase";
-import {
-  ANEXO_TRATAMIENTO_DATOS_DOCUMENTO,
-  ANEXO_TRATAMIENTO_DATOS_VERSION,
-} from "@gym/domain/legal";
 
 export const runtime = "nodejs"; // ExcelJS needs Node, not edge
 
@@ -65,16 +54,6 @@ export async function GET(request: Request): Promise<Response> {
     gym = await getOperatorGym(supabase);
   } catch {
     return new Response("Sin acceso", { status: 403 });
-  }
-
-  const aceptado = await getAcuerdoAceptado(
-    gym.id,
-    ANEXO_TRATAMIENTO_DATOS_DOCUMENTO,
-    ANEXO_TRATAMIENTO_DATOS_VERSION,
-    supabase,
-  );
-  if (!aceptado) {
-    return new Response("Anexo de tratamiento de datos pendiente de aceptación", { status: 403 });
   }
 
   const mesRaw = new URL(request.url).searchParams.get("mes");

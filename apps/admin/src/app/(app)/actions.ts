@@ -25,8 +25,9 @@ import {
  *
  * `aceptar_acuerdo` itself is owner-gated (`has_role(gym,'owner')`, SECURITY DEFINER) — an
  * operator calling this is refused by the RPC, exactly like every other owner-only path in
- * this codebase; nothing here re-checks the role client-side, since the UI never renders an
- * ACEPTAR button for a non-owner in the first place (`AnexoPendiente`).
+ * this codebase; nothing here re-checks the role client-side, since the `(app)` layout only
+ * ever shows the pending-Anexo banner (and thus the `/cuenta/anexo` link to `AceptarAnexo`)
+ * to the owner in the first place (#254).
  */
 export async function aceptarAnexoAction(): Promise<void> {
   const gym = await getOperatorGym();
