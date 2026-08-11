@@ -40,3 +40,11 @@ numerals (`font-variant-numeric: tabular-nums`) for prices, vigencias, receipts.
   is loaded, or outline to paths for print/handoff.
 - The mark recolors by swapping the accent fill only; quiet cells always take the scheme's
   ink color.
+
+## Alternate accent on file (NOT in use)
+
+**Índigo cálido** `#5560A8` (light) / `#98A2E0` (dark) was the runner-up at CP3 and is kept
+as a possible future swap — nothing else may change if it's ever adopted. Full asset set
+already built: `candidates/a-el-lugar/refine/` (`mark-indigo.svg`,
+`lockup-indigo-{light,dark}.svg`, `appicon-indigo.svg`; side-by-side in `board3.html`).
+Until the owner explicitly reopens this, plum is the accent — do not ship indigo anywhere.
