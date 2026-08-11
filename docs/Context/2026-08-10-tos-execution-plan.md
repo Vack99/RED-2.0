@@ -224,3 +224,23 @@ contrato por aviso y silencio, que es un terreno bastante más débil que el que
 respalda. Mitigación, y por eso está dentro de T8: con **dos** contrapartes, una respuesta de correo
 que diga "de acuerdo" convierte el silencio en aceptación expresa por el costo de un renglón. Si
 solo se puede rescatar una cosa de este plan, que sea esa respuesta.
+
+---
+
+## T1 rulings (owner, 2026-08-10)
+
+- **B6 — contraprestación: minimal clause.** Price and periodicity agreed in writing with each
+  gym, outside the platform; IVA as per law; suspension for documented non-payment; price changes
+  with prior notice. No amounts, no billing regime in the ToS. Expands when a billing epic exists.
+- **B12/F3 — aggregates: standard reservation.** iBookit may use aggregated, anonymized data
+  (identifies no gym, no member) for operating the service, product improvement, and benchmarks.
+  Selling data, identifiable-data use for own purposes, and AI training on personal data remain
+  prohibited. Redraft cl. 5 §2 accordingly — the "ni siquiera en forma agregada" total ban is out.
+- **Existing gyms: owner handles them personally** (in person / later — good relations). T8's
+  emailed orden-de-servicio route is NOT needed for current tenants; only testing gyms are live
+  today. The ToS + /terminos page is for the go-forward.
+- **Persona física: CONFIRMED** — iBookit already operates as persona física con actividad
+  empresarial. **BLOCKING INPUT for T3's identity block only:** the owner will provide the
+  registered details (nombre como está registrado ante el SAT, RFC, régimen fiscal, domicilio
+  fiscal, contact email) BEFORE any ToS text names the contracting party. Nothing else waits on
+  this — assemble around a placeholder and flag it.
