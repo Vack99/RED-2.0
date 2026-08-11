@@ -39,15 +39,21 @@ WhatsApp, keeps the truth of the business in their head.
 
 **Secondary:** their coaches and front-desk staff — users, never buyers.
 
+**Niche breadth (sales scope):** beyond the brief's 12 genres, see
+`docs/Context/2026-08-10-sales-niche-sweep.md` — 8 additional STRONG niches (tennis/circo/
+parkour/chess/choral/regularización-grupal/teatro infantil …) and the capacity-1
+private-lessons ruling (fixed weekly slot + same teacher = sellable PARTIAL).
+
 **Not a brand audience:** the end member. The platform is invisible to them by design
 (CP1-recorded decision); they see their gym's brand, not ours.
 
 ## Value propositions (ranked)
 
-1. **It wears your brand, not ours.** Colors, logo, name, app icon, receipts, emails — or our
-   finished house identity if you have none. Two businesses run fully branded today; no
-   competitor sampled makes this the headline (it's a buried feature or a paid add-on
-   everywhere). This is the flag.
+1. **It wears your brand, not ours.** Colors, logo, name, app icon, receipts, emails — all
+   swap. Three doors, always stated together (brief §4, CP2 ruling): wear your own brand; no
+   brand yet? use our finished house identity; or we design you one and the platform wears
+   it. Two businesses run fully branded today; no competitor sampled makes any of this the
+   headline (it's a buried feature or a paid add-on everywhere). This is the flag.
 2. **Day one opens with your real roster inside.** We take the notebook, the ten-year-old
    spreadsheet, the competitor export — reconcile it with you and load it. Done-for-you, not
    a file-upload button. Competitors offer "free migration" as reassurance copy; none makes
