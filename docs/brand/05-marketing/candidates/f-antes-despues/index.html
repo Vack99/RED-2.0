@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iBookit — La recepción de tu negocio, en orden</title>
+<meta name="description" content="Clientes, pagos, agenda y asistencia — sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp. iBookit llega con tu marca y tus clientes ya cargados.">
+<meta property="og:title" content="iBookit — La recepción de tu negocio, en orden">
+<meta property="og:description" content="Sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp — con tu marca y tus clientes ya cargados.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ibooki.lat/">
+<meta property="og:locale" content="es_MX">
+<meta name="theme-color" content="#FAF8F4">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cg fill='none' stroke='%23201B14' stroke-width='2.5'%3E%3Crect x='6' y='6' width='12' height='12' rx='3'/%3E%3Crect x='26' y='6' width='12' height='12' rx='3'/%3E%3Crect x='46' y='6' width='12' height='12' rx='3'/%3E%3Crect x='6' y='26' width='12' height='12' rx='3'/%3E%3Crect x='26' y='26' width='12' height='12' rx='3'/%3E%3Crect x='6' y='46' width='12' height='12' rx='3'/%3E%3Crect x='26' y='46' width='12' height='12' rx='3'/%3E%3Crect x='46' y='46' width='12' height='12' rx='3'/%3E%3C/g%3E%3Cpath fill='%238A4A6C' d='M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Caveat:wght@500;600&family=Hanken+Grotesk:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+<style>
+:root{
+  --canvas:#FAF8F4; --ink:#201B14; --muted:#6B6257;
+  --plum:#8A4A6C; --plum-dark:#713957; --plum-soft:rgba(138,74,108,.08);
+  --line:#E7E0D3; --paper:#FFFFFF;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+html,body{overflow-x:clip}
+body{margin:0;background:var(--canvas);color:var(--ink);font-family:"Hanken Grotesk",system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:24px}
+h1,h2,h3{margin:0}
+p{margin:0}
+
+/* ---------- header ---------- */
+header .wrap{display:flex;align-items:center;justify-content:space-between;padding-block:15px}
+.logo{display:flex;align-items:center;gap:9px;font-weight:800;font-size:18px;letter-spacing:-.01em;color:var(--ink);text-decoration:none}
+.btn-ghost{font-size:14px;font-weight:600;color:var(--ink);text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:8px 16px;background:var(--paper);transition:border-color .15s,color .15s}
+.btn-ghost:hover{border-color:var(--plum);color:var(--plum)}
+
+/* ---------- hero / stage ---------- */
+.hero{padding-top:8px}
+.stage{position:relative;height:330px;max-width:1120px;margin:0 auto;padding-inline:24px}
+.stage::before{content:"";position:absolute;inset:-6% 50% -6% -2%;background:radial-gradient(58% 66% at 42% 42%,rgba(88,80,68,.075),transparent 72%);pointer-events:none}
+.stage::after{content:"";position:absolute;inset:-10% -3% -10% 55%;background:radial-gradient(56% 62% at 58% 44%,rgba(138,74,108,.11),transparent 72%);pointer-events:none}
+.side-label{position:absolute;z-index:6;font-size:11px;font-weight:700;letter-spacing:.18em;text-transform:uppercase;color:var(--muted)}
+.label-antes{top:2px;left:2.5%}
+.label-despues{top:2px;right:2.5%;color:var(--plum)}
+
+.artifact{position:absolute;animation:drop .45s cubic-bezier(.2,.8,.35,1) backwards}
+@keyframes drop{from{opacity:0;translate:0 -14px}}
+
+/* notebook */
+.notebook{left:2%;top:38px;width:238px;z-index:2;rotate:-5deg;--lh:24px;
+  padding:5px 12px 22px 34px;
+  background:linear-gradient(90deg,transparent 23px,rgba(203,110,110,.5) 23px,rgba(203,110,110,.5) 24px,transparent 24px),
+    repeating-linear-gradient(to bottom,var(--paper) 0 calc(var(--lh) - 1px),#DEE2E7 calc(var(--lh) - 1px) var(--lh));
+  clip-path:polygon(0 0,100% 0,100% 93%,91% 97%,83% 93%,73% 98%,62% 94%,51% 98%,40% 94%,28% 97%,16% 94%,7% 98%,0 94%);
+  font-family:Caveat,cursive;font-size:19px;line-height:var(--lh);color:#43413C;
+  filter:drop-shadow(0 10px 12px rgba(32,27,20,.16));
+  animation-delay:.02s}
+.notebook .u{text-decoration:underline;text-underline-offset:3px}
+.notebook s{text-decoration-thickness:2px;text-decoration-color:#75716A}
+
+/* spreadsheet */
+.sheet{left:15%;top:198px;width:300px;z-index:1;rotate:2deg;background:var(--paper);border:1px solid #C6C6C6;
+  font-family:Arial,Helvetica,sans-serif;font-size:9.5px;color:#303030;
+  box-shadow:0 12px 22px -12px rgba(32,27,20,.3);animation-delay:.08s}
+.sheet .r{display:grid;grid-template-columns:19px 1.6fr 1fr .7fr .8fr}
+.sheet .c{border-right:1px solid #DDD;border-bottom:1px solid #DDD;padding:3px 4px;white-space:nowrap;overflow:hidden}
+.sheet .c:last-child{border-right:0}
+.sheet .h .c{background:#ECECEC;color:#5A5A5A;text-align:center;font-size:8.5px;padding-block:2px}
+.sheet .n{background:#ECECEC;color:#7A7A7A;text-align:center}
+.sheet .b{font-weight:700}
+.sheet .dup .c:not(.n){background:#F7EFC0}
+
+/* whatsapp bubbles */
+.wa{max-width:220px;z-index:3;background:#D9FDD3;border-radius:10px;border-top-left-radius:2px;padding:7px 10px 5px;
+  font-size:13.5px;line-height:1.35;color:#111B21;filter:drop-shadow(0 8px 10px rgba(32,27,20,.16))}
+.wa::before{content:"";position:absolute;top:0;left:-9px;border-top:10px solid #D9FDD3;border-left:10px solid transparent}
+.wa .t{display:inline-block;float:right;font-size:10px;color:#7D8A80;margin:7px 0 0 8px}
+.wa1{left:28%;top:36px;rotate:-2deg;animation-delay:.14s}
+.wa2{left:45%;top:130px;rotate:2.5deg;animation-delay:.2s}
+.wa3{left:36%;top:226px;rotate:-3deg;animation-delay:.26s}
+
+/* the after: agenda panel */
+.panel{position:absolute;right:2%;top:40px;width:400px;z-index:5;background:var(--paper);border:1px solid var(--line);border-radius:16px;
+  padding:14px 14px 6px;box-shadow:0 26px 48px -22px rgba(90,44,68,.32),0 2px 10px rgba(32,27,20,.05);
+  animation:rise .45s ease-out .32s backwards}
+@keyframes rise{from{opacity:0;translate:0 18px}}
+.panel-h{display:flex;align-items:baseline;gap:8px;padding:2px 6px 10px}
+.panel-h strong{font-size:16px;font-weight:800;letter-spacing:-.01em}
+.panel-h>span{font-size:13px;color:var(--muted)}
+.live{margin-left:auto;display:flex;align-items:center;gap:5px;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--plum)}
+.live i{width:7px;height:7px;border-radius:50%;background:var(--plum);animation:pulse 2.4s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.3}}
+.row{display:grid;grid-template-columns:50px 1fr auto;align-items:center;gap:10px;padding:10px 8px;border-top:1px solid #F1EBDF}
+.row .hr{font-weight:700;font-size:13.5px;font-variant-numeric:tabular-nums}
+.row .nm{font-weight:600;font-size:14.5px}
+.row .nm small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);margin-top:1px}
+.row .st{font-size:13px;color:var(--muted)}
+.row.res{background:var(--plum-soft);border-radius:12px;border-top-color:transparent;margin-block:2px}
+.row.res+.row{border-top-color:transparent}
+.pill{background:var(--plum);color:#fff;font-size:12px;font-weight:700;padding:5px 10px;border-radius:999px;white-space:nowrap}
+
+/* pitch */
+.pitch{text-align:center;max-width:960px;margin:0 auto;padding:24px 24px 0}
+h1{font-size:clamp(28px,4.4vw + 12px,56px);line-height:1.05;letter-spacing:-.03em;font-weight:800;text-wrap:balance}
+.giro{color:var(--plum);white-space:nowrap;animation:giroIn .45s ease}
+@keyframes giroIn{from{opacity:0}}
+.sub{font-size:clamp(15px,1.4vw,17.5px);line-height:1.5;color:var(--muted);max-width:56ch;margin:14px auto 0;text-wrap:pretty}
+.cta{display:inline-block;background:var(--plum);color:#fff;text-decoration:none;font-weight:700;font-size:16px;padding:15px 30px;border-radius:999px;margin-top:20px;
+  box-shadow:0 12px 26px -12px rgba(138,74,108,.55);transition:background .15s,translate .15s}
+.cta:hover{background:var(--plum-dark);translate:0 -1px}
+.cta:focus-visible,.btn-ghost:focus-visible{outline:2px solid var(--plum);outline-offset:2px}
+.micro{font-size:13.5px;color:var(--muted);margin:12px 0 0}
+
+/* ---------- below the fold ---------- */
+.band{background:#FFFCF7;border-block:1px solid var(--line);padding:54px 0;margin-top:56px}
+.kicker{font-size:12px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:var(--plum);margin:0 0 26px}
+.qgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(225px,1fr));gap:30px 28px}
+.q h3{font-size:16.5px;font-weight:700;letter-spacing:-.01em;margin-bottom:6px}
+.q p{font-size:14px;line-height:1.55;color:var(--muted)}
+
+.moat{padding:56px 0 0}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:28px}
+.m{border-top:2px solid var(--plum);padding-top:14px}
+.m h3{font-size:18px;font-weight:800;letter-spacing:-.015em;margin-bottom:6px}
+.m p{font-size:14px;line-height:1.55;color:var(--muted)}
+
+.giros-sec{padding:56px 0}
+h2{font-size:clamp(23px,3vw,31px);font-weight:800;letter-spacing:-.02em;text-wrap:balance}
+.giros-sec p{font-size:15.5px;line-height:1.55;color:var(--muted);max-width:58ch;margin:10px 0 22px}
+.chips{display:flex;flex-wrap:wrap;gap:9px;max-width:860px}
+.chip{background:var(--paper);border:1px solid var(--line);border-radius:999px;padding:8px 15px;font-size:13.5px;font-weight:600}
+.chip.more{border-style:dashed;color:var(--muted);background:transparent}
+
+.close{padding:2px 0 64px}
+.close-card{background:var(--paper);border:1px solid var(--line);border-radius:20px;padding:44px 28px;text-align:center}
+.close-card p{font-size:15.5px;line-height:1.55;color:var(--muted);max-width:46ch;margin:10px auto 24px}
+.close-row{display:flex;justify-content:center;align-items:center;gap:16px;flex-wrap:wrap}
+.close-row .cta{margin-top:0}
+.mail{color:var(--plum);font-weight:600;font-size:15px;text-decoration:none}
+.mail:hover{text-decoration:underline}
+
+footer{border-top:1px solid var(--line)}
+footer .wrap{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:20px;font-size:13.5px;color:var(--muted)}
+footer .logo{font-size:15px}
+
+/* ---------- tablet squeeze ---------- */
+@media (max-width:1080px) and (min-width:861px){
+  .panel{width:352px}
+  .sheet{width:262px;font-size:8.5px}
+  .notebook{width:212px;font-size:17px}
+  .wa{max-width:200px;font-size:12.5px}
+  .wa2{left:43%}
+}
+
+/* ---------- mobile: chaos on top, order below ---------- */
+@media (max-width:860px){
+  header .wrap{padding-block:12px}
+  .hero{padding-top:4px}
+  .stage{height:316px;max-width:480px;padding-inline:20px}
+  .stage::before{inset:-4% 30% 45% -4%}
+  .stage::after{inset:40% -4% -6% 8%}
+  .label-antes{left:4px;top:0}
+  .label-despues{top:122px;right:4px}
+  .notebook{left:-4px;top:14px;width:148px;--lh:19px;font-size:15px;padding:4px 8px 16px 24px;
+    background:linear-gradient(90deg,transparent 16px,rgba(203,110,110,.5) 16px,rgba(203,110,110,.5) 17px,transparent 17px),
+      repeating-linear-gradient(to bottom,var(--paper) 0 calc(var(--lh) - 1px),#DEE2E7 calc(var(--lh) - 1px) var(--lh))}
+  .sheet{left:auto;right:-6px;top:2px;width:186px;font-size:8px}
+  .sheet .c{padding:2px 3px}
+  .wa{font-size:12px;max-width:175px}
+  .wa1{left:6%;top:92px}
+  .wa2{left:52%;top:88px}
+  .wa3{left:30%;top:124px;rotate:-2deg}
+  .panel{left:0;right:0;margin-inline:auto;top:140px;width:min(324px,97%);padding:10px 10px 4px}
+  .panel-h{padding:0 4px 8px}
+  .row{grid-template-columns:40px 1fr auto;padding:7px 6px;gap:8px}
+  .row .hr{font-size:12.5px}
+  .row .nm{font-size:13.5px}
+  .row .st{font-size:12px}
+  .row.hide-m{display:none}
+  .pill{font-size:11px;padding:3px 8px}
+  .pitch{padding-top:10px}
+  .sub{margin-top:10px}
+  .cta{margin-top:16px}
+  .micro{margin-top:10px}
+  .giro{white-space:normal}
+  .band{margin-top:40px;padding:44px 0}
+  .moat{padding-top:44px}
+  .giros-sec{padding:44px 0}
+  .close-card{padding:36px 20px}
+}
+@media (max-width:359px){
+  .stage{height:342px}
+  .sheet{width:170px}
+  .wa2{left:52%}
+  .pill{font-size:10px;padding:3px 7px}
+}
+
+/* ---------- reduced motion ---------- */
+@media (prefers-reduced-motion: reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation-duration:.01ms !important;animation-delay:0s !important;animation-iteration-count:1 !important;transition:none !important}
+}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="logo" href="/" aria-label="iBookit, inicio">
+      <svg width="22" height="22" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#201B14" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="3"/><rect x="26" y="6" width="12" height="12" rx="3"/><rect x="46" y="6" width="12" height="12" rx="3"/><rect x="6" y="26" width="12" height="12" rx="3"/><rect x="26" y="26" width="12" height="12" rx="3"/><rect x="6" y="46" width="12" height="12" rx="3"/><rect x="26" y="46" width="12" height="12" rx="3"/><rect x="46" y="46" width="12" height="12" rx="3"/></g><path fill="#8A4A6C" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/></svg>
+      iBookit
+    </a>
+    <nav aria-label="principal">
+      <a class="btn-ghost js-wa" href="mailto:hola@ibooki.lat?subject=Quiero%20saber%20m%C3%A1s%20de%20iBookit">Escríbenos</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero" aria-labelledby="titular">
+    <div class="stage" aria-hidden="true">
+      <span class="side-label label-antes">antes</span>
+      <span class="side-label label-despues">después</span>
+
+      <div class="artifact notebook">
+        <div><span class="u">martes · 7 am</span></div>
+        <div><s>Karla M.</s></div>
+        <div><s>Mariana</s> ¿pagó?</div>
+        <div>Luis P. — le debo recibo</div>
+        <div>Mariana ¿otra vez?</div>
+      </div>
+
+      <div class="artifact sheet">
+        <div class="r h"><div class="c n"></div><div class="c">A</div><div class="c">B</div><div class="c">C</div><div class="c">D</div></div>
+        <div class="r"><div class="c n">1</div><div class="c b">Nombre</div><div class="c b">Plan</div><div class="c b">Pagó</div><div class="c b">Vence</div></div>
+        <div class="r dup"><div class="c n">2</div><div class="c">Mariana Garcia</div><div class="c">8 clases</div><div class="c">700</div><div class="c">12/08</div></div>
+        <div class="r"><div class="c n">3</div><div class="c">Luis Peña</div><div class="c">mes</div><div class="c">¿?</div><div class="c">30/08</div></div>
+        <div class="r dup"><div class="c n">4</div><div class="c">MARIANA GARCIA</div><div class="c">8 clases</div><div class="c">700</div><div class="c">¿?</div></div>
+        <div class="r"><div class="c n">5</div><div class="c">mariana g (¿nueva?)</div><div class="c"></div><div class="c"></div><div class="c"></div></div>
+      </div>
+
+      <div class="artifact wa wa1">¿me apartas lugar mañana?<span class="t">8:57 p. m.</span></div>
+      <div class="artifact wa wa2">¿cuánto era?<span class="t">9:14 p. m.</span></div>
+      <div class="artifact wa wa3">voy tarde<span class="t">7:02 a. m.</span></div>
+
+      <div class="panel">
+        <div class="panel-h"><strong>Agenda</strong><span>hoy · martes 11</span><span class="live"><i></i>en vivo</span></div>
+        <div class="row"><span class="hr">07:00</span><span class="nm">Funcional</span><span class="st">2 lugares</span></div>
+        <div class="row hide-m"><span class="hr">09:30</span><span class="nm">Yoga suave</span><span class="st">5 lugares</span></div>
+        <div class="row res"><span class="hr">18:00</span><span class="nm">Pilates reformer<small>Pagó · recibo enviado</small></span><span class="pill">Reservada · Mariana G.</span></div>
+        <div class="row"><span class="hr">19:30</span><span class="nm">Box</span><span class="st">Lleno</span></div>
+      </div>
+    </div>
+
+    <div class="pitch">
+      <h1 id="titular">La recepción de tu <span class="giro" id="giro">estudio de yoga</span>, en orden.</h1>
+      <p class="sub">Sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp — con tu marca y tus clientes ya cargados.</p>
+      <a class="cta js-wa" href="mailto:hola@ibooki.lat?subject=Quiero%20saber%20m%C3%A1s%20de%20iBookit">Escríbenos por WhatsApp</a>
+      <p class="micro">Web en tu navegador — nada que instalar.</p>
+    </div>
+  </section>
+
+  <section class="band" id="preguntas" aria-label="Cuatro preguntas, respondidas en vivo">
+    <div class="wrap">
+      <p class="kicker">Cuatro preguntas, respondidas en vivo</p>
+      <div class="qgrid">
+        <div class="q"><h3>¿Quiénes son mis clientes?</h3><p>Tu lista completa, con expediente por persona: plan, asistencias y cada pago.</p></div>
+        <div class="q"><h3>¿Qué pagaron y cuándo vence?</h3><p>Vigencia y clases restantes a la vista — y quién está por renovar, antes de que venza.</p></div>
+        <div class="q"><h3>¿Qué hay en la agenda?</h3><p>El día y la semana, con lugares disponibles en vivo y la lista de cada sesión.</p></div>
+        <div class="q"><h3>¿Quién vino hoy?</h3><p>Pase de lista de un toque, hoy o con fecha anterior, por clase o acceso abierto.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="moat" aria-label="Cómo trabaja iBookit">
+    <div class="wrap">
+      <div class="mgrid">
+        <div class="m"><h3>Tu marca, no la nuestra.</h3><p>Colores, logo y nombre en toda la plataforma — hasta el recibo que llega a tus clientes.</p></div>
+        <div class="m"><h3>Cargamos tu lista a mano.</h3><p>Cuaderno, Excel o WhatsApp: lo recibimos como esté y nunca empiezas con una base vacía.</p></div>
+        <div class="m"><h3>El cobro sigue en tu mostrador.</h3><p>Efectivo, terminal o transferencia — iBookit lo registra y manda el recibo.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="giros-sec" id="para-quien" aria-labelledby="giros-t">
+    <div class="wrap">
+      <h2 id="giros-t">No es «para gimnasios».</h2>
+      <p>Es para cualquier negocio que vende un lugar en una clase, a personas con nombre que regresan cada semana.</p>
+      <div class="chips">
+        <span class="chip">Artes marciales y combate</span>
+        <span class="chip">Gimnasios y funcional</span>
+        <span class="chip">Yoga, pilates y movimiento</span>
+        <span class="chip">Escuelas acuáticas y aventura</span>
+        <span class="chip">Academias infantiles</span>
+        <span class="chip">Baile, arte y oficios</span>
+        <span class="chip">Escalada</span>
+        <span class="chip">Barberías con membresía</span>
+        <span class="chip more">…y más</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="close" id="contacto" aria-labelledby="close-t">
+    <div class="wrap">
+      <div class="close-card">
+        <h2 id="close-t">Cuéntanos de tu negocio.</h2>
+        <p>Armamos tu cuenta, cargamos tu lista y te acompañamos en el arranque — a mano, negocio por negocio.</p>
+        <div class="close-row">
+          <a class="cta js-wa" href="mailto:hola@ibooki.lat?subject=Quiero%20saber%20m%C3%A1s%20de%20iBookit">Escríbenos por WhatsApp</a>
+          <a class="mail" href="mailto:hola@ibooki.lat">hola@ibooki.lat</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="logo"><svg width="17" height="17" viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="#201B14" stroke-width="2.5"><rect x="6" y="6" width="12" height="12" rx="3"/><rect x="26" y="6" width="12" height="12" rx="3"/><rect x="46" y="6" width="12" height="12" rx="3"/><rect x="6" y="26" width="12" height="12" rx="3"/><rect x="26" y="26" width="12" height="12" rx="3"/><rect x="6" y="46" width="12" height="12" rx="3"/><rect x="26" y="46" width="12" height="12" rx="3"/><rect x="46" y="46" width="12" height="12" rx="3"/></g><path fill="#8A4A6C" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/></svg>iBookit</span>
+    <span>ibooki.lat</span>
+  </div>
+</footer>
+
+<script>
+const WHATSAPP = ""; // número con lada, ej. "5215512345678"; vacío → el CTA usa correo
+const EMAIL = "hola@ibooki.lat";
+const MSG = "Hola, quiero saber más de iBookit para mi negocio.";
+const num = WHATSAPP.replace(/\D/g, "");
+const waHref = num
+  ? "https://wa.me/" + num + "?text=" + encodeURIComponent(MSG)
+  : "mailto:" + EMAIL + "?subject=" + encodeURIComponent("Quiero saber más de iBookit");
+document.querySelectorAll(".js-wa").forEach(a => { a.href = waHref; });
+
+const giro = document.getElementById("giro");
+const giros = ["estudio de yoga","academia de jiu-jitsu","box de CrossFit","escuela de natación","academia de baile","rocódromo","taller de cerámica","escuela de música","estudio de pilates","academia de futbol"];
+if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+  giro.textContent = "negocio";
+} else {
+  let i = 0;
+  setInterval(() => {
+    i = (i + 1) % giros.length;
+    giro.style.animation = "none";
+    void giro.offsetWidth;
+    giro.textContent = giros[i];
+    giro.style.animation = "giroIn .45s ease";
+  }, 2600);
+}
+</script>
+</body>
+</html>

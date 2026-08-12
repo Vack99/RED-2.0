@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iBookit — La recepción de tu negocio, en orden</title>
+<meta name="description" content="Clientes, pagos, agenda y asistencia — sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp. iBookit llega con tu marca y con tus clientes ya cargados.">
+<meta name="theme-color" content="#8A4A6C">
+<meta property="og:title" content="iBookit — La recepción de tu negocio, en orden">
+<meta property="og:description" content="Sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp. Con tu marca y tus clientes ya cargados.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://ibooki.lat/">
+<meta property="og:site_name" content="iBookit">
+<meta property="og:locale" content="es_MX">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%238A4A6C'/%3E%3Cpath fill='%23FAF8F4' d='M20 20h16a8 8 0 0 1 8 8v8a8 8 0 0 1-8 8h-8a8 8 0 0 1-8-8V20Z'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400..900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --plum: #8A4A6C;
+    --plum-deep: #5E3049;
+    --plum-ink: #2B1622;
+    --tint: #E9D0DE;
+    --tint-muted: #C9A8BA;
+    --canvas: #FAF8F4;
+    --card: #FFFDFA;
+    --ink: #201B14;
+    --muted: #6B6257;
+    --hairline: #E7E0D6;
+    --r-block: clamp(22px, 3vw, 34px);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--canvas);
+    color: var(--ink);
+    font-family: "Hanken Grotesk", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: clip;
+  }
+  a { color: var(--plum); }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  :focus-visible { outline: 3px solid var(--plum); outline-offset: 3px; border-radius: 6px; }
+  .fold :focus-visible { outline-color: var(--canvas); }
+
+  /* ---------- FOLD: the poster ---------- */
+  .fold {
+    position: relative;
+    margin: 12px;
+    background: var(--plum);
+    border-radius: var(--r-block);
+    min-height: calc(100vh - 24px);
+    min-height: calc(100svh - 24px);
+    display: flex;
+    flex-direction: column;
+    padding: clamp(18px, 3.2vw, 44px) clamp(20px, 4vw, 56px) 0;
+  }
+  .plane {
+    position: absolute;
+    right: 0; bottom: 0;
+    width: min(46%, 560px);
+    height: 52%;
+    background: var(--plum-deep);
+    border-top-left-radius: clamp(64px, 9vw, 128px);
+    border-bottom-right-radius: var(--r-block);
+    pointer-events: none;
+  }
+  .fold > :not(.plane) { position: relative; }
+
+  .top {
+    display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    padding-bottom: clamp(20px, 4vh, 44px);
+  }
+  .wordmark { display: flex; align-items: center; gap: 10px; color: var(--canvas); text-decoration: none; }
+  .wordmark strong { font-size: 20px; font-weight: 800; letter-spacing: -0.01em; }
+  .top-link {
+    color: var(--canvas); font-weight: 700; font-size: 15px;
+    text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 1.5px;
+  }
+
+  .h1 {
+    margin: 0;
+    color: var(--canvas);
+    font-size: clamp(38px, 7.4vw, 100px);
+    font-weight: 830;
+    line-height: 1.0;
+    letter-spacing: -0.035em;
+  }
+  .h1 .line { display: block; white-space: nowrap; width: fit-content; }
+  .h1 .giro { display: inline-block; color: var(--tint); }
+  .h1 .giro.swap { animation: nicheIn .5s cubic-bezier(.2, .7, .2, 1); }
+  @keyframes nicheIn {
+    from { opacity: 0; transform: translateY(0.22em); }
+    to   { opacity: 1; transform: none; }
+  }
+
+  .fold-grid {
+    flex: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 400px);
+    grid-template-rows: 1fr;
+    column-gap: clamp(32px, 5vw, 72px);
+  }
+  .pitch { align-self: start; padding: clamp(20px, 3.5vh, 34px) 0 clamp(24px, 4vh, 40px); max-width: 58ch; }
+  .sub {
+    margin: 0;
+    color: var(--canvas);
+    font-size: clamp(16px, 1.5vw, 19px);
+    line-height: 1.55;
+    max-width: 50ch;
+    text-wrap: pretty;
+  }
+  .cta-row { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; margin-top: clamp(20px, 3.4vh, 32px); }
+  .btn {
+    display: inline-block;
+    background: var(--canvas); color: var(--plum);
+    font-weight: 800; font-size: 17px; letter-spacing: -0.01em;
+    padding: 16px 30px; border-radius: 999px;
+    text-decoration: none;
+    transition: background .15s ease, transform .15s ease;
+  }
+  .btn:hover { background: var(--tint); color: var(--plum-ink); transform: translateY(-1px); }
+  .micro { margin: 14px 0 0; color: #F0DFE9; font-size: 14.5px; font-weight: 500; }
+
+  /* the product panel breaking the block edge */
+  .panel-wrap { align-self: end; transform: translateY(clamp(56px, 8vh, 92px)); }
+  .panel {
+    margin: 0;
+    background: var(--card);
+    border-radius: 20px;
+    padding: 22px 20px 12px;
+    box-shadow: 14px 14px 0 0 var(--plum-ink);
+  }
+  .panel-top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 0 4px 14px; }
+  .panel-kicker { display: block; color: var(--plum); font-size: 12.5px; font-weight: 800; letter-spacing: 0.08em; }
+  .panel-top strong { font-size: 19px; font-weight: 800; letter-spacing: -0.01em; }
+  .live { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); font-size: 12.5px; font-weight: 700; }
+  .live i { width: 8px; height: 8px; border-radius: 50%; background: var(--plum); }
+  .slots { list-style: none; margin: 0; padding: 0; }
+  .slots li {
+    display: grid; grid-template-columns: 52px 1fr auto; align-items: baseline; gap: 12px;
+    padding: 13px 8px; border-top: 1px solid #EFE9E1; font-size: 15px;
+  }
+  .slots time { font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .slots .name { font-weight: 700; }
+  .slots .spots { font-weight: 800; color: var(--plum); }
+  .slots li.mine {
+    background: var(--plum); border-radius: 12px; border-top-color: transparent;
+    color: var(--canvas); margin: 4px -4px;
+  }
+  .slots li.mine + li { border-top-color: transparent; }
+  .slots li.mine time, .slots li.mine .spots { color: var(--canvas); }
+
+  /* ---------- BELOW THE FOLD: warm canvas ---------- */
+  .wrap { max-width: 1160px; margin: 0 auto; padding-inline: clamp(20px, 4vw, 32px); }
+  .kicker { margin: 0 0 20px; color: var(--plum); font-size: 14px; font-weight: 800; letter-spacing: 0.07em; }
+
+  .preguntas { padding-top: clamp(92px, 10vw, 96px); padding-bottom: clamp(32px, 4vw, 40px); }
+  .q-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 32px 28px; }
+  .q { border-top: 3px solid var(--plum); padding-top: 14px; }
+  .q h3 { margin: 0 0 8px; font-size: 19px; font-weight: 800; letter-spacing: -0.015em; }
+  .q p { margin: 0; font-size: 15px; line-height: 1.55; color: var(--muted); text-wrap: pretty; }
+
+  .giros { padding-block: clamp(28px, 3vw, 36px) clamp(32px, 4vw, 40px); }
+  .giros h2 { margin: 0 0 8px; font-size: clamp(26px, 3vw, 36px); font-weight: 830; letter-spacing: -0.03em; }
+  .giros .lead { margin: 0 0 22px; font-size: 16px; line-height: 1.55; color: var(--muted); max-width: 58ch; text-wrap: pretty; }
+  .chips { display: flex; flex-wrap: wrap; gap: 10px; max-width: 920px; }
+  .chips span {
+    border: 1.5px solid #D8CEC2; border-radius: 999px; padding: 10px 18px;
+    font-size: 15px; font-weight: 650; color: var(--ink); background: var(--card);
+  }
+  .chips .mas { border-style: dashed; color: var(--muted); background: transparent; }
+
+  /* moats + close: the dark poster echo */
+  .cierre {
+    margin: clamp(28px, 3.5vw, 36px) 12px 12px;
+    background: var(--plum-ink);
+    border-radius: var(--r-block);
+    color: var(--canvas);
+    padding-block: clamp(44px, 5vw, 52px);
+  }
+  .moat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px 32px; }
+  .moat { border-top: 3px solid var(--plum); padding-top: 14px; }
+  .moat h3 { margin: 0 0 8px; font-size: clamp(21px, 2vw, 25px); font-weight: 820; letter-spacing: -0.02em; text-wrap: pretty; }
+  .moat p { margin: 0; font-size: 15px; line-height: 1.5; color: var(--tint-muted); text-wrap: pretty; }
+  .cierre-cta { margin-top: clamp(32px, 4vw, 40px); padding-top: clamp(28px, 3.5vw, 36px); border-top: 1px solid rgba(250, 248, 244, 0.16); }
+  .cierre-cta h2 { margin: 0 0 8px; font-size: clamp(28px, 3.6vw, 44px); font-weight: 830; letter-spacing: -0.03em; }
+  .cierre-cta .lead { margin: 0 0 22px; font-size: 16px; line-height: 1.55; color: var(--tint-muted); max-width: 52ch; text-wrap: pretty; }
+  .cierre-cta .cta-row { margin-top: 0; }
+  .btn-dark { background: var(--canvas); color: var(--plum-ink); }
+  .btn-dark:hover { background: var(--tint); color: var(--plum-ink); }
+  .mail { color: var(--tint); font-weight: 700; font-size: 16px; text-decoration: underline; text-underline-offset: 4px; }
+  .cierre :focus-visible { outline-color: var(--canvas); }
+
+  footer { border-top: 1px solid var(--hairline); margin-top: 12px; }
+  .foot { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding-block: 20px; }
+  .foot .wordmark { color: var(--ink); }
+  .foot .wordmark strong { font-size: 16px; }
+  .foot span { color: var(--muted); font-size: 14.5px; }
+
+  /* ---------- responsive ---------- */
+  @media (max-width: 1023px) {
+    .q-grid { grid-template-columns: repeat(2, 1fr); }
+    .moat-grid { grid-template-columns: 1fr; gap: 22px; }
+  }
+  @media (max-width: 860px) {
+    .fold-grid { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .pitch { padding-top: clamp(12px, 3vh, 28px); }
+    .panel-wrap { align-self: end; justify-self: start; width: min(100%, 400px); transform: translateY(clamp(48px, 7vh, 72px)); margin-top: 8px; }
+    .plane { width: 74%; height: 30%; }
+    .preguntas { padding-top: clamp(104px, 18vw, 128px); }
+  }
+  @media (max-width: 560px) {
+    .q-grid { grid-template-columns: 1fr; gap: 24px; }
+    .panel { box-shadow: 10px 10px 0 0 var(--plum-ink); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ============ FOLD: el cartel ============ -->
+<section class="fold" aria-labelledby="titular">
+  <div class="plane" aria-hidden="true"></div>
+
+  <header class="top">
+    <a class="wordmark" href="#" aria-label="iBookit — inicio">
+      <svg width="26" height="26" viewBox="0 0 64 64" aria-hidden="true">
+        <g fill="none" stroke="#FAF8F4" stroke-width="3">
+          <rect x="6" y="6" width="12" height="12" rx="3"/><rect x="26" y="6" width="12" height="12" rx="3"/><rect x="46" y="6" width="12" height="12" rx="3"/>
+          <rect x="6" y="26" width="12" height="12" rx="3"/><rect x="26" y="26" width="12" height="12" rx="3"/>
+          <rect x="6" y="46" width="12" height="12" rx="3"/><rect x="26" y="46" width="12" height="12" rx="3"/><rect x="46" y="46" width="12" height="12" rx="3"/>
+        </g>
+        <path fill="#E9D0DE" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/>
+      </svg>
+      <strong>iBookit</strong>
+    </a>
+    <nav aria-label="Contacto">
+      <a class="top-link" data-cta href="mailto:hola@ibooki.lat?subject=Quiero%20saber%20m%C3%A1s%20de%20iBookit">Escríbenos</a>
+    </nav>
+  </header>
+
+  <h1 class="h1" id="titular">
+    <span class="sr-only">La recepción de tu negocio, en orden.</span>
+    <span class="line" aria-hidden="true">La recepción de tu</span>
+    <span class="line l2" aria-hidden="true" id="l2"><span class="giro" id="giro">negocio</span>,</span>
+    <span class="line" aria-hidden="true">en orden.</span>
+  </h1>
+
+  <div class="fold-grid">
+    <div class="pitch">
+      <p class="sub">Clientes, pagos, agenda y asistencia — sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp. iBookit llega con tu marca y con tus clientes ya cargados.</p>
+      <div class="cta-row">
+        <a class="btn" data-cta href="mailto:hola@ibooki.lat?subject=Quiero%20saber%20m%C3%A1s%20de%20iBookit">Escríbenos por WhatsApp</a>
+      </div>
+      <p class="micro">Web en tu navegador — nada que instalar.</p>
+    </div>
+
+    <div class="panel-wrap">
+      <figure class="panel" aria-label="Vista de la agenda del día en iBookit: clases con lugares disponibles en vivo y una reserva confirmada">
+        <div class="panel-top">
+          <div>
+            <span class="panel-kicker">Agenda</span>
+            <strong>Hoy · martes</strong>
+          </div>
+          <span class="live" aria-hidden="true"><i></i>en vivo</span>
+        </div>
+        <ul class="slots">
+          <li><time>07:00</time><span class="name">Funcional</span><span class="spots">4 lugares</span></li>
+          <li><time>09:30</time><span class="name">Yoga flow</span><span class="spots">2 lugares</span></li>
+          <li class="mine"><time>18:00</time><span class="name">Jiu-jitsu</span><span class="spots">Reservado ✓</span></li>
+          <li><time>19:30</time><span class="name">Box</span><span class="spots">6 lugares</span></li>
+        </ul>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<main>
+  <!-- ============ Cuatro preguntas ============ -->
+  <section class="preguntas wrap" aria-labelledby="k-preguntas">
+    <p class="kicker" id="k-preguntas">Cuatro preguntas, respondidas en vivo</p>
+    <div class="q-grid">
+      <div class="q"><h3>¿Quiénes son mis clientes?</h3><p>Tu lista completa, con expediente por persona: plan, asistencias y cada pago.</p></div>
+      <div class="q"><h3>¿Qué pagaron y cuándo vence?</h3><p>Vigencia y clases restantes a la vista — y quién está por renovar, antes de que venza.</p></div>
+      <div class="q"><h3>¿Qué hay en la agenda?</h3><p>El día y la semana, con lugares disponibles en vivo y la lista de cada sesión.</p></div>
+      <div class="q"><h3>¿Quién vino hoy?</h3><p>Pase de lista de un toque, por clase o acceso abierto.</p></div>
+    </div>
+  </section>
+
+  <!-- ============ Giros ============ -->
+  <section class="giros wrap" aria-labelledby="t-giros">
+    <h2 id="t-giros">No es «para gimnasios».</h2>
+    <p class="lead">Es para cualquier negocio que vende un lugar en una clase, a personas con nombre que regresan cada semana.</p>
+    <div class="chips">
+      <span>Artes marciales y combate</span>
+      <span>Gimnasios y funcional</span>
+      <span>Yoga, pilates y movimiento</span>
+      <span>Escuelas acuáticas y aventura</span>
+      <span>Academias infantiles</span>
+      <span>Baile, arte y oficios</span>
+      <span>Escalada</span>
+      <span>Barberías con membresía</span>
+      <span class="mas">…y más</span>
+    </div>
+  </section>
+
+  <!-- ============ Moats + cierre: el eco oscuro del cartel ============ -->
+  <section class="cierre" aria-labelledby="t-cierre">
+    <div class="wrap">
+      <div class="moat-grid">
+        <div class="moat">
+          <h3>Tu marca, no la nuestra.</h3>
+          <p>Colores, logo, recibos y correos — la plataforma completa viste tu identidad.</p>
+        </div>
+        <div class="moat">
+          <h3>Cargamos tu lista a mano.</h3>
+          <p>Como esté — cuaderno, Excel o WhatsApp. Nunca empiezas con una base vacía.</p>
+        </div>
+        <div class="moat">
+          <h3>El cobro sigue en tu mostrador.</h3>
+          <p>Efectivo, terminal o transferencia — iBookit lo registra y envía el recibo.</p>
+        </div>
+      </div>
+
+      <div class="cierre-cta">
+        <h2 id="t-cierre">Cuéntanos de tu negocio.</h2>
+        <p class="lead">Armamos tu cuenta, cargamos tu lista y te acompañamos en el arranque — a mano, negocio por negocio.</p>
+        <div class="cta-row">
+          <a class="btn btn-dark" data-cta href="mailto:hola@ibooki.lat?subject=Quiero%20saber%20m%C3%A1s%20de%20iBookit">Escríbenos por WhatsApp</a>
+          <a class="mail" href="mailto:hola@ibooki.lat">hola@ibooki.lat</a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span class="wordmark">
+      <svg width="20" height="20" viewBox="0 0 64 64" aria-hidden="true">
+        <g fill="none" stroke="#201B14" stroke-width="3">
+          <rect x="6" y="6" width="12" height="12" rx="3"/><rect x="26" y="6" width="12" height="12" rx="3"/><rect x="46" y="6" width="12" height="12" rx="3"/>
+          <rect x="6" y="26" width="12" height="12" rx="3"/><rect x="26" y="26" width="12" height="12" rx="3"/>
+          <rect x="6" y="46" width="12" height="12" rx="3"/><rect x="26" y="46" width="12" height="12" rx="3"/><rect x="46" y="46" width="12" height="12" rx="3"/>
+        </g>
+        <path fill="#8A4A6C" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/>
+      </svg>
+      <strong>iBookit</strong>
+    </span>
+    <span>ibooki.lat</span>
+  </div>
+</footer>
+
+<script>
+  const WHATSAPP = ""; // lada + número, ej. "5215512345678" — vacío = correo
+  const EMAIL = "hola@ibooki.lat";
+  const WA_MSG = "Hola, quiero saber más de iBookit para mi negocio.";
+  const MAIL_SUBJECT = "Quiero saber más de iBookit";
+
+  const ctaHref = WHATSAPP.trim()
+    ? "https://wa.me/" + WHATSAPP.replace(/\D/g, "") + "?text=" + encodeURIComponent(WA_MSG)
+    : "mailto:" + EMAIL + "?subject=" + encodeURIComponent(MAIL_SUBJECT);
+  document.querySelectorAll("[data-cta]").forEach(a => { a.href = ctaHref; });
+
+  // --- poster type: each line fits its plane, always one line ---
+  const h1 = document.getElementById("titular");
+  const l2 = document.getElementById("l2");
+  const giro = document.getElementById("giro");
+
+  function fitLine(el) {
+    el.style.fontSize = "";
+    const avail = h1.clientWidth;
+    const w = el.scrollWidth;
+    if (w > avail) el.style.fontSize = Math.max((avail / w) * 98, 40) + "%";
+  }
+  function fitAll() { h1.querySelectorAll(".line").forEach(fitLine); }
+
+  // --- rotating niche word ---
+  const NICHES = ["estudio de yoga", "academia de jiu-jitsu", "box de CrossFit", "escuela de natación", "academia de baile", "rocódromo", "taller de cerámica", "escuela de música", "estudio de pilates", "academia de futbol"];
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)");
+  let timer = null;
+  let i = 0;
+
+  function startRotation() {
+    if (timer || reduce.matches) return;
+    timer = setInterval(() => {
+      i = (i + 1) % NICHES.length;
+      giro.textContent = NICHES[i];
+      fitLine(l2);
+      giro.classList.remove("swap");
+      void giro.offsetWidth;
+      giro.classList.add("swap");
+    }, 2600);
+  }
+  function applyMotionPref() {
+    if (reduce.matches) {
+      clearInterval(timer); timer = null;
+      giro.classList.remove("swap");
+      giro.textContent = "negocio";
+      fitLine(l2);
+    } else {
+      giro.textContent = NICHES[i];
+      fitLine(l2);
+      giro.classList.add("swap");
+      startRotation();
+    }
+  }
+  reduce.addEventListener("change", applyMotionPref);
+
+  applyMotionPref();
+  fitAll();
+  let raf = 0;
+  addEventListener("resize", () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(fitAll); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitAll);
+</script>
+</body>
+</html>
