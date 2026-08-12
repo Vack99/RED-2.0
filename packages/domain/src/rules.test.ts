@@ -110,6 +110,10 @@ describe("derivarEstado — the #223/#225 engine's estado predicate (fecha wins,
   it("esPaseSuelto does NOT exempt the fecha axis: an expired drop-in is still vencido", () => {
     expect(derivarEstado({ clases: 0, dias: -1 }, true)).toBe("vencido");
   });
+  it("is sin_paquete for a NULL saldo — the fourth estado is minted here too, never a caller's ternary", () => {
+    expect(derivarEstado(null)).toBe("sin_paquete");
+    expect(derivarEstado(null, true)).toBe("sin_paquete"); // no package, so the drop-in arm is moot
+  });
 });
 
 describe("consumirClase", () => {

@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
+import { paseSueltoNombres } from "@gym/domain/lifecycle";
 import { derivarEstadosDia, diasRestantes, disponibles, estaVencido, ratioOcupacion } from "@gym/domain/rules";
 import type { EstadoSesion } from "@gym/domain/types";
 import {
@@ -10,6 +11,7 @@ import {
   fechaEnZona,
   horaEnZona,
   hoyEnZona,
+  hoyIsoEnZona,
   inicioSemana,
   instanteEnZona,
   MON,
@@ -500,8 +502,18 @@ async function fetchMembresia(
   tz: string,
   gymId: string,
 ): Promise<{ membresia: MembresiaDerivada | null; paqueteNombre: string | null }> {
-  const { data, error } = await supabase.rpc("mi_membresia", { p_gym_id: gymId });
+  // The catalog leg rides ALONGSIDE the RPC (not after it): `derivarMembresia` runs the
+  // SAME veredicto the admin roster does, and that requires the gym's pase-suelto names
+  // — a roster row stores only the sold package's display name, never its class GRANT.
+  // The member reads their own gym's catalog through the paquetes_member_select policy.
+  // Fail-loud, mirroring paquetes.ts's `getPaseSueltoNombres` (#225 F5): a swallowed
+  // error would silently misclassify every drop-in as a membership.
+  const [{ data, error }, paquetesRes] = await Promise.all([
+    supabase.rpc("mi_membresia", { p_gym_id: gymId }),
+    supabase.from("paquetes").select("nombre, clases").eq("gym_id", gymId),
+  ]);
   if (error) throw error;
+  if (paquetesRes.error) throw paquetesRes.error;
   const row = data?.[0];
   if (!row) return { membresia: null, paqueteNombre: null };
   const membresia = derivarMembresia(
@@ -514,7 +526,7 @@ async function fetchMembresia(
       anchorVigenciaDias: row.anchor_vigencia_dias,
       attendedSincePurchase: row.attended_since_purchase,
     },
-    hoyEnZona(tz),
+    { hoy: hoyIsoEnZona(tz), pasesSueltos: paseSueltoNombres(paquetesRes.data ?? []) },
   );
   return { membresia, paqueteNombre: row.paquete_nombre };
 }

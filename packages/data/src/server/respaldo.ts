@@ -181,7 +181,7 @@ export const getRespaldoData = cache(
     const [clientesRes, ventas, asistencias, paquetesRes] = await Promise.all([
       supabase
         .from("clientes")
-        .select("id, nombre, tel, email, birthday, paquete_nombre, clases_restantes, vence, created_at")
+        .select("id, nombre, tel, email, birthday, paquete_nombre, clases_restantes, vence, auth_user_id, created_at")
         .eq("gym_id", gym.id)
         .order("nombre"),
       readAllVentas(supabase, gym.id, ventanaVentas), // paginated
@@ -209,6 +209,9 @@ export const getRespaldoData = cache(
       paquete_nombre: c.paquete_nombre,
       clases_restantes: c.clases_restantes,
       vence: c.vence,
+      // The auth link (ClienteFacts): the shaper's veredicto reads it, and it is the
+      // only stored fact the Clientes sheet needs that it does not itself print.
+      auth_user_id: c.auth_user_id,
       alta: c.created_at,
     }));
 

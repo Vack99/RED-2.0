@@ -94,9 +94,13 @@ export function estaVencido(dias: number): boolean {
 
 /**
  * Derive a PACKAGE's lifecycle state from what's left (ADR-0002 — never stored).
- * The single home for estado — `lifecycle.ts`'s `derivarLifecycle` (the #223 engine)
+ * The ONE minting site of all four estados — `lifecycle.ts`'s `derivarVeredicto`
  * calls this exact function rather than re-deriving its own copy, so a Saldo-only
- * caller (this one) and a full-roster caller (the engine) can never disagree (#225).
+ * caller (this one) and a full-row caller (the engine) can never disagree (#225).
+ *  - sin_paquete: a NULL saldo — there is no package to be vigente/vencido/
+ *    sin_clases ABOUT (a same-day sign-up, or a pendienteOnline row). Passing null
+ *    instead of writing `tienePaquete ? … : "sin_paquete"` at the call site is what
+ *    keeps the fourth estado inside this function with the other three.
  *  - vencido: expired (dias < 0) — FECHA WINS (A2) unconditionally, even when
  *    classes also read 0 (a lapsed finite pack is forfeited to 0 at read).
  *  - sin_clases: not expired, but out of classes (clases <= 0) — reserved for
@@ -106,10 +110,11 @@ export function estaVencido(dias: number): boolean {
  *  - vigente: otherwise.
  * The vence day (dias === 0) is a valid training day (ruling C9), so it is never
  * vencido. `por_vencer`/`activo` (the old <=5-day/<=2-class split) are RETIRED —
- * that signal now lives in urgenciaCliente/nivelUrgenciaLifecycle and the POR
- * RENOVAR tile (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts), never in estado.
+ * that signal now lives in urgenciaCliente / the veredicto's floored urgencia and
+ * the POR RENOVAR tile (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts).
  */
-export function derivarEstado(saldo: Saldo, esPaseSuelto = false): EstadoCliente {
+export function derivarEstado(saldo: Saldo | null, esPaseSuelto = false): EstadoCliente {
+  if (saldo === null) return "sin_paquete";
   if (estaVencido(saldo.dias)) return "vencido";
 
   const sinClases = !esPaseSuelto && saldo.clases !== "ilimitado" && saldo.clases <= 0;
@@ -129,9 +134,10 @@ const URGENCIA_CLASES = { critico: 1, urgente: 3, pronto: 5 };
  * dimension (clases | días). `vinculante` is whichever lapses first. Ilimitado
  * has no class pressure, so only días can make it urgent. Replaces the threshold
  * engine that was copy-pasted into the clientes screen (invisible to the
- * dependency boundary). This is the RAW dimension logic — every display consumer
- * reads it through `nivelUrgenciaLifecycle` (lifecycle.ts), which floors a
- * `vencido`/`sin_paquete` estado to "ok" (#225 finding 1 / F3); `derivarEstado`'s
+ * dependency boundary). This is the RAW dimension logic, and lifecycle.ts is its
+ * ONLY caller: every display consumer reads `VeredictoCliente.urgencia`, already
+ * floored to "ok" for a `vencido`/`sin_paquete` estado (#225 finding 1 / F3) and
+ * already blind to a pase suelto's spent clases. `derivarEstado`'s
  * vigente/vencido/sin_clases is a SEPARATE predicate (the retired por_vencer band
  * lived here, not there).
  */

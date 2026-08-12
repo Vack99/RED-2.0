@@ -19,7 +19,14 @@ type Sort = "dias" | "nombre" | "asist" | null;
 
 /** The numeric classes a client has left ("ilimitado" → no ceiling). */
 function clasesNum(c: ClienteRosterDTO): number {
-  return c.clasesRest === "ilimitado" ? Infinity : c.clasesRest;
+  return c.veredicto.clases === "ilimitado" ? Infinity : c.veredicto.clases;
+}
+
+/** The días numeral the facets/sorts compare on. A package-less row has no
+ *  countdown (`veredicto.dias` is honestly null), and reads 0 here — the same
+ *  number the row itself renders. */
+function diasNum(c: ClienteRosterDTO): number {
+  return c.veredicto.dias ?? 0;
 }
 
 /** Map an urgency level to its accent color (pure presentation). */
@@ -68,9 +75,9 @@ export function ClientesScreen({
   const list = React.useMemo(() => {
     let list = withU;
     if (renovar) list = list.filter((x) => x.renovar);
-    if (online) list = list.filter((x) => x.c.pendienteOnline);
+    if (online) list = list.filter((x) => x.c.veredicto.pendienteOnline);
     if (aunATiempo) list = list.filter((x) => x.aunATiempo);
-    if (diasMax != null) list = list.filter((x) => x.c.diasRest <= diasMax);
+    if (diasMax != null) list = list.filter((x) => diasNum(x.c) <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {
       // Diacritic-folded name arm (#224) + digit-guarded tel arm (#239) — see
@@ -83,7 +90,7 @@ export function ClientesScreen({
     // button off (see the ORDEN buttons below) returns `sort` to null.
     if (sort === null) return list;
     const sorters: Record<Exclude<Sort, null>, (a: FilaRoster, b: FilaRoster) => number> = {
-      dias: (a, b) => a.c.diasRest - b.c.diasRest,
+      dias: (a, b) => diasNum(a.c) - diasNum(b.c),
       nombre: (a, b) => a.c.nombre.localeCompare(b.c.nombre),
       asist: (a, b) => b.c.asistEsteMes - a.c.asistEsteMes,
     };
@@ -351,8 +358,8 @@ export function ClientesScreen({
                     unified engine — never a verdict on the person. Shown on every row,
                     including a pendienteOnline one below (a package fact still holds
                     even when the numeral area becomes COBRAR). */}
-                <Badge state={c.estado} style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.8, marginBottom: 6 }} />
-                {c.pendienteOnline ? (
+                <Badge state={c.veredicto.estado} style={{ padding: "2px 6px", fontSize: 8.5, letterSpacing: 0.8, marginBottom: 6 }} />
+                {c.veredicto.pendienteOnline ? (
                   // Online-pending rows have meaningless días/clases zeros; swap the
                   // numbers for a one-tap COBRAR deep-link to Vender (#77).
                   <button
@@ -362,7 +369,7 @@ export function ClientesScreen({
                   >
                     COBRAR
                   </button>
-                ) : c.estado === "vencido" && f.diasDesdeVencido !== null ? (
+                ) : c.veredicto.estado === "vencido" && f.diasDesdeVencido !== null ? (
                   // VENCIDO (#227 AC): days-SINCE-expiry, always positive — never the raw
                   // negative diasRest a vigente/sin_clases row uses below. The caption is
                   // the expiry DATE (#227 F6), not the word "vencido" again — the badge
@@ -377,8 +384,8 @@ export function ClientesScreen({
                 ) : bindingIsDias ? (
                   <>
                     <div className="flex items-baseline justify-end" style={{ gap: 3 }}>
-                      <Tnum className="font-extrabold" style={{ fontSize: 17, lineHeight: 1, color: col }}>{c.diasRest}</Tnum>
-                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{c.diasRest === 1 ? "día" : "días"}</span>
+                      <Tnum className="font-extrabold" style={{ fontSize: 17, lineHeight: 1, color: col }}>{diasNum(c)}</Tnum>
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{diasNum(c) === 1 ? "día" : "días"}</span>
                     </div>
                     <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.3 }}><Tnum>{clsLabel}</Tnum> cl</div>
                   </>
@@ -386,9 +393,9 @@ export function ClientesScreen({
                   <>
                     <div className="flex items-baseline justify-end" style={{ gap: 3 }}>
                       <Tnum className="font-extrabold" style={{ fontSize: 17, lineHeight: 1, color: col }}>{clsLabel}</Tnum>
-                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{c.clasesRest === 1 ? "clase" : "clases"}</span>
+                      <span style={{ fontSize: 10, color: "var(--muted)" }}>{c.veredicto.clases === 1 ? "clase" : "clases"}</span>
                     </div>
-                    <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.3 }}><Tnum>{c.diasRest}</Tnum> d</div>
+                    <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.3 }}><Tnum>{diasNum(c)}</Tnum> d</div>
                   </>
                 )}
               </div>

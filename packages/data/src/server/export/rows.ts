@@ -6,7 +6,7 @@
 // fully unit-tested in rows.test.ts.
 //
 // Estado / urgencia are NEVER re-derived here: they come from the read-side
-// derivation (derivarCliente / nivelUrgenciaLifecycle, ADR-0002, #225), the single
+// derivation (derivarCliente's single `veredicto`, ADR-0002, #225), the single
 // home for "how a PACKAGE is doing" — never a verdict on the person. Money columns
 // are emitted as raw numbers (summable in
 // Excel — PRD US#7); the workbook applies the peso number format to `money` cols.
@@ -15,14 +15,14 @@
 
 import { derivarCliente } from "../derive";
 import type { ClienteFacts } from "../derive";
-import { fechaEnZona, fmtShort, isoDay, parseDay } from "@gym/format";
-import { nivelUrgenciaLifecycle, paseSueltoNombres } from "@gym/domain/lifecycle";
+import { fechaEnZona, fmtShort, isoDay, parseDay, toIsoDay } from "@gym/format";
+import { paseSueltoNombres } from "@gym/domain/lifecycle";
 import type { CorteMes, EstadoCliente, NivelUrgencia } from "@gym/domain/types";
 
 // ── The contract — RespaldoData (DAL → shaper) + RespaldoRows (shaper → workbook) ──
 
 /** Full roster client facts + the extra contact/standing fields the Clientes sheet needs.
- *  ClienteFacts = { id, nombre, tel, paquete_nombre, clases_restantes, vence }. */
+ *  ClienteFacts = { id, nombre, tel, paquete_nombre, clases_restantes, vence, auth_user_id }. */
 export interface RespaldoCliente extends ClienteFacts {
   email: string | null;
   birthday: string | null; // 'YYYY-MM-DD'
@@ -199,29 +199,32 @@ function shapeClientes(data: RespaldoData): RespaldoSheet {
     "Urgencia",
     "Alta",
   ];
-  // The membership-vs-drop-in fact (#225): a roster row's `paquete_nombre` carries
-  // no grant, so esPaseSuelto resolves against the catalog gather already supplies.
-  // paseSueltoNombres (@gym/domain/lifecycle) is the ONE place this Set is built
-  // (#225 F5) — was triplicated across this file + clientes.ts before.
-  const paseSuelto = paseSueltoNombres(data.paquetes);
+  // The read's contexto, built ONCE for the sheet. The membership-vs-drop-in fact
+  // (#225): a roster row's `paquete_nombre` carries no grant, so the predicate
+  // resolves against the catalog the gather already supplies. paseSueltoNombres
+  // (@gym/domain/lifecycle) is the ONE place this Set is built (#225 F5) — was
+  // triplicated across this file + clientes.ts before.
+  const ctx = { hoy: toIsoDay(data.generadoHoy), pasesSueltos: paseSueltoNombres(data.paquetes) };
   const rows = data.clientes.map((c) => {
     // REUSE the read-side derivation — never re-derive estado/urgencia (ADR-0002).
-    // asistEsteMes is omitted from this sheet, so pass 0 (build-spec §0). Urgencia is
-    // the FLOORED level (#225 finding 1 + F3): a vencido OR sin_paquete package is
-    // never "Crítico" — nothing to run out of either way (new business must not
-    // read as churn, story 13).
-    const d = derivarCliente(c, data.generadoHoy, 0, paseSuelto);
-    const u = nivelUrgenciaLifecycle({ clases: d.clasesRest, dias: d.diasRest }, d.estado);
+    // asistEsteMes is omitted from this sheet, so pass 0 (build-spec §0); the export
+    // reads no visit aggregate, hence "no_leidas". Urgencia is the veredicto's own
+    // FLOORED, pase-suelto-BLIND level: a vencido OR sin_paquete package is never
+    // "Crítico" (nothing to run out of either way — new business must not read as
+    // churn, story 13), and neither is a spent drop-in whose 0 clases are its normal
+    // end state. This sheet used to re-run the floor over the FLAT clases/días and
+    // therefore missed the blind — the one behavior this deepening changes.
+    const d = derivarCliente(c, ctx, 0, "no_leidas");
     return [
       c.nombre,
       c.tel ?? EM_DASH,
       c.email ?? EM_DASH,
       c.birthday ? fmtShort(parseDay(c.birthday)) : EM_DASH,
       d.paquete,
-      clasesLabel(d.clasesRest),
+      clasesLabel(d.veredicto.clases),
       d.venceDisplay,
-      ESTADO_LABEL[d.estado],
-      URGENCIA_LABEL[u],
+      ESTADO_LABEL[d.veredicto.estado],
+      URGENCIA_LABEL[d.veredicto.urgencia.nivel],
       isoDay(fechaEnZona(c.alta, data.tz)),
     ];
   });

@@ -45,6 +45,10 @@ interface Rows {
   coach?: Record<string, unknown>[];
   reservation?: Record<string, unknown>[];
   clientes?: Record<string, unknown>[];
+  /** The gym's package catalog — the pase-suelto leg `fetchMembresia` reads alongside
+   *  `mi_membresia()` so the plan card's veredicto classifies a drop-in the same way the
+   *  admin roster does. Defaults to an empty catalog (this gym sells no drop-in). */
+  paquetes?: Record<string, unknown>[];
   gymTimezone?: string;
   marca?: string;
 }
@@ -475,6 +479,25 @@ describe("getPerfilResumenMiembro", () => {
     const perfil = await getPerfilResumenMiembro(makeFake({ clientes: [], reservation: [] }));
     expect(perfil.notificaciones).toBe(true);
     expect(perfil.desde).toBeNull();
+  });
+
+  it("reads the gym's paquetes catalog alongside mi_membresia — the plan card's veredicto classifies a drop-in exactly as the admin roster does", async () => {
+    const visto: string[] = [];
+    await getPerfilResumenMiembro(
+      makeFake({ clientes: [], reservation: [], paquetes: [{ nombre: "1 clase", clases: 1 }] }, (name) => {
+        visto.push(name);
+        return { data: [], error: null };
+      }),
+    );
+    expect(visto).toContain("mi_membresia");
+  });
+
+  it("FAILS LOUD on a paquetes read error — a swallowed catalog would misclassify every drop-in (the getPaseSueltoNombres posture, #225 F5)", async () => {
+    await expect(
+      getPerfilResumenMiembro(
+        makeFake({ clientes: [], reservation: [] }, undefined, ["paquetes"]),
+      ),
+    ).rejects.toMatchObject({ message: "transient" });
   });
 
   it("is best-effort on a transient clientes read error — degrades to no-date / opted-in, never throws", async () => {

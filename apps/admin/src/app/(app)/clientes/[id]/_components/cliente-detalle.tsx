@@ -16,7 +16,6 @@ import {
   SectionHeader,
   Tnum,
 } from "@gym/ui/forge/ui";
-import { nivelUrgenciaLifecycle } from "@gym/domain/lifecycle";
 import type { ClienteFichaDTO } from "@gym/data/server/clientes";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
@@ -48,14 +47,14 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   // here: the libre visit the toggle owns + every class visit (#89).
   const asistCount = ficha.historial.length + (present ? 1 : 0) + ficha.clasesHoy.length;
   const cuentaActiva = ficha.invitacion.estado === "cuenta_activa";
-  // #225: reads the #223 engine's FLOORED urgencia (nivelUrgenciaLifecycle) instead of
-  // the ficha's own copied `diasRest <= 5` threshold engine (DELETED) — a vencido
-  // package no longer paints its días/vence accent as urgent (nothing left to run out
-  // of), and the threshold now lives in exactly one place (rules.ts's urgenciaCliente).
-  // `c.estado` (#225 F3) floors sin_paquete too — a same-day sign-up must not paint
-  // as urgent either (its bare diasRest/clasesRest of 0 would otherwise read crítico).
-  const urgente =
-    nivelUrgenciaLifecycle({ clases: c.clasesRest, dias: c.diasRest }, c.estado) !== "ok";
+  // The row's OWN veredicto — the same urgencia the directorio, INICIO and the
+  // respaldo read (#225 replaced this screen's copied `diasRest <= 5` engine with a
+  // call; "una fila → un veredicto" replaced the call with a read). Floored, so a
+  // vencido/sin_paquete package never paints urgent, AND pase-suelto-blind, which
+  // this screen's own hand-assembled call was not: a spent drop-in inside its
+  // validity window used to paint "Crítico" here while the directorio read the SAME
+  // row "ok".
+  const urgente = c.veredicto.urgencia.nivel !== "ok";
   const compraLabel = ficha.primeraCompra ? "COBRAR PRIMERA COMPRA" : "RENOVAR";
   const irAVender = () => router.push(`/vender?cliente=${c.id}`);
 
@@ -263,7 +262,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             <div className="min-w-0 flex-1">
               <H1 size={24} style={{ letterSpacing: -0.3, lineHeight: 1.05 }}>{c.nombre}</H1>
               <div className="flex flex-wrap items-center" style={{ gap: 8, marginTop: 8, fontSize: 11.5, color: "var(--muted)" }}>
-                <Badge state={c.estado} />
+                <Badge state={c.veredicto.estado} />
                 <Badge state={ficha.invitacion.estado === "cuenta_activa" ? "success" : "info"}>
                   {ficha.invitacion.badge}
                 </Badge>
@@ -347,7 +346,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
               <div className="uppercase" style={{ marginTop: ficha.clasesGauge ? 6 : 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
                 {ficha.clasesGauge ? (
                   <>Usadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.clasesGauge.usadas}</Tnum></>
-                ) : c.clasesRest === "ilimitado" ? (
+                ) : c.veredicto.clases === "ilimitado" ? (
                   "Ilimitado"
                 ) : (
                   "—"
@@ -356,7 +355,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             </div>
             <div className="flex-1">
               <Eyebrow style={{ fontSize: 10 }}>DÍAS RESTANTES</Eyebrow>
-              <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4, color: urgente ? "var(--yellow)" : "var(--fg)" }}>{c.diasRest}</Tnum>
+              <Tnum className="font-extrabold" style={{ display: "block", fontSize: 32, lineHeight: 1, marginTop: 4, color: urgente ? "var(--yellow)" : "var(--fg)" }}>{c.veredicto.dias ?? 0}</Tnum>
               {ficha.diasGauge && (
                 <div style={{ height: 4, background: "var(--line-soft)", marginTop: 8, overflow: "hidden" }}>
                   <div style={{ width: "100%", height: "100%", background: urgente ? "var(--yellow)" : "var(--green)", transform: `scaleX(${ficha.diasGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />

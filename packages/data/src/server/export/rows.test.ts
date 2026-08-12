@@ -22,6 +22,7 @@ const cliente = (over: Partial<RespaldoCliente> = {}): RespaldoCliente => ({
   paquete_nombre: "8 clases",
   clases_restantes: 8,
   vence: "2026-07-01", // dias 35 from HOY
+  auth_user_id: null,
   email: "andrea@example.com",
   birthday: "1994-06-16",
   alta: "2026-01-15T18:30:00.000Z",

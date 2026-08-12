@@ -458,20 +458,21 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     const online = roster.find((r) => r.id === "cli-online")!;
     expect(online.invitacion.estado).toBe("cuenta_activa");
     expect(online.invitacion.badge).toBe("Cuenta activa");
-    expect(online.pendienteOnline).toBe(true);
+    expect(online.veredicto.pendienteOnline).toBe(true);
 
     const desk = roster.find((r) => r.id === "cli-desk")!;
     expect(desk.invitacion.estado).toBe("invitacion_enviada");
     expect(desk.invitacion.badge).toBe("Invitada 7 jul"); // gym-local send date
-    expect(desk.pendienteOnline).toBe(false);
+    expect(desk.veredicto.pendienteOnline).toBe(false);
 
-    // #226: the roster carries BOTH last-visit facts from the aggregate RPC — the AUSENTE
-    // clock (any visit) and the CLASES clock (consuming visits only) — as distinct dates.
-    expect(desk.ultimaVisita).toBe("2026-07-22");
-    expect(desk.ultimaVisitaConsumida).toBe("2026-07-20");
-    // cli-online never visited — missing from the RPC result — falls back to null, not 0/undefined.
-    expect(online.ultimaVisita).toBeNull();
-    expect(online.ultimaVisitaConsumida).toBeNull();
+    // #226: the roster THREADS both last-visit facts from the aggregate RPC into the
+    // veredicto — the AUSENTE clock (any visit) and the CLASES clock (consuming visits
+    // only). Neither is a flat DTO field any more; `ausencia` is what a caller reads,
+    // and it is present for both rows (cli-online is missing from the RPC result and
+    // floors on its alta instead of reading "never absent" — #226 F5). The two axes'
+    // numeric distinctness is pinned by the #229 F8 case further down.
+    expect(desk.veredicto.ausencia).not.toBeNull();
+    expect(online.veredicto.ausencia).not.toBeNull();
 
     // #226 F5: altaIso is the badge's fallback anchor when ultimaVisita is null — same column/
     // conversion as getClientesLite's altaIso, riding the existing select (zero extra reads).
@@ -782,7 +783,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
     const sumaCubos = Object.values(resumen.porRenovar.cubos).reduce((a, b) => a + b, 0);
     expect(sumaCubos).toBe(resumen.porRenovar.total); // the sum invariant, at the seam that computes it
 
-    // sin_paquete rows have no live package, so esPorRenovar is false — a
+    // sin_paquete rows have no live package, so `porRenovar` is false — a
     // pendienteOnline fresh arrival is never double-counted into POR RENOVAR.
     expect(resumen.nuevosOnline).toBe(1);
 
@@ -796,16 +797,15 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
 });
 
 /**
- * #229: `getClientesRoster` now calls the FULL lifecycle engine (`derivarLifecycle`,
- * not the thin `derivarFilaLifecycle` #227/#228 used before this row carried
- * `tieneCuenta`/the visit clocks) and stamps its real `tile`/`ausente`/`diasSinVenir`
- * onto `ClienteRosterDTO`. `HOY`/relative offsets (not fixed calendar dates) keep this
- * self-consistent regardless of when the suite runs — the same pattern the
- * RESUMEN_CLIENTES/PORRENOVAR_CLIENTES fixtures above already use. `created_at` is
- * pinned at noon UTC so the Chihuahua-local calendar day always matches the UTC one
- * (no midnight-rollover drift across the -6h offset).
+ * #229: `getClientesRoster` threads every fact the tile + the ausencia need
+ * (`auth_user_id`, both visit clocks, alta) into the ONE `derivarVeredicto` call each
+ * row gets, and the verdict rides on `ClienteRosterDTO`. `HOY`/relative offsets (not
+ * fixed calendar dates) keep this self-consistent regardless of when the suite runs —
+ * the same pattern the RESUMEN_CLIENTES/PORRENOVAR_CLIENTES fixtures above already
+ * use. `created_at` is pinned at noon UTC so the Chihuahua-local calendar day always
+ * matches the UTC one (no midnight-rollover drift across the -6h offset).
  */
-describe("getClientesRoster — #229: tile/ausente/diasSinVenir via the FULL lifecycle engine", () => {
+describe("getClientesRoster — #229: tile + ausencia on the row's own veredicto", () => {
   const TZ = "America/Chihuahua";
   const HOY = hoyEnZona(TZ);
 
@@ -859,25 +859,24 @@ describe("getClientesRoster — #229: tile/ausente/diasSinVenir via the FULL lif
     const fake = makeReadFake({ clientes: CLIENTES_229, gym_membership: GYM_MEMBERSHIP });
     const roster = await getClientesRoster(fake.client);
 
-    expect(roster.find((r) => r.id === "recuperable")!.tile).toBe("aun_a_tiempo");
-    expect(roster.find((r) => r.id === "con-cuenta")!.tile).toBeNull();
-    expect(roster.find((r) => r.id === "vigente-ausente")!.tile).toBeNull();
+    expect(roster.find((r) => r.id === "recuperable")!.veredicto.tile).toBe("aun_a_tiempo");
+    expect(roster.find((r) => r.id === "con-cuenta")!.veredicto.tile).toBeNull();
+    expect(roster.find((r) => r.id === "vigente-ausente")!.veredicto.tile).toBeNull();
   });
 
-  it("stamps the ausente badge fact + diasSinVenir, floored on alta when never visited (A9)", async () => {
+  it("stamps the ausencia (numeral + badge decision), floored on alta when never visited (A9)", async () => {
     const fake = makeReadFake({ clientes: CLIENTES_229, gym_membership: GYM_MEMBERSHIP });
     const roster = await getClientesRoster(fake.client);
 
     const ausente = roster.find((r) => r.id === "vigente-ausente")!;
-    expect(ausente.ausente).toBe(true);
-    expect(ausente.diasSinVenir).toBe(30);
+    expect(ausente.veredicto.ausencia).toEqual({ dias: 30, ausente: true });
 
     const recuperable = roster.find((r) => r.id === "recuperable")!;
-    expect(recuperable.ausente).toBe(false); // alta only 10 días ago — under AUSENTE_DIAS
-    expect(recuperable.diasSinVenir).toBe(10);
+    // alta only 10 días ago — under AUSENTE_DIAS, so the fact holds but the badge doesn't.
+    expect(recuperable.veredicto.ausencia).toEqual({ dias: 10, ausente: false });
   });
 
-  it("#229 opus review F8: feeds ultima_visita — never ultima_visita_consumida — into the badge's diasSinVenir axis; built so swapping the two RPC columns fails", async () => {
+  it("#229 opus review F8: feeds ultima_visita — never ultima_visita_consumida — into the ausencia axis; built so swapping the two RPC columns fails", async () => {
     const CLIENTE_DISTINTO = [
       {
         id: "eje-distinto",
@@ -911,16 +910,13 @@ describe("getClientesRoster — #229: tile/ausente/diasSinVenir via the FULL lif
     const roster = await getClientesRoster(fake.client);
     const row = roster.find((r) => r.id === "eje-distinto")!;
 
-    // Raw pass-through fields keep their own distinct RPC values (#226) —
-    // asserted for completeness, unaffected by a wiring swap either way.
-    expect(row.ultimaVisita).toBe(toIsoDay(addDays(HOY, -3)));
-    expect(row.ultimaVisitaConsumida).toBe(toIsoDay(addDays(HOY, -10)));
-
-    // The badge's numeral is ALWAYS ultima_visita's axis (3 días) — a wiring
-    // bug that fed ultima_visita_consumida into derivarLifecycle's
-    // `ultimaVisita` slot would read 10 here instead, failing this assertion.
-    expect(row.diasSinVenir).toBe(3);
-    expect(row.ausente).toBe(false); // 3 días is well under AUSENTE_DIAS
+    // The two axes land in two DIFFERENT fields of the same veredicto, so a wiring
+    // swap can't hide: the badge's numeral is ALWAYS ultima_visita's axis (3 días),
+    // and a sin_clases row's `diasDesdeFin` is ALWAYS the CONSUMING visit's (10) —
+    // feeding either RPC column into the other's slot flips both assertions.
+    expect(row.veredicto.ausencia).toEqual({ dias: 3, ausente: false }); // 3 < AUSENTE_DIAS
+    expect(row.veredicto.estado).toBe("sin_clases");
+    expect(row.veredicto.diasDesdeFin).toBe(10);
   });
 });
 

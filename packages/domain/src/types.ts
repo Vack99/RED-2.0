@@ -13,21 +13,23 @@ export type Clases = number | "ilimitado";
 
 /** A package's lifecycle state — DERIVED, never stored (ADR-0002), and NEVER a verdict
  *  on the person (no activo/inactivo on a human — #225). Single source: `derivarEstado`
- *  (rules.ts) computes this from a Saldo + the membership-vs-drop-in fact; `lifecycle.ts`'s
- *  `derivarLifecycle` (the #223 engine, richer FilaRosterLifecycle input) calls the SAME
- *  function — its `EstadoPaquete` is this exact type, not a parallel one. FECHA WINS (A2):
- *  `vencido` is set unconditionally once the date has lapsed, even if classes also read 0 —
- *  `sin_clases` is reserved for class-empty WITH days remaining. `sin_paquete` covers "no
+ *  (rules.ts) computes this from a Saldo-or-null + the membership-vs-drop-in fact, and is
+ *  the ONE minting site of all four values; `lifecycle.ts`'s `derivarVeredicto` calls that
+ *  SAME function — its `EstadoPaquete` is this exact type, not a parallel one. FECHA WINS
+ *  (A2): `vencido` is set unconditionally once the date has lapsed, even if classes also read
+ *  0 — `sin_clases` is reserved for class-empty WITH days remaining. `sin_paquete` covers "no
  *  package at all" (a same-day sign-up or a pendienteOnline row) — there is nothing to be
- *  vigente/vencido/sin_clases ABOUT. Replaces the old activo/por_vencer/sin_clases split:
- *  por_vencer was a threshold restatement now owned by urgenciaCliente/nivelUrgenciaLifecycle
- *  and the POR RENOVAR tile (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts), never estado. */
+ *  vigente/vencido/sin_clases ABOUT — and is minted by a NULL saldo, never a caller's ternary.
+ *  Replaces the old activo/por_vencer/sin_clases split: por_vencer was a threshold restatement
+ *  now owned by urgenciaCliente / the veredicto's floored urgencia and the POR RENOVAR tile
+ *  (RENOVACION_DIAS/RENOVACION_CLASES, lifecycle.ts), never estado. */
 export type EstadoCliente = "vigente" | "vencido" | "sin_clases" | "sin_paquete";
 
 /** Retention urgency level — DERIVED from saldo. FLOORED to "ok" for a `vencido` or
- *  `sin_paquete` estado (`nivelUrgenciaLifecycle`, #225 F3) — nothing left to run out
- *  of either way. Drives the directory's accent color/sort; POR RENOVAR (the
- *  "por renovar" gate) is a SEPARATE predicate (`esPorRenovar`, lifecycle.ts). */
+ *  `sin_paquete` estado (#225 F3) — nothing left to run out of either way — and blind to a
+ *  pase suelto's spent clases. Every consumer reads the already-floored, already-blind
+ *  `VeredictoCliente.urgencia` (lifecycle.ts), never `urgenciaCliente` directly. Drives the
+ *  directory's accent color/sort; POR RENOVAR is a SEPARATE gate (`veredicto.porRenovar`). */
 export type NivelUrgencia = "critico" | "urgente" | "pronto" | "ok";
 
 /** A client's retention urgency: level + which dimension binds.
