@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iBookit — La recepción de tu negocio, en orden</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:ital,wght@0,400..900;1,400..900&display=swap" rel="stylesheet">
+<style>
+html { scroll-behavior: smooth; }
+body { margin: 0; background: #f6f6f7; color: #17171a; font-family: 'Schibsted Grotesk', system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: #3f4670; }
+a:hover { color: #5b6698; }
+@keyframes nicheIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+</style>
+</helmet>
+
+<header style="max-width: 1120px; margin: 0 auto; padding: 26px 32px; display: flex; align-items: center; justify-content: space-between; gap: 24px">
+  <div style="display: flex; align-items: center; gap: 10px">
+    <svg width="30" height="30" viewBox="0 0 100 100" aria-label="iBookit"><defs><clipPath id="tile"><rect x="16" y="16" width="68" height="68" rx="20"></rect></clipPath></defs><g clip-path="url(#tile)"><polygon points="16,16 84,16 16,84" fill="#5b6698"></polygon><polygon points="84,16 84,84 16,84" fill="#3f4670"></polygon></g></svg>
+    <span style="font-weight: 700; font-size: 19px; letter-spacing: -0.01em">iBookit</span>
+  </div>
+  <nav style="display: flex; align-items: center; gap: 26px; font-size: 15px">
+    <a href="#como-funciona" style="text-decoration: none; color: #7b7b82" style-hover="color: #17171a">Cómo funciona</a>
+    <a href="#para-quien" style="text-decoration: none; color: #7b7b82" style-hover="color: #17171a">Para quién</a>
+    <a href="{{ waHref }}" style="text-decoration: none; background: #3f4670; color: #ffffff; padding: 10px 18px; border-radius: 999px; font-weight: 600; font-size: 14px" style-hover="background: #5b6698; color: #ffffff">Escríbenos</a>
+  </nav>
+</header>
+
+<section style="max-width: 1120px; margin: 0 auto; padding: 72px 32px 88px">
+  <h1 style="font-size: clamp(40px, 6vw, 68px); line-height: 1.06; letter-spacing: -0.03em; font-weight: 800; margin: 0; max-width: 17ch; text-wrap: pretty">La recepción de tu <span style="color: #5b6698; white-space: nowrap">{{ nicheEl }}</span>, en orden.</h1>
+  <p style="font-size: 20px; line-height: 1.55; color: #7b7b82; max-width: 52ch; margin: 26px 0 0; text-wrap: pretty">Clientes, pagos, agenda y asistencia — sin cuaderno, sin Excel, sin perseguir el grupo de WhatsApp. iBookit llega con tu marca y con tus clientes ya cargados.</p>
+  <div style="display: flex; align-items: center; gap: 14px; margin-top: 36px; flex-wrap: wrap">
+    <a href="{{ waHref }}" style="text-decoration: none; background: #3f4670; color: #ffffff; padding: 15px 26px; border-radius: 999px; font-weight: 700; font-size: 16px" style-hover="background: #5b6698; color: #ffffff">Escríbenos por WhatsApp</a>
+    <a href="#como-funciona" style="text-decoration: none; color: #3f4670; font-weight: 600; font-size: 16px; padding: 15px 10px">Ver cómo funciona ↓</a>
+  </div>
+  <p style="font-size: 14px; color: #bcbcc2; margin: 22px 0 0">Web en tu navegador — nada que instalar, ni para ti ni para tus clientes.</p>
+</section>
+
+<section style="border-top: 1px solid #e3e3e6; border-bottom: 1px solid #e3e3e6; background: #ffffff">
+  <div style="max-width: 1120px; margin: 0 auto; padding: 64px 32px">
+    <p style="font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6698; margin: 0 0 34px">Cuatro preguntas, respondidas en vivo</p>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 40px 32px">
+      <div><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em">¿Quiénes son mis clientes?</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">Tu lista completa, con expediente por persona: plan, asistencias y cada pago.</p></div>
+      <div><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em">¿Qué pagaron y cuándo vence?</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">Vigencia y clases restantes a la vista — y quién está por renovar, antes de que venza.</p></div>
+      <div><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em">¿Qué hay en la agenda?</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">El día y la semana, con lugares disponibles en vivo y la lista de cada sesión.</p></div>
+      <div><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em">¿Quién vino hoy?</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">Pase de lista de un toque, hoy o con fecha anterior, por clase o acceso abierto.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="como-funciona" style="max-width: 1120px; margin: 0 auto; padding: 88px 32px">
+  <h2 style="font-size: clamp(30px, 4vw, 42px); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: pretty">Dos apps, un solo sistema.</h2>
+  <p style="font-size: 18px; color: #7b7b82; margin: 0 0 44px; max-width: 56ch; line-height: 1.55">Una para tu mostrador, otra para tus clientes. Cada negocio recibe las dos.</p>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 24px">
+    <div style="background: #ffffff; border: 1px solid #e3e3e6; border-radius: 18px; padding: 34px">
+      <p style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6698; margin: 0 0 6px">Para ti y tu equipo</p>
+      <h3 style="font-size: 24px; font-weight: 700; margin: 0 0 24px; letter-spacing: -0.01em">Consola de recepción</h3>
+      <div style="display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Inicio</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Los check-ins de hoy, la venta de la semana, quién está por renovar.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Clientes</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Búsqueda al instante; expediente con plan, vigencia, asistencia y pagos.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Asistencia</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Check-in de un toque, a una clase o acceso abierto.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Agenda</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Sesiones únicas o repetidas, lista por sesión, reserva o walk-in.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Vender</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Venta o renovación en unos toques; recibo numerado por WhatsApp o correo.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Cuenta</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Precios, clases, coaches, tu página pública y exportación mensual a Excel.</span></div>
+      </div>
+    </div>
+    <div style="background: #ffffff; border: 1px solid #e3e3e6; border-radius: 18px; padding: 34px">
+      <p style="font-size: 13px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #5b6698; margin: 0 0 6px">Para tus clientes</p>
+      <h3 style="font-size: 24px; font-weight: 700; margin: 0 0 24px; letter-spacing: -0.01em">App de tus clientes</h3>
+      <div style="display: flex; flex-direction: column; gap: 16px">
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Tu página</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Inicio, precios y contacto públicos, con tu contenido y tu marca.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Reservar</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Las clases de la semana con lugares en vivo; reservar, cancelar, marcar favoritas.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">La clase</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Coach, qué van a hacer, qué llevar y quién más va.</span></div>
+        <div style="display: flex; gap: 12px; align-items: baseline"><span style="font-weight: 700; font-size: 15px; min-width: 92px">Perfil</span><span style="font-size: 15px; color: #7b7b82; line-height: 1.5">Su plan, clases restantes, vigencia y próximas reservas.</span></div>
+      </div>
+      <p style="font-size: 14px; color: #7b7b82; background: rgba(91, 102, 152, 0.1); border-radius: 10px; padding: 12px 16px; margin: 24px 0 0; line-height: 1.5">Web móvil: tus clientes entran desde el navegador, sin descargar nada de una tienda de apps.</p>
+    </div>
+  </div>
+</section>
+
+<section style="max-width: 1120px; margin: 0 auto; padding: 0 32px 88px">
+  <h2 style="font-size: clamp(30px, 4vw, 42px); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: pretty">Se ve como tu negocio, no como el nuestro.</h2>
+  <p style="font-size: 18px; color: #7b7b82; margin: 0 0 44px; max-width: 56ch; line-height: 1.55">Colores, logo, nombre, ícono, recibos y correos — todo viste tu identidad. Dos negocios ya operan así, y ninguno se parece al otro.</p>
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px">
+    <div style="border-top: 3px solid #5b6698; padding: 22px 0 0"><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px">¿Tienes marca? Tráela.</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">La plataforma completa se viste con ella, hasta el recibo que llega a tus clientes.</p></div>
+    <div style="border-top: 3px solid #5b6698; padding: 22px 0 0"><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px">¿No tienes? Usa la nuestra.</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">Una identidad terminada viene incluida: abres viéndote profesional sin diseñar nada.</p></div>
+    <div style="border-top: 3px solid #5b6698; padding: 22px 0 0"><h3 style="font-size: 19px; font-weight: 700; margin: 0 0 8px">¿Quieres una? Te la hacemos.</h3><p style="font-size: 15px; line-height: 1.55; color: #7b7b82; margin: 0">Diseñamos tu marca y la plataforma la viste desde el primer día.</p></div>
+  </div>
+</section>
+
+<section style="background: #3f4670">
+  <div style="max-width: 1120px; margin: 0 auto; padding: 80px 32px">
+    <p style="font-size: 14px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #b9c0e4; margin: 0 0 16px">Nosotros cargamos tus datos</p>
+    <h2 style="font-size: clamp(30px, 4.5vw, 46px); font-weight: 800; letter-spacing: -0.02em; margin: 0; color: #ffffff; max-width: 22ch; text-wrap: pretty">Tu día uno empieza con tu lista real adentro.</h2>
+    <p style="font-size: 18px; line-height: 1.6; color: #c9cee8; max-width: 58ch; margin: 22px 0 0">Un cuaderno a mano. Un grupo de WhatsApp. Un Excel de hace diez años con tres versiones del mismo nombre. Lo recibimos como esté, lo cuadramos contigo y lo cargamos nosotros. Nunca empiezas con una base vacía.</p>
+    <p style="font-size: 15px; color: #9aa3cf; margin: 26px 0 0">Es un servicio hecho a mano, persona a persona — no un botón de «subir archivo».</p>
+  </div>
+</section>
+
+<section id="para-quien" style="max-width: 1120px; margin: 0 auto; padding: 88px 32px">
+  <h2 style="font-size: clamp(30px, 4vw, 42px); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: pretty">No es «para gimnasios».</h2>
+  <p style="font-size: 18px; color: #7b7b82; margin: 0 0 40px; max-width: 58ch; line-height: 1.55">Es para cualquier negocio que vende un lugar en una clase, a personas con nombre que regresan cada semana. Esa forma cruza giros que no se parecen en nada:</p>
+  <div style="display: flex; flex-wrap: wrap; gap: 10px; max-width: 900px">
+    <sc-for list="{{ genres }}" as="g" hint-placeholder-count="8">
+      <span style="background: #ffffff; border: 1px solid #e3e3e6; border-radius: 999px; padding: 10px 18px; font-size: 15px; font-weight: 600; color: #17171a">{{ g }}</span>
+    </sc-for>
+    <span style="border: 1px dashed #bcbcc2; border-radius: 999px; padding: 10px 18px; font-size: 15px; font-weight: 600; color: #7b7b82">…y más</span>
+  </div>
+</section>
+
+<section style="max-width: 1120px; margin: 0 auto; padding: 0 32px 96px">
+  <div style="background: #ffffff; border: 1px solid #e3e3e6; border-radius: 22px; padding: 56px 40px; text-align: center">
+    <h2 style="font-size: clamp(28px, 4vw, 40px); font-weight: 800; letter-spacing: -0.02em; margin: 0 0 12px; text-wrap: pretty">Cuéntanos de tu negocio.</h2>
+    <p style="font-size: 17px; color: #7b7b82; margin: 0 auto 32px; max-width: 46ch; line-height: 1.55">Nosotros armamos tu cuenta, cargamos tu lista y te acompañamos en el arranque — a mano, negocio por negocio.</p>
+    <div style="display: flex; justify-content: center; align-items: center; gap: 14px; flex-wrap: wrap">
+      <a href="{{ waHref }}" style="text-decoration: none; background: #3f4670; color: #ffffff; padding: 15px 26px; border-radius: 999px; font-weight: 700; font-size: 16px" style-hover="background: #5b6698; color: #ffffff">Escríbenos por WhatsApp</a>
+      <a href="{{ mailHref }}" style="text-decoration: none; color: #3f4670; font-weight: 600; font-size: 16px; padding: 15px 10px">{{ email }}</a>
+    </div>
+    <p style="font-size: 13px; color: #bcbcc2; margin: 28px 0 0; line-height: 1.5">El cobro sigue en tu mostrador — efectivo, terminal o transferencia. iBookit lo registra y envía el recibo.</p>
+  </div>
+</section>
+
+<footer style="border-top: 1px solid #e3e3e6">
+  <div style="max-width: 1120px; margin: 0 auto; padding: 28px 32px; display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap">
+    <div style="display: flex; align-items: center; gap: 9px">
+      <svg width="20" height="20" viewBox="0 0 100 100" aria-hidden="true"><defs><clipPath id="tilef"><rect x="16" y="16" width="68" height="68" rx="20"></rect></clipPath></defs><g clip-path="url(#tilef)"><polygon points="16,16 84,16 16,84" fill="#5b6698"></polygon><polygon points="84,16 84,84 16,84" fill="#3f4670"></polygon></g></svg>
+      <span style="font-weight: 700; font-size: 15px">iBookit</span>
+    </div>
+    <span style="font-size: 14px; color: #7b7b82">ibooki.lat</span>
+  </div>
+</footer>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;whatsapp&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Contacto&quot;, &quot;description&quot;: &quot;Número de WhatsApp con lada (ej. 52 1 55 1234 5678). Vacío = el CTA usa correo.&quot;}, &quot;correo&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;hola@ibooki.lat&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Contacto&quot;}, &quot;rotarGiros&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Hero&quot;, &quot;description&quot;: &quot;Rotar el giro del negocio en el titular; apagado muestra «negocio».&quot;}}">
+class Component extends DCLogic {
+  state = { i: 0 };
+  niches = ["estudio de yoga", "academia de jiu-jitsu", "box de CrossFit", "escuela de natación", "academia de baile", "rocódromo", "taller de cerámica", "escuela de música", "estudio de pilates", "academia de futbol"];
+  componentDidMount() {
+    this.timer = setInterval(() => this.setState(s => ({ i: (s.i + 1) % this.niches.length })), 2600);
+  }
+  componentWillUnmount() { clearInterval(this.timer); }
+  renderVals() {
+    const rotate = this.props.rotarGiros ?? true;
+    const word = rotate ? this.niches[this.state.i] : "negocio";
+    const wa = (this.props.whatsapp ?? "").replace(/\D/g, "");
+    const email = this.props.correo ?? "hola@ibooki.lat";
+    const msg = encodeURIComponent("Hola, quiero saber más de iBookit para mi negocio.");
+    return {
+      nicheEl: React.createElement("span", { key: word, style: { display: "inline-block", animation: "nicheIn .45s ease" } }, word),
+      waHref: wa ? `https://wa.me/${wa}?text=${msg}` : `mailto:${email}?subject=${encodeURIComponent("Quiero saber más de iBookit")}`,
+      mailHref: `mailto:${email}`,
+      email,
+      genres: ["Artes marciales y combate", "Gimnasios y funcional", "Yoga, pilates y movimiento", "Escuelas acuáticas y aventura", "Academias infantiles", "Baile, arte y oficios", "Escalada", "Barberías con membresía"],
+    };
+  }
+}
+</script>
+</body>
+</html>
