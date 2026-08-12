@@ -21,7 +21,6 @@ const gym = (over: Partial<OperatorGym> = {}): OperatorGym => ({
   slug: "forge",
   brandName: "Forge",
   userId: "op-1",
-  role: "owner",
   ...over,
 });
 
