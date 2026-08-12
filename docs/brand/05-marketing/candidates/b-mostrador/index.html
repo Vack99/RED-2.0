@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>iBookit — agenda, clientes y cobros con tu marca</title>
+<meta name="description" content="iBookit lleva la agenda, los clientes, los cobros y la asistencia de estudios, academias y gimnasios — con la marca de cada negocio. Hecho para México.">
+<meta name="theme-color" content="#FAF8F4">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="iBookit">
+<meta property="og:locale" content="es_MX">
+<meta property="og:url" content="https://ibooki.lat/">
+<meta property="og:title" content="iBookit — el mostrador de tu negocio, en orden">
+<meta property="og:description" content="Agenda, clientes, cobros y asistencia para negocios de clases y membresías — con tu marca, no la nuestra.">
+<!-- og:image: exportar de docs/brand/03-visual-identity/final/og-template.svg al publicar -->
+<link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20512%20512'%3E%3Crect%20width='512'%20height='512'%20rx='112'%20fill='%238A4A6C'/%3E%3Cg%20transform='translate(64%2064)%20scale(6)'%3E%3Cg%20fill='none'%20stroke='%23FAF8F4'%20stroke-width='2.5'%3E%3Crect%20x='6'%20y='6'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='26'%20y='6'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='46'%20y='6'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='6'%20y='26'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='26'%20y='26'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='6'%20y='46'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='26'%20y='46'%20width='12'%20height='12'%20rx='3'/%3E%3Crect%20x='46'%20y='46'%20width='12'%20height='12'%20rx='3'/%3E%3C/g%3E%3Cpath%20fill='%23FAF8F4'%20d='M45.5%2025.5H54.75A3.75%203.75%200%200%201%2058.5%2029.25V34.75A3.75%203.75%200%200%201%2054.75%2038.5H49.25A3.75%203.75%200%200%201%2045.5%2034.75V25.5Z'/%3E%3C/g%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ---------- tokens: todo deriva de los 5 hex bloqueados ---------- */
+:root{
+  --canvas:#FAF8F4;
+  --surface:#FFFFFF;
+  --ink:#201B14;
+  --muted:#6B6257;
+  --plum:#8A4A6C;
+  --accent-ink:#FFFFFF;               /* texto sobre relleno ciruela — probado 5.5:1 */
+  --ink-soft:color-mix(in oklab, var(--ink) 82%, var(--canvas));
+  --sand:color-mix(in oklab, var(--canvas) 94%, var(--ink));
+  --hairline:color-mix(in oklab, var(--ink) 16%, transparent);
+  --hairline-soft:color-mix(in oklab, var(--ink) 9%, transparent);
+  --plum-deep:color-mix(in oklab, var(--plum) 86%, var(--ink));
+  --plum-wash:color-mix(in oklab, var(--plum) 20%, var(--canvas));
+  --shadow:0 1px 2px color-mix(in oklab, var(--ink) 6%, transparent),
+           0 12px 32px color-mix(in oklab, var(--ink) 5%, transparent);
+  /* estados semánticos del producto (permitidos por IDENTITY) */
+  --ok:#2C6E49;      --ok-bg:#E9F1EA;
+  --warn:#7A5210;    --warn-bg:#F5EBD7;
+  --err:#A13333;     --err-bg:#F6E7E3;
+  /* tipo: 5 tamaños de página + micro de viñeta */
+  --fs-display:clamp(2.5rem, 4.6vw + .6rem, 3.6rem);
+  --fs-h2:clamp(1.7rem, 2.2vw + .8rem, 2.25rem);
+  --fs-lede:1.25rem;
+  --fs-body:1rem;
+  --fs-small:.875rem;
+  --fs-micro:.8125rem;
+  /* espacio: escala 4pt por rol */
+  --space-2xs:.25rem; --space-xs:.5rem; --space-s:1rem; --space-m:1.5rem;
+  --space-l:3rem; --space-xl:4rem; --space-2xl:6rem; --space-3xl:8rem;
+  /* movimiento */
+  --ease-out:cubic-bezier(.16,1,.3,1);
+  --t-micro:120ms; --t-short:220ms; --t-long:420ms;
+  --z-nav:200;
+}
+@font-face{
+  font-family:"Hanken Fallback"; src:local("Arial");
+  size-adjust:98%; ascent-override:102%; descent-override:26%;
+}
+/* ---------- base ---------- */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{overflow-x:clip;scroll-behavior:smooth;scroll-padding-top:84px}
+body{
+  overflow-x:clip;min-height:100dvh;
+  background:var(--canvas);color:var(--ink);
+  font-family:"Hanken Grotesk","Hanken Fallback","Segoe UI",system-ui,sans-serif;
+  font-size:var(--fs-body);line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--plum-wash);color:var(--ink)}
+h1,h2,h3{font-weight:600;line-height:1.12;letter-spacing:-.02em;text-wrap:balance;overflow-wrap:anywhere;min-width:0}
+p{text-wrap:pretty}
+a{color:inherit}
+:focus-visible{outline:2px solid var(--plum);outline-offset:2px;border-radius:4px}
+.container{max-width:1160px;margin-inline:auto;padding-inline:clamp(1.25rem,5vw,3rem)}
+.skip{
+  position:absolute;left:var(--space-s);top:-100%;z-index:calc(var(--z-nav) + 1);
+  background:var(--ink);color:var(--canvas);padding:.6em 1em;border-radius:8px;
+  text-decoration:none;font-weight:600;font-size:var(--fs-small);
+}
+.skip:focus{top:var(--space-s)}
+/* ---------- nav: N9 mínima alineada a los bordes ---------- */
+.site-h{
+  position:sticky;top:0;z-index:var(--z-nav);
+  background:var(--canvas);border-bottom:1px solid var(--hairline-soft);
+}
+.site-h nav{
+  display:flex;align-items:center;gap:var(--space-m);
+  min-height:64px;max-height:80px;
+}
+.brand{display:inline-flex;align-items:center;border-radius:6px}
+.brand svg{height:26px;width:auto;display:block}
+.nav-links{display:flex;gap:var(--space-m);margin-left:auto}
+.nav-links a{
+  text-decoration:none;font-size:var(--fs-small);color:var(--ink-soft);
+  white-space:nowrap;padding:.25em 0;
+  transition:color var(--t-micro) var(--ease-out);
+}
+.nav-links a:hover{color:var(--ink);text-decoration:underline;text-underline-offset:6px;text-decoration-thickness:1.5px}
+.nav-links a[aria-current="true"]{
+  color:var(--ink);text-decoration:underline;text-underline-offset:6px;
+  text-decoration-thickness:2px;text-decoration-color:var(--plum);
+}
+/* ---------- botones ---------- */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:.5em;
+  min-height:48px;padding:0 1.5rem;border-radius:12px;
+  font-weight:600;font-size:var(--fs-body);text-decoration:none;white-space:nowrap;
+  transition:background-color var(--t-micro) var(--ease-out),
+             border-color var(--t-micro) var(--ease-out),
+             transform var(--t-micro) var(--ease-out);
+}
+.btn--primary{background:var(--plum);color:var(--accent-ink)}
+.btn--primary:hover{background:var(--plum-deep)}
+.btn--primary:active{transform:translateY(1px)}
+.btn--quiet{
+  border:1px solid var(--hairline);color:var(--ink);background:transparent;
+  min-height:40px;padding:0 1rem;font-size:var(--fs-small);
+}
+.btn--quiet:hover{border-color:color-mix(in oklab, var(--ink) 38%, transparent)}
+.btn--quiet:active{transform:translateY(1px)}
+.link-cta{
+  font-weight:600;text-decoration:underline;text-underline-offset:5px;
+  text-decoration-thickness:1.5px;text-decoration-color:var(--hairline);
+  transition:text-decoration-color var(--t-micro) var(--ease-out);
+}
+.link-cta:hover{text-decoration-color:var(--plum)}
+@media (pointer:coarse){.btn,.nav-links a{min-height:48px;display:inline-flex;align-items:center}}
+/* ---------- héroe: díptico (única sección texto-izq / imagen-der) ---------- */
+.hero{padding-block:var(--space-xl) var(--space-2xl)}
+.hero-grid{
+  display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,.95fr);
+  gap:var(--space-xl);align-items:center;
+}
+.hero h1{font-size:var(--fs-display)}
+.hero .lede{
+  font-size:var(--fs-lede);color:var(--ink-soft);
+  max-width:46ch;margin-top:var(--space-m);
+}
+.hero-cta{display:flex;align-items:center;gap:var(--space-m);margin-top:var(--space-l);flex-wrap:wrap}
+.rise{animation:rise var(--t-long) var(--ease-out) both;animation-delay:calc(var(--i,0)*60ms)}
+@keyframes rise{from{opacity:0;transform:translateY(10px)}}
+/* ---------- secciones genéricas ---------- */
+section{padding-block:var(--space-2xl)}
+.sec-head h2{font-size:var(--fs-h2)}
+.sec-head .sub{color:var(--ink-soft);max-width:56ch;margin-top:var(--space-s)}
+/* ---------- viñetas: lenguaje UI del producto ---------- */
+.vig{margin:0;min-width:0}
+.vig .panel{
+  background:var(--surface);border:1px solid var(--hairline);border-radius:14px;
+  box-shadow:var(--shadow);overflow:hidden;
+  font-variant-numeric:tabular-nums;font-size:var(--fs-micro);line-height:1.45;
+}
+.vig figcaption{margin-top:.625rem;font-size:var(--fs-micro);color:var(--muted)}
+.panel-h{
+  display:flex;justify-content:space-between;align-items:baseline;gap:var(--space-s);
+  padding:.75rem 1rem;font-size:var(--fs-small);font-weight:600;
+}
+.panel-h .meta{font-weight:400;color:var(--muted);font-size:var(--fs-micro)}
+.row{
+  display:flex;align-items:baseline;gap:.75rem;
+  padding:.7rem 1rem;border-top:1px solid var(--hairline-soft);min-width:0;
+}
+.row .t{font-weight:600;white-space:nowrap}
+.row .g{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{color:var(--muted);white-space:nowrap}
+.row--tuyo{background:var(--plum);color:var(--accent-ink);border-top-color:transparent}
+.row--tuyo .m{color:color-mix(in srgb, var(--accent-ink) 78%, transparent)}
+.kv{display:flex;justify-content:space-between;gap:var(--space-s);padding:.7rem 1rem;border-top:1px solid var(--hairline-soft)}
+.kv dt{color:var(--muted);white-space:nowrap}
+.kv dd{text-align:right;min-width:0;overflow-wrap:anywhere}
+.chip{
+  display:inline-block;border-radius:999px;padding:.15em .7em;
+  font-size:var(--fs-micro);font-weight:600;white-space:nowrap;
+}
+.chip--ok{background:var(--ok-bg);color:var(--ok)}
+.chip--neutral{background:var(--sand);color:var(--muted);font-weight:400}
+.check{flex:none;width:14px;height:14px;color:var(--ok);align-self:center}
+.chip-act{
+  display:inline-block;border:1px solid var(--hairline);border-radius:9px;
+  padding:.4em .8em;font-weight:600;color:var(--ink-soft);white-space:nowrap;
+}
+.btn-mini{
+  display:inline-block;background:var(--plum);color:var(--accent-ink);
+  border-radius:8px;padding:.35em .8em;font-weight:600;white-space:nowrap;
+}
+.cupo--pocos{color:var(--warn);font-weight:600}
+/* revelado de viñetas (solo con JS + sin reduced-motion) */
+html.anim .vig{opacity:0;transform:translateY(8px);
+  transition:opacity var(--t-short) var(--ease-out),transform var(--t-short) var(--ease-out)}
+html.anim .vig.en{opacity:1;transform:none}
+html.anim .hero .vig{opacity:1;transform:none}  /* el héroe entra con su propia animación */
+/* ---------- 2 · el mostrador: bloques pregunta con desfases editoriales ---------- */
+.asks{display:flex;flex-direction:column;gap:var(--space-2xl);margin-top:var(--space-2xl)}
+.ask{max-width:620px;min-width:0}
+.ask--right{margin-left:auto}
+.ask--wide{max-width:680px}
+.ask h3{font-size:var(--fs-lede)}
+.ask>p{color:var(--ink-soft);max-width:52ch;margin-block:var(--space-xs) var(--space-m)}
+/* ---------- 3 · reservas: banda blanca, texto arriba-izq + figura abajo-der ---------- */
+.band--surface{background:var(--surface);border-block:1px solid var(--hairline-soft)}
+.vig--member{width:min(340px,100%);margin-left:auto;margin-top:var(--space-l)}
+/* ---------- 4 · marca: columna angosta, casi vacía ---------- */
+.marca-body{max-width:65ch;display:flex;flex-direction:column;gap:var(--space-m);margin-top:var(--space-m)}
+.marca-body p{color:var(--ink-soft)}
+.marca-body strong{color:var(--ink)}
+/* ---------- 5 · migración: banda arena, figura ancha ---------- */
+.band--sand{background:var(--sand);border-block:1px solid var(--hairline-soft)}
+.vig--merge{max-width:880px;margin-top:var(--space-l)}
+.merge{display:grid;grid-template-columns:minmax(0,1.1fr) auto minmax(0,.9fr);align-items:stretch}
+.merge-col{min-width:0;display:flex;flex-direction:column}
+.merge-label{padding:.75rem 1rem .35rem;font-size:var(--fs-micro);font-weight:600;color:var(--muted)}
+.merge .row:last-child{flex:1}
+.merge-arrow{display:flex;align-items:center;padding-inline:.25rem;color:var(--muted)}
+.merge-arrow svg{width:22px;height:22px}
+.merge-clean{
+  display:flex;flex-direction:column;justify-content:center;gap:.4rem;
+  padding:1rem;border-left:1px solid var(--hairline-soft);
+}
+.merge-clean .nombre{font-size:var(--fs-small);font-weight:600}
+/* ---------- 6 · claro: filas con filete, sin tarjetas ---------- */
+.claro-rows{margin-top:var(--space-l)}
+.claro-rows p{
+  max-width:65ch;color:var(--ink-soft);
+  padding-block:var(--space-m);border-top:1px solid var(--hairline);
+}
+.claro-rows p strong{color:var(--ink)}
+/* ---------- 7 · contacto: cierre centrado ---------- */
+.contacto{padding-block:var(--space-3xl);text-align:center}
+.contacto .sec-head .sub{margin-inline:auto}
+.contacto .btn{margin-top:var(--space-l)}
+.contacto .mail{margin-top:var(--space-s);font-size:var(--fs-small);color:var(--muted)}
+/* ---------- pie: una sola regla ---------- */
+footer{border-top:1px solid var(--hairline-soft)}
+.foot{
+  display:flex;align-items:center;justify-content:space-between;gap:var(--space-m);
+  padding-block:var(--space-l);flex-wrap:wrap;
+}
+.foot svg{height:22px;width:auto;display:block}
+.foot p{font-size:var(--fs-small);color:var(--muted)}
+/* ---------- responsivo ---------- */
+@media (max-width:900px){
+  .hero-grid{grid-template-columns:minmax(0,1fr);gap:var(--space-l)}
+  .ask--right{margin-left:0}
+  .vig--member{margin-left:0}
+}
+@media (max-width:700px){
+  .merge{grid-template-columns:minmax(0,1fr)}
+  .merge-arrow{padding:.25rem 1rem;transform:rotate(90deg);width:min-content}
+  .merge-clean{border-left:none;border-top:1px solid var(--hairline-soft)}
+  section{padding-block:var(--space-xl)}
+  .contacto{padding-block:var(--space-2xl)}
+  .asks{gap:var(--space-xl);margin-top:var(--space-xl)}
+}
+@media (max-width:640px){
+  .nav-links{display:none}
+  .row .m--coach{display:none}
+}
+@media (max-width:400px){
+  .row{flex-wrap:wrap;row-gap:.25rem}
+}
+/* ---------- movimiento reducido ---------- */
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none !important;transition:none !important}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+<a class="skip" href="#contenido">Saltar al contenido</a>
+
+<header class="site-h">
+  <nav class="container" aria-label="Principal">
+    <a class="brand" href="#inicio" aria-label="iBookit — inicio">
+      <svg viewBox="0 0 240 64" role="img" aria-hidden="true" focusable="false">
+        <g fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="6" y="6" width="12" height="12" rx="3"/><rect x="26" y="6" width="12" height="12" rx="3"/><rect x="46" y="6" width="12" height="12" rx="3"/>
+          <rect x="6" y="26" width="12" height="12" rx="3"/><rect x="26" y="26" width="12" height="12" rx="3"/>
+          <rect x="6" y="46" width="12" height="12" rx="3"/><rect x="26" y="46" width="12" height="12" rx="3"/><rect x="46" y="46" width="12" height="12" rx="3"/>
+        </g>
+        <path fill="#8A4A6C" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/>
+        <text x="80" y="47" fill="currentColor" font-family="Hanken Grotesk, Arial, sans-serif" font-size="43" font-weight="600" letter-spacing="-0.86">i<tspan dx="0.9">Bookit</tspan></text>
+      </svg>
+    </a>
+    <div class="nav-links">
+      <a data-spy href="#mostrador">Producto</a>
+      <a data-spy href="#reservas">Reservas</a>
+      <a data-spy href="#marca">Tu marca</a>
+    </div>
+    <a class="btn btn--quiet" href="#contacto">Agenda una demo</a>
+  </nav>
+</header>
+
+<main id="contenido">
+
+  <!-- 1 · héroe — gancho: díptico titular + viñeta de agenda -->
+  <section class="hero" id="inicio" aria-labelledby="h-inicio">
+    <div class="container hero-grid">
+      <div class="hero-copy">
+        <h1 id="h-inicio" class="rise" style="--i:0">Quién vino, quién pagó, quién sigue.</h1>
+        <p class="lede rise" style="--i:1">iBookit lleva la agenda, los clientes, los cobros y la asistencia de tu negocio — con tu marca, no la nuestra.</p>
+        <div class="hero-cta rise" style="--i:2">
+          <a class="btn btn--primary" href="#contacto">Agenda una demo</a>
+          <a class="link-cta" href="#mostrador">Ver el producto ↓</a>
+        </div>
+      </div>
+      <figure class="vig rise" style="--i:3">
+        <div class="panel">
+          <div class="panel-h"><span>Agenda</span><span class="meta">martes&nbsp;14</span></div>
+          <div class="row"><span class="t">16:00</span><span class="g">Ballet clásico</span><span class="m m--coach">Coach Regina</span><span class="m">8/10</span></div>
+          <div class="row"><span class="t">17:00</span><span class="g">Hip-hop juvenil</span><span class="m m--coach">Coach Óscar</span><span class="m">12/12 · lleno</span></div>
+          <div class="row row--tuyo"><span class="t">18:00</span><span class="g">Salsa nivel 2</span><span class="m m--coach">Coach Marifer</span><span class="m">11/12</span></div>
+          <div class="row"><span class="t">19:30</span><span class="g">Bachata principiantes</span><span class="m m--coach">Coach Iván</span><span class="m">6/12</span></div>
+        </div>
+        <figcaption>La agenda de un día — datos de ejemplo de una academia de danza.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 2 · el mostrador — probar: cada pantalla responde una pregunta -->
+  <section id="mostrador" aria-labelledby="h-mostrador">
+    <div class="container">
+      <div class="sec-head">
+        <h2 id="h-mostrador">Cada pantalla responde una pregunta</h2>
+        <p class="sub">Las que hoy resuelves de memoria, hojeando la libreta o buscando en el chat.</p>
+      </div>
+      <div class="asks">
+
+        <div class="ask">
+          <h3>¿Quién es cada cliente?</h3>
+          <p>Su plan, cuántas clases le quedan, cuándo vence y todo lo que ha pagado — en una sola ficha.</p>
+          <figure class="vig">
+            <div class="panel">
+              <div class="panel-h"><span>Mariana Torres</span><span class="chip chip--ok">vigente</span></div>
+              <dl>
+                <div class="kv"><dt>Plan</dt><dd>Boulder · 10&nbsp;entradas</dd></div>
+                <div class="kv"><dt>Le quedan</dt><dd>4 de 10</dd></div>
+                <div class="kv"><dt>Vence</dt><dd>28&nbsp;may</dd></div>
+                <div class="kv"><dt>Último pago</dt><dd>$650&nbsp;MXN · efectivo</dd></div>
+                <div class="kv"><dt>Última visita</dt><dd>hace 2&nbsp;días</dd></div>
+              </dl>
+            </div>
+            <figcaption>La ficha de una clienta — ejemplo de un gimnasio de escalada.</figcaption>
+          </figure>
+        </div>
+
+        <div class="ask ask--right">
+          <h3>¿Qué pagó y cuándo vence?</h3>
+          <p>Cobras en efectivo, tarjeta o transferencia; iBookit lo registra y envía el recibo numerado por WhatsApp o correo.</p>
+          <figure class="vig">
+            <div class="panel">
+              <div class="panel-h"><span>Venta registrada</span><span class="meta">Recibo&nbsp;#0483</span></div>
+              <dl>
+                <div class="kv"><dt>Concepto</dt><dd>Mensualidad · Piano grupal</dd></div>
+                <div class="kv"><dt>Cliente</dt><dd>Emilio C.</dd></div>
+                <div class="kv"><dt>Pago</dt><dd>$900&nbsp;MXN · transferencia</dd></div>
+                <div class="kv"><dt>Vigencia</dt><dd>12&nbsp;jun al 12&nbsp;jul</dd></div>
+              </dl>
+              <div class="row" aria-hidden="true"><span class="chip-act">Enviar por WhatsApp</span><span class="chip-act">Enviar por correo</span></div>
+            </div>
+            <figcaption>Una venta cobrada en el mostrador — ejemplo de una escuela de música.</figcaption>
+          </figure>
+        </div>
+
+        <div class="ask ask--wide">
+          <h3>¿Quién vino hoy?</h3>
+          <p>Pasas lista con un toque — a una clase o acceso abierto, hoy o con fecha de ayer.</p>
+          <figure class="vig">
+            <div class="panel">
+              <div class="panel-h"><span>Asistencia</span><span class="meta">hoy · 23&nbsp;visitas</span></div>
+              <div class="row"><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M2.5 8.5l3.5 3.5 7.5-8"/></svg><span class="t">07:12</span><span class="g">Sofía M.</span><span class="m">Yoga matutino</span></div>
+              <div class="row"><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M2.5 8.5l3.5 3.5 7.5-8"/></svg><span class="t">09:05</span><span class="g">Diego L.</span><span class="m">Vinyasa 9:00</span></div>
+              <div class="row"><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M2.5 8.5l3.5 3.5 7.5-8"/></svg><span class="t">13:40</span><span class="g">Carla V.</span><span class="m">Acceso abierto</span></div>
+              <div class="row"><svg class="check" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M2.5 8.5l3.5 3.5 7.5-8"/></svg><span class="t">ayer&nbsp;19:00</span><span class="g">Renata P.</span><span class="m">Restaurativa</span><span class="chip chip--neutral">capturada hoy</span></div>
+            </div>
+            <figcaption>El pase de lista de hoy — ejemplo de un estudio de yoga.</figcaption>
+          </figure>
+        </div>
+
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 · reservas — enseñar: el lado del cliente -->
+  <section id="reservas" class="band--surface" aria-labelledby="h-reservas">
+    <div class="container">
+      <div class="sec-head">
+        <h2 id="h-reservas">Tus clientes reservan solos</h2>
+        <p class="sub">Desde su celular ven el horario con lugares en vivo, reservan y cancelan — sin instalar nada.</p>
+      </div>
+      <figure class="vig vig--member">
+        <div class="panel">
+          <div class="panel-h"><span>Reservar</span><span class="meta">esta semana</span></div>
+          <div class="row"><span class="t">mar&nbsp;18:00</span><span class="g">Adultos principiantes</span><span class="cupo--pocos">quedan&nbsp;3</span><span class="btn-mini" aria-hidden="true">Reservar</span></div>
+          <div class="row"><span class="t">mié&nbsp;17:00</span><span class="g">Técnica de nado</span><span class="m">lleno</span></div>
+          <div class="row"><span class="t">jue&nbsp;19:00</span><span class="g">Adultos principiantes</span><span class="m">quedan&nbsp;8</span><span class="btn-mini" aria-hidden="true">Reservar</span></div>
+          <div class="row"><span class="m">Tu plan — 8&nbsp;clases · quedan&nbsp;5 · vence 30&nbsp;jun</span></div>
+        </div>
+        <figcaption>Lo que ve un cliente al reservar — ejemplo de una escuela de natación.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 4 · marca — diferenciar: sección tipográfica, en calma -->
+  <section id="marca" aria-labelledby="h-marca">
+    <div class="container">
+      <div class="sec-head">
+        <h2 id="h-marca">Con tu marca, no la nuestra</h2>
+      </div>
+      <div class="marca-body">
+        <p><strong>¿Ya tienes marca?</strong> Tu logo, tus colores y tu nombre en la app que abren tus clientes, en los recibos y en cada correo. Dos negocios ya operan así — y ninguno se parece al otro.</p>
+        <p><strong>¿Todavía no?</strong> iBookit trae la propia, terminada. Abres con una identidad que se ve deliberada, sin haber diseñado nada.</p>
+        <p><strong>¿La quieres tuya?</strong> Te la diseñamos nosotros — y la plataforma se la pone.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · migración — diferenciar: banda arena, el momento de segunda lectura -->
+  <section id="migracion" class="band--sand" aria-labelledby="h-migracion">
+    <div class="container">
+      <div class="sec-head">
+        <h2 id="h-migracion">El día uno empieza con tu lista completa</h2>
+        <p class="sub">Nos das tu libreta, tu Excel o tu chat — como esté. Nosotros lo limpiamos y lo cargamos, a mano, contigo.</p>
+      </div>
+      <figure class="vig vig--merge">
+        <div class="panel merge">
+          <div class="merge-col">
+            <div class="merge-label">Así llega</div>
+            <div class="row"><span class="g">Maria lopez — debe 150 de abril</span><span class="m">libreta</span></div>
+            <div class="row"><span class="g">maria.lopez84 — ¿sí hay clase mañana?</span><span class="m">WhatsApp</span></div>
+            <div class="row"><span class="g">MA. LOPEZ… ABR PAGADO</span><span class="m">Excel</span></div>
+          </div>
+          <div class="merge-arrow" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </div>
+          <div class="merge-clean">
+            <div class="merge-label">Así queda</div>
+            <span class="chip chip--ok">vigente</span>
+            <span class="nombre">María López</span>
+            <span class="m">Jazz adultos · vence 3&nbsp;jul</span>
+          </div>
+        </div>
+        <figcaption>Tres registros, una sola clienta — datos de ejemplo.</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- 6 · claro — despejar dudas: filas honestas -->
+  <section id="claro" aria-labelledby="h-claro">
+    <div class="container">
+      <div class="sec-head">
+        <h2 id="h-claro">Claro desde el principio</h2>
+      </div>
+      <div class="claro-rows">
+        <p><strong>El dinero no pasa por nosotros.</strong> Cobras en tu mostrador como siempre — efectivo, terminal o transferencia — y el sistema lo registra y emite el recibo.</p>
+        <p><strong>Nada que instalar.</strong> El mostrador funciona en tu compu o tu celular, y tus clientes reservan desde el navegador del suyo.</p>
+        <p><strong>Los mensajes los mandas tú.</strong> iBookit te prepara el WhatsApp con los datos listos; tú decides a quién y cuándo enviarlo.</p>
+        <p><strong>Tu información es tuya.</strong> El resumen mensual de tu negocio se descarga en Excel, desde tu cuenta.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 · contacto — convertir: cierre centrado -->
+  <section id="contacto" class="contacto" aria-labelledby="h-contacto">
+    <div class="container">
+      <div class="sec-head">
+        <h2 id="h-contacto">Platícanos de tu negocio</h2>
+        <p class="sub">Te enseñamos iBookit funcionando y armamos la puesta en marcha contigo — a mano, negocio por negocio.</p>
+      </div>
+      <a class="btn btn--primary" href="mailto:hola@ibooki.lat?subject=Demo%20de%20iBookit">Agenda una demo</a>
+      <p class="mail">hola@ibooki.lat</p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="container foot">
+    <a class="brand" href="#inicio" aria-label="iBookit — inicio">
+      <svg viewBox="0 0 240 64" role="img" aria-hidden="true" focusable="false">
+        <g fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="6" y="6" width="12" height="12" rx="3"/><rect x="26" y="6" width="12" height="12" rx="3"/><rect x="46" y="6" width="12" height="12" rx="3"/>
+          <rect x="6" y="26" width="12" height="12" rx="3"/><rect x="26" y="26" width="12" height="12" rx="3"/>
+          <rect x="6" y="46" width="12" height="12" rx="3"/><rect x="26" y="46" width="12" height="12" rx="3"/><rect x="46" y="46" width="12" height="12" rx="3"/>
+        </g>
+        <path fill="#8A4A6C" d="M45.5 25.5H54.75A3.75 3.75 0 0 1 58.5 29.25V34.75A3.75 3.75 0 0 1 54.75 38.5H49.25A3.75 3.75 0 0 1 45.5 34.75V25.5Z"/>
+        <text x="80" y="47" fill="currentColor" font-family="Hanken Grotesk, Arial, sans-serif" font-size="43" font-weight="600" letter-spacing="-0.86">i<tspan dx="0.9">Bookit</tspan></text>
+      </svg>
+    </a>
+    <p>© 2026 iBookit · ibooki.lat</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (!("IntersectionObserver" in window)) return;
+
+  // Revelado de viñetas: el mostrador "llenándose" al llegar a cada panel.
+  if (!reduced) {
+    document.documentElement.classList.add("anim");
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { e.target.classList.add("en"); io.unobserve(e.target); }
+      });
+    }, { threshold: 0.15, rootMargin: "0px 0px -8% 0px" });
+    document.querySelectorAll("main .vig").forEach(function (v) { io.observe(v); });
+  }
+
+  // Scrollspy: aria-current en la navegación.
+  var links = Array.prototype.slice.call(document.querySelectorAll(".nav-links a[data-spy]"));
+  if (!links.length) return;
+  var byId = {};
+  links.forEach(function (a) { byId[a.getAttribute("href").slice(1)] = a; });
+  var spy = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (e.isIntersecting) {
+        links.forEach(function (a) { a.removeAttribute("aria-current"); });
+        var a = byId[e.target.id];
+        if (a) a.setAttribute("aria-current", "true");
+      }
+    });
+  }, { rootMargin: "-35% 0px -55% 0px" });
+  Object.keys(byId).forEach(function (id) {
+    var s = document.getElementById(id);
+    if (s) spy.observe(s);
+  });
+})();
+</script>
+</body>
+</html>
