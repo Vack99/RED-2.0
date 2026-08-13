@@ -73,14 +73,13 @@ export default async function ReservarPage({
   }
   if (!esMiembro) return <SinMembresia />;
 
-  // Host reconciliation (audit #17 / spec §5.5): pass the presentation tenant (x-gym) so a
-  // member in several gyms reads THIS gym's agenda + perfil. Host stays presentation-only —
-  // it only picks among the caller's own memberships; RLS scopes the reads either way.
-  const hostGym = (await headers()).get("x-gym");
+  // Host reconciliation (audit #17 / spec §5.5) happens INSIDE the DAL: each reader resolves
+  // the request's own tenant (`slugDelHost`), so a member in several gyms reads THIS gym's
+  // agenda + perfil with nothing to thread through — and nothing to forget.
   const [semana, saldo, perfil] = await Promise.all([
-    getAgendaSemanaMiembro(undefined, undefined, hostGym),
-    getSaldoMiembro(undefined, hostGym),
-    getPerfilResumenMiembro(undefined, hostGym),
+    getAgendaSemanaMiembro(),
+    getSaldoMiembro(),
+    getPerfilResumenMiembro(),
   ]);
   const nombre = perfil.nombre;
 

@@ -14,8 +14,8 @@ import type { SupabaseServer } from "./supabase";
  * separately. Injectable client (ADR-0001); RLS itself (staff write, cross-tenant
  * denial) is proven at the DB layer.
  *
- * `hostGymSlug()` reads `next/headers`, which throws outside a request scope — exactly
- * where these tests live — so every case here exercises the no-host fallback path.
+ * `slugDelHost()` (inquilino.ts) reads `next/headers`, which throws outside a request scope
+ * — exactly where these tests live — so every case here exercises the no-host fallback path.
  */
 function makeFake(opts: {
   sub?: string | null;

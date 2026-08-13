@@ -1,7 +1,6 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { headers } from "next/headers";
 
 import {
   toggleFavoritoTipo,
@@ -44,12 +43,11 @@ export async function cancelarDesdeClaseAction(sessionId: string): Promise<Cance
  * the "Tu favorita" tag re-derives across the week + mis reservas; the client island
  * refreshes this page for the hero heart.
  *
- * Host reconciliation (#219), the same `x-gym` the page itself passes down: the heart must move on
- * the row of the gym the member is looking at, never on whichever gym a `limit 1` returned.
+ * Host reconciliation (#219) happens inside the DAL, off this action's own request: the heart must
+ * move on the row of the gym the member is looking at, never on whichever gym a `limit 1` returned.
  */
 export async function toggleFavoritoAction(classTypeId: string): Promise<ToggleFavoritoResultado> {
-  const hostGym = (await headers()).get("x-gym");
-  const result = await toggleFavoritoTipo(classTypeId, undefined, hostGym);
+  const result = await toggleFavoritoTipo(classTypeId);
   if (result.ok) revalidatePath("/reservar");
   return result;
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { instanteEnZona } from "@gym/format";
 
@@ -8,6 +8,19 @@ import {
   toggleFavoritoTipo,
 } from "./clase-miembro";
 import type { SupabaseServer } from "./supabase";
+
+const stubbedHeaders = new Headers();
+vi.mock("next/headers", () => ({ headers: async () => stubbedHeaders }));
+
+/** The proxy's `x-gym` stamp — the ONE tenant input these readers take, read inside the
+ *  DAL by `slugDelHost` (inquilino.ts) instead of threaded through their signatures.
+ *  `null` is the unmapped host: previews, the bare `.vercel.app`, plain `pnpm dev`. */
+function setHostGym(slug: string | null): void {
+  if (slug === null) stubbedHeaders.delete("x-gym");
+  else stubbedHeaders.set("x-gym", slug);
+}
+
+beforeEach(() => setHostGym(null));
 
 /**
  * The clase-detail + Confirmada + favorita seam (slice #59). Injectable client (ADR-0001),
@@ -252,7 +265,7 @@ describe("getConfirmacionReserva", () => {
 });
 
 /**
- * Host reconciliation (audit #17 / spec §5.5), the clase-miembro twin of resolverMiembroGym.
+ * Host reconciliation (audit #17 / spec §5.5) through the shared `resolverMiembroGym`.
  * A member in several gyms reads the HOST gym's data on that gym's site. The observable signal
  * is the resolved timezone: the two gyms sit one hour apart (both DST-free), so the SAME UTC
  * session renders a different local `hora` depending on which membership won. Host match wins;
@@ -279,22 +292,25 @@ describe("getClaseDetalleMiembro — host-tenant reconciliation (audit #17)", ()
   });
 
   it("host match → renders in the host gym's timezone (Hermosillo, UTC-7)", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "her");
+    setHostGym("her");
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.hora).toBe("17:15");
   });
 
   it("host match → renders in the host gym's timezone (Chihuahua, UTC-6)", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "cua");
+    setHostGym("cua");
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.hora).toBe("18:15");
   });
 
   it("no host tenant → deterministic fallback to the OLDEST membership's gym (Chihuahua)", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), null);
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.hora).toBe("18:15");
   });
 
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "otro");
+    setHostGym("otro");
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.hora).toBe("18:15");
   });
 });
@@ -327,17 +343,19 @@ describe("getClaseDetalleMiembro — favorita host reconciliation (#74)", () => 
   });
 
   it("host match → favorita from the host gym's clientes row (her favors this type → true)", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "her");
+    setHostGym("her");
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.favorita).toBe(true);
   });
 
   it("host match → false when the host gym's row favors a different type (cua)", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), "cua");
+    setHostGym("cua");
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.favorita).toBe(false);
   });
 
   it("no host tenant → oldest-membership fallback (cua favors a different type → false)", async () => {
-    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()), null);
+    const d = await getClaseDetalleMiembro(SID, makeFake(dosGimnasios()));
     expect(d!.favorita).toBe(false);
   });
 });
@@ -398,26 +416,29 @@ describe("toggleFavoritoTipo — tenant pin (#219)", () => {
   }
 
   it("host match → the RPC is handed the HOST gym, not the oldest membership", async () => {
+    setHostGym("her");
     const { fake, visto } = espia(dosGimnasios());
-    expect(await toggleFavoritoTipo(CTID, fake, "her")).toEqual({ ok: true, favorito: CTID });
+    expect(await toggleFavoritoTipo(CTID, fake)).toEqual({ ok: true, favorito: CTID });
     expect(visto.gym).toBe("gym-her");
   });
 
   it("host match on the older gym → that one", async () => {
+    setHostGym("cua");
     const { fake, visto } = espia(dosGimnasios());
-    await toggleFavoritoTipo(CTID, fake, "cua");
+    await toggleFavoritoTipo(CTID, fake);
     expect(visto.gym).toBe("gym-cua");
   });
 
   it("no host tenant → the deterministic OLDEST-membership fallback, never a roulette", async () => {
     const { fake, visto } = espia(dosGimnasios());
-    await toggleFavoritoTipo(CTID, fake, null);
+    await toggleFavoritoTipo(CTID, fake);
     expect(visto.gym).toBe("gym-cua");
   });
 
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback (never widens)", async () => {
+    setHostGym("otro");
     const { fake, visto } = espia(dosGimnasios());
-    await toggleFavoritoTipo(CTID, fake, "otro");
+    await toggleFavoritoTipo(CTID, fake);
     expect(visto.gym).toBe("gym-cua");
   });
 

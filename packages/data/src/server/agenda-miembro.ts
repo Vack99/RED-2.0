@@ -24,6 +24,7 @@ import {
 } from "@gym/format";
 
 import { derivarMembresia, type MembresiaDerivada } from "./derive";
+import { resolverMiembroGym } from "./inquilino";
 import { getPlanesPublicos } from "./marketing";
 
 export type { MembresiaDerivada } from "./derive";
@@ -122,49 +123,6 @@ interface SesionMiembroRaw {
   favorita: boolean;
   coaches: string[];
 }
-
-/** The member's gym (tz + brand display name) from their `gym_membership` self-read —
- *  the RLS gate. Returns `null` for an anon/non-member caller (or an unreadable gym row)
- *  INSTEAD of throwing — the signed-in-but-not-yet-a-member state (audit #10/#15: a
- *  swallowed claim or a password-reset-first session must not crash the booking home) —
- *  mirroring the clase-miembro.ts twin. `marca` (gym.brand_name) is the brand-neutral
- *  display name the perfil footer renders from real data — never a hardcoded brand string.
- *
- *  Host reconciliation (audit #17 / spec §5.5): a member who belongs to several gyms sees
- *  the HOST gym's data on that gym's site — this prefers the membership whose gym matches
- *  the host tenant (`hostGymSlug` = the proxy's `x-gym`, presentation-only per ADR-0008),
- *  falling back to the OLDEST membership (a stable, deterministic choice — never the
- *  `limit(1)` roulette). It only picks among the caller's OWN memberships; RLS still scopes
- *  every downstream read, so the host can never surface data the caller doesn't already hold.
- *
- *  `cache()`-wrapped (perf): the page's three branches (agenda / saldo / perfil) each resolve
- *  the SAME member's gym for the SAME request — without this, that's 3 independent sequential
- *  2-query pairs (6 round trips) for identical input. React `cache()` keys on argument identity;
- *  `supabase` is safe to key on because `createClient()` (supabase.ts) is itself `cache()`-wrapped,
- *  so every caller in one request that passes `client: undefined` resolves the SAME instance —
- *  this is still per-request (React's request-scoped memoization), never module-level state. */
-const resolverMiembroGym = cache(async function resolverMiembroGym(
-  supabase: SupabaseServer,
-  hostGymSlug?: string | null,
-): Promise<{ id: string; tz: string; marca: string } | null> {
-  // ONE request (embedded FK join) instead of the old membership-then-gym pair (perf):
-  // gym_membership.gym_id → gym is a many-to-one FK, so PostgREST embeds `gym` as a
-  // single object per row (verified against the local stack), never an array.
-  const { data: memberships } = await supabase
-    .from("gym_membership")
-    .select("gym_id, created_at, gym(id, slug, timezone, brand_name)")
-    .order("created_at", { ascending: true });
-  if (!memberships || memberships.length === 0) return null;
-
-  const enHost = hostGymSlug
-    ? memberships.find((m) => m.gym?.slug === hostGymSlug)
-    : undefined;
-  const elegido = enHost ?? memberships[0]; // host match, else the oldest (stable fallback)
-  const gym = elegido.gym;
-  if (!gym) return null;
-
-  return { id: elegido.gym_id, tz: gym.timezone, marca: gym.brand_name };
-});
 
 /**
  * Whether the signed-in caller currently holds a `gym_membership` row (the same
@@ -341,13 +299,9 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
  * staff have already scheduled.
  */
 export const getAgendaSemanaMiembro = cache(
-  async (
-    fechaIso?: string,
-    client?: SupabaseServer,
-    hostGymSlug?: string | null,
-  ): Promise<AgendaSemanaMiembroDTO> => {
+  async (fechaIso?: string, client?: SupabaseServer): Promise<AgendaSemanaMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+    const miembro = await resolverMiembroGym(supabase);
     if (!miembro) return { dias: [] };
     const { id: gymId, tz } = miembro;
 
@@ -383,19 +337,16 @@ export const getAgendaSemanaMiembro = cache(
  * caller with no cliente row (edge) reads as ilimitado-safe `{ ilimitado: false,
  * clasesRestantes: 0 }`. `client` injectable (ADR-0001); memoized per request.
  *
- * Host reconciliation (#74, audit #17 / spec §5.5): resolves the SAME gym the agenda
- * readers do (`resolverMiembroGym` — host-tenant match, else the oldest membership) and
+ * Host reconciliation (#74, audit #17 / spec §5.5): resolves the SAME gym every other
+ * reader does (`resolverMiembroGym` — host-tenant match, else the oldest membership) and
  * scopes the balance read to that gym's clientes row, so a member holding rows in several
  * gyms reads THIS gym's saldo — never the `limit(1)` roulette. No membership → the same
- * safe default. `hostGymSlug` is the proxy's `x-gym` (presentation-only, ADR-0008).
+ * safe default.
  */
 export const getSaldoMiembro = cache(
-  async (
-    client?: SupabaseServer,
-    hostGymSlug?: string | null,
-  ): Promise<SaldoMiembroDTO> => {
+  async (client?: SupabaseServer): Promise<SaldoMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+    const miembro = await resolverMiembroGym(supabase);
     if (!miembro) return { ilimitado: false, clasesRestantes: 0, vencido: false };
     // The balance is load-bearing, so this read PROPAGATES a transient error (a swallowed 0
     // would silently understate the member's classes) — unlike the best-effort perfil/favorita
@@ -546,12 +497,9 @@ const PERFIL_SIN_MEMBRESIA: PerfilResumenMiembroDTO = {
 };
 
 export const getPerfilResumenMiembro = cache(
-  async (
-    client?: SupabaseServer,
-    hostGymSlug?: string | null,
-  ): Promise<PerfilResumenMiembroDTO> => {
+  async (client?: SupabaseServer): Promise<PerfilResumenMiembroDTO> => {
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+    const miembro = await resolverMiembroGym(supabase);
     if (!miembro) return PERFIL_SIN_MEMBRESIA;
     const { id: gymId, tz, marca } = miembro;
 

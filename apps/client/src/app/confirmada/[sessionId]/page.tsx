@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getConfirmacionReserva } from "@gym/data/server/clase-miembro";
@@ -31,10 +30,9 @@ export default async function ConfirmadaPage({
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims?.sub) redirect("/entrar");
 
-  // Host reconciliation (audit #17 / spec §5.5): the presentation tenant (x-gym) picks the
-  // caller's membership in THIS gym when they belong to several. Presentation-only — RLS scopes the read.
-  const hostGym = (await headers()).get("x-gym");
-  const confirmacion = await getConfirmacionReserva(sessionId, undefined, hostGym);
+  // Host reconciliation (audit #17 / spec §5.5) happens INSIDE the DAL: the presentation tenant
+  // (x-gym) picks the caller's membership in THIS gym when they belong to several. RLS scopes the read.
+  const confirmacion = await getConfirmacionReserva(sessionId);
   if (!confirmacion) redirect("/reservar");
 
   return <ConfirmadaVista confirmacion={confirmacion} />;

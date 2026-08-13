@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 
 import { getSaldoMiembro } from "@gym/data/server/agenda-miembro";
@@ -31,12 +30,11 @@ export default async function ClasePage({
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims?.sub) redirect("/entrar");
 
-  // Host reconciliation (audit #17 / spec §5.5): the presentation tenant (x-gym) picks the
-  // caller's membership in THIS gym when they belong to several. Presentation-only — RLS scopes the read.
-  const hostGym = (await headers()).get("x-gym");
+  // Host reconciliation (audit #17 / spec §5.5) happens INSIDE the DAL: the presentation tenant
+  // (x-gym) picks the caller's membership in THIS gym when they belong to several. RLS scopes the read.
   const [detalle, saldo] = await Promise.all([
-    getClaseDetalleMiembro(sessionId, undefined, hostGym),
-    getSaldoMiembro(undefined, hostGym),
+    getClaseDetalleMiembro(sessionId),
+    getSaldoMiembro(),
   ]);
   if (!detalle) notFound();
 

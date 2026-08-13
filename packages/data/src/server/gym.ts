@@ -1,8 +1,8 @@
 import "server-only";
 
-import { headers } from "next/headers";
 import { cache } from "react";
 
+import { slugDelHost } from "./inquilino";
 import { createClient, type SupabaseServer } from "./supabase";
 import { requireOperator } from "./_auth";
 
@@ -71,22 +71,6 @@ const resolveOperatorGyms = cache(
   },
 );
 
-/**
- * The tenant the HOST names (`x-gym`, stamped by `proxy.ts`), or `null` when no
- * `gym_domain` row matched — the bare `.vercel.app`, every preview, plain `pnpm dev`.
- *
- * The `catch` is required, not defensive padding: the DAL unit tests inject a client and
- * never enter a request scope, where `headers()` throws. Deliberately NOT a parameter —
- * an extra argument splits `resolveOperatorGyms`' `cache()` bucket (see its docstring).
- */
-async function hostGymSlug(): Promise<string | null> {
-  try {
-    return (await headers()).get("x-gym");
-  } catch {
-    return null;
-  }
-}
-
 /** Every gym the session staffs, ordered by `gym_id`. */
 export async function getOperatorGyms(client?: SupabaseServer): Promise<OperatorGym[]> {
   const supabase = client ?? (await createClient());
@@ -106,7 +90,7 @@ export async function getOperatorGyms(client?: SupabaseServer): Promise<Operator
  */
 export async function getOperatorGym(client?: SupabaseServer): Promise<OperatorGym> {
   const gyms = await getOperatorGyms(client);
-  const host = await hostGymSlug();
+  const host = await slugDelHost();
   const gym = gyms.find((g) => g.slug === host) ?? gyms[0];
   if (!gym) throw new Error("Sin gym asignado");
   return gym;

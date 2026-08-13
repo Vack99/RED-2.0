@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { instanteEnZona } from "@gym/format";
 
@@ -9,6 +9,19 @@ import {
   getSaldoMiembro,
 } from "./agenda-miembro";
 import type { SupabaseServer } from "./supabase";
+
+const stubbedHeaders = new Headers();
+vi.mock("next/headers", () => ({ headers: async () => stubbedHeaders }));
+
+/** The proxy's `x-gym` stamp — the ONE tenant input these readers take, read inside the
+ *  DAL by `slugDelHost` (inquilino.ts) instead of threaded through their signatures.
+ *  `null` is the unmapped host: previews, the bare `.vercel.app`, plain `pnpm dev`. */
+function setHostGym(slug: string | null): void {
+  if (slug === null) stubbedHeaders.delete("x-gym");
+  else stubbedHeaders.set("x-gym", slug);
+}
+
+beforeEach(() => setHostGym(null));
 
 /**
  * The member-facing agenda reader (PRD #49 S3, slice #56/#57) — the seam BESIDE the
@@ -611,24 +624,27 @@ describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", (
   });
 
   it("host match → the membership in the host gym (newer of the two)", async () => {
-    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "red");
+    setHostGym("red");
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()));
     expect(perfil.marca).toBe("RED");
     expect(perfil.nombre).toBe("Ana en RED");
   });
 
   it("host match → the membership in the host gym (older of the two, not just newest)", async () => {
-    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "forge");
+    setHostGym("forge");
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()));
     expect(perfil.marca).toBe("Forge");
     expect(perfil.nombre).toBe("Ana en Forge");
   });
 
   it("no host tenant (unmapped) → deterministic fallback to the OLDEST membership", async () => {
-    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), null);
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()));
     expect(perfil.marca).toBe("Forge");
   });
 
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback", async () => {
-    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()), "otro-gym");
+    setHostGym("otro-gym");
+    const perfil = await getPerfilResumenMiembro(makeFake(dosGimnasios()));
     expect(perfil.marca).toBe("Forge");
   });
 
@@ -639,8 +655,10 @@ describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", (
       clientes: [],
       reservation: [],
     });
-    expect((await getPerfilResumenMiembro(makeFake(uno()), "red")).marca).toBe("RED");
-    expect((await getPerfilResumenMiembro(makeFake(uno()), "un-host-cualquiera")).marca).toBe("RED");
+    setHostGym("red");
+    expect((await getPerfilResumenMiembro(makeFake(uno()))).marca).toBe("RED");
+    setHostGym("un-host-cualquiera");
+    expect((await getPerfilResumenMiembro(makeFake(uno()))).marca).toBe("RED");
   });
 
   /**
@@ -650,14 +668,15 @@ describe("getPerfilResumenMiembro — host-tenant reconciliation (audit #17)", (
    */
   it("hands mi_membresia the same gym the DTO's marca/tz came from", async () => {
     const visto: { gym?: unknown } = {};
-    const espia = (host: string | null) =>
-      getPerfilResumenMiembro(
+    const espia = (host: string | null) => {
+      setHostGym(host);
+      return getPerfilResumenMiembro(
         makeFake(dosGimnasios(), (name, args) => {
           if (name === "mi_membresia") visto.gym = args.p_gym_id;
           return { data: [], error: null };
         }),
-        host,
       );
+    };
 
     expect((await espia("red")).marca).toBe("RED");
     expect(visto.gym).toBe("gym-red");
@@ -690,19 +709,22 @@ describe("getSaldoMiembro — host-tenant reconciliation (#74)", () => {
   });
 
   it("host match → the balance of the host gym's clientes row (red → 8)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "red")).toEqual({ ilimitado: false, clasesRestantes: 8, vencido: false });
+    setHostGym("red");
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 8, vencido: false });
   });
 
   it("host match → the other gym's row when that gym is the host (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "forge")).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
+    setHostGym("forge");
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
   });
 
   it("no host tenant → deterministic fallback to the OLDEST membership's row (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), null)).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
   });
 
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()), "otro-gym")).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
+    setHostGym("otro-gym");
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
   });
 });
 
@@ -739,19 +761,21 @@ describe("getAgendaSemanaMiembro — favorita host reconciliation (#74)", () => 
   };
 
   it("host match → favorita follows the host gym's favorite (red → Metcon/wed1)", async () => {
-    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), "red");
+    setHostGym("red");
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()));
     expect(semana.dias[2].sesiones[0].favorita).toBe(true); // wed1 = ct2
     expect(semana.dias[0].sesiones[0].favorita).toBe(false); // mon1 = ct1
   });
 
   it("host match → the other gym's favorite when that gym is the host (forge → Fuerza/mon1)", async () => {
-    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), "forge");
+    setHostGym("forge");
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()));
     expect(semana.dias[0].sesiones[0].favorita).toBe(true); // mon1 = ct1
     expect(semana.dias[2].sesiones[0].favorita).toBe(false); // wed1 = ct2
   });
 
   it("no host tenant → deterministic fallback to the OLDEST membership's favorite (forge → Fuerza)", async () => {
-    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()), null);
+    const semana = await getAgendaSemanaMiembro("2020-06-17", makeFake(dosGimnasios()));
     expect(semana.dias[0].sesiones[0].favorita).toBe(true); // forge → ct1
     expect(semana.dias[2].sesiones[0].favorita).toBe(false);
   });

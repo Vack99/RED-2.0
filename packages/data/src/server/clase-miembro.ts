@@ -14,6 +14,7 @@ import {
 } from "@gym/format";
 import { z } from "zod";
 
+import { resolverMiembroGym } from "./inquilino";
 import { contarActivosMiembro } from "./ocupacion";
 import { createClient, type SupabaseServer } from "./supabase";
 
@@ -118,35 +119,6 @@ function fechaLargaEnZona(local: Date): string {
   return `${capitalizar(WEEKDAYS_FULL[local.getDay()])} ${local.getDate()} de ${MONTHS_FULL[local.getMonth()]}`;
 }
 
-/** The member's gym id + timezone from their `gym_membership` self-read — the RLS gate
- *  (an anon/non-member reads none and every reader below returns null). Host-reconciled
- *  twin of agenda-miembro's `resolverMiembroGym` (audit #17 / spec §5.5): prefers the
- *  membership whose gym matches the host tenant (`hostGymSlug` = the proxy's `x-gym`,
- *  presentation-only per ADR-0008), else the OLDEST membership (stable, deterministic —
- *  not the `limit(1)` roulette). Picks only among the caller's OWN memberships; RLS still
- *  scopes every read, so the host can never surface data the caller doesn't hold. */
-async function resolverMiembroGym(
-  supabase: SupabaseServer,
-  hostGymSlug?: string | null,
-): Promise<{ gymId: string; tz: string } | null> {
-  // ONE request (embedded FK join) instead of the old membership-then-gym pair (perf):
-  // gym_membership.gym_id → gym is a many-to-one FK, so PostgREST embeds `gym` as a
-  // single object per row (verified against the local stack), never an array.
-  const { data: memberships } = await supabase
-    .from("gym_membership")
-    .select("gym_id, created_at, gym(id, slug, timezone)")
-    .order("created_at", { ascending: true });
-  if (!memberships || memberships.length === 0) return null;
-
-  const enHost = hostGymSlug
-    ? memberships.find((m) => m.gym?.slug === hostGymSlug)
-    : undefined;
-  const elegido = enHost ?? memberships[0]; // host match, else the oldest (stable fallback)
-  const gym = elegido.gym;
-  if (!gym?.timezone) return null;
-  return { gymId: elegido.gym_id, tz: gym.timezone };
-}
-
 /** The gym's street address (gym_contact.address_line), or null when unset/no row. */
 async function fetchDireccion(supabase: SupabaseServer, gymId: string): Promise<string | null> {
   const { data } = await supabase
@@ -205,16 +177,12 @@ const sessionIdSchema = z.string().uuid();
  * `client` injectable (ADR-0001); memoized per request.
  */
 export const getClaseDetalleMiembro = cache(
-  async (
-    rawSessionId: string,
-    client?: SupabaseServer,
-    hostGymSlug?: string | null,
-  ): Promise<ClaseDetalleDTO | null> => {
+  async (rawSessionId: string, client?: SupabaseServer): Promise<ClaseDetalleDTO | null> => {
     if (!sessionIdSchema.safeParse(rawSessionId).success) return null;
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+    const miembro = await resolverMiembroGym(supabase);
     if (!miembro) return null;
-    const { gymId, tz } = miembro;
+    const { id: gymId, tz } = miembro;
 
     const { data: sesion } = await supabase
       .from("class_session")
@@ -299,16 +267,12 @@ export const getClaseDetalleMiembro = cache(
  * injectable (ADR-0001); memoized per request.
  */
 export const getConfirmacionReserva = cache(
-  async (
-    rawSessionId: string,
-    client?: SupabaseServer,
-    hostGymSlug?: string | null,
-  ): Promise<ConfirmacionReservaDTO | null> => {
+  async (rawSessionId: string, client?: SupabaseServer): Promise<ConfirmacionReservaDTO | null> => {
     if (!sessionIdSchema.safeParse(rawSessionId).success) return null;
     const supabase = client ?? (await createClient());
-    const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+    const miembro = await resolverMiembroGym(supabase);
     if (!miembro) return null;
-    const { gymId, tz } = miembro;
+    const { id: gymId, tz } = miembro;
 
     // The member's OWN active booking for this session (plain RLS read of their own rows).
     const { data: reserva } = await supabase
@@ -367,10 +331,10 @@ export const getConfirmacionReserva = cache(
  * and the tenant pin; this thin seam validates the id and returns the new favorite (null =
  * cleared). `client` injectable (ADR-0001).
  *
- * `hostGymSlug` feeds the SAME host reconciliation every reader here uses (#219): the RPC used
- * to pick its own tenant with a bare `limit 1`, so a member with clientes rows in two gyms could
- * write the heart onto the other gym's row — or be refused with `Tipo de clase no encontrado` on
- * their own gym's class. It is passed the resolved gym, the same one `fetchFavoritoId` reads back.
+ * It runs the SAME host reconciliation every reader here uses (#219): the RPC used to pick its
+ * own tenant with a bare `limit 1`, so a member with clientes rows in two gyms could write the
+ * heart onto the other gym's row — or be refused with `Tipo de clase no encontrado` on their own
+ * gym's class. It is handed the resolved gym, the same one `fetchFavoritoId` reads back.
  */
 export type ToggleFavoritoResultado =
   | { ok: true; favorito: string | null }
@@ -379,17 +343,16 @@ export type ToggleFavoritoResultado =
 export async function toggleFavoritoTipo(
   rawClassTypeId: unknown,
   client?: SupabaseServer,
-  hostGymSlug?: string | null,
 ): Promise<ToggleFavoritoResultado> {
   const parsed = sessionIdSchema.safeParse(rawClassTypeId);
   if (!parsed.success) return { ok: false, error: "Tipo de clase inválido" };
 
   const supabase = client ?? (await createClient());
-  const miembro = await resolverMiembroGym(supabase, hostGymSlug);
+  const miembro = await resolverMiembroGym(supabase);
   if (!miembro) return { ok: false, error: "No eres miembro de este gimnasio" };
   const { data, error } = await supabase.rpc("toggle_favorito_tipo", {
     p_class_type_id: parsed.data,
-    p_gym_id: miembro.gymId,
+    p_gym_id: miembro.id,
   });
   if (error) return { ok: false, error: error.message || "No se pudo actualizar tu favorita" };
   return { ok: true, favorito: data?.[0]?.favorito ?? null };
