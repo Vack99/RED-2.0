@@ -29,13 +29,26 @@ describe("verificarTurnstile", () => {
 
   it("returns false when Cloudflare reports failure", async () => {
     const fetchImpl = vi.fn(async () => ({ json: async () => ({ success: false }) }) as Response);
-    expect(await verificarTurnstile("tok", null, { fetchImpl: fetchImpl as unknown as typeof fetch })).toBe(false);
+    expect(
+      await verificarTurnstile("tok", null, { secret: "sekret", fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).toBe(false);
   });
 
   it("fails closed on a network error", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("network down");
     });
-    expect(await verificarTurnstile("tok", null, { fetchImpl: fetchImpl as unknown as typeof fetch })).toBe(false);
+    expect(
+      await verificarTurnstile("tok", null, { secret: "sekret", fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).toBe(false);
+  });
+
+  it("throws when neither opts.secret nor TURNSTILE_SECRET_KEY is set — no silent test-key fallback", async () => {
+    const fetchImpl = vi.fn();
+    delete process.env.TURNSTILE_SECRET_KEY;
+    await expect(
+      verificarTurnstile("tok", null, { fetchImpl: fetchImpl as unknown as typeof fetch }),
+    ).rejects.toThrow("TURNSTILE_SECRET_KEY");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

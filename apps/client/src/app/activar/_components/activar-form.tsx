@@ -6,12 +6,9 @@ import { startTransition, useActionState, useEffect, useState, type FormEvent } 
 
 import { validarCorreo } from "../../../lib/auth-validacion";
 import { activarAction, type ActivarActionState } from "../actions";
+import { TURNSTILE_SITE_KEY as SITE_KEY } from "../../../lib/turnstile-site-key";
 
 const INICIAL: ActivarActionState = { status: "idle" };
-
-// Cloudflare's documented ALWAYS-PASS test sitekey — the default so dev works with no real key; the
-// owner swaps in the production sitekey via NEXT_PUBLIC_TURNSTILE_SITE_KEY post-queue.
-const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA";
 
 // Turnstile's implicit render calls these by NAME off `window` once the challenge resolves — submit
 // stays gated on a real token rather than firing the instant the form mounts.
