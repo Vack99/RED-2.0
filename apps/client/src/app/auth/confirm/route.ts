@@ -2,9 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { getMarketingGym } from "@gym/data/server/marketing";
 import {
+  intentarReclamoConFirma,
+  intentarReclamoPorEmail,
   parseCodigoInvitacion,
-  reclamarCliente,
-  reclamarPorCodigo,
 } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { confirmarCodigo, confirmarTokenHash } from "@gym/data/server/sesion";
@@ -53,7 +53,7 @@ async function finalizarAuth(
       // Re-review: this rail renders no aviso anywhere upstream (the magic-link existing-
       // account rail — no consent UI, `ActivarForm` shows only email + Turnstile), so it
       // stamps an honest null, matching reservar/page.tsx and activar/actions.ts.
-      await reclamarPorCodigo(codigo, firma ?? "", null, supabase);
+      await intentarReclamoConFirma(codigo, firma ?? "", null, supabase);
     } else if (!next) {
       // Fallback: claim (or create) the cliente by verified email in the host gym. Never
       // on a bare `next` recovery (a plain password reset must not claim a membership).
@@ -64,12 +64,13 @@ async function finalizarAuth(
         // complete — recompute that here (never trust a stale render-time flag) so the
         // stamped version matches what THIS request's gym actually shows.
         const gym = await getMarketingGym(tenant.slug);
-        await reclamarCliente(tenant.id, await avisoVersionParaGym(gym), supabase);
+        await intentarReclamoPorEmail(tenant.id, await avisoVersionParaGym(gym), supabase);
       }
     }
   } catch {
-    // A failed claim must not strand a verified account — land on the destination;
-    // the member can retry / an operator reconciles. The RPCs are idempotent.
+    // The claim itself no longer throws (the `intentar*` ceremony returns a refusal as a
+    // value); this still guards the host/aviso LOOKUPS above, so a tenant or legal-identity
+    // read that blows up lands the verified account on its destination instead of erroring.
   }
   return NextResponse.redirect(new URL(next ?? "/reservar", request.url));
 }

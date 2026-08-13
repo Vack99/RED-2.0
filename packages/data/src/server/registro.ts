@@ -59,7 +59,7 @@ export function parseCodigoInvitacion(raw: unknown): string | null {
 
 /** The claim RPC's row DTO, DERIVED from the generated types so it cannot drift
  *  from the migration's `returns table(cliente_id, reclamado)`. */
-export type ReclamoCliente =
+type ReclamoCliente =
   Database["public"]["Functions"]["reclamar_o_crear_cliente"]["Returns"][number];
 
 /** signUp outcome — a discriminated result so the action renders one message
@@ -131,8 +131,11 @@ function firmaTenant(userId: string, gymId: string): string {
  * `terms_accepted_at` stays a bare timestamp. `?? undefined` at the RPC boundary: the
  * generated `p_aviso_version` arg type is optional-only (no `| null`), the same shape
  * `aceptarAcuerdo`'s `p_ip`/`p_user_agent` already use for a nullable optional param.
+ *
+ * PRIVATE: the throwing primitive. Doors go through `intentarReclamoPorEmail` below, so
+ * "a refused claim never strands an authenticated member" is decided once, not per door.
  */
-export async function reclamarCliente(
+async function reclamarCliente(
   gymId: string,
   avisoVersion: string | null,
   client?: SupabaseServer,
@@ -156,7 +159,7 @@ export async function reclamarCliente(
 
 /** The invite-code claim RPC's row DTO (the gym slug for the post-claim redirect),
  *  derived from the generated types so it can't drift from the migration. */
-export type ReclamoPorCodigo =
+type ReclamoPorCodigo =
   Database["public"]["Functions"]["reclamar_por_codigo"]["Returns"][number];
 
 /**
@@ -191,8 +194,11 @@ export function firmaCodigo(codigo: string): string {
  * here), or `null` when no aviso was rendered on this rail (final review round, Important 1)
  * — stamped onto `clientes.privacy_aviso_version` alongside `privacy_accepted_at`.
  * No terms-of-service version exists (Gate 0.1 scope cut): `terms_accepted_at` stays bare.
+ *
+ * PRIVATE: the throwing primitive. Doors go through `intentarReclamoPorCodigo` /
+ * `intentarReclamoConFirma` below.
  */
-export async function reclamarPorCodigo(
+async function reclamarPorCodigo(
   codigo: string,
   firma: string,
   avisoVersion: string | null,
@@ -206,6 +212,85 @@ export async function reclamarPorCodigo(
     throw new Error(error?.message ?? "No se pudo reclamar la invitación");
   }
   return data;
+}
+
+/**
+ * El reclamo del socio — the claim ceremony, one home.
+ *
+ * The SQL is already centralized (`reclamar_o_crear_cliente`, `reclamar_por_codigo`); what
+ * was re-decided at five doors is the ceremony AROUND it: which rail, what to pass, and —
+ * every single time — the same verdict on a refusal. `ReclamoResultado` makes that verdict a
+ * VALUE: `ok:false` carries the RPC's own refusal message instead of a throw, so a door that
+ * wants to act on a refusal can, without writing another bare `catch {}`.
+ */
+export type ReclamoResultado = { ok: true } | { ok: false; motivo: string };
+
+/**
+ * Run a claim best-effort. Every expected refusal is a value here, never a throw: a
+ * dead/already-used code, a row the caller already owns in this gym, a bad or absent firma,
+ * an unverified email, a missing `TENANT_ASSERTION_KEY`. That is the rule all five doors
+ * already applied by hand (`/auth/confirm`'s two rails, `/activar`'s vincular short-circuit,
+ * `completarActivacion`'s set-password step, `/reservar`'s defense-in-depth retry): a claim
+ * only ever runs for an ALREADY-authenticated caller, so a refused claim must never strand
+ * them — they reach the app either way and an operator reconciles. Both RPCs are idempotent
+ * (`reclamar_o_crear_cliente` re-upserts the membership and returns `reclamado:false`;
+ * `reclamar_por_codigo` refuses a spent code), so re-entry is a success path, not a double
+ * write. The claim callback is invoked INSIDE the catch's reach so firma minting refuses the
+ * same way the RPC does — the shape every door already had.
+ */
+async function intentarReclamo(reclamo: () => Promise<unknown>): Promise<ReclamoResultado> {
+  try {
+    await reclamo();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, motivo: e instanceof Error ? e.message : "No se pudo reclamar" };
+  }
+}
+
+/**
+ * Invite-code claim from a SERVER-GATED door (ADR-0015 primary rail): the firma is minted
+ * HERE from the code, so only a caller holding `TENANT_ASSERTION_KEY` can produce one. Used
+ * by `/activar`'s one-click vincular and by `completarActivacion`'s set-password step.
+ * `avisoVersion` is the aviso the DOOR actually rendered, or `null` when it rendered none.
+ */
+export function intentarReclamoPorCodigo(
+  codigo: string,
+  avisoVersion: string | null,
+  client?: SupabaseServer,
+): Promise<ReclamoResultado> {
+  return intentarReclamo(() => reclamarPorCodigo(codigo, firmaCodigo(codigo), avisoVersion, client));
+}
+
+/**
+ * The same rail with a firma the door RECEIVED rather than minted — `/auth/confirm`, which
+ * forwards the URL's `?firma=` UNVERIFIED for the RPC to check (audit 2026-07-22 §3 H2: an
+ * attacker-appended `&codigo=` on a recovery link carries no matching firma, so the RPC
+ * refuses and writes nothing). Deliberately NOT folded into `intentarReclamoPorCodigo`: the
+ * firma's provenance is the entire security difference between these doors, so it stays
+ * visible at the call site.
+ */
+export function intentarReclamoConFirma(
+  codigo: string,
+  firma: string,
+  avisoVersion: string | null,
+  client?: SupabaseServer,
+): Promise<ReclamoResultado> {
+  return intentarReclamo(() => reclamarPorCodigo(codigo, firma, avisoVersion, client));
+}
+
+/**
+ * Verified-EMAIL claim in the host-resolved gym (ADR-0009 fallback rail). `gymId` is the
+ * door's ALREADY-resolved tenant: the gym is a host fact each door resolves for itself
+ * (`resolveTenant`, never a client field — ADR-0008/0009), and `/auth/confirm` needs the
+ * resolved slug for its aviso lookup anyway, so resolution stays at the door. Used by
+ * `/auth/confirm`'s plain-signup arm and `/reservar`'s defense-in-depth retry.
+ */
+export function intentarReclamoPorEmail(
+  gymId: string,
+  avisoVersion: string | null,
+  client?: SupabaseServer,
+): Promise<ReclamoResultado> {
+  return intentarReclamo(() => reclamarCliente(gymId, avisoVersion, client));
 }
 
 /** The pre-signup invite projection DTO ({gym nombre, gym slug, cliente nombre}). */

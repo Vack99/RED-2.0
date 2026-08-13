@@ -4,7 +4,11 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { iniciarActivacion } from "@gym/data/server/activacion";
-import { firmaCodigo, parseCodigoInvitacion, reclamarPorCodigo } from "@gym/data/server/registro";
+import {
+  firmaCodigo,
+  intentarReclamoPorCodigo,
+  parseCodigoInvitacion,
+} from "@gym/data/server/registro";
 import { enviarMagicLink } from "@gym/data/server/sesion";
 
 import { verificarTurnstile } from "../../lib/turnstile";
@@ -121,14 +125,11 @@ export async function vincularAction(
     return { status: "error", mensaje: "No pudimos verificar que no eres un robot. Intenta de nuevo." };
   }
 
-  try {
-    // Final review round, Important 1: no aviso is rendered on this page at all — the
-    // one-click bind is a bare button, no consent text, no checkbox — so this stamps null
-    // rather than a version the member never saw.
-    await reclamarPorCodigo(codigo, firmaCodigo(codigo), null);
-  } catch {
-    // Swallowed (mirrors finalizarAuth): the member is logged in; a dead/already-owned
-    // code must not strand them — they reach the app either way.
-  }
+  // Best-effort by the shared ceremony (`intentarReclamoPorCodigo` never throws): the member
+  // is logged in, so a dead/already-owned code must not strand them — they reach the app
+  // either way. Final review round, Important 1: no aviso is rendered on this page at all —
+  // the one-click bind is a bare button, no consent text, no checkbox — so this stamps null
+  // rather than a version the member never saw.
+  await intentarReclamoPorCodigo(codigo, null);
   redirect("/reservar");
 }

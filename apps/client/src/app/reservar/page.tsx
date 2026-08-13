@@ -8,7 +8,7 @@ import {
   getPerfilResumenMiembro,
   getSaldoMiembro,
 } from "@gym/data/server/agenda-miembro";
-import { reclamarCliente } from "@gym/data/server/registro";
+import { intentarReclamoPorEmail } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { createClient } from "@gym/data/server/supabase";
 
@@ -41,7 +41,7 @@ function iniciales(nombre: string): string {
  * A signed-in caller with no `gym_membership` row yet (audit #10/#15: a swallowed
  * claim on registro/actions.ts or auth/confirm/route.ts, or a password-reset-first
  * session that never ran the claim at all) no longer crashes here: the idempotent
- * `reclamarCliente` re-runs once, and only if membership is STILL missing does the
+ * `intentarReclamoPorEmail` re-runs once, and only if membership is STILL missing does the
  * page render the graceful SinMembresia state instead of the week.
  */
 export default async function ReservarPage({
@@ -58,17 +58,12 @@ export default async function ReservarPage({
   let esMiembro = await getEsMiembro(supabase);
   if (!esMiembro) {
     const tenant = await resolveTenant((await headers()).get("host"), null);
-    if (tenant) {
-      try {
-        // Final review round, Important 1: no aviso is rendered on this page — this is a
-        // silent defense-in-depth retry for a dropped claim, not a consent screen — so this
-        // stamps null rather than a version the member never saw.
-        await reclamarCliente(tenant.id, null, supabase);
-        esMiembro = await getEsMiembro(supabase);
-      } catch {
-        // Still no membership (no matching invite/sale to claim in this gym) —
-        // fall through to the graceful state below.
-      }
+    // Final review round, Important 1: no aviso is rendered on this page — this is a silent
+    // defense-in-depth retry for a dropped claim, not a consent screen — so this stamps null
+    // rather than a version the member never saw. A refusal (nothing to claim in this gym)
+    // is a value, not a throw: fall through to the graceful state below.
+    if (tenant && (await intentarReclamoPorEmail(tenant.id, null, supabase)).ok) {
+      esMiembro = await getEsMiembro(supabase);
     }
   }
   if (!esMiembro) return <SinMembresia />;

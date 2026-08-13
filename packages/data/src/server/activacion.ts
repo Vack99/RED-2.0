@@ -2,7 +2,7 @@ import "server-only";
 
 import { createHmac } from "node:crypto";
 
-import { firmaCodigo, reclamarPorCodigo } from "./registro";
+import { intentarReclamoPorCodigo } from "./registro";
 import { actualizarPassword, confirmarTokenHash } from "./sesion";
 import { createClient, type SupabaseServer } from "./supabase";
 
@@ -137,12 +137,13 @@ export type CompletarActivacionResultado =
  * Finish activation: set the password on the established session user, THEN claim the
  * paid roster row by code. Order is load-bearing (#126): password first means an
  * abandoned attempt (no password yet) leaves the code live and the link re-usable.
- * The claim is best-effort — a dead/already-owned code THROWS from `reclamarPorCodigo`
- * and is swallowed here, exactly like `/auth/confirm`'s `finalizarAuth`: the member is
- * logged in, so a claim hiccup must never strand them (an operator reconciles; the RPC
- * is idempotent). Re-entry with an already-claimed code is therefore a success path.
+ * The claim is best-effort — it runs through the shared `intentarReclamoPorCodigo`
+ * ceremony, which turns a dead/already-owned code into a refusal VALUE instead of a throw
+ * (the same verdict `/auth/confirm` and `/activar`'s vincular apply): the member is logged
+ * in, so a claim hiccup must never strand them (an operator reconciles; the RPC is
+ * idempotent). Re-entry with an already-claimed code is therefore a success path.
  *
- * `avisoVersion` (#257) is forwarded to `reclamarPorCodigo` untouched — the action layer
+ * `avisoVersion` (#257) is forwarded to the claim untouched — the action layer
  * resolves it from `@gym/domain/legal`'s `AVISO_PRIVACIDAD_VERSION`, or `null` when no aviso
  * was actually rendered / the gym's legal identity was incomplete (final review round,
  * Important 1) — this DAL never invents either value.
@@ -160,11 +161,8 @@ export async function completarActivacion(
   const set = await actualizarPassword(input.password, supabase);
   if (!set.ok) return { ok: false, error: set.error };
 
-  try {
-    await reclamarPorCodigo(input.codigo, firmaCodigo(input.codigo), input.avisoVersion, supabase);
-  } catch {
-    // Swallowed — the member is logged in; a dead/already-claimed code must not strand
-    // them (mirrors finalizarAuth). Redirect in regardless.
-  }
+  // Best-effort by the shared ceremony (`intentarReclamoPorCodigo` never throws) — the member
+  // is logged in; a dead/already-claimed code must not strand them. Redirect in regardless.
+  await intentarReclamoPorCodigo(input.codigo, input.avisoVersion, supabase);
   return { ok: true };
 }

@@ -164,8 +164,9 @@ describe("iniciarActivacion", () => {
 });
 
 describe("completarActivacion", () => {
-  // The claim mints firmaCodigo (needs the tenant key); without it firmaCodigo throws and
-  // the claim step is skipped — so stub the key so the password→claim ordering is exercised.
+  // The claim ceremony mints firmaCodigo (needs the tenant key); without it the mint throws
+  // and the ceremony refuses without touching the RPC — so stub the key so the
+  // password→claim ordering is actually exercised.
   beforeEach(() => vi.stubEnv("TENANT_ASSERTION_KEY", "test-key"));
   afterEach(() => vi.unstubAllEnvs());
 
@@ -232,7 +233,7 @@ describe("completarActivacion", () => {
     expect(orden).toEqual(["password"]); // bailed before the claim
   });
 
-  it("forwards a null aviso version to reclamarPorCodigo (no aviso rendered / incomplete identity)", async () => {
+  it("forwards a null aviso version to the claim RPC (no aviso rendered / incomplete identity)", async () => {
     let seenArgs: unknown = null;
     const client = {
       auth: {
