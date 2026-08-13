@@ -4,6 +4,14 @@ Research run 2026-08-13 (deep-research: 6 Sonnet workers + Opus synthesis + inde
 verifier, verdict `corrected` — 8 claim issues found and applied here). Apple-only scope.
 Supersedes the Apple half of `2026-08-12-app-store-launch-plan.md`; see §0 for what changed.
 
+> ⚠️ **Scope changed after this was written.** The plan is now **admin app only** on the App Store
+> (the member booking app stays web-only), with iBookit's revenue being the **gym's SaaS
+> subscription**. That is a different guideline question — see
+> [`2026-08-13-apple-b2b-saas-verdict.md`](./2026-08-13-apple-b2b-saas-verdict.md), which also
+> **corrects §5.1 of this document** (3.1.3 runs (a)–(g); (c) and (f) were missed). This playbook's
+> enrollment, App Store Connect, TestFlight, review, release, 4.2 and 4.2.6 material all still
+> applies — it is the *how to ship anything to Apple* half.
+
 **Marker convention** — every claim carries one:
 - **[V]** verified against a primary source, quoted, with a fetch date
 - **[~]** inference *from* verified text (the reasoning is ours, the text is Apple's)
@@ -425,6 +433,22 @@ available as in-app purchases within the app."* — not the route to rely on.
 **3.1.5(a):** the direct fetch stopped at 3.1.3(e) and surfaced **no 3.1.5(a) text** — whether that
 subsection currently exists is **[?] unconfirmed**. The 08-12 doc's warning ("don't cite 3.1.5") still
 stands: cite **3.1.3(e)**.
+
+> ⚠️ **CORRECTED by the second 08-13 run** — see
+> [`2026-08-13-apple-b2b-saas-verdict.md`](./2026-08-13-apple-b2b-saas-verdict.md) §0.
+> **This fetch was truncating.** 3.1.3 runs **(a) through (g)**, not (a),(b),(d),(e). The two missing
+> clauses matter:
+> - **3.1.3(c) Enterprise Services [V]** — *"If your app is only sold directly by you to
+>   organizations or groups for their employees or students… you may allow enterprise users to access
+>   previously-purchased content or subscriptions. Consumer, single user, or family sales must use
+>   in-app purchase."*
+> - **3.1.3(f) Free Stand-alone Apps [V]** — *"Free apps acting as a stand-alone companion to a paid
+>   web based tool (i.e. VoIP, Cloud Storage, Email Services, Web Hosting) do not need to use in-app
+>   purchase."* **This is the clause the admin-app plan rides.**
+>
+> Also missed by this run: **4.2.7(e) [V]** — *"Thin clients for cloud-based apps are not appropriate
+> for the App Store."* That lands directly on a WKWebView-over-remote-origin shell and makes §7's
+> native build list load-bearing rather than defensive.
 
 **Applied verdict [~]:** a gym membership and a class pack both qualify — the member physically
 attends the gym, so it's a service consumed outside the app under 3.1.3(e); 1:1 training is
