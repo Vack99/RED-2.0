@@ -1,52 +1,56 @@
-# 2026-08-12 — Arch review: veredicto shipped, candidate queue open
+# 2026-08-12 — Arch review batch 2: 7 of 8 queue cards shipped
 
-## Shipped today (on main after ff)
+## Shipped (this worktree, rebased onto main's legal-docs commit)
 
-**Una fila → un veredicto** — `6d7b344` (+ `6ac9b9c` stale test fixture, `6a028ba` glossary).
-`derivarVeredicto` in `packages/domain/src/lifecycle.ts` now owns the whole lifecycle
-verdict; DTOs carry `veredicto`; both duplicated `clientes.ts` assembly blocks and the
-vm's hand-built fila are gone. 1509/1509, net −200 lines. Full detail: the commit
-message of `6d7b344` and CONTEXT.md's **veredicto** row.
+| card | commit | what |
+|---|---|---|
+| 1. Turnstile fallback | `fix(client)` | Always-pass test-key fallbacks DELETED (4 forms + server secret). Missing env now throws. One home: `apps/client/src/lib/turnstile-site-key.ts`. |
+| 3. Vista canónica | `feat(guards)` | `supabase/functions-canonical/` — 52 committed `.sql`, one per live RPC; `pnpm gen:rpc-canon` regenerates; `tools/guards/rpc-canon-drift.test.ts` guards drift. |
+| 2. El gym en efecto | `refactor(data)` | `packages/data/src/server/inquilino.ts`: `slugDelHost()` + `resolverMiembroGym()` (React `cache()`, request-scoped). `hostGymSlug` threading GONE from 8 signatures / 4 app call sites. `getOperatorGym` deliberately NOT folded in (member row must never win admin). |
+| 5. Refusal vocabulary | `refactor(domain)` | `BLOQUEOS_VENDIBLES` → `@gym/domain/rules`; both copies were identical. Cross-sector `_components` import is about `reciboResultado`, unrelated — left, still open. |
+| 8. Catálogo curado | `refactor(data)` | `packages/data/src/server/gym-content.ts` owns about/facilities/faqs/stats, authed + anon twins share row→DTO mappers. 4 modules deleted, −262 lines. No drift found. |
+| 6. Reservabilidad | `refactor(domain)` | `derivarReservabilidad` in `packages/domain/src/reserva.ts` — one booking verdict, RPC `reservar_clase` as referee; 6 drifts resolved (see commit). `/clase/[id]` gains the #89 nota. 76 tests. |
+| 7. Reclamo del socio | `refactor(data)` | Claim ceremony → `intentarReclamo{PorCodigo,ConFirma,PorEmail}` in `registro.ts`; throwing primitives DE-EXPORTED (re-drift hole closed); 5 doors delegate; 13 tests. Both /activar rails untouched. |
 
-## Owner walk (tomorrow's testing)
+Every commit went through the full pre-commit gate. Final: 1555/1555, lint + typecheck + depcruise green.
 
-The ONE intended visible change — a client holding a **spent pase suelto** (0 clases,
-días still left):
+## ⚠️ DEPLOY GATE — before the next push
 
-- [ ] Ficha: días/vence accent no longer paints gold/urgente
-- [ ] Respaldo export: Urgencia column reads **Ok**, not **Crítico**
-- [ ] Roster shows the same client **ok/gris** (as before)
+The Turnstile fix makes both env vars REQUIRED in Vercel for **apps/client**:
+`NEXT_PUBLIC_TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET_KEY`. If either is missing in prod
+the app now throws (build/first-render for the sitekey, verify-call for the secret) instead
+of silently passing CAPTCHA. **Owner: confirm both exist in Vercel before consenting to a
+push.** If prod relied on the old silent fallback, CAPTCHA was never protecting those forms.
 
-Everything else must look identical: CLIENTES order + header counts, INICIO tiles,
-pase de lista badge, client-app member card. Any other visible difference = bug, file it.
+## Owner walk — member-visible changes to verify (all intended, from card 6)
 
-## Left to fix (from the 14-candidate review; full text in memory `arch-review-veredicto-shipped`)
+- [ ] `/clase/[id]`: second class same day now shows "Ya tienes una clase hoy — esta usará otra de tus N clases" (#89 parity; suppressed for ilimitado)
+- [ ] Week cards: a DEPLETED member (0 clases or vencido) sees dimmed **"Sin clases"** — no more green Reservar that the RPC then refuses
+- [ ] `/clase/[id]` badge: near-full class now reads **"Pocos lugares"** (was "Disponible")
+- [ ] Full-class button: **"Lleno"** everywhere (sheet used to say "Sin lugares")
+- [ ] A booked class that already ENDED reads "Esta clase ya pasó" in the sheet too (used to say "Ya tienes tu lugar")
+- Everything else (pase-suelto veredicto walk from batch 1) unchanged — still pending if not walked yet.
 
-1. **Turnstile fallback** — 4 client forms default to Cloudflare's always-pass test
-   sitekey (`?? "1x000…AA"`); env var missing in prod = CAPTCHA silently passes. ~20 min, do first.
-2. **El gym en efecto** — one request-scoped tenant resolver; today 3 confessed twins
-   (`gym.ts`, `agenda-miembro.ts:144`, `clase-miembro.ts:128`) + optional `hostGymSlug`
-   threaded through 22 signatures; forgetting it silently reads another gym.
-3. **Vista canónica de funciones** — commit the migration replay
-   `tools/guards/denial-suite.ts:128` already computes (one file per RPC) + drift guard. Cheapest card.
-4. **SQL prelude del inquilino** — 31 write RPCs open with 5 hand-rolled tenant/authz
-   idioms; one shared prelude kills the `mi_membresia` roulette bug class. Needs scratch `test:denial`.
-5. **Refusal vocabulary** — `BLOQUEOS_VENDIBLES` duplicated in `marcadas.ts:177` +
-   `session-vm.ts:266` + the app's one cross-sector `_components` import; home it in `@gym/domain`.
-6. **Reservabilidad del socio** — booking cascade written twice, drifted 4 ways;
-   `/clase/[id]` is missing the #89 "usará otra clase" nota (member-visible).
-7. **Reclamo del socio** — the claim ceremony re-decided at 5 call sites, zero tests.
-8. **Catálogo curado** — about-values/facilities/faqs/stats are one module written 4×
-   (+ anon twins in `marketing.ts`).
+## Left
 
-Parked (worth exploring, not urgent): delete dead `materializarSesion` + guard the
-stacking mirror in `rules.ts`; the contradictory `revalidatePath` prose ×3 seams;
-`@gym/ui` row/calendar/tile primitives; one PostgREST test double (33 hand-rolled fakes);
-denial-suite fixture contract (15/59 suites need ambient seeds, runner never checks
-target currency). Dormant: proxy session-rotation twin.
+- **Card 4 — SQL prelude del inquilino** (the only queue survivor): 31 write RPCs, 5 hand-rolled
+  tenant/authz idioms → one shared prelude. Needs its OWN session: migrations + scratch
+  `test:denial` (PAT at `docs/db-testing-throwaway-project/data`; TRAP: the denial runner never
+  applies migrations to scratch — apply them first; runner refuses the live ref).
+- **New defect filed**: reserva preview doesn't anticipate `v_vence < session date`
+  (`reservar_clase.sql:90`'s second expiry arm) — a member whose paquete lapses mid-week sees
+  green Reservar on Friday, dead-ends in the RPC. See issue filed 2026-08-12 + the module
+  header of `packages/domain/src/reserva.ts`.
+- Small: `tools/guards/docs.test.ts:32` bans literal `src/lib` in docs — over-broad now that
+  `apps/client/src/lib/` is real; relax to a lookbehind. Aviso under-record on re-claim after a
+  dropped first claim (can never ERASE a stamp; deliberate, documented in registro.ts).
+- Parked list unchanged from batch 1 (materializarSesion, revalidatePath prose, @gym/ui
+  primitives, PostgREST test double, denial fixture contract, proxy rotation twin).
 
 ## State
 
-- Worktree `.claude/worktrees/arch-review` KEPT; `main` fast-forwarded to it.
-- **Nothing pushed** — origin/main is behind by the brand-docs batch + today; next
-  consented push carries it all. Pure TS today: no migrations, no edge deploys pending.
+- Worktree `.claude/worktrees/arch-review` KEPT; branch rebased onto `main` (d6addc2) and
+  `main` fast-forwarded to it.
+- **Nothing pushed** — origin/main still behind by the brand-docs batch + veredicto batch +
+  this batch. Next consented push carries it all; NO migrations or edge deploys pending
+  (pure TS again), but the deploy gate above applies.

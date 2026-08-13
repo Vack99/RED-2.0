@@ -39,9 +39,12 @@ describe("RPC canonical-body drift", () => {
   });
 
   it("every committed file matches the migration-derived body", () => {
+    // EOL-insensitive on BOTH sides: autocrlf checkouts (Windows) materialize the committed
+    // files — and can materialize the migrations themselves — with CRLF.
+    const lf = (s: string) => s.replaceAll("\r\n", "\n");
     const stale = functions
       .filter((f) => onDiskSet.has(`${f.name}.sql`))
-      .filter((f) => readFileSync(join(OUT_DIR, `${f.name}.sql`), "utf8") !== f.body.trim() + "\n")
+      .filter((f) => lf(readFileSync(join(OUT_DIR, `${f.name}.sql`), "utf8")) !== lf(f.body).trim() + "\n")
       .map((f) => f.name)
       .sort();
     expect(stale, `stale canonical file(s) — run \`${REGEN}\`: ${stale.join(", ")}`).toEqual([]);

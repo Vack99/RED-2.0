@@ -18,7 +18,7 @@ const functions = readRpcFunctions();
 const expected = new Set(functions.map((f) => `${f.name}.sql`));
 
 for (const fn of functions) {
-  writeFileSync(join(OUT_DIR, `${fn.name}.sql`), fn.body.trim() + "\n");
+  writeFileSync(join(OUT_DIR, `${fn.name}.sql`), fn.body.replaceAll("\r\n", "\n").trim() + "\n");
 }
 
 for (const file of readdirSync(OUT_DIR)) {
