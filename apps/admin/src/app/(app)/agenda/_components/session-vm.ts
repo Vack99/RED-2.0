@@ -1,4 +1,4 @@
-import { antesDeVentanaArribo } from "@gym/domain/rules";
+import { antesDeVentanaArribo, BLOQUEOS_VENDIBLES } from "@gym/domain/rules";
 import { parseDay } from "@gym/format";
 import type { PlantillaDTO, SesionAgendaDTO } from "@gym/data/server/agenda";
 import type { EditorAlcance, EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
@@ -252,19 +252,9 @@ export function accionAgregar(startsAtIso: string, ahora: Date): "reservar" | "p
   return antesDeVentanaArribo(new Date(startsAtIso), ahora) ? "reservar" : "pase";
 }
 
-/**
- * The only two refusals a SALE fixes (#235 story 10). Exact match, because these strings are OURS:
- * both are `raise exception` literals in our own RPCs — reservar_clase's expiry and zero-balance
- * gates (20260803140000_reserva_manual_staff_target.sql:145,151), and 'Paquete vencido' again on
- * pasar_lista_sesion's walk-in arm (20260729120000:270) — and the DAL hands the raise through
- * verbatim (agenda.ts `ejecutar`). Change a raise, change this list; they mirror each other.
- *
- * Every other refusal is a fact a sale does not touch: 'Clase llena' is the room, 'Ya reservaste
- * esta clase' is the booking, 'La clase ya comenzó' is the clock, 'No autorizado' is the operator.
- * Offering VENDER on any of those would send the operator to charge a member for nothing.
- */
-const BLOQUEOS_VENDIBLES = ["Sin clases disponibles", "Paquete vencido"];
-
+/** Agenda's own gate on `@gym/domain`'s sale-fixable refusal list (agenda.ts `ejecutar`'s `error`
+ *  matched against BLOQUEOS_VENDIBLES) — see that constant for the full rationale; the desk's
+ *  asistencia/_components/marcadas.ts is the list's other caller. */
 export function esBloqueoVendible(error: string): boolean {
   return BLOQUEOS_VENDIBLES.includes(error);
 }

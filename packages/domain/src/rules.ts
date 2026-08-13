@@ -523,6 +523,21 @@ export function esNoAsistio(
   return status === "reservada" && ventanaArribo(startsAt, duracionMin).hasta.getTime() <= ahora.getTime();
 }
 
+// ── Sale-fixable refusals (owner ruling 2026-08-04, #237; #235 story 10) ─
+
+/**
+ * The refusal strings a SALE fixes — exact match, because these strings are OURS: `raise
+ * exception` literals in `toggle_pase`'s and `pasar_lista_sesion`'s own zero-balance/vigencia
+ * gates, and in `reservar_clase`'s expiry and zero-balance gates. The DAL hands each raise
+ * through verbatim, so a caller compares its `error`/`res.message` against this list directly to
+ * decide whether a refused tap can offer a deep link to Vender. Every other refusal — 'Ya marcada
+ * en la clase de HH:MM', 'Clase llena', 'Cliente no encontrado', 'No autorizado' — is a fact a
+ * sale does not touch, so it must not be offered here. Change a raise, change this list; they
+ * mirror each other. Consumed by the desk (asistencia) and Agenda, which each wrap it in their
+ * own `esBloqueoVendible`/`sugerenciaVenta`.
+ */
+export const BLOQUEOS_VENDIBLES = ["Sin clases disponibles", "Paquete vencido"];
+
 // ── Editor bounds (PRD decision e) ───────────────────────────────────────
 
 const DURACIONES_VALIDAS: readonly number[] = [30, 45, 60, 75, 90];

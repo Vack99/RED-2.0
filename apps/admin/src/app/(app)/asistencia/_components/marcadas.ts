@@ -16,7 +16,7 @@
  * in-flight action's optimistic and reconciled states consistent.
  */
 
-import { enVentanaArribo, VENTANA_ARRIBO_PREVIA_MIN } from "@gym/domain/rules";
+import { BLOQUEOS_VENDIBLES, enVentanaArribo, VENTANA_ARRIBO_PREVIA_MIN } from "@gym/domain/rules";
 
 /** The screen's context key for the class-less visit kind (ACCESO LIBRE). Never a
  *  session id — session ids are uuids, so the two can't collide. */
@@ -161,21 +161,9 @@ export function reservaAtribuible(
   return Object.fromEntries(Object.entries(mejor).map(([id, m]) => [id, m.sessionId]));
 }
 
-/**
- * The only two refusals a SALE fixes at the desk (owner ruling 2026-08-04, #237). Exact match,
- * because these strings are OURS: `raise exception` literals in toggle_pase's and
- * pasar_lista_sesion's own zero-balance/vigencia gates (20260804120000, and 20260729120000's C9
- * gate), and the DAL hands the raise through verbatim (togglePase's `res.message`). Every other
- * refusal — 'Ya marcada en la clase de HH:MM', 'Cliente no encontrado' — is a fact a sale does not
- * touch, so it must not be offered here.
- *
- * Duplicated, not imported, from the unmerged reserva-manual-agenda branch's
- * apps/admin/.../agenda/_components/session-vm.ts (owner 2026-08-04): that file belongs to a
- * branch this worktree must not touch, and this is the whole predicate at two call sites — cheaper
- * than a cross-worktree coupling.
- */
-const BLOQUEOS_VENDIBLES = ["Sin clases disponibles", "Paquete vencido"];
-
+/** The desk's own gate on `@gym/domain`'s sale-fixable refusal list (togglePase's `res.message`
+ *  matched against BLOQUEOS_VENDIBLES) — see that constant for the full rationale; Agenda's
+ *  session-vm.ts is the list's other caller. */
 function esBloqueoVendible(error: string): boolean {
   return BLOQUEOS_VENDIBLES.includes(error);
 }
