@@ -34,9 +34,10 @@ then acknowledge with `EDGE_DEPLOY_OK=1 git push`.
 
 # Database RPC contract tests (the `test:denial` gate)
 
-The 34 `public` functions — **25 of them write rows** (`registrar_venta`, `reclamar_o_crear_cliente`,
-`reclamar_por_codigo`, `reservar_clase`, `pasar_lista_sesion`, `toggle_pase`, `preparar_invitacion`, …)
-— are invisible to vitest: `packages/data` mocks the RPC boundary, so a function that drops a column,
+The 52 `public` functions — **31 of them write rows** (`registrar_venta`, `reclamar_o_crear_cliente`,
+`reclamar_por_codigo`, `reservar_clase`, `pasar_lista_sesion`, `toggle_pase`, `preparar_invitacion`, …;
+current bodies committed one-per-function in `supabase/functions-canonical/`, drift-guarded, regen
+`pnpm gen:rpc-canon`) — are invisible to vitest: `packages/data` mocks the RPC boundary, so a function that drops a column,
 stamps the wrong `gym_id`, or forgets `where auth_user_id is null` passes all of `pnpm test`. #78
 shipped exactly this way (the create path dropped the verified `email`). Their real contract is
 proven by the self-asserting SQL suites in `supabase/tests/`, driven by `pnpm test:denial`

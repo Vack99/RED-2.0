@@ -21,7 +21,7 @@ platform shape in `docs/adr/0008-platform-multitenant-gym-rls-brand-modules.md`.
 ## Packages & app (the homes — ADR-0011 §4)
 | Package / app | Holds | May import (internal) |
 |---|---|---|
-| `@gym/domain` | pure gym rules + types (`rules.ts`, `types.ts`); innermost leaf | — (nothing) |
+| `@gym/domain` | pure gym rules + types (`rules.ts`, `types.ts`, `lifecycle.ts`, `legal.ts`, `reserva.ts`); innermost leaf | — (nothing) |
 | `@gym/format` | es-MX / America-Chihuahua formatters (`date.ts`, `fecha.ts`, `format.ts`); pure leaf | — (nothing) |
 | `@gym/data` | the `server-only` Supabase DAL + `export/` + browser client + `database.types`; subpath exports `./server/*` ÷ `./client` ÷ `.` | `@gym/domain`, `@gym/format` |
 | `@gym/ui` | the forge primitive kit + UI-runtime utils (`motion`, `utils`/`cn`, `viewport`) | `@gym/domain`, `@gym/format` |

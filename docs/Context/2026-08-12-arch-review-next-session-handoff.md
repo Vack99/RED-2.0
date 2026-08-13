@@ -64,16 +64,23 @@ spent **pase suelto** (0 clases, días left):
    second expiry arm (`v_vence <` session date) — paquete lapsing mid-week still shows green
    Reservar for Friday, dead-ends at the RPC. Fix = expose `vence` + gym-local session day in
    DTOs, add `vence_antes` motivo to `derivarReservabilidad`. Member-visible → owner walks it.
-3. **Small, next-touch:** `tools/guards/docs.test.ts:32` bans literal `src/lib` in docs —
+3. **Card 11 stage 2 (review r1):** CUENTA's sheet tier re-types the same list machine 7×
+   (same `View` union, same reorder ritual) over 33 untyped `(raw: unknown) → void` forwarders —
+   the DAL collapse (gym-content.ts) is done, so this is now unblocked. Resist generic-CRUD
+   (ADR-0001: closed shape).
+4. **Small, next-touch:** `tools/guards/docs.test.ts:32` bans literal `src/lib` in docs —
    over-broad now that `apps/client/src/lib/` is real; relax to a lookbehind
    (`(?<!apps/[a-z-]+/)src/lib`). Cross-sector import `clientes/[id]/_components/cliente-detalle.tsx:27`
    → `asistencia/_components/marcadas` (`reciboResultado`) still open — the batch-2 vocab move
    did NOT fix it (different function); pairs with the post-#89 "helper dedupe" leftover.
-4. **Documented non-bugs (don't re-file):** aviso-version under-record on a re-claim after a
+5. **Documented decisions (don't re-file):** aviso-version under-record on a re-claim after a
    dropped first claim — deliberate, can never erase a stamp (registro.ts); the preview keeps
    `llena` before `sin_clases` against RPC order — buying a package doesn't create a seat
-   (reserva.ts header).
-5. **Parked list unchanged** (explore when bored, not urgent): dead `materializarSesion` +
+   (reserva.ts header); anon/marketing readers KEEP their required slug/gymId param (review r1
+   card 2 wanted them paramless too — declined: a REQUIRED param can't be silently forgotten,
+   and registro's slug is write-side host authority, ADR-0009); review card 5's deeper cut
+   (stable discriminator in RPC results instead of raise-literals) stays a later option.
+6. **Parked list unchanged** (explore when bored, not urgent): dead `materializarSesion` +
    stacking-mirror guard in rules.ts; contradictory `revalidatePath` prose ×3; @gym/ui
    row/calendar/tile primitives; one PostgREST test double (33 hand-rolled fakes); denial-suite
    fixture contract (15/59 suites need ambient seeds, runner never checks target currency).
