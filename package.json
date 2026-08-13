@@ -18,6 +18,7 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:denial": "node supabase/tests/run-denial-suite.mjs",
+    "gen:rpc-canon": "node tools/generate-rpc-canon.mjs",
     "perf": "node tools/perf/run.mjs",
     "perf:env": "node tools/perf/env.mjs",
     "perf:seed": "node tools/perf/seed-local.mjs",

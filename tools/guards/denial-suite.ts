@@ -57,7 +57,7 @@ export function suiteInvokes(suiteFile: string, fn: string): boolean {
   return new RegExp(`\\b${fn}\\s*\\(`, "i").test(body);
 }
 
-type RpcFunction = { name: string; writes: boolean };
+export type RpcFunction = { name: string; writes: boolean; body: string };
 
 // A `create [or replace] function public.NAME (...) ... $tag$ BODY $tag$` definition. The body's
 // opening dollar-tag is captured and back-referenced, because the migrations use four different
@@ -124,6 +124,10 @@ function propagateWrites(bodies: Map<string, string>, writes: Map<string, boolea
  *
  * Verified against the live catalog (`pg_proc` where `pronamespace = 'public'`) at the time of #80:
  * exactly 34 functions, 25 writers, 9 pure readers — same names, no drift.
+ *
+ * `body` is the same dollar-quoted text `writes` is derived from, exposed so
+ * `tools/generate-rpc-canon.mjs` can materialize it into supabase/functions-canonical/ without a
+ * second parse of the migrations.
  */
 export function readRpcFunctions(): RpcFunction[] {
   const present = new Map<string, string>(); // name -> final body
@@ -149,6 +153,6 @@ export function readRpcFunctions(): RpcFunction[] {
   propagateWrites(present, writes);
 
   return [...present.keys()]
-    .map((name) => ({ name, writes: writes.get(name) ?? false }))
+    .map((name) => ({ name, writes: writes.get(name) ?? false, body: present.get(name) ?? "" }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
