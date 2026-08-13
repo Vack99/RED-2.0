@@ -6,8 +6,14 @@ import { useRouter } from "next/navigation";
 
 import type { ClaseDetalleDTO, CoachDetalleDTO } from "@gym/data/server/clase-miembro";
 import type { SaldoMiembroDTO } from "@gym/data/server/agenda-miembro";
+import { derivarReservabilidad } from "@gym/domain/reserva";
 
 import { CtaVerPlanes } from "../../../_components/cta-ver-planes";
+import {
+  badgeDeReserva,
+  LINEA_BLOQUEO,
+  presentarAvisoReserva,
+} from "../../../../lib/reserva-vista";
 import {
   cancelarDesdeClaseAction,
   reservarDesdeClaseAction,
@@ -51,14 +57,6 @@ const fwdArrow = (
     <path d="M5 10h10M11 6l4 4-4 4" />
   </svg>
 );
-
-type Badge = { texto: string; clase: string };
-function badgeDe(d: ClaseDetalleDTO): Badge {
-  if (d.estado === "termino") return { texto: "Terminada", clase: "border-line bg-sunk text-muted" };
-  if (d.miReserva) return { texto: "Reservada", clase: "border-accent/40 bg-accent-soft text-accent" };
-  if (d.estado === "lleno") return { texto: "Llena", clase: "border-warning/40 bg-warning-soft text-warning" };
-  return { texto: "Disponible", clase: "border-accent/40 bg-accent-soft text-accent" };
-}
 
 function FactRow({ k, v, danger }: { k: string; v: string; danger?: boolean }) {
   return (
@@ -151,8 +149,24 @@ export function ClaseDetalle({
   const [pending, startTransition] = useTransition();
   const [favPending, startFavTransition] = useTransition();
 
-  const badge = badgeDe(detalle);
-  const casiLleno = detalle.estado === "casi_lleno";
+  // The ONE booking verdict (@gym/domain/reserva) — the same derivation the week's card
+  // and summary sheet render, so /reservar and /clase/[id] can never disagree about the
+  // same tap.
+  const veredicto = derivarReservabilidad({
+    estado: detalle.estado,
+    miReserva: detalle.miReserva,
+    saldo,
+    otraEseDia: detalle.otraReservaEseDia,
+  });
+  const badge = badgeDeReserva(veredicto, detalle.estado);
+  /** Non-null exactly when the CTA is live — the verdict's own union guarantees it. */
+  const nota = veredicto.reservable
+    ? presentarAvisoReserva(veredicto.aviso, {
+        clasesRestantes: saldo.clasesRestantes,
+        disponibles: detalle.disponibles,
+        esHoy: detalle.esHoy,
+      })
+    : null;
 
   function book() {
     setError(null);
@@ -306,16 +320,17 @@ export function ClaseDetalle({
       {/* CTA */}
       <div className="flex-none border-t border-line bg-canvas px-6 pb-8 pt-4">
         {error && <p className="mb-2.5 text-center text-[11px] font-semibold text-danger">{error}</p>}
-        {detalle.estado === "termino" ? (
-          // termino wins over miReserva: cancel is closed once the class began (the RPC
-          // would reject it), so a reserved past session reads as done, not cancellable.
+        {veredicto.motivo === "terminada" ? (
           <>
-            <p className="mb-2.5 text-center text-[11px] text-muted">Esta clase ya pasó.</p>
+            <p className="mb-2.5 text-center text-[11px] text-muted">{LINEA_BLOQUEO.terminada}</p>
             <button type="button" disabled className="w-full cursor-default rounded-xl bg-sunk py-4 text-xs font-bold uppercase tracking-wider text-muted">
               Sesión terminada
             </button>
           </>
-        ) : detalle.miReserva ? (
+        ) : veredicto.motivo === "reservada" ? (
+          // The one motivo whose line is surface-specific: this page offers the cancel the
+          // week's sheet does not. `terminada` already outranks it in the verdict, so a
+          // reserved PAST session reads as done here, not cancellable (the RPC agrees).
           <>
             <p className="mb-2.5 text-center text-[11px] text-muted">
               Ya tienes tu lugar · cancela sin costo hasta el inicio
@@ -328,33 +343,22 @@ export function ClaseDetalle({
               Cancelar reserva
             </button>
           </>
-        ) : saldo.vencido ? (
-          // Membership lapsed (#118 E4): reservar_clase rejects "Paquete vencido" (finite AND
-          // ilimitado). paga-en-tu-gym → route to precios, not a dead-end button. After miReserva,
-          // so a member who booked before lapsing can still cancel their held spot.
-          <CtaVerPlanes>Tu paquete venció. Renueva en tu gimnasio para reservar.</CtaVerPlanes>
-        ) : detalle.estado === "lleno" ? (
+        ) : veredicto.motivo === "vencido" || veredicto.motivo === "sin_clases" ? (
+          // Lapsed vigencia (#118 E4) or a depleted finite plan (audit #9): no online payment
+          // (paga en tu gym) — route to precios, never a button that only dead-ends in the RPC.
+          <CtaVerPlanes>{LINEA_BLOQUEO[veredicto.motivo]}</CtaVerPlanes>
+        ) : veredicto.motivo === "llena" ? (
           <>
-            <p className="mb-2.5 text-center text-[11px] text-muted">Clase llena. No hay lugares disponibles.</p>
+            <p className="mb-2.5 text-center text-[11px] text-muted">{LINEA_BLOQUEO.llena}</p>
             <button type="button" disabled className="w-full cursor-default rounded-xl bg-sunk py-4 text-xs font-bold uppercase tracking-wider text-muted">
               Lleno
             </button>
           </>
-        ) : !saldo.ilimitado && (saldo.clasesRestantes ?? 0) <= 0 ? (
-          // Finite plan depleted (audit #9): no free/trial class, no online payment
-          // (paga en tu gym) — route to precios instead of a dead-end "Sin clases disponibles".
-          <CtaVerPlanes>No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.</CtaVerPlanes>
-        ) : (
+        ) : nota ? (
           <>
-            {casiLleno ? (
-              <p className="mb-2.5 text-center text-[11px] font-semibold text-warning">
-                Solo {detalle.disponibles} libre{detalle.disponibles === 1 ? "" : "s"} · asegura tu lugar
-              </p>
-            ) : saldo.ilimitado ? (
-              <p className="mb-2.5 text-center text-[11px] text-muted">Reserva incluida en tu plan ilimitado.</p>
-            ) : (
-              <p className="mb-2.5 text-center text-[11px] text-muted">Esta reserva usa 1 de tus {saldo.clasesRestantes} clases</p>
-            )}
+            <p className={`mb-2.5 text-center text-[11px] ${nota.urgente ? "font-semibold text-warning" : "text-muted"}`}>
+              {nota.texto}
+            </p>
             <button
               type="button"
               onClick={book}
@@ -365,7 +369,7 @@ export function ClaseDetalle({
               {!pending && fwdArrow}
             </button>
           </>
-        )}
+        ) : null}
       </div>
 
       {/* Cancel confirm sheet */}

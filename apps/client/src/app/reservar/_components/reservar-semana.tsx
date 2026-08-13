@@ -5,14 +5,22 @@ import { useRouter } from "next/navigation";
 
 import type {
   AgendaSemanaMiembroDTO,
+  DiaMiembroDTO,
   PerfilResumenMiembroDTO,
   SaldoMiembroDTO,
   SesionMiembroDTO,
 } from "@gym/data/server/agenda-miembro";
+import { derivarReservabilidad, type VeredictoReserva } from "@gym/domain/reserva";
 
 import { CtaVerPlanes } from "../../_components/cta-ver-planes";
 import { descargarIcs } from "../../../lib/ics";
-import { presentarEstadoReserva, type TonoReserva } from "../../../lib/reserva-vista";
+import {
+  badgeDeReserva,
+  LINEA_BLOQUEO,
+  presentarAvisoReserva,
+  presentarEstadoReserva,
+  type TonoReserva,
+} from "../../../lib/reserva-vista";
 import { reservarClaseAction } from "../actions";
 import { PerfilOverlay } from "./perfil-overlay";
 
@@ -73,8 +81,8 @@ function OccupancyBar({ pct, tono, idx }: { pct: number; tono: TonoReserva; idx:
   );
 }
 
-function ClassCard({ sesion, idx, vencido, onOpen }: { sesion: SesionMiembroDTO; idx: number; vencido: boolean; onOpen: () => void }) {
-  const vista = presentarEstadoReserva(sesion.estado, sesion.disponibles, sesion.miReserva, vencido);
+function ClassCard({ sesion, idx, veredicto, onOpen }: { sesion: SesionMiembroDTO; idx: number; veredicto: VeredictoReserva; onOpen: () => void }) {
+  const vista = presentarEstadoReserva(veredicto, sesion.disponibles);
 
   return (
     <button
@@ -150,16 +158,6 @@ function ClassCard({ sesion, idx, vencido, onOpen }: { sesion: SesionMiembroDTO;
   );
 }
 
-type Badge = { texto: string; clase: string };
-function badgeDe(sesion: SesionMiembroDTO): Badge {
-  if (sesion.estado === "termino") return { texto: "Terminada", clase: "border-line bg-sunk text-muted" };
-  if (sesion.miReserva) return { texto: "Reservada", clase: "border-accent/40 bg-accent-soft text-accent" };
-  if (sesion.estado === "lleno") return { texto: "Llena", clase: "border-warning/40 bg-warning-soft text-warning" };
-  if (sesion.estado === "casi_lleno")
-    return { texto: "Pocos lugares", clase: "border-warning/40 bg-warning-soft text-warning" };
-  return { texto: "Disponible", clase: "border-accent/40 bg-accent-soft text-accent" };
-}
-
 function Cell({ k, v, few }: { k: string; v: string; few?: boolean }) {
   return (
     <div className="bg-surface px-3.5 py-3">
@@ -196,8 +194,8 @@ function descargarIcsSesion(sesion: SesionMiembroDTO) {
 
 function SummarySheet({
   sesion,
+  veredicto,
   saldo,
-  otroEseDia,
   esHoy,
   pending,
   error,
@@ -205,26 +203,34 @@ function SummarySheet({
   onClose,
 }: {
   sesion: SesionMiembroDTO;
+  /** The ONE booking verdict (@gym/domain/reserva) — the same one the card behind
+   *  this sheet and the /clase/[id] CTA render. */
+  veredicto: VeredictoReserva;
   saldo: SaldoMiembroDTO;
-  /** True when the member already has another session marked `miReserva` on the SELECTED
-   *  day (#89 W3): surfaces the charge-consent nota below before the urgency copy —
-   *  outranks `casi_lleno`. */
-  otroEseDia: boolean;
-  /** Whether that selected day IS today — the nota says "hoy" only then. */
+  /** Whether the selected day IS today — the #89 nota says "hoy" only then. */
   esHoy: boolean;
   pending: boolean;
   error: string | null;
   onBook: () => void;
   onClose: () => void;
 }) {
-  const badge = badgeDe(sesion);
+  const badge = badgeDeReserva(veredicto, sesion.estado);
   const nombres = sesion.coaches === "Por asignar" ? [] : sesion.coaches.split(" · ");
   const cupoTexto =
     sesion.estado === "termino" ? "—" : sesion.disponibles <= 0 ? "Lleno" : `${sesion.disponibles} libre${sesion.disponibles === 1 ? "" : "s"}`;
   const cupoFew = sesion.estado === "lleno" || sesion.estado === "casi_lleno";
 
-  let cta: ReactNode;
-  if (sesion.miReserva) {
+  /** Non-null exactly when the CTA is live — the verdict's own union guarantees it. */
+  const nota = veredicto.reservable
+    ? presentarAvisoReserva(veredicto.aviso, {
+        clasesRestantes: saldo.clasesRestantes,
+        disponibles: sesion.disponibles,
+        esHoy,
+      })
+    : null;
+
+  let cta: ReactNode = null;
+  if (veredicto.motivo === "reservada") {
     cta = (
       <>
         <p className="mb-2.5 text-center text-[11px] text-muted">Ya tienes tu lugar en esta clase.</p>
@@ -233,55 +239,35 @@ function SummarySheet({
         </button>
       </>
     );
-  } else if (sesion.estado === "termino") {
+  } else if (veredicto.motivo === "terminada") {
     cta = (
       <>
-        <p className="mb-2.5 text-center text-[11px] text-muted">Esta clase ya pasó.</p>
+        <p className="mb-2.5 text-center text-[11px] text-muted">{LINEA_BLOQUEO.terminada}</p>
         <button type="button" disabled className="w-full cursor-default rounded-xl bg-sunk py-4 text-xs font-bold uppercase tracking-wider text-muted">
           Sesión terminada
         </button>
       </>
     );
-  } else if (saldo.vencido) {
-    // Membership lapsed (#118 E4): reservar_clase would reject "Paquete vencido" (finite AND
-    // ilimitado). No online payment (paga en tu gym) — route to precios, not a dead-end button.
-    cta = <CtaVerPlanes>Tu paquete venció. Renueva en tu gimnasio para reservar.</CtaVerPlanes>;
-  } else if (sesion.estado === "lleno") {
+  } else if (veredicto.motivo === "vencido" || veredicto.motivo === "sin_clases") {
+    // Lapsed vigencia (#118 E4) or a depleted finite plan (audit #9): no online payment
+    // (paga en tu gym) — route to precios, never a button that only dead-ends in the RPC.
+    cta = <CtaVerPlanes>{LINEA_BLOQUEO[veredicto.motivo]}</CtaVerPlanes>;
+  } else if (veredicto.motivo === "llena") {
     cta = (
       <>
-        <p className="mb-2.5 text-center text-[11px] text-muted">Clase llena. No hay lugares disponibles.</p>
+        <p className="mb-2.5 text-center text-[11px] text-muted">{LINEA_BLOQUEO.llena}</p>
         <button type="button" disabled className="w-full cursor-default rounded-xl bg-sunk py-4 text-xs font-bold uppercase tracking-wider text-muted">
-          Sin lugares
+          Lleno
         </button>
       </>
     );
-  } else if (!saldo.ilimitado && (saldo.clasesRestantes ?? 0) <= 0) {
-    // Finite plan depleted (audit #9): no free/trial class, no online payment (paga
-    // en tu gym) — route to precios instead of an enabled button that would only
-    // dead-end in the RPC's "Sin clases disponibles".
-    cta = <CtaVerPlanes>No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.</CtaVerPlanes>;
-  } else {
-    const nota =
-      otroEseDia && !saldo.ilimitado ? (
-        <p className="mb-2.5 text-center text-[11px] text-muted">
-          Ya tienes una clase {esHoy ? "hoy" : "ese día"} — esta usará otra de tus{" "}
-          {saldo.clasesRestantes} clases.
-        </p>
-      ) : sesion.estado === "casi_lleno" ? (
-        <p className="mb-2.5 text-center text-[11px] font-semibold text-warning">
-          Solo {sesion.disponibles} libre{sesion.disponibles === 1 ? "" : "s"} · asegura tu lugar
-        </p>
-      ) : saldo.ilimitado ? (
-        <p className="mb-2.5 text-center text-[11px] text-muted">Reserva incluida en tu plan ilimitado.</p>
-      ) : (
-        <p className="mb-2.5 text-center text-[11px] text-muted">
-          Usa 1 de tus {saldo.clasesRestantes} clases
-        </p>
-      );
+  } else if (nota) {
     cta = (
       <>
         {error && <p className="mb-2.5 text-center text-[11px] font-semibold text-danger">{error}</p>}
-        {nota}
+        <p className={`mb-2.5 text-center text-[11px] ${nota.urgente ? "font-semibold text-warning" : "text-muted"}`}>
+          {nota.texto}
+        </p>
         <button
           type="button"
           onClick={onBook}
@@ -437,6 +423,23 @@ function ConfirmedSheet({
 
 type SheetState = { sesion: SesionMiembroDTO; mode: "summary" | "confirmed" };
 
+/** The ONE booking verdict for a session on the SELECTED day — derived once and rendered
+ *  by both the card and the sheet, so the two can never disagree about the same tap.
+ *  `otraEseDia` is the member's own other active booking that day (#89 W3), read off the
+ *  day the week DTO already resolved. */
+function veredictoDeSesion(
+  sesion: SesionMiembroDTO,
+  dia: DiaMiembroDTO,
+  saldo: SaldoMiembroDTO,
+): VeredictoReserva {
+  return derivarReservabilidad({
+    estado: sesion.estado,
+    miReserva: sesion.miReserva,
+    saldo,
+    otraEseDia: dia.sesiones.some((s) => s.miReserva && s.id !== sesion.id),
+  });
+}
+
 export function ReservarSemana({
   semana,
   saldo,
@@ -541,7 +544,13 @@ export function ReservarSemana({
       <section className="mt-4 flex flex-col gap-3 px-1">
         {dia.sesiones.length > 0 ? (
           dia.sesiones.map((s, i) => (
-            <ClassCard key={s.id} sesion={s} idx={i} vencido={saldo.vencido} onOpen={() => openSheet(s)} />
+            <ClassCard
+              key={s.id}
+              sesion={s}
+              idx={i}
+              veredicto={veredictoDeSesion(s, dia, saldo)}
+              onOpen={() => openSheet(s)}
+            />
           ))
         ) : (
           <div className="px-6 py-12 text-center">
@@ -581,8 +590,8 @@ export function ReservarSemana({
             ) : (
               <SummarySheet
                 sesion={sheet.sesion}
+                veredicto={veredictoDeSesion(sheet.sesion, dia, saldo)}
                 saldo={saldo}
-                otroEseDia={dia.sesiones.some((s) => s.miReserva && s.id !== sheet.sesion.id)}
                 esHoy={dia.esHoy}
                 pending={pending}
                 error={error}

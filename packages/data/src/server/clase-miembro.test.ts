@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { instanteEnZona } from "@gym/format";
+import { addDays, hoyEnZona, instanteEnZona } from "@gym/format";
 
 import {
   getClaseDetalleMiembro,
@@ -70,6 +70,10 @@ function makeFake(
       },
       gte: (col: string, val: unknown) => {
         filtered = filtered.filter((r) => (r[col] as string) >= (val as string));
+        return b;
+      },
+      lt: (col: string, val: unknown) => {
+        filtered = filtered.filter((r) => (r[col] as string) < (val as string));
         return b;
       },
       in: (col: string, vals: unknown[]) => {
@@ -208,6 +212,7 @@ describe("getClaseDetalleMiembro", () => {
     const d = await getClaseDetalleMiembro(SID, makeFake(rows));
     expect(d!.miReserva).toBe(true);
     expect(d!.favorita).toBe(true);
+    expect(d!.otraReservaEseDia).toBe(false); // their only booking that day is THIS one
   });
 
   it("returns null for a session the member cannot see", async () => {
@@ -226,6 +231,99 @@ describe("getClaseDetalleMiembro", () => {
 
   it("returns null when the caller has no membership", async () => {
     expect(await getClaseDetalleMiembro(SID, makeFake({ gym_membership: [] }))).toBeNull();
+  });
+});
+
+/**
+ * The #89 W3 same-day facts (`otraReservaEseDia` / `esHoy`) — what the class page's
+ * "esta usará otra de tus N clases" nota is derived from. The window is the session's
+ * GYM-LOCAL calendar day, so a booking at 07:00 counts and one the next morning does not.
+ */
+describe("getClaseDetalleMiembro — otra reserva ese día (#89 W3)", () => {
+  const OTRA = "33333333-3333-4333-8333-333333333333";
+  const MANANA = "44444444-4444-4444-8444-444444444444";
+
+  /** The same day's earlier session + one the NEXT gym-local day, both in this gym. */
+  function conVecinas(reservation: Record<string, unknown>[]): Rows {
+    const base = detalleRows();
+    return {
+      ...base,
+      class_session: [
+        ...base.class_session!,
+        { id: OTRA, class_type_id: CTID, starts_at: iso("07:00"), duration_min: 60, capacity: 20, cancelled_at: null, gym_id: "gym-1" },
+        {
+          id: MANANA,
+          class_type_id: CTID,
+          starts_at: instanteEnZona(addDays(FUT, 1), "07:00", TZ).toISOString(),
+          duration_min: 60,
+          capacity: 20,
+          cancelled_at: null,
+          gym_id: "gym-1",
+        },
+      ],
+      reservation,
+    };
+  }
+
+  it("another ACTIVE booking earlier the same day → true", async () => {
+    const d = await getClaseDetalleMiembro(
+      SID,
+      makeFake(conVecinas([{ id: "r1", class_session_id: OTRA, status: "reservada" }])),
+    );
+    expect(d!.otraReservaEseDia).toBe(true);
+    expect(d!.miReserva).toBe(false);
+  });
+
+  it("an ATTENDED class earlier the same day counts — it already spent a class", async () => {
+    const d = await getClaseDetalleMiembro(
+      SID,
+      makeFake(conVecinas([{ id: "r1", class_session_id: OTRA, status: "asistida" }])),
+    );
+    expect(d!.otraReservaEseDia).toBe(true);
+  });
+
+  it("a CANCELLED booking that day does not count", async () => {
+    const d = await getClaseDetalleMiembro(
+      SID,
+      makeFake(conVecinas([{ id: "r1", class_session_id: OTRA, status: "cancelada" }])),
+    );
+    expect(d!.otraReservaEseDia).toBe(false);
+  });
+
+  it("a booking the NEXT gym-local day does not count (the window is one day)", async () => {
+    const d = await getClaseDetalleMiembro(
+      SID,
+      makeFake(conVecinas([{ id: "r1", class_session_id: MANANA, status: "reservada" }])),
+    );
+    expect(d!.otraReservaEseDia).toBe(false);
+  });
+
+  it("holding THIS session plus another that day → both flags true", async () => {
+    const d = await getClaseDetalleMiembro(
+      SID,
+      makeFake(
+        conVecinas([
+          { id: "r1", class_session_id: SID, status: "reservada" },
+          { id: "r2", class_session_id: OTRA, status: "reservada" },
+        ]),
+      ),
+    );
+    expect(d!.miReserva).toBe(true);
+    expect(d!.otraReservaEseDia).toBe(true);
+  });
+
+  it("esHoy is false for a session on another day", async () => {
+    const d = await getClaseDetalleMiembro(SID, makeFake(detalleRows()));
+    expect(d!.esHoy).toBe(false);
+  });
+
+  it("esHoy is true for a session on the gym's current day", async () => {
+    const rows = detalleRows();
+    rows.class_session = [
+      { ...rows.class_session![0], starts_at: instanteEnZona(hoyEnZona(TZ), "23:00", TZ).toISOString() },
+    ];
+    const d = await getClaseDetalleMiembro(SID, makeFake(rows));
+    expect(d!.esHoy).toBe(true);
   });
 });
 

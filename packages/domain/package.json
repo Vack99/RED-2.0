@@ -7,6 +7,7 @@
     "./ids": "./src/ids.ts",
     "./legal": "./src/legal.ts",
     "./lifecycle": "./src/lifecycle.ts",
+    "./reserva": "./src/reserva.ts",
     "./rules": "./src/rules.ts",
     "./types": "./src/types.ts"
   },

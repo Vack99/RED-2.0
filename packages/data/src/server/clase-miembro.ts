@@ -5,11 +5,15 @@ import { cache } from "react";
 import { derivarEstadoSesion, disponibles, ratioOcupacion } from "@gym/domain/rules";
 import type { EstadoSesion } from "@gym/domain/types";
 import {
+  addDays,
   DOW,
   fechaEnZona,
   horaEnZona,
+  hoyEnZona,
+  instanteEnZona,
   MON,
   MONTHS_FULL,
+  sameDay,
   WEEKDAYS_FULL,
 } from "@gym/format";
 import { z } from "zod";
@@ -76,6 +80,12 @@ export interface ClaseDetalleDTO {
   ocupacionPct: number;
   /** The member's own active booking for this session. */
   miReserva: boolean;
+  /** The member already holds ANOTHER active booking on this session's gym-local day
+   *  (#89 W3) — drives the "esta usará otra de tus N clases" charge-consent nota, the
+   *  same one the week's summary sheet shows. */
+  otraReservaEseDia: boolean;
+  /** Whether this session's gym-local day IS today — the nota says "hoy" only then. */
+  esHoy: boolean;
   /** This class type is the member's favorite (heart filled + "Tu favorita"). */
   favorita: boolean;
   /** Real attendee initials (active reservations), display-minimum, order-stable. */
@@ -200,7 +210,13 @@ export const getClaseDetalleMiembro = cache(
       .maybeSingle();
     if (!tipo) return null;
 
-    const [bloquesRes, traerRes, coaches, misReservasRes, activosMap, favoritoId, roster] =
+    // The session's gym-local calendar day as an absolute UTC window — the frame BOTH
+    // same-day facts are answered in (`otraReservaEseDia`, `esHoy`).
+    const local = fechaEnZona(sesion.starts_at, tz);
+    const diaLow = instanteEnZona(local, "00:00", tz);
+    const diaHigh = instanteEnZona(addDays(local, 1), "00:00", tz);
+
+    const [bloquesRes, traerRes, coaches, sesionesDiaRes, activosMap, favoritoId, roster] =
       await Promise.all([
         supabase
           .from("class_type_workblock")
@@ -213,19 +229,36 @@ export const getClaseDetalleMiembro = cache(
           .eq("class_type_id", tipo.id)
           .order("sort_order"),
         fetchCoaches(supabase, sesion.id),
+        // The gym's OTHER sessions that day (#89 W3). This read replaced the old
+        // single-session `reservation` lookup: `miReserva` and "do I already have a class
+        // that day" are the same question over a wider window, so they are answered by one
+        // reservation read below instead of two. Bounded to the day on purpose — the
+        // alternative (the member's own reservation rows, unfiltered) grows with their whole
+        // `asistida` history.
         supabase
-          .from("reservation")
+          .from("class_session")
           .select("id")
-          .eq("class_session_id", sesion.id)
-          .in("status", ["reservada", "asistida"]),
+          .eq("gym_id", gymId)
+          .is("cancelled_at", null)
+          .gte("starts_at", diaLow.toISOString())
+          .lt("starts_at", diaHigh.toISOString()),
         contarActivosMiembro(supabase, [sesion.id]),
         fetchFavoritoId(supabase, gymId),
         supabase.rpc("roster_clase", { p_session_id: sesion.id }),
       ]);
 
+    // The member's OWN active bookings among that day's sessions (RLS returns only their
+    // rows). The day's ids already came from a gym-scoped query, so no second gym filter
+    // can matter here. Costs one sequential hop, which is what buys the bounded window.
+    const { data: misReservasDia } = await supabase
+      .from("reservation")
+      .select("class_session_id")
+      .in("class_session_id", (sesionesDiaRes.data ?? []).map((s) => s.id))
+      .in("status", ["reservada", "asistida"]);
+    const reservadas = new Set((misReservasDia ?? []).map((r) => r.class_session_id));
+
     const inicio = new Date(sesion.starts_at);
     const fin = new Date(inicio.getTime() + sesion.duration_min * 60_000);
-    const local = fechaEnZona(sesion.starts_at, tz);
     const ocupados = activosMap.get(sesion.id) ?? 0;
     const estado = derivarEstadoSesion(
       { startsAt: inicio, activos: ocupados, capacidad: sesion.capacity },
@@ -253,7 +286,9 @@ export const getClaseDetalleMiembro = cache(
       disponibles: disponibles(sesion.capacity, ocupados),
       ocupados,
       ocupacionPct: Math.round(ratioOcupacion(sesion.capacity, ocupados) * 100),
-      miReserva: (misReservasRes.data ?? []).length > 0,
+      miReserva: reservadas.has(sesion.id),
+      otraReservaEseDia: [...reservadas].some((id) => id !== sesion.id),
+      esHoy: sameDay(local, hoyEnZona(tz)),
       favorita: favoritoId === tipo.id,
       roster: (roster.data ?? []).map((r) => r.iniciales),
     };
