@@ -1,10 +1,8 @@
-import { listAboutValues } from "@gym/data/server/about-values";
 import { getClassTypes } from "@gym/data/server/class-type";
 import { getCoaches } from "@gym/data/server/coach";
 import { getCobro } from "@gym/data/server/cobro";
-import { listFacilities } from "@gym/data/server/facilities";
-import { listFaqs } from "@gym/data/server/faqs";
 import { getClientHost, getOperatorGym } from "@gym/data/server/gym";
+import { listAboutValues, listFacilities, listFaqs, listStats } from "@gym/data/server/gym-content";
 import { getIdentidadLegal } from "@gym/data/server/legal";
 import { getContacto } from "@gym/data/server/marketing";
 import { listMensajes } from "@gym/data/server/mensajes";
@@ -13,7 +11,6 @@ import { getPerfil } from "@gym/data/server/perfil";
 import { listarPlantillas } from "@gym/data/server/plantillas";
 import { getMesesRespaldo } from "@gym/data/server/respaldo";
 import { getResumenMes } from "@gym/data/server/resumen";
-import { listStats } from "@gym/data/server/stats";
 import { urlAvisoIntegralDesde } from "@gym/domain/legal";
 import { fmtMesAnio, formatTelMx, hoyEnZona } from "@gym/format";
 

@@ -2,13 +2,11 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 
+import { getInstalacionesPublicas, getStatsPublicas, getValoresPublicos } from "@gym/data/server/gym-content";
 import {
   getCoachesPublicos,
   getFormatosPublicos,
-  getInstalacionesPublicas,
   getMarketingGym,
-  getStatsPublicas,
-  getValoresPublicos,
   type CoachPublicoDTO,
 } from "@gym/data/server/marketing";
 

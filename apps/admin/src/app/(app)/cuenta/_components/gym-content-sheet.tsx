@@ -7,10 +7,7 @@ import { Textarea } from "@gym/ui/forge/input";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
 import { Button, Eyebrow, H1, Input } from "@gym/ui/forge/ui";
-import type { AboutValueDTO } from "@gym/data/server/about-values";
-import type { FacilityDTO } from "@gym/data/server/facilities";
-import type { FaqDTO } from "@gym/data/server/faqs";
-import type { StatDTO } from "@gym/data/server/stats";
+import type { AboutValueDTO, FacilityDTO, FaqDTO, StatDTO } from "@gym/data/server/gym-content";
 import {
   actualizarAboutValueAction,
   actualizarFacilityAction,

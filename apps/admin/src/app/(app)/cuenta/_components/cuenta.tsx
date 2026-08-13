@@ -16,19 +16,16 @@ import {
 } from "@gym/ui/forge/ui";
 import { identidadDesde, identidadLegalCompleta } from "@gym/domain/legal";
 import type { ResumenMes } from "@gym/domain/types";
-import type { AboutValueDTO } from "@gym/data/server/about-values";
 import type { ClassTypeDTO } from "@gym/data/server/class-type";
 import type { CoachDTO } from "@gym/data/server/coach";
 import type { CobroDTO } from "@gym/data/server/cobro";
-import type { FacilityDTO } from "@gym/data/server/facilities";
-import type { FaqDTO } from "@gym/data/server/faqs";
+import type { AboutValueDTO, FacilityDTO, FaqDTO, StatDTO } from "@gym/data/server/gym-content";
 import type { IdentidadLegalDTO } from "@gym/data/server/legal";
 import type { MensajeDTO } from "@gym/data/server/mensajes";
 import type { PlanEditorDTO } from "@gym/data/server/paquetes";
 import type { PerfilDTO } from "@gym/data/server/perfil";
 import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import type { MesRespaldo } from "@gym/data/server/respaldo";
-import type { StatDTO } from "@gym/data/server/stats";
 import { pesos } from "@gym/format";
 
 import { LogoutButton } from "../../_components/logout-button";

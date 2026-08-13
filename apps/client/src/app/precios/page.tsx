@@ -4,13 +4,12 @@ import Link from "next/link";
 
 import { esPaseSuelto } from "@gym/domain/lifecycle";
 import { pesos } from "@gym/format";
+import { getFaqsPublicas, getValoresPublicos } from "@gym/data/server/gym-content";
 import {
   getCoachesPublicos,
   getContacto,
-  getFaqsPublicas,
   getMarketingGym,
   getPlanesPublicos,
-  getValoresPublicos,
   type PlanPublicoDTO,
 } from "@gym/data/server/marketing";
 

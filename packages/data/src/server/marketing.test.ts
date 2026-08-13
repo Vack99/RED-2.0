@@ -3,14 +3,10 @@ import { describe, expect, it } from "vitest";
 import {
   getCoachesPublicos,
   getContacto,
-  getFaqsPublicas,
   getFormatosPublicos,
   getHorarioHoyPublico,
-  getInstalacionesPublicas,
   getMarketingGym,
   getPlanesPublicos,
-  getStatsPublicas,
-  getValoresPublicos,
   parseHorarios,
 } from "./marketing";
 import type { SupabaseServer } from "./supabase";
@@ -26,11 +22,7 @@ interface TableRows {
   gym?: Record<string, unknown>[];
   paquetes?: Record<string, unknown>[];
   plan_feature?: Record<string, unknown>[];
-  faq?: Record<string, unknown>[];
   class_session?: Record<string, unknown>[];
-  about_value?: Record<string, unknown>[];
-  facility?: Record<string, unknown>[];
-  stat?: Record<string, unknown>[];
   coach?: Record<string, unknown>[];
   class_type?: Record<string, unknown>[];
   gym_contact?: Record<string, unknown>[];
@@ -192,17 +184,6 @@ describe("marketing DAL — public anon reads", () => {
     expect(await getPlanesPublicos(GYM, fake.client)).toEqual([]);
   });
 
-  it("getFaqsPublicas maps rows and scopes the read to the gym", async () => {
-    const fake = makeFake({
-      faq: [{ id: "q1", question: "¿Puedo congelar?", answer: "Sí." }],
-    });
-    const faqs = await getFaqsPublicas(GYM, fake.client);
-    expect(faqs).toEqual([
-      { id: "q1", question: "¿Puedo congelar?", answer: "Sí." },
-    ]);
-    expect(fake.eqCalls).toEqual([{ table: "faq", col: "gym_id", val: GYM }]);
-  });
-
   it("getHorarioHoyPublico maps today's sessions to hora/tipo/derived-spots and scopes to the gym", async () => {
     // 06:00 and 19:00 gym-local for America/Mexico_City (UTC−6) = 12:00Z / 01:00Z next day.
     const fake = makeFake({
@@ -242,39 +223,6 @@ describe("marketing DAL — public anon reads", () => {
   it("getHorarioHoyPublico returns [] when there are no sessions today", async () => {
     const fake = makeFake({ class_session: [] });
     expect(await getHorarioHoyPublico(GYM, TZ, fake.client)).toEqual([]);
-  });
-
-  it("getValoresPublicos maps the three values and scopes the read to the gym", async () => {
-    const fake = makeFake({
-      about_value: [
-        { id: "v1", title: "Fuerza", description: "La base de todo." },
-        { id: "v2", title: "Disciplina", description: "Te trae a las 05:30." },
-      ],
-    });
-    const valores = await getValoresPublicos(GYM, fake.client);
-    expect(valores).toEqual([
-      { id: "v1", title: "Fuerza", description: "La base de todo." },
-      { id: "v2", title: "Disciplina", description: "Te trae a las 05:30." },
-    ]);
-    expect(fake.eqCalls).toEqual([{ table: "about_value", col: "gym_id", val: GYM }]);
-  });
-
-  it("getInstalacionesPublicas maps rows and scopes the read to the gym", async () => {
-    const fake = makeFake({
-      facility: [{ id: "f1", name: "Racks y barras", description: "12 estaciones" }],
-    });
-    const facs = await getInstalacionesPublicas(GYM, fake.client);
-    expect(facs).toEqual([{ id: "f1", name: "Racks y barras", description: "12 estaciones" }]);
-    expect(fake.eqCalls).toEqual([{ table: "facility", col: "gym_id", val: GYM }]);
-  });
-
-  it("getStatsPublicas maps the label/value pairs and scopes the read to the gym", async () => {
-    const fake = makeFake({
-      stat: [{ id: "s1", label: "Coaches", value: "3" }],
-    });
-    const stats = await getStatsPublicas(GYM, fake.client);
-    expect(stats).toEqual([{ id: "s1", label: "Coaches", value: "3" }]);
-    expect(fake.eqCalls).toEqual([{ table: "stat", col: "gym_id", val: GYM }]);
   });
 
   it("getCoachesPublicos maps every field (nullable bio/specialty), filters to active + gym", async () => {

@@ -1,12 +1,6 @@
 "use server";
 
 import {
-  actualizarAboutValue,
-  crearAboutValue,
-  eliminarAboutValue,
-  reordenarAboutValues,
-} from "@gym/data/server/about-values";
-import {
   actualizarClassType,
   actualizarBloque,
   actualizarPorTraer,
@@ -23,12 +17,23 @@ import {
   reordenarCoaches,
 } from "@gym/data/server/coach";
 import {
+  actualizarAboutValue,
   actualizarFacility,
+  actualizarFaq,
+  actualizarStat,
+  crearAboutValue,
   crearFacility,
+  crearFaq,
+  crearStat,
+  eliminarAboutValue,
   eliminarFacility,
+  eliminarFaq,
+  eliminarStat,
+  reordenarAboutValues,
   reordenarFacilities,
-} from "@gym/data/server/facilities";
-import { actualizarFaq, crearFaq, eliminarFaq, reordenarFaqs } from "@gym/data/server/faqs";
+  reordenarFaqs,
+  reordenarStats,
+} from "@gym/data/server/gym-content";
 import { actualizarIdentidadLegal } from "@gym/data/server/legal";
 import {
   actualizarPaquete,
@@ -42,7 +47,6 @@ import {
   sembrarPlantillasDefault,
 } from "@gym/data/server/plantillas";
 import { marcarLeido } from "@gym/data/server/mensajes";
-import { actualizarStat, crearStat, eliminarStat, reordenarStats } from "@gym/data/server/stats";
 
 /** Thin write seams over the DAL. (app) reads are dynamic (cookie-bound), so the client
  *  router.refresh()es after a successful write — no cache invalidation needed (matches togglePaseAction). */

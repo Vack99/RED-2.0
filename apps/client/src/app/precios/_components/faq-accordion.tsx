@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-import type { FaqPublicaDTO } from "@gym/data/server/marketing";
+import type { FaqPublicaDTO } from "@gym/data/server/gym-content";
 
 /**
  * The Precios FAQ accordion — the mock's `pr-faq` behavior: one question open at a time, tap to toggle.

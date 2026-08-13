@@ -16,6 +16,9 @@ import { createAnonClient, type SupabaseServer } from "./supabase";
  *
  * Every reader takes an injectable client (ADR-0001) defaulting to the anon client, so the row→DTO
  * mapping is unit-testable with a fake and the pages share one instance per request via cache().
+ *
+ * The about_value/facility/faq/stat anon twins live in `./gym-content` (same file as their authed
+ * `list*` counterparts — one home for the "Contenido del gimnasio" catalog, CONTEXT.md).
  */
 
 /** The gym identity a marketing page needs: the row id (to scope catalog reads), the brand name (the
@@ -228,32 +231,6 @@ export async function enviarMensajeContacto(
   if (error) throw new Error(error.message);
 }
 
-/** One pregunta/respuesta pair for the public FAQ accordion. */
-export interface FaqPublicaDTO {
-  id: string;
-  question: string;
-  answer: string;
-}
-
-/** A gym's FAQs in display order, anon + gym-scoped. Best-effort: returns [] on error. Memoized. */
-export const getFaqsPublicas = cache(
-  async (
-    gymId: string,
-    client: SupabaseServer = createAnonClient(gymId),
-  ): Promise<FaqPublicaDTO[]> => {
-    const { data } = await client
-      .from("faq")
-      .select("id, question, answer")
-      .eq("gym_id", gymId)
-      .order("sort_order");
-    return (data ?? []).map((f) => ({
-      id: f.id,
-      question: f.question,
-      answer: f.answer,
-    }));
-  },
-);
-
 /** One row of the landing's today-schedule teaser: the wall-clock hora, the class type name, and the
  *  DERIVED free-spot count (never a stored column — ADR-0010). */
 export interface HorarioHoyDTO {
@@ -311,66 +288,6 @@ export const getHorarioHoyPublico = cache(
       tipo: tipoById.get(r.class_type_id) ?? "—",
       disponibles: disponiblesDe(r.capacity, 0),
     }));
-  },
-);
-
-/** One "quiénes somos" value card (about_value) as the Nosotros page renders it. */
-export interface ValorPublicoDTO {
-  id: string;
-  title: string;
-  description: string;
-}
-
-/** A gym's values in the operator's display order, anon + gym-scoped. Best-effort []. Memoized. */
-export const getValoresPublicos = cache(
-  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<ValorPublicoDTO[]> => {
-    const { data } = await client
-      .from("about_value")
-      .select("id, title, description")
-      .eq("gym_id", gymId)
-      .order("sort_order");
-    return (data ?? []).map((v) => ({ id: v.id, title: v.title, description: v.description }));
-  },
-);
-
-/** One instalación card (facility) — name + one-line description. */
-export interface InstalacionPublicaDTO {
-  id: string;
-  name: string;
-  description: string;
-}
-
-/** A gym's facilities in display order, anon + gym-scoped. Best-effort []. Memoized. */
-export const getInstalacionesPublicas = cache(
-  async (
-    gymId: string,
-    client: SupabaseServer = createAnonClient(gymId),
-  ): Promise<InstalacionPublicaDTO[]> => {
-    const { data } = await client
-      .from("facility")
-      .select("id, name, description")
-      .eq("gym_id", gymId)
-      .order("sort_order");
-    return (data ?? []).map((f) => ({ id: f.id, name: f.name, description: f.description }));
-  },
-);
-
-/** One marketing stat tile — a label + free-text value ("Coaches" / "3", "Taller" / "320 m²"). */
-export interface StatPublicaDTO {
-  id: string;
-  label: string;
-  value: string;
-}
-
-/** A gym's stat tiles in display order, anon + gym-scoped. Best-effort []. Memoized. */
-export const getStatsPublicas = cache(
-  async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<StatPublicaDTO[]> => {
-    const { data } = await client
-      .from("stat")
-      .select("id, label, value")
-      .eq("gym_id", gymId)
-      .order("sort_order");
-    return (data ?? []).map((s) => ({ id: s.id, label: s.label, value: s.value }));
   },
 );
 
