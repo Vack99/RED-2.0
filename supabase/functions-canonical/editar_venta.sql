@@ -16,7 +16,12 @@ begin
   
   
   
-  if p_monto is null or p_monto < 1 or p_monto > 100000 then
+  
+  
+  
+  
+  
+  if p_monto is null or p_monto < 1 then
     raise exception 'Monto inválido';
   end if;
 

@@ -98,6 +98,9 @@ describe("montoEditado", () => {
     expect(montoEditado("0")).toBeNull();
     expect(montoEditado("850.5")).toBeNull();
     expect(montoEditado("abc")).toBeNull();
-    expect(montoEditado("100001")).toBeNull();
+  });
+
+  it("has NO upper cap — a paquete's precio is unbounded, so a high-value sale stays correctable", () => {
+    expect(montoEditado("150000")).toBe(150_000);
   });
 });

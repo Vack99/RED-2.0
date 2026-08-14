@@ -24,11 +24,13 @@
 --   V3 — CROSS-TENANT: staff of gym B calling on gym A's venta raises 'Venta no encontrada' — a
 --        REFUSAL, not a silent no-op (the #219/retire_recurring_schedule shape) — and gym A's row is
 --        unchanged. The message is the same one a non-existent id gets, so the refusal leaks nothing.
---   V3b — THE MONTO BOUND: monto 0 raises 'Monto inválido' and writes nothing. `ventas.monto` has NO
+--   V3b — THE MONTO FLOOR: monto 0 raises 'Monto inválido' and writes nothing. `ventas.monto` has NO
 --        table CHECK, so unlike metodo there is no constraint underneath to catch a bad value — the
---        1..100 000 bound (mirroring registrar_venta's custom precio) exists ONLY inside this RPC.
---        The Zod schema sits on the far side of the trust boundary and binds no direct caller, which
---        is exactly why the bound is asserted here against the DB rather than only in vitest.
+--        `>= 1` floor exists ONLY inside this RPC. The Zod schema sits on the far side of the trust
+--        boundary and binds no direct caller, which is exactly why the floor is asserted here against
+--        the DB rather than only in vitest. The bound is one-sided by design: there is no ceiling,
+--        because a sale's monto can come from an unbounded `paquetes.precio` and a cap would make an
+--        already-registered high-value sale permanently uncorrectable.
 --
 -- Fixtures are 100% transaction-local (fresh gen_random_uuid gym/auth.users/gym_membership/cliente/
 -- venta rows, zero prod UUIDs — a live-gym lookup 22P02s in staff_gym() on a fresh scratch project),

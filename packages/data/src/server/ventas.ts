@@ -411,9 +411,11 @@ function raiseVentaError(message: string): never {
 
 export const editarVentaSchema = z.object({
   ventaId: z.string().uuid(),
-  // Mirrors the personalizado paquete's `precio` bound (§2.2) — the closest existing "a sale's
-  // monto" schema in the house; the RPC is the trust boundary and re-checks nothing stricter.
-  monto: z.number().int().min(1).max(100_000),
+  // A positive integer, with NO ceiling — matching `editar_venta`'s own one-sided bound. The
+  // personalizado `precio` cap above governs a paquete being INVENTED; a sale's monto can also come
+  // from `paquetes.precio`, which has no CHECK and no ceiling, so a cap here would refuse to correct
+  // an already-registered high-value sale (and block fixing its método along with it).
+  monto: z.number().int().min(1),
   metodo: z.enum(METODOS),
 });
 

@@ -23,7 +23,7 @@
 --     columns — folio/clases/gym_id/fecha stay unreachable — and `ventas_metodo_check` still binds the
 --     método domain. It does NOT make a raw PATCH equivalent to the RPC: PostgREST PATCH is
 --     filter-based, so `?cliente_id=eq.<x>` rewrites every matching row at once, and `monto` carries no
---     table CHECK, so the 1..100000 bound below lives only on the RPC door. The residual is therefore
+--     table CHECK, so even the `>= 1` floor below lives only on the RPC door. The residual is therefore
 --     gym-staff-scoped self-harm — a signed-in operator mangling their OWN gym's amounts (RLS still
 --     pins the tenant) — accepted under the gym's-data ruling: it's the gym's data, and we optimize for
 --     the administrator's agency rather than adding locks the owner did not ask for.
@@ -78,10 +78,15 @@ begin
     raise exception 'Método inválido';
   end if;
 
-  -- `monto` has NO table CHECK, so this is the only place the bound exists — the Zod schema sits on
-  -- the far side of the trust boundary and binds nobody calling the RPC directly. Same bound and same
-  -- raise shape as registrar_venta's custom precio (functions-canonical/registrar_venta.sql:69-71).
-  if p_monto is null or p_monto < 1 or p_monto > 100000 then
+  -- `monto` has NO table CHECK, so this is the only place any bound exists at all — the Zod schema
+  -- sits on the far side of the trust boundary and binds nobody calling the RPC directly. Same raise
+  -- shape as registrar_venta's custom precio (functions-canonical/registrar_venta.sql:69-71), but the
+  -- bound is deliberately ONE-SIDED: that 100 000 cap governs only the CUSTOM branch, while the
+  -- PAQUETE branch writes `monto` from `paquetes.precio`, which carries no CHECK and no ceiling. An
+  -- upper bound here would make an already-registered high-value sale permanently UNCORRECTABLE —
+  -- the sheet seeds its field from the stored monto, so the operator could not even fix the método —
+  -- and it would buy nothing, since the residual this migration accepts is an unbounded PATCH anyway.
+  if p_monto is null or p_monto < 1 then
     raise exception 'Monto inválido';
   end if;
 

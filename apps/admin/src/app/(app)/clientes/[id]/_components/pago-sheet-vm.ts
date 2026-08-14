@@ -23,12 +23,16 @@ export function vigenciaDiasVenta(tipo: "dias" | "mes", dias: number | null): nu
   return tipo === "mes" ? 30 : (dias ?? 0);
 }
 
-/** The monto field's parse + bounds rule, mirroring `editarVentaSchema` (integer, 1–100 000)
+/** The monto field's parse rule, mirroring `editarVentaSchema` (a positive integer, no ceiling)
  *  so GUARDAR is gated before the round trip. Returns the integer the action will send, or
- *  null when the field is not a legal monto. The RPC remains the trust boundary. */
+ *  null when the field is not a legal monto. The RPC remains the trust boundary.
+ *
+ *  No upper cap on purpose: the sheet seeds this field from the sale's STORED monto, which can
+ *  come from a `paquetes.precio` with no ceiling of its own — a cap would freeze GUARDAR on a
+ *  high-value sale and leave even its método uncorrectable. */
 export function montoEditado(raw: string): number | null {
   const n = Number(raw.trim());
-  return Number.isInteger(n) && n >= 1 && n <= 100_000 ? n : null;
+  return Number.isInteger(n) && n >= 1 ? n : null;
 }
 
 /**
