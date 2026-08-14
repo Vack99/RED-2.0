@@ -30,6 +30,21 @@
 --        REFUSAL, not a silent no-op (the #219/retire_recurring_schedule shape). The target sale is
 --        deliberately INSIDE the 30-day window, so what refuses it is provably the tenant gate and not
 --        the window.
+--   V9 — ILIMITADO SALE on a finite balance: the deleted sale granted no classes (`clases` null), so
+--        the clawback subtracts DAYS ONLY and clases_restantes must come back byte-identical. The
+--        obvious bug this pins is a `coalesce(clases, 0)` slip into something that zeroes or floors a
+--        balance the sale never touched.
+--   V10 — ILIMITADO BALANCE (clases_restantes null) losing a FINITE sale: the null is the ilimitado
+--        marker (ADR-0004), not a missing number — subtracting from it must leave it NULL, never 0 and
+--        never a negative. `vence` still moves back by the sale's own vigencia_dias.
+--   GRANT LAYER — the door itself, proven from the client role rather than from the migration text.
+--        `eliminar_venta` is SECURITY DEFINER with NO delete policy precisely because DELETE has no
+--        column granularity, so a direct `delete from public.ventas` must be refused at the GRANT
+--        layer (42501) before RLS is ever consulted — otherwise a raw PostgREST call would skip the
+--        window AND the clawback. UPDATE is the mirror image: revoked table-wide then re-granted on
+--        (monto, metodo) only, so a direct `update ... set folio` is refused the same way while a
+--        direct `update ... set monto` on the caller's OWN gym row SUCCEEDS — which is the accepted
+--        residual, and asserting it keeps the column grant from being silently widened or dropped.
 --
 -- Fixtures are 100% transaction-local (fresh gen_random_uuid gym/auth.users/gym_membership/clientes/
 -- ventas/asistencias rows, zero prod UUIDs — a live-gym lookup 22P02s in staff_gym() on a fresh
@@ -58,6 +73,9 @@ declare
   c3       uuid;  -- V6 the floor
   c4       uuid;  -- V7 the window
   c5       uuid;  -- V8 cross-tenant
+  c6       uuid;  -- V9 ilimitado sale, finite balance
+  c7       uuid;  -- V10 finite sale, ilimitado balance
+  c8       uuid;  -- GRANT LAYER probe
   v_old    uuid;  -- c1's surviving older sale
   v_new    uuid;  -- c1's delete target
   v_dup1   uuid;  -- c2's kept sale
@@ -65,6 +83,9 @@ declare
   v_floor  uuid;  -- c3's only sale (delete target)
   v_stale  uuid;  -- c4's 31-day-old sale (refused)
   v_cross  uuid;  -- c5's in-window sale (refused for tenancy, not age)
+  v_ilim   uuid;  -- c6's ilimitado sale (delete target)
+  v_fin    uuid;  -- c7's finite sale (delete target)
+  v_grant  uuid;  -- c8's in-window sale, never deleted — the raw-DML probe target
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'eliminar-venta-suite-gym-a', 'Eliminar Venta Suite A', 'America/Chihuahua', 'forge'),
@@ -126,6 +147,27 @@ begin
     values (gym_a, c5, 7107, 'AJENO', 8, 'mes', null, 950, 'efectivo', now() - interval '4 days', now() - interval '4 days')
     returning id into v_cross;
 
+  -- ── V9: an ILIMITADO sale (clases null, 'mes') on a client who has a finite balance ─────────────
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('DV Ilimitado', '0000000016', 10, current_date + 45, 'ILIMITADO', gym_a) returning id into c6;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c6, 7108, 'ILIMITADO', null, 'mes', null, 1200, 'efectivo', now() - interval '6 days', now() - interval '6 days')
+    returning id into v_ilim;
+
+  -- ── V10: an ILIMITADO balance (clases_restantes null) losing a finite 10-clase / 15-día sale ────
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('DV Saldo Ilimitado', '0000000017', null, current_date + 50, '10 CLASES', gym_a) returning id into c7;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c7, 7109, '10 CLASES', 10, 'dias', 15, 600, 'efectivo', now() - interval '7 days', now() - interval '7 days')
+    returning id into v_fin;
+
+  -- ── GRANT LAYER: an in-window own-gym sale, never passed to the RPC — only probed with raw DML ──
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('DV Grants', '0000000018', 9, current_date + 20, 'GRANTS', gym_a) returning id into c8;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c8, 7110, 'GRANTS', 8, 'dias', 20, 500, 'efectivo', now() - interval '2 days', now() - interval '2 days')
+    returning id into v_grant;
+
   perform set_config('t.gym_a',   gym_a::text,   true);
   perform set_config('t.gym_b',   gym_b::text,   true);
   perform set_config('t.op_a',    op_a::text,    true);
@@ -135,6 +177,9 @@ begin
   perform set_config('t.c3',      c3::text,      true);
   perform set_config('t.c4',      c4::text,      true);
   perform set_config('t.c5',      c5::text,      true);
+  perform set_config('t.c6',      c6::text,      true);
+  perform set_config('t.c7',      c7::text,      true);
+  perform set_config('t.c8',      c8::text,      true);
   perform set_config('t.v_old',   v_old::text,   true);
   perform set_config('t.v_new',   v_new::text,   true);
   perform set_config('t.v_dup1',  v_dup1::text,  true);
@@ -142,6 +187,9 @@ begin
   perform set_config('t.v_floor', v_floor::text, true);
   perform set_config('t.v_stale', v_stale::text, true);
   perform set_config('t.v_cross', v_cross::text, true);
+  perform set_config('t.v_ilim',  v_ilim::text,  true);
+  perform set_config('t.v_fin',   v_fin::text,   true);
+  perform set_config('t.v_grant', v_grant::text, true);
 end $$;
 
 select set_config('request.jwt.claims',
@@ -313,6 +361,101 @@ begin
   end if;
   if cli.paquete_nombre is distinct from 'AJENO' then
     raise exception 'V8 FAIL: paquete_nombre = % (expected AJENO — untouched by the refused delete)', cli.paquete_nombre;
+  end if;
+end $$;
+
+-- ══ V9 — ILIMITADO SALE: days only. clases_restantes must be UNCHANGED, not floored, not zeroed ═════
+-- Back to gym A's own staff (V8 left the claims on gym B).
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+begin
+  perform public.eliminar_venta(current_setting('t.v_ilim', true)::uuid);
+end $$;
+reset role;
+do $$
+declare
+  cli record;
+begin
+  if exists (select 1 from public.ventas where id = current_setting('t.v_ilim', true)::uuid) then
+    raise exception 'V9 FAIL: the venta row survived the delete';
+  end if;
+  select * into cli from public.clientes where id = current_setting('t.c6', true)::uuid;
+  if cli.clases_restantes is distinct from 10 then
+    raise exception 'V9 FAIL: clases_restantes = % (expected 10, UNCHANGED — an ilimitado sale granted no clases, so the clawback subtracts none)', cli.clases_restantes;
+  end if;
+  if cli.vence is distinct from current_date + 15 then
+    raise exception 'V9 FAIL: vence = % (expected current_date + 15 — 45 minus the flat 30 days a vigencia_tipo mes sale contributes, ruling C1)', cli.vence;
+  end if;
+end $$;
+
+-- ══ V10 — ILIMITADO BALANCE: null is the ilimitado marker, so it stays NULL — never 0, never negative ══
+set local role authenticated;
+do $$
+begin
+  perform public.eliminar_venta(current_setting('t.v_fin', true)::uuid);
+end $$;
+reset role;
+do $$
+declare
+  cli record;
+begin
+  if exists (select 1 from public.ventas where id = current_setting('t.v_fin', true)::uuid) then
+    raise exception 'V10 FAIL: the venta row survived the delete';
+  end if;
+  select * into cli from public.clientes where id = current_setting('t.c7', true)::uuid;
+  if cli.clases_restantes is not null then
+    raise exception 'V10 FAIL: clases_restantes = % (expected NULL — null is ILIMITADO, ADR-0004, not a missing number to subtract from)', cli.clases_restantes;
+  end if;
+  if cli.vence is distinct from current_date + 35 then
+    raise exception 'V10 FAIL: vence = % (expected current_date + 35 — 50 minus the sale''s 15 vigencia_dias)', cli.vence;
+  end if;
+end $$;
+
+-- ══ GRANT LAYER — raw DML from the client role: DELETE refused, folio UPDATE refused, monto allowed ══
+set local role authenticated;
+do $$
+declare
+  n_del int;
+begin
+  -- (a) DELETE is revoked outright, so the RPC is the only door to a delete — refused at the GRANT
+  -- layer, before RLS is consulted. A raw PostgREST delete would otherwise skip window + clawback.
+  n_del := -1;
+  begin
+    delete from public.ventas where id = current_setting('t.v_grant', true)::uuid;
+    get diagnostics n_del = row_count;
+    raise exception 'GRANT FAIL: authenticated DELETE on public.ventas was permitted (% row(s)) — eliminar_venta is no longer the only door', n_del;
+  exception when insufficient_privilege then null;
+  end;
+
+  -- (b) UPDATE is column-scoped to (monto, metodo): folio is outside the grant, so this is refused
+  -- the same way — a raw PATCH cannot re-folio a sale or move it between gyms.
+  begin
+    update public.ventas set folio = 999999 where id = current_setting('t.v_grant', true)::uuid;
+    raise exception 'GRANT FAIL: authenticated UPDATE of ventas.folio was permitted — the column grant has been widened past (monto, metodo)';
+  exception when insufficient_privilege then null;
+  end;
+
+  -- (c) …and monto IS granted, on the caller's own gym row: this must SUCCEED. That is the accepted
+  -- residual (a raw PATCH can still restate an amount, gym-scoped, under the gym's-data ruling), and
+  -- asserting it is what stops the column grant or ventas_staff_update from silently disappearing.
+  update public.ventas set monto = 4321 where id = current_setting('t.v_grant', true)::uuid;
+end $$;
+reset role;
+do $$
+declare
+  rec record;
+begin
+  select * into rec from public.ventas where id = current_setting('t.v_grant', true)::uuid;
+  if rec.id is null then
+    raise exception 'GRANT FAIL: the probe venta is gone — the refused DELETE took effect after all';
+  end if;
+  if rec.monto is distinct from 4321 then
+    raise exception 'GRANT FAIL: monto = % (expected 4321 — the granted column UPDATE must actually land, proving grant + ventas_staff_update both hold)', rec.monto;
+  end if;
+  if rec.folio is distinct from 7110 then
+    raise exception 'GRANT FAIL: folio = % (expected 7110 — the refused UPDATE must not have written it)', rec.folio;
   end if;
 end $$;
 

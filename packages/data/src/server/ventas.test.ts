@@ -9,6 +9,7 @@ import {
   eliminarVenta,
   EMAIL_EN_USO_MSG,
   EmailEnUsoError,
+  VentaRefusalError,
 } from "./ventas";
 import type { SupabaseServer } from "./supabase";
 
@@ -553,9 +554,11 @@ describe("emailCliente — the receipt mail's recipient (#99)", () => {
 
 /**
  * editar_venta / eliminar_venta (#269) — same injected-fake seam as crearVenta, but both are
- * thin: requireOperator, then one bare-awaited RPC call whose Spanish refusal message is
- * surfaced as-is (unlike crearVenta's generic mapping — these ARE the UI copy). The window /
- * clawback / gym-scope rules live entirely in the RPC, proven by the SQL denial suites.
+ * thin: requireOperator, then one bare-awaited RPC call. The error leg is the part with a rule:
+ * a message on the KNOWN refusal list becomes a `VentaRefusalError` (these ARE the UI copy, so
+ * the action toasts them), anything else stays a plain Error so the action rethrows it into the
+ * error boundary instead of showing an internal failure as advice. The window / clawback /
+ * gym-scope rules themselves live entirely in the RPC, proven by the SQL denial suites.
  */
 const VENTA_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -569,11 +572,27 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     });
   });
 
-  it("surfaces the RPC's refusal message verbatim, not a generic failure", async () => {
-    const fake = makeFake({}, { rpcData: null, rpcError: { message: "Venta no encontrada" } });
-    await expect(
-      editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" }, fake.client),
-    ).rejects.toThrow("Venta no encontrada");
+  it.each(["No autorizado", "Venta no encontrada", "Método inválido", "Monto inválido"])(
+    "types the known refusal %j as VentaRefusalError, message verbatim",
+    async (mensaje) => {
+      const fake = makeFake({}, { rpcData: null, rpcError: { message: mensaje } });
+      const err = await editarVenta(
+        { ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" },
+        fake.client,
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(VentaRefusalError);
+      expect((err as Error).message).toBe(mensaje);
+    },
+  );
+
+  it("leaves an UNKNOWN failure a plain Error — the action must rethrow it, not toast it", async () => {
+    const fake = makeFake({}, { rpcData: null, rpcError: { message: "fetch failed" } });
+    const err = await editarVenta(
+      { ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" },
+      fake.client,
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(VentaRefusalError);
   });
 
   it("throws 'No autenticado' when getClaims returns no sub (requireOperator wired)", async () => {
@@ -608,14 +627,21 @@ describe("eliminarVenta — write orchestration (injected fake)", () => {
     expect(lastRpc(fake)).toEqual({ name: "eliminar_venta", args: { p_venta_id: VENTA_ID } });
   });
 
-  it("surfaces the RPC's window refusal message verbatim", async () => {
+  it("types the window refusal as VentaRefusalError, message verbatim", async () => {
     const fake = makeFake(
       {},
       { rpcData: null, rpcError: { message: "La venta ya no se puede eliminar" } },
     );
-    await expect(eliminarVenta({ ventaId: VENTA_ID }, fake.client)).rejects.toThrow(
-      "La venta ya no se puede eliminar",
-    );
+    const err = await eliminarVenta({ ventaId: VENTA_ID }, fake.client).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(VentaRefusalError);
+    expect((err as Error).message).toBe("La venta ya no se puede eliminar");
+  });
+
+  it("leaves an UNKNOWN failure a plain Error — the action must rethrow it, not toast it", async () => {
+    const fake = makeFake({}, { rpcData: null, rpcError: { message: "canceling statement" } });
+    const err = await eliminarVenta({ ventaId: VENTA_ID }, fake.client).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(VentaRefusalError);
   });
 
   it("throws 'No autenticado' when getClaims returns no sub (requireOperator wired)", async () => {

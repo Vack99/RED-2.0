@@ -6,9 +6,14 @@ begin
   v_gym := public.staff_gym();
   if v_gym is null then raise exception 'No autorizado'; end if;
 
+  
+  
+  
+  
   select v.cliente_id, v.clases, v.vigencia_tipo, v.vigencia_dias, v.created_at into v_venta
     from public.ventas v
-    where v.id = p_venta_id and v.gym_id = v_gym;
+    where v.id = p_venta_id and v.gym_id = v_gym
+    for update;
   if not found then raise exception 'Venta no encontrada'; end if;
 
   
@@ -19,7 +24,10 @@ begin
   
   perform 1 from public.clientes c where c.id = v_venta.cliente_id for update;
 
-  delete from public.ventas where id = p_venta_id;
+  
+  
+  delete from public.ventas where id = p_venta_id and gym_id = v_gym;
+  if not found then raise exception 'Venta no encontrada'; end if;
 
   
   v_dias := case when v_venta.vigencia_tipo = 'mes' then 30

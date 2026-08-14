@@ -19,8 +19,14 @@
 -- a policy for that command exists." So:
 --
 --   * editar_venta stays SECURITY INVOKER (ADR-0005) with `ventas_staff_update`, but the table grant is
---     revoked and re-granted COLUMN-SCOPED to (monto, metodo). The worst a raw PATCH can then do is
---     exactly what the RPC already permits, and `ventas_metodo_check` still binds.
+--     revoked and re-granted COLUMN-SCOPED to (monto, metodo). That caps a raw PATCH at those two
+--     columns — folio/clases/gym_id/fecha stay unreachable — and `ventas_metodo_check` still binds the
+--     método domain. It does NOT make a raw PATCH equivalent to the RPC: PostgREST PATCH is
+--     filter-based, so `?cliente_id=eq.<x>` rewrites every matching row at once, and `monto` carries no
+--     table CHECK, so the 1..100000 bound below lives only on the RPC door. The residual is therefore
+--     gym-staff-scoped self-harm — a signed-in operator mangling their OWN gym's amounts (RLS still
+--     pins the tenant) — accepted under the gym's-data ruling: it's the gym's data, and we optimize for
+--     the administrator's agency rather than adding locks the owner did not ask for.
 --   * eliminar_venta is SECURITY DEFINER and ships NO delete policy, with DELETE revoked outright.
 --     DELETE has no column granularity, so an INVOKER+policy design cannot be closed the same way —
 --     definer keeps the window + clawback the only door. Its gym gate (`staff_gym()` +
@@ -60,14 +66,24 @@ as $function$
 declare
   v_gym uuid;
 begin
+  -- Authorization first, input second — the registrar_venta order (functions-canonical/
+  -- registrar_venta.sql:30-31 gates before :46-48 validates): a caller with no staff row learns
+  -- 'No autorizado' and nothing about which arguments this gym would have accepted.
+  v_gym := public.staff_gym();
+  if v_gym is null then raise exception 'No autorizado'; end if;
+
   -- Re-assert the domain in-body so a bad método surfaces a human message instead of a raw 23514,
   -- exactly as registrar_venta does ('pendiente' was removed by ruling C2).
   if p_metodo not in ('efectivo', 'transferencia', 'tarjeta') then
     raise exception 'Método inválido';
   end if;
 
-  v_gym := public.staff_gym();
-  if v_gym is null then raise exception 'No autorizado'; end if;
+  -- `monto` has NO table CHECK, so this is the only place the bound exists — the Zod schema sits on
+  -- the far side of the trust boundary and binds nobody calling the RPC directly. Same bound and same
+  -- raise shape as registrar_venta's custom precio (functions-canonical/registrar_venta.sql:69-71).
+  if p_monto is null or p_monto < 1 or p_monto > 100000 then
+    raise exception 'Monto inválido';
+  end if;
 
   -- `gym_id = v_gym` makes a cross-tenant id a REFUSAL, not a silent zero-row no-op.
   update public.ventas set monto = p_monto, metodo = p_metodo
@@ -108,9 +124,14 @@ begin
   v_gym := public.staff_gym();
   if v_gym is null then raise exception 'No autorizado'; end if;
 
+  -- FOR UPDATE on the VENTA, not just on the cliente below: two overlapping deletes of the same sale
+  -- would otherwise both pass the window check, serialize on the clientes lock, and each apply the full
+  -- clawback — the loser deleting zero rows but still subtracting the clases/días a second time, which
+  -- corrupts the stored balance permanently. The lock makes the second call wait and then find nothing.
   select v.cliente_id, v.clases, v.vigencia_tipo, v.vigencia_dias, v.created_at into v_venta
     from public.ventas v
-    where v.id = p_venta_id and v.gym_id = v_gym;
+    where v.id = p_venta_id and v.gym_id = v_gym
+    for update;
   if not found then raise exception 'Venta no encontrada'; end if;
 
   -- #266.2: the window runs from registration, NOT from the backdatable sold date `fecha`.
@@ -121,7 +142,10 @@ begin
   -- Lock the saldo row before the read-modify-write, same discipline as registrar_venta.
   perform 1 from public.clientes c where c.id = v_venta.cliente_id for update;
 
-  delete from public.ventas where id = p_venta_id;
+  -- The tenant predicate rides the MUTATING statement (house form), and the rowcount check makes a
+  -- zero-row delete a refusal instead of a clawback with nothing to claw back.
+  delete from public.ventas where id = p_venta_id and gym_id = v_gym;
+  if not found then raise exception 'Venta no encontrada'; end if;
 
   -- Ruling C1: 'mes' is a flat 30 days; 'dias' uses its own count; null contributes nothing.
   v_dias := case when v_venta.vigencia_tipo = 'mes' then 30

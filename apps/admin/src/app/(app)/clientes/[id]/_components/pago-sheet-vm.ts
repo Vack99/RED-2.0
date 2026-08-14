@@ -65,7 +65,9 @@ export function previewEliminarVenta(v: {
     v.clases === null || v.clasesRestantes === null ? null : Math.max(0, v.clasesRestantes - v.clases);
   const queda = [
     nuevasClases !== null ? `quedará en ${nuevasClases} ${nuevasClases === 1 ? "clase" : "clases"}` : null,
-    v.vence ? `vence ${fmtShort(addDays(parseDay(v.vence), -v.dias))}` : null,
+    // `dias > 0` guards the fragment as well as the subtraction: at 0 días the date does not move,
+    // and re-stating the unchanged vence would read as an outcome of the delete.
+    v.vence && v.dias > 0 ? `vence ${fmtShort(addDays(parseDay(v.vence), -v.dias))}` : null,
   ].filter((s): s is string => s !== null);
 
   const ingresos = `Se restarán ${pesos(v.monto)} de los ingresos de ${v.mes}.`;

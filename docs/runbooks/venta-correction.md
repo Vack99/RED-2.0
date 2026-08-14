@@ -15,7 +15,9 @@ Correction shipped in-product. From a client's ficha, any staff member can now:
 
 ## The one rule (past the window): the ventas ledger is append-only
 
-`ventas` RLS is **select + insert only** — no update, no delete policy (ADR-0005; the revenue aggregations in `resumen.ts`/`derive.ts` sum every `monto` and assume no row ever mutates or vanishes). **Never `UPDATE` or `DELETE` a `ventas` row.** A correction is a **compensating negative `ventas` row** (the reversal, so `Σ monto` stays truthful) plus a **`saldo` fix on `clientes`**, both in **one transaction**.
+Since #269 `ventas` RLS is **select + insert + a column-scoped update** — `ventas_staff_update` exists, but the table grant is revoked and re-granted on `(monto, metodo)` only, so those two columns are the *only* thing any direct write can reach. There is still **no delete policy at all**: DELETE is revoked from `authenticated` outright and `eliminar_venta` (SECURITY DEFINER) is the only door, which is what keeps the 30-day window and the saldo clawback unskippable.
+
+For a sale **past that window** — the only case this runbook covers — nothing here has changed: **never `DELETE` the row, and never hand-`UPDATE` anything but `monto`/`metodo` (and for those, use the in-product edit below, not SQL)**. A correction is a **compensating negative `ventas` row** (the reversal, so `Σ monto` stays truthful) plus a **`saldo` fix on `clientes`**, both in **one transaction**.
 
 Run **authenticated as the gym owner** — no service role needed, and none would work:
 - Nothing is deleted, and the staff RLS policies already permit the whole correction: `ventas_staff_insert` covers the negative-`monto` row (there is no sign gate) and `clientes_staff_update` grants staff direct UPDATE on the saldo columns (`20260702173309_gym_scoped_rls_policies.sql:40-50`).
@@ -83,9 +85,9 @@ commit;
 
 Then **re-sell the correct package through the normal path** — the app's COBRAR flow / `registrar_venta` with `p_paquete_id = <ilimitado_id>` and a fresh `p_idempotency_key`. It re-derives price, balance, and vence from the paquete row and stacks onto the just-restored base (ruling C13), so the correct +$1200 sale posts with its own folio and the member ends in the right state. Do **not** hand-write the correct sale — let the RPC derive it.
 
-### Simpler case — right package, wrong price / method only
+### Right package, wrong price / method only — do NOT use SQL for this
 
-If only the amount or method was wrong (correct package, correct saldo), skip step 2: post the compensating negative `ventas` row for the wrong `monto`, then re-sell at the correct price via `registrar_venta`. The saldo never moves; only the ledger is rebalanced.
+Superseded by #269: `editar_venta` fixes `monto` and `metodo` in place at **any age**, window or no window. Open the client's ficha → tap the row in HISTORIAL DE PAGOS → correct the amount / method → GUARDAR. No compensating row, no folio hole, no saldo to touch. The old two-row recipe is strictly worse here and is not reproduced.
 
 ## Do NOT
 

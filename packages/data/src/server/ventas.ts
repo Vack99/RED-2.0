@@ -380,10 +380,34 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
 
 // ── Payment correction (#269, rulings #266/#267) ────────────────────
 // editar_venta / eliminar_venta are the ONLY writers besides registrar_venta (ADR-0005's
-// pure-INVOKER-or-DEFINER split is decided per RPC, in the migration, not here). Both raise
-// human-readable Spanish messages on refusal ('No autorizado', 'Venta no encontrada', 'Método
-// inválido', 'La venta ya no se puede eliminar') — this DAL surfaces error.message AS-IS
-// (unlike crearVenta's generic mapping) because these messages are already the UI copy.
+// pure-INVOKER-or-DEFINER split is decided per RPC, in the migration, not here).
+
+/** The refusals `editar_venta`/`eliminar_venta` raise BY NAME — each string is already the Spanish
+ *  copy the desk shows, so the DAL forwards it verbatim. The list is the contract: the suites pin
+ *  these exact strings, same discipline as EMAIL_EN_USO_MSG. */
+const VENTA_REFUSALS: readonly string[] = [
+  "No autorizado",
+  "Venta no encontrada",
+  "Método inválido",
+  "Monto inválido",
+  "La venta ya no se puede eliminar",
+];
+
+/** An RPC refusal the operator can act on, typed so the server action can map exactly THIS to
+ *  `{ ok: false, mensaje }` and rethrow everything else (a dropped connection, a 42501, a constraint
+ *  the RPC never asserts) into the error boundary — catching bare `Error` would toast an internal
+ *  failure as if it were advice. Same channel discipline as DuplicadoError/EmailEnUsoError. */
+export class VentaRefusalError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "VentaRefusalError";
+  }
+}
+
+function raiseVentaError(message: string): never {
+  if (VENTA_REFUSALS.includes(message)) throw new VentaRefusalError(message);
+  throw new Error(message);
+}
 
 export const editarVentaSchema = z.object({
   ventaId: z.string().uuid(),
@@ -406,7 +430,7 @@ export async function editarVenta(raw: unknown, client?: SupabaseServer): Promis
     p_monto: input.monto,
     p_metodo: input.metodo,
   });
-  if (error) throw new Error(error.message);
+  if (error) raiseVentaError(error.message);
 }
 
 /** Hard-delete a sale within its 30-day window, clawing back the balance it granted (#266.1/2,
@@ -417,5 +441,5 @@ export async function eliminarVenta(raw: unknown, client?: SupabaseServer): Prom
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
   const { error } = await supabase.rpc("eliminar_venta", { p_venta_id: input.ventaId });
-  if (error) throw new Error(error.message);
+  if (error) raiseVentaError(error.message);
 }

@@ -24,6 +24,11 @@
 --   V3 — CROSS-TENANT: staff of gym B calling on gym A's venta raises 'Venta no encontrada' — a
 --        REFUSAL, not a silent no-op (the #219/retire_recurring_schedule shape) — and gym A's row is
 --        unchanged. The message is the same one a non-existent id gets, so the refusal leaks nothing.
+--   V3b — THE MONTO BOUND: monto 0 raises 'Monto inválido' and writes nothing. `ventas.monto` has NO
+--        table CHECK, so unlike metodo there is no constraint underneath to catch a bad value — the
+--        1..100 000 bound (mirroring registrar_venta's custom precio) exists ONLY inside this RPC.
+--        The Zod schema sits on the far side of the trust boundary and binds no direct caller, which
+--        is exactly why the bound is asserted here against the DB rather than only in vitest.
 --
 -- Fixtures are 100% transaction-local (fresh gen_random_uuid gym/auth.users/gym_membership/cliente/
 -- venta rows, zero prod UUIDs — a live-gym lookup 22P02s in staff_gym() on a fresh scratch project),
@@ -231,6 +236,44 @@ begin
   select to_jsonb(v.*) - 'monto' - 'metodo' into v_after from public.ventas v where v.id = rec.id;
   if v_after is distinct from v_rest then
     raise exception 'V3 FAIL: the cross-tenant call moved another column. before = % / after = %', v_rest, v_after;
+  end if;
+end $$;
+
+-- ══ V3b — THE MONTO BOUND: an out-of-range monto is REFUSED in-body, and the row is untouched ═══════
+-- Back to gym A's own staff on purpose: the caller is fully entitled, so the ONLY thing that can
+-- refuse this call is the bound itself.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_msg text;
+begin
+  v_msg := null;
+  begin
+    perform public.editar_venta(current_setting('t.venta', true)::uuid, 0, 'efectivo');
+  exception when others then v_msg := sqlerrm;
+  end;
+  if v_msg is distinct from 'Monto inválido' then
+    raise exception 'V3b FAIL: got % (expected Monto inválido — the in-body bound, the only one there is: ventas.monto has no CHECK)', coalesce(v_msg, '<no error raised>');
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  rec     record;
+  v_rest  jsonb := current_setting('t.venta_rest', true)::jsonb;
+  v_after jsonb;
+begin
+  select * into rec from public.ventas where id = current_setting('t.venta', true)::uuid;
+  if rec.monto is distinct from 900 then
+    raise exception 'V3b FAIL: monto = % (expected 900 — a refused call must not have written the out-of-bounds amount)', rec.monto;
+  end if;
+  if rec.metodo is distinct from 'transferencia' then
+    raise exception 'V3b FAIL: metodo = % (expected transferencia — unchanged by the refused call)', rec.metodo;
+  end if;
+  select to_jsonb(v.*) - 'monto' - 'metodo' into v_after from public.ventas v where v.id = rec.id;
+  if v_after is distinct from v_rest then
+    raise exception 'V3b FAIL: the refused call still moved another column. before = % / after = %', v_rest, v_after;
   end if;
 end $$;
 

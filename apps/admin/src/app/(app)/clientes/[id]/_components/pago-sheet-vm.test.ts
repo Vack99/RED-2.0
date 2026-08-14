@@ -49,6 +49,12 @@ describe("previewEliminarVenta", () => {
     );
   });
 
+  it("omits vence at 0 days even when there IS one — the date does not move, so it is not an outcome", () => {
+    expect(previewEliminarVenta({ ...EJEMPLO, dias: 0 })).toBe(
+      "Se restarán 8 clases → quedará en 6 clases. Se restarán $850 de los ingresos de agosto.",
+    );
+  });
+
   it("says only what leaves the month when the sale granted nothing to claw back", () => {
     expect(previewEliminarVenta({ ...EJEMPLO, clases: null, dias: 0 })).toBe(
       "Se restarán $850 de los ingresos de agosto.",
