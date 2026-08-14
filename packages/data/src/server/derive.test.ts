@@ -230,6 +230,7 @@ describe("shapeFicha", () => {
   });
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
     id: "v1",
+    folio: 1001,
     fecha: "2026-05-20T18:00:00Z",
     created_at: "2026-05-20T18:00:00Z",
     paquete_nombre: "8 clases",
@@ -401,6 +402,7 @@ describe("shapeFicha", () => {
     const f = shapeFicha(clienteRow, [], ventas, CTX, TZ_FORGE, [], "FORGE", 0);
     expect(f.pagos[0]).toEqual({
       id: "v1",
+      folio: 1001,
       fechaDisplay: "20 may",
       paquete: "8 clases",
       montoDisplay: "$800",
@@ -580,6 +582,7 @@ describe("shapeFicha gauges", () => {
   };
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
     id: "v1",
+    folio: 1001,
     fecha: "2026-05-17T18:00:00Z", // purchased 10 days ago; vence 2026-06-16 → 30-day window
     created_at: "2026-05-17T18:00:00Z",
     paquete_nombre: "8 clases",
@@ -681,6 +684,7 @@ describe("derivarMembresia", () => {
   };
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
     id: "v1",
+    folio: 1001,
     fecha: "2026-05-17T18:00:00Z",
     created_at: "2026-05-17T18:00:00Z",
     paquete_nombre: "8 clases",

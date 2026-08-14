@@ -3,15 +3,16 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { CountUp } from "@gym/ui/forge/count-up";
-import { Icon, type IconName } from "@gym/ui/forge/icon";
+import { Icon } from "@gym/ui/forge/icon";
 import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
 import { Avatar, Badge, Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { ClienteLiteDTO } from "@gym/data/server/clientes";
 import type { PaqueteDTO } from "@gym/data/server/paquetes";
-import type { Metodo as MetodoEnum, ReciboResult } from "@gym/data/server/ventas";
+import type { Metodo, ReciboResult } from "@gym/data/server/ventas";
 import { calcVigenciaEnd } from "@gym/domain/rules";
 import { DOW, fmtFull, fmtNavegadorDia, fmtShort, isoDay, MON, parseDay, pesos, sameDay } from "@gym/format";
+import { MetodoEditor } from "../../_components/metodo-editor";
 import { crearVentaAction } from "../actions";
 import { PersonalizadoEditor } from "./personalizado-editor";
 import { Recibo } from "./recibo";
@@ -31,13 +32,6 @@ import {
 } from "./vender-vm";
 
 type Mode = "new" | "existing";
-type Metodo = "Efectivo" | "Tarjeta" | "Transferencia";
-
-const METODO_ENUM: Record<Metodo, MetodoEnum> = {
-  Efectivo: "efectivo",
-  Tarjeta: "tarjeta",
-  Transferencia: "transferencia",
-};
 
 export function VenderScreen({
   paquetes,
@@ -73,7 +67,7 @@ export function VenderScreen({
   const [clientId, setClientId] = React.useState<string | null>(preselectId);
   const [sel, setSel] = React.useState<string | null>(null);
   const [custom, setCustom] = React.useState<CustomForm>(CUSTOM_VACIO);
-  const [metodo, setMetodo] = React.useState<Metodo | null>(null);
+  const [metodo, setMetodo] = React.useState<Metodo | null>(null); // the stored value; the tiles own its display casing
   // Backdated sold date (spec D6). The raw pick defaults to today (== "not backdated");
   // `inicioEfectivo` clamps it against the current client's alta floor so the label,
   // preview, confirm line and submit always agree on the day that will actually be sent.
@@ -245,7 +239,7 @@ export function VenderScreen({
         paquete: esCustom
           ? customSeleccion(custom)
           : { tipo: "registrado" as const, paqueteId: sel },
-        metodo: METODO_ENUM[metodo],
+        metodo,
         idempotencyKey: idemKey,
         forzarNuevo: opts.forzarNuevo,
         // Backdated sold date (D6) — sent only for a real past date; a today-sale omits it
@@ -946,32 +940,6 @@ function InicioCalendar({
           HOY
         </button>
       </div>
-    </div>
-  );
-}
-
-function MetodoEditor({ metodo, setMetodo }: { metodo: Metodo | null; setMetodo: (m: Metodo) => void }) {
-  const opts: { k: Metodo; icon: IconName }[] = [
-    { k: "Efectivo", icon: "cash" },
-    { k: "Tarjeta", icon: "card" },
-    { k: "Transferencia", icon: "swap" },
-  ];
-  return (
-    <div className="grid grid-cols-3" style={{ gap: 8 }}>
-      {opts.map((o) => {
-        const on = metodo === o.k;
-        return (
-          <button
-            key={o.k}
-            onClick={() => setMetodo(o.k)}
-            className="forge-pressable flex flex-col items-center"
-            style={{ padding: "18px 6px", background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: on ? "var(--yellow)" : "var(--fg)", cursor: "pointer", gap: 8, transition: "border-color 140ms ease" }}
-          >
-            <Icon name={o.icon} size={20} color={on ? "var(--gold)" : "var(--muted)"} />
-            <span className="uppercase font-bold" style={{ fontSize: 10.5, letterSpacing: 1.2 }}>{o.k}</span>
-          </button>
-        );
-      })}
     </div>
   );
 }

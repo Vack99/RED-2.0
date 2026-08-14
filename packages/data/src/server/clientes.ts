@@ -412,7 +412,7 @@ export const getClienteFicha = cache(
           .order("fecha", { ascending: false }),
         supabase
           .from("ventas")
-          .select("id, fecha, created_at, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
+          .select("id, folio, fecha, created_at, paquete_nombre, monto, metodo, clases, vigencia_tipo, vigencia_dias")
           .eq("cliente_id", id)
           // The saldo anchor is the LAST-WRITTEN sale (created_at desc, id desc — never
           // fecha, which a backdate can push into the past), matching mi_membresia (spec

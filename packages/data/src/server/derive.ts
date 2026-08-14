@@ -244,6 +244,9 @@ export interface FichaPago {
   /** The `ventas.id` this row corrects/deletes (#269) — never rendered, only threaded to the
    *  edit/delete write seam. */
   id: string;
+  /** The sale's receipt number — the sheet renders it `F-{folio}`, the same spelling the
+   *  recibo and the ticket-twin email print (#269), so the operator can match a paper ticket. */
+  folio: number;
   fechaDisplay: string;
   paquete: string;
   montoDisplay: string;
@@ -312,6 +315,7 @@ export function etiquetaClase(s: FichaAsistRow["class_session"], tz: string): st
  *  above never reads them. */
 export interface FichaVentaRow {
   id: string;
+  folio: number;
   fecha: string;
   created_at: string;
   paquete_nombre: string;
@@ -435,6 +439,7 @@ export function shapeFicha(
 
   const pagos: FichaPago[] = ventas.map((v) => ({
     id: v.id,
+    folio: v.folio,
     fechaDisplay: fmtShort(fechaEnZona(v.fecha, tz)),
     paquete: v.paquete_nombre,
     montoDisplay: pesos(v.monto),

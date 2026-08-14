@@ -17,6 +17,7 @@ import {
   Tnum,
 } from "@gym/ui/forge/ui";
 import type { ClienteFichaDTO } from "@gym/data/server/clientes";
+import type { FichaPago } from "@gym/data/server/derive";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "../../../../../lib/swipe";
@@ -26,6 +27,7 @@ import { reenviarInvitacionAction, togglePaseAction } from "../actions";
 // re-derived, from the route that owns the toggle's vocabulary.
 import { reciboResultado } from "../../../asistencia/_components/marcadas";
 import { EditarClienteSheet } from "./editar-cliente-sheet";
+import { PagoSheet } from "./pago-sheet";
 
 export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const router = useRouter();
@@ -38,6 +40,12 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const [horaHoy, setHoraHoy] = React.useState<string | null>(ficha.horaHoy);
   const [busy, setBusy] = React.useState(false);
   const [editOpen, setEditOpen] = React.useState(false);
+  // The tapped pago row (#269). `open` is separate from `pago` so closing keeps the sale
+  // mounted through the sheet's slide-down — the agenda's quick-glance idiom.
+  const [pagoSheet, setPagoSheet] = React.useState<{ open: boolean; pago: FichaPago | null }>({
+    open: false,
+    pago: null,
+  });
   const [msgOpen, setMsgOpen] = React.useState(false);
   const [reenviando, setReenviando] = React.useState(false);
   const [dx, setDx] = React.useState(0);
@@ -234,6 +242,15 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
           email: ficha.email ?? "",
           cuentaActiva: ficha.invitacion.estado === "cuenta_activa",
         }}
+      />
+
+      <PagoSheet
+        open={pagoSheet.open}
+        onClose={() => setPagoSheet((s) => ({ ...s, open: false }))}
+        pago={pagoSheet.pago}
+        clienteId={c.id}
+        clasesRestantes={ficha.clasesRestantes}
+        vence={ficha.vence}
       />
 
       {tel && (
@@ -475,16 +492,27 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         {ficha.pagos.length === 0 && (
           <div style={{ padding: "20px 22px", fontSize: 12, color: "var(--muted)" }}>Sin ventas registradas.</div>
         )}
+        {/* Each row opens its own correction sheet (#269) — tap-to-open + a trailing chev,
+            the plantillas row idiom. Keyed by the venta id now that the row IS a write seam:
+            an index key would hand the sheet the wrong sale after a delete re-orders the list. */}
         {ficha.pagos.map((row, i) => (
-          <div key={i} className="flex items-center justify-between" style={{ gap: 12, padding: "13px 22px", borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)" }}>
+          <button
+            key={row.id}
+            onClick={() => setPagoSheet({ open: true, pago: row })}
+            className="forge-pressable flex w-full items-center justify-between text-left"
+            style={{ gap: 12, padding: "13px 22px", background: "transparent", border: "none", borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)", cursor: "pointer", color: "var(--fg)" }}
+          >
             <div>
               <div className="uppercase font-semibold" style={{ fontSize: 13, color: "var(--fg)", letterSpacing: 0.3 }}>{row.paquete}</div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
                 <Tnum>{row.fechaDisplay}</Tnum> · {row.metodoDisplay}
               </div>
             </div>
-            <Tnum className="font-extrabold" style={{ fontSize: 16 }}>{row.montoDisplay}</Tnum>
-          </div>
+            <div className="flex shrink-0 items-center" style={{ gap: 10 }}>
+              <Tnum className="font-extrabold" style={{ fontSize: 16 }}>{row.montoDisplay}</Tnum>
+              <Icon name="chev" size={13} color="var(--muted-soft)" />
+            </div>
+          </button>
         ))}
 
         <div style={{ height: 28 }} />
