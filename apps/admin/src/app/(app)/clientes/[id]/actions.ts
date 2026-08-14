@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { togglePase, type TogglePaseOutcome } from "@gym/data/server/asistencia";
 import { actualizarCliente, reenviarInvitacion } from "@gym/data/server/clientes";
 import type { EnvioResult } from "@gym/data/server/invitaciones";
-import { EmailEnUsoError } from "@gym/data/server/ventas";
+import { editarVenta, eliminarVenta, EmailEnUsoError } from "@gym/data/server/ventas";
 
 /** The ficha edit switches on this: a saved edit (with the auto-invite outcome), or the RPC's
  *  email-in-use refusal (clientes_email_gym_uq) surfaced as a message the sheet toasts verbatim —
@@ -68,4 +68,40 @@ export async function reenviarInvitacionAction(clienteId: string): Promise<Envio
     revalidatePath("/inicio");
   }
   return res;
+}
+
+/** Correct (`editarVentaAction`) or hard-delete-with-clawback (`eliminarVentaAction`) a sale
+ *  from the ficha's HISTORIAL DE PAGOS (#269). Both `editar_venta`/`eliminar_venta` raise a
+ *  human-readable Spanish refusal ('No autorizado', 'Venta no encontrada', 'Método inválido',
+ *  'La venta ya no se puede eliminar') — mapped to a typed non-throwing result (prod Next.js
+ *  masks thrown action messages), same discipline as `actualizarClienteAction`. Both earnings
+ *  surfaces (`/cuenta`, `/inicio`) recompute from raw `ventas` rows on read (#267.3), so
+ *  revalidating them is enough — no stored total to correct. */
+export type EditarVentaActionResult = { ok: true } | { ok: false; mensaje: string };
+export type EliminarVentaActionResult = { ok: true } | { ok: false; mensaje: string };
+
+export async function editarVentaAction(raw: unknown): Promise<EditarVentaActionResult> {
+  try {
+    await editarVenta(raw);
+    revalidatePath("/clientes");
+    revalidatePath("/cuenta");
+    revalidatePath("/inicio");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Error) return { ok: false, mensaje: e.message };
+    throw e;
+  }
+}
+
+export async function eliminarVentaAction(raw: unknown): Promise<EliminarVentaActionResult> {
+  try {
+    await eliminarVenta(raw);
+    revalidatePath("/clientes");
+    revalidatePath("/cuenta");
+    revalidatePath("/inicio");
+    return { ok: true };
+  } catch (e) {
+    if (e instanceof Error) return { ok: false, mensaje: e.message };
+    throw e;
+  }
 }

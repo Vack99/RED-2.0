@@ -10,7 +10,7 @@
 import { derivarVeredicto, type ContextoVeredicto, type HechosCliente, type VeredictoCliente } from "@gym/domain/lifecycle";
 import { diasRestantes } from "@gym/domain/rules";
 import type { PlantillaContext } from "@gym/domain/types";
-import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, parseDay, pesos } from "@gym/format";
+import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, MONTHS_FULL, parseDay, pesos } from "@gym/format";
 
 import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
@@ -241,10 +241,26 @@ export interface FichaAsistencia {
   origen: "libre" | "clase" | null;
 }
 export interface FichaPago {
+  /** The `ventas.id` this row corrects/deletes (#269) — never rendered, only threaded to the
+   *  edit/delete write seam. */
+  id: string;
   fechaDisplay: string;
   paquete: string;
   montoDisplay: string;
-  metodo: string;
+  /** Display label ("Efectivo") — RENAMED from the old bare `metodo` (#269) now that a raw
+   *  `metodo` value lives alongside it; the ficha's HISTORIAL DE PAGOS rows read this one. */
+  metodoDisplay: string;
+  /** Raw stored facts the correction sheet edits/previews from — never rendered directly. */
+  monto: number;
+  metodo: "efectivo" | "transferencia" | "tarjeta";
+  fecha: string;
+  clases: number | null;
+  vigenciaTipo: "dias" | "mes";
+  vigenciaDias: number | null;
+  createdAt: string;
+  /** Spanish lowercase month name of `fecha`, gym-local (e.g. "agosto") — feeds the delete
+   *  confirm's "Se restarán $M de los ingresos de {mes}" copy (#267 rule 6). */
+  mes: string;
 }
 
 /** A cliente row with its alta timestamp — the ficha's stored facts. */
@@ -291,9 +307,13 @@ export function etiquetaClase(s: FichaAsistRow["class_session"], tz: string): st
   const nombre = (s.is_special && s.special_name?.trim()) || s.class_type?.name || "Clase";
   return `${nombre} ${horaEnZona(new Date(s.starts_at), tz)}`;
 }
-/** A venta row reduced to what the ficha's pagos list + saldo gauges need. */
+/** A venta row reduced to what the ficha's pagos list + saldo gauges need. `id` + `created_at`
+ *  (#269) exist only to thread through to `FichaPago` for the correction sheet — the gauge math
+ *  above never reads them. */
 export interface FichaVentaRow {
+  id: string;
   fecha: string;
+  created_at: string;
   paquete_nombre: string;
   monto: number;
   metodo: string;
@@ -315,6 +335,11 @@ export interface DiasGauge {
 /** Everything the ficha derives at read, minus the I/O-sourced hoyIso + vecinos. */
 export interface FichaDerivada {
   cliente: ClienteDerivado;
+  /** Raw stored balance (#269) — same underlying facts as `cliente.clasesRestLabel`/
+   *  `cliente.venceDisplay` but UNDERIVED: a delete-preview computes its own subtraction from
+   *  these numbers, not from display strings. NULL clasesRestantes = ilimitado. */
+  clasesRestantes: number | null;
+  vence: string | null; // 'YYYY-MM-DD'
   /** @deprecated superseded by `clasesGauge` (depletion bar, no N/M fraction). */
   totalClases: number | null;
   /** @deprecated superseded by `diasGauge`. */
@@ -409,10 +434,19 @@ export function shapeFicha(
     .map((a) => ({ hora: a.hora ? a.hora.slice(0, 5) : null, clase: etiquetaClase(a.class_session, tz) }));
 
   const pagos: FichaPago[] = ventas.map((v) => ({
+    id: v.id,
     fechaDisplay: fmtShort(fechaEnZona(v.fecha, tz)),
     paquete: v.paquete_nombre,
     montoDisplay: pesos(v.monto),
-    metodo: metodoLabel(v.metodo),
+    metodoDisplay: metodoLabel(v.metodo),
+    monto: v.monto,
+    metodo: v.metodo as FichaPago["metodo"],
+    fecha: v.fecha,
+    clases: v.clases,
+    vigenciaTipo: v.vigencia_tipo as FichaPago["vigenciaTipo"],
+    vigenciaDias: v.vigencia_dias,
+    createdAt: v.created_at,
+    mes: MONTHS_FULL[fechaEnZona(v.fecha, tz).getMonth()],
   }));
 
   const latest = ventas[0];
@@ -467,6 +501,8 @@ export function shapeFicha(
 
   return {
     cliente,
+    clasesRestantes: c.clases_restantes,
+    vence: c.vence,
     totalClases,
     dayDenom,
     clasesGauge,

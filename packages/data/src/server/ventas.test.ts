@@ -1,7 +1,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { crearVenta, crearVentaSchema, DuplicadoError, EMAIL_EN_USO_MSG, EmailEnUsoError } from "./ventas";
+import {
+  crearVenta,
+  crearVentaSchema,
+  DuplicadoError,
+  editarVenta,
+  eliminarVenta,
+  EMAIL_EN_USO_MSG,
+  EmailEnUsoError,
+} from "./ventas";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -118,9 +126,12 @@ function makeFake(
     },
     rpc: (name: string, args: Record<string, unknown>) => {
       rpcCalls.push({ name, args });
+      const resolved = opts.rpcError ? { data: null, error: opts.rpcError } : { data: rpcData, error: null };
+      // Both call shapes the DAL uses: crearVenta chains `.single()`; editarVenta/eliminarVenta
+      // (void RPCs) bare-await the builder directly — `then` makes the same fake serve both.
       return {
-        single: async () =>
-          opts.rpcError ? { data: null, error: opts.rpcError } : { data: rpcData, error: null },
+        single: async () => resolved,
+        then: (resolve: (v: typeof resolved) => unknown) => resolve(resolved),
       };
     },
   };
@@ -537,5 +548,85 @@ describe("emailCliente — the receipt mail's recipient (#99)", () => {
     });
     const res = await crearVenta(input({ mode: "existing", clienteId: "cli-1" }), fake.client);
     expect(res.emailCliente).toBeNull();
+  });
+});
+
+/**
+ * editar_venta / eliminar_venta (#269) — same injected-fake seam as crearVenta, but both are
+ * thin: requireOperator, then one bare-awaited RPC call whose Spanish refusal message is
+ * surfaced as-is (unlike crearVenta's generic mapping — these ARE the UI copy). The window /
+ * clawback / gym-scope rules live entirely in the RPC, proven by the SQL denial suites.
+ */
+const VENTA_ID = "22222222-2222-4222-8222-222222222222";
+
+describe("editarVenta — write orchestration (injected fake)", () => {
+  it("sends the exact editar_venta payload", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" }, fake.client);
+    expect(lastRpc(fake)).toEqual({
+      name: "editar_venta",
+      args: { p_venta_id: VENTA_ID, p_monto: 900, p_metodo: "tarjeta" },
+    });
+  });
+
+  it("surfaces the RPC's refusal message verbatim, not a generic failure", async () => {
+    const fake = makeFake({}, { rpcData: null, rpcError: { message: "Venta no encontrada" } });
+    await expect(
+      editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" }, fake.client),
+    ).rejects.toThrow("Venta no encontrada");
+  });
+
+  it("throws 'No autenticado' when getClaims returns no sub (requireOperator wired)", async () => {
+    const fake = makeFake({}, { sub: null });
+    await expect(
+      editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" }, fake.client),
+    ).rejects.toThrow("No autenticado");
+    expect(fake.rpcCalls).toHaveLength(0); // never reached the write
+  });
+
+  it("rejects metodo 'pendiente' at schema parse before any write (C2)", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await expect(
+      editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "pendiente" }, fake.client),
+    ).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("rejects a non-uuid ventaId at schema parse before any write", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await expect(
+      editarVenta({ ventaId: "not-a-uuid", monto: 900, metodo: "efectivo" }, fake.client),
+    ).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+});
+
+describe("eliminarVenta — write orchestration (injected fake)", () => {
+  it("sends the exact eliminar_venta payload", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await eliminarVenta({ ventaId: VENTA_ID }, fake.client);
+    expect(lastRpc(fake)).toEqual({ name: "eliminar_venta", args: { p_venta_id: VENTA_ID } });
+  });
+
+  it("surfaces the RPC's window refusal message verbatim", async () => {
+    const fake = makeFake(
+      {},
+      { rpcData: null, rpcError: { message: "La venta ya no se puede eliminar" } },
+    );
+    await expect(eliminarVenta({ ventaId: VENTA_ID }, fake.client)).rejects.toThrow(
+      "La venta ya no se puede eliminar",
+    );
+  });
+
+  it("throws 'No autenticado' when getClaims returns no sub (requireOperator wired)", async () => {
+    const fake = makeFake({}, { sub: null });
+    await expect(eliminarVenta({ ventaId: VENTA_ID }, fake.client)).rejects.toThrow("No autenticado");
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
+  it("rejects a non-uuid ventaId at schema parse before any write", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await expect(eliminarVenta({ ventaId: "not-a-uuid" }, fake.client)).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
   });
 });

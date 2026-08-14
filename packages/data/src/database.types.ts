@@ -1546,7 +1546,12 @@ export type Database = {
         }
         Returns: undefined
       }
+      editar_venta: {
+        Args: { p_metodo: string; p_monto: number; p_venta_id: string }
+        Returns: undefined
+      }
       eliminar_plantilla: { Args: { p_id: string }; Returns: undefined }
+      eliminar_venta: { Args: { p_venta_id: string }; Returns: undefined }
       ensure_week_materialized: {
         Args: { p_week_start: string }
         Returns: number

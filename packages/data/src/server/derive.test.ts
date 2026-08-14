@@ -229,7 +229,9 @@ describe("shapeFicha", () => {
     ...over,
   });
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
+    id: "v1",
     fecha: "2026-05-20T18:00:00Z",
+    created_at: "2026-05-20T18:00:00Z",
     paquete_nombre: "8 clases",
     monto: 800,
     metodo: "efectivo",
@@ -386,16 +388,44 @@ describe("shapeFicha", () => {
   it("maps pagos with pesos + metodo label and reads the active package", () => {
     const ventas = [
       venta(),
-      venta({ paquete_nombre: "Ilimitado", monto: 1200, metodo: "transferencia", clases: null, vigencia_tipo: "mes", vigencia_dias: null }),
+      venta({
+        id: "v2",
+        paquete_nombre: "Ilimitado",
+        monto: 1200,
+        metodo: "transferencia",
+        clases: null,
+        vigencia_tipo: "mes",
+        vigencia_dias: null,
+      }),
     ];
     const f = shapeFicha(clienteRow, [], ventas, CTX, TZ_FORGE, [], "FORGE", 0);
-    expect(f.pagos[0]).toEqual({ fechaDisplay: "20 may", paquete: "8 clases", montoDisplay: "$800", metodo: "Efectivo" });
-    expect(f.pagos[1].metodo).toBe("Transferencia");
+    expect(f.pagos[0]).toEqual({
+      id: "v1",
+      fechaDisplay: "20 may",
+      paquete: "8 clases",
+      montoDisplay: "$800",
+      metodoDisplay: "Efectivo",
+      monto: 800,
+      metodo: "efectivo",
+      fecha: "2026-05-20T18:00:00Z",
+      clases: 8,
+      vigenciaTipo: "dias",
+      vigenciaDias: 30,
+      createdAt: "2026-05-20T18:00:00Z",
+      mes: "mayo",
+    });
+    expect(f.pagos[1].metodoDisplay).toBe("Transferencia");
     expect(f.ventasCount).toBe(2);
     expect(f.primeraCompra).toBe(false); // has sales
     expect(f.totalClases).toBe(8); // latest = ventas[0]
     expect(f.dayDenom).toBe(30);
     expect(f.compradoDisplay).toBe("20 may");
+  });
+
+  it("exposes the raw clasesRestantes/vence balance alongside the display strings (#269)", () => {
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
+    expect(f.clasesRestantes).toBe(5);
+    expect(f.vence).toBe("2026-06-16");
   });
 
   it("flags primeraCompra when the member has no ventas (#77)", () => {
@@ -549,7 +579,9 @@ describe("shapeFicha gauges", () => {
     created_at: "2026-04-10T18:00:00Z",
   };
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
+    id: "v1",
     fecha: "2026-05-17T18:00:00Z", // purchased 10 days ago; vence 2026-06-16 → 30-day window
+    created_at: "2026-05-17T18:00:00Z",
     paquete_nombre: "8 clases",
     monto: 800,
     metodo: "efectivo",
@@ -648,7 +680,9 @@ describe("derivarMembresia", () => {
     created_at: "2026-04-10T18:00:00Z",
   };
   const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
+    id: "v1",
     fecha: "2026-05-17T18:00:00Z",
+    created_at: "2026-05-17T18:00:00Z",
     paquete_nombre: "8 clases",
     monto: 800,
     metodo: "efectivo",

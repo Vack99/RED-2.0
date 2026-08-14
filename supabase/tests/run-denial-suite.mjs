@@ -27,7 +27,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // (gym_membership) table vectors, then the S5 per-gym folio + gym-scoped re-key vectors (#24),
 // then the S8 member self-register + verified-email claim vectors (registro_claim →
 // preparar_invitacion → actualizar_cliente_email → reclamar_por_codigo, the whole claim rail),
-// then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm), the
+// then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm, closed by
+// #269's correction pair editar_venta/eliminar_venta — the only other writers of a registered sale,
+// so they belong beside the sale that created it, and eliminar_venta's clawback is registrar_venta's
+// stacking read backwards), the
 // per-package RLS/RPC-rule vectors (cancel_class_session_release runs with the two booking suites
 // rather than with the scheduling ones because its subject is the HOLD, not the schedule: #233's gym
 // cancel releases every reservada booking and refunds what it spent, so it reads as reservar_clase /
@@ -70,6 +73,8 @@ export const SUITE = [
   'registrar_venta_stacking.sql',
   'registrar_venta_personalizado.sql',
   'registrar_venta_backdate.sql',
+  'editar_venta_rules.sql',
+  'eliminar_venta_rules.sql',
   'renewal_schema_prep.sql',
   'contract_a_denials.sql',
   'contract_b_denials.sql',

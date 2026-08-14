@@ -377,3 +377,45 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     fechaInicio: fechaInicioDisplay,
   };
 }
+
+// ── Payment correction (#269, rulings #266/#267) ────────────────────
+// editar_venta / eliminar_venta are the ONLY writers besides registrar_venta (ADR-0005's
+// pure-INVOKER-or-DEFINER split is decided per RPC, in the migration, not here). Both raise
+// human-readable Spanish messages on refusal ('No autorizado', 'Venta no encontrada', 'Método
+// inválido', 'La venta ya no se puede eliminar') — this DAL surfaces error.message AS-IS
+// (unlike crearVenta's generic mapping) because these messages are already the UI copy.
+
+export const editarVentaSchema = z.object({
+  ventaId: z.string().uuid(),
+  // Mirrors the personalizado paquete's `precio` bound (§2.2) — the closest existing "a sale's
+  // monto" schema in the house; the RPC is the trust boundary and re-checks nothing stricter.
+  monto: z.number().int().min(1).max(100_000),
+  metodo: z.enum(METODOS),
+});
+
+export const eliminarVentaSchema = z.object({ ventaId: z.string().uuid() });
+
+/** Correct a sale's monto/metodo (#266.3: editable ANY TIME, no window — only destruction is
+ *  windowed). Injectable (ADR-0001). */
+export async function editarVenta(raw: unknown, client?: SupabaseServer): Promise<void> {
+  const input = editarVentaSchema.parse(raw);
+  const supabase = client ?? (await createClient());
+  await requireOperator(supabase);
+  const { error } = await supabase.rpc("editar_venta", {
+    p_venta_id: input.ventaId,
+    p_monto: input.monto,
+    p_metodo: input.metodo,
+  });
+  if (error) throw new Error(error.message);
+}
+
+/** Hard-delete a sale within its 30-day window, clawing back the balance it granted (#266.1/2,
+ *  #267) — the whole correction, including the window refusal, happens inside the RPC's one
+ *  transaction. Injectable (ADR-0001). */
+export async function eliminarVenta(raw: unknown, client?: SupabaseServer): Promise<void> {
+  const input = eliminarVentaSchema.parse(raw);
+  const supabase = client ?? (await createClient());
+  await requireOperator(supabase);
+  const { error } = await supabase.rpc("eliminar_venta", { p_venta_id: input.ventaId });
+  if (error) throw new Error(error.message);
+}

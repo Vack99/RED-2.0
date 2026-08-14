@@ -480,7 +480,7 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
             <div>
               <div className="uppercase font-semibold" style={{ fontSize: 13, color: "var(--fg)", letterSpacing: 0.3 }}>{row.paquete}</div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 3 }}>
-                <Tnum>{row.fechaDisplay}</Tnum> · {row.metodo}
+                <Tnum>{row.fechaDisplay}</Tnum> · {row.metodoDisplay}
               </div>
             </div>
             <Tnum className="font-extrabold" style={{ fontSize: 16 }}>{row.montoDisplay}</Tnum>

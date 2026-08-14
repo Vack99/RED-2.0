@@ -2,7 +2,18 @@
 
 **Date authored:** 2026-07-10 · **Ruling:** C8, "Runbook now, RPC later" (`docs/FIndings/2026-07-08-renewal-flow-findings.md`). An `anular_venta` RPC ships only if mis-sales prove frequent; until then, correction is an owner-run SQL recipe.
 
-## The one rule: the ventas ledger is append-only
+## Amended 2026-08-13 (#269) — this runbook is now the PAST-WINDOW escape hatch only
+
+Correction shipped in-product. From a client's ficha, any staff member can now:
+
+- **Edit `monto` + `metodo` at any age** — `editar_venta(p_venta_id, p_monto, p_metodo)`, SECURITY INVOKER under `ventas_staff_update`. No compensating row, no window.
+- **Delete a sale within 30 days of its `created_at`** — `eliminar_venta(p_venta_id)`, SECURITY DEFINER, one transaction: hard-deletes the `ventas` row and claws the saldo back (subtracts the sale's `clases` and its vigencia-days, floored at 0; reverts `paquete_nombre` to the most recent remaining sale). Wrong paquete or fecha = delete + re-sell through `/vender?cliente=<id>`. Past 30 days the affordance is simply absent.
+
+`ventas` is **no longer append-only**: `ventas_staff_update` exists, DELETE is revoked from `authenticated` outright, and UPDATE is column-scoped to `(monto, metodo)` (`20260813120000_editar_eliminar_venta.sql`; ADR-0005's 2026-08-13 note carries why).
+
+**Use the recipe below only for a sale older than the 30-day delete window** — that is the one case with no in-product path. Everything below still applies verbatim for it: never `UPDATE`/`DELETE` an old `ventas` row by hand, post a compensating negative row instead.
+
+## The one rule (past the window): the ventas ledger is append-only
 
 `ventas` RLS is **select + insert only** — no update, no delete policy (ADR-0005; the revenue aggregations in `resumen.ts`/`derive.ts` sum every `monto` and assume no row ever mutates or vanishes). **Never `UPDATE` or `DELETE` a `ventas` row.** A correction is a **compensating negative `ventas` row** (the reversal, so `Σ monto` stays truthful) plus a **`saldo` fix on `clientes`**, both in **one transaction**.
 
