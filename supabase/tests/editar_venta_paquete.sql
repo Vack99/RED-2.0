@@ -34,11 +34,13 @@
 --        the new day + the sale's own días. Both arms also assert the written instant is midday gym-tz.
 --   S6 — IDEMPOTENCE. The identical swap payload posted twice. There is no idempotency key and none is
 --        needed: the write is an UPDATE of a row named by id, so a replay creates no second row and no
---        folio, and the change-detection flags make the second call degenerate to a monto/metodo write
---        with the same values. Between the two fires the cliente's balance is DECREMENTED by hand (an
---        asistencia the member trained in the meantime), and the second fire must leave that decrement
---        standing: a replay that re-ran the clawback + re-grant would silently restore the class. Also
---        asserts exactly one ventas row exists for the cliente and that `folio` never moved.
+--        folio. Between the two fires the cliente's balance is DECREMENTED by hand (an asistencia the
+--        member trained in the meantime), and the second fire must leave that decrement standing. NOTE
+--        what carries that: the re-derive is a FIXED POINT on its own output (after fire 1, base_vence
+--        lands exactly at the sale's fecha, so the discard can never re-fire and the clamp is
+--        idempotent) — a body that re-ran the whole clawback + re-grant would ALSO leave 13. The
+--        change-detection cheap path is real but is pinned by S10, not here; this vector pins the
+--        fixed-point identity plus the one-row/no-refolio facts.
 --   S7 — THE WINDOW COVERS THE RE-DERIVE, NOT JUST THE PACKAGE. A sale registered 31 days ago refuses a
 --        swap with 'Ya pasaron 30 días: esta venta ya no se puede recalcular', and refuses a FECHA-only
 --        edit with the same message — a fecha edit re-grants exactly as much as a swap does, and on a
@@ -599,7 +601,7 @@ begin
     raise exception 'S6 FAIL: the replay moved the saldo again. after 1 = % / after 2 = %', v_after1, v_after2;
   end if;
   if (v_after2 ->> 'clases_restantes')::int is distinct from 13 then
-    raise exception 'S6 FAIL: clases_restantes = % (expected 13 — the class consumed between the two fires must survive the replay; 14 means the second call re-ran the clawback + re-grant instead of taking the cheap path)', v_after2 ->> 'clases_restantes';
+    raise exception 'S6 FAIL: clases_restantes = % (expected 13 — the class consumed between the two fires must survive the replay; the re-derive is a fixed point on its own output, so ANY correct body leaves 13)', v_after2 ->> 'clases_restantes';
   end if;
 
   select count(*) into n from public.ventas where cliente_id = current_setting('t.c7', true)::uuid;

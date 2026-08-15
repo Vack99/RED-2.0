@@ -131,16 +131,23 @@ export function PagoSheet({
   // actual" — instead of re-running the monto reseed below; every OTHER tap is a real
   // selection change. A registrado pick reseeds MONTO to the package's own price (ruling 4 —
   // still editable, FIX3b: only on that real change, never on a deselect or a re-tap).
+  // Deselect also RESTORES the monto that stood before the first pick (N2): the reseed is a
+  // side effect of selecting, so undoing the selection must undo it too — otherwise a
+  // fat-fingered tile leaves its catalog price behind and GUARDAR writes it as a monto edit.
   // PERSONALIZADO leaves MONTO alone, since it IS the personalizado price, and seeds the
   // custom form from the CURRENT sale's own facts EXACTLY ONCE per `editar` session
   // (`debeSeedCustom`, FIX3c) — so switching to a registrado tile and back does not wipe
   // whatever the operator already typed.
+  const montoAntesDePaq = React.useRef("");
   const selectPaq = (id: string) => {
     const next = siguientePaqSel(paqSel, id);
-    if (next !== null && next !== PERSONALIZADO) {
+    if (paqSel === null && next !== null) montoAntesDePaq.current = monto;
+    if (next === null) {
+      setMonto(montoAntesDePaq.current);
+    } else if (next !== PERSONALIZADO) {
       const p = paquetes.find((pp) => pp.id === next);
       if (p) setMonto(String(p.precio));
-    } else if (next === PERSONALIZADO && debeSeedCustom(customSeeded.current, next) && pago) {
+    } else if (debeSeedCustom(customSeeded.current, next) && pago) {
       setCustom({
         nombre: pago.paquete,
         precio: monto,
@@ -408,7 +415,11 @@ export function PagoSheet({
                         </Button>
                       ) : (
                         <div style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
-                          Esta venta ya no se puede eliminar: se usaron clases de ella. Cambia el paquete.
+                          {/* The advice must match what EDITAR will actually offer: on a non-latest
+                              sale the picker is hidden (top-of-stack guard), so "cambia el paquete"
+                              would send the operator into a dead end. */}
+                          Esta venta ya no se puede eliminar: se usaron clases de ella.
+                          {esMasReciente ? " Cambia el paquete." : " Solo la venta más reciente puede cambiarse."}
                         </div>
                       )}
                     </div>
