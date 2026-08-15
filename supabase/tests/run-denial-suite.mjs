@@ -30,7 +30,10 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // then the SECURITY DEFINER money-path write rail (registrar_venta gym-stamp + email arm, closed by
 // #269's correction pair editar_venta/eliminar_venta — the only other writers of a registered sale,
 // so they belong beside the sale that created it, and eliminar_venta's clawback is registrar_venta's
-// stacking read backwards), the
+// stacking read backwards; editar_venta_paquete runs BETWEEN that pair because it is the same spine
+// seen whole — 20260815120000's paquete swap claws the old grant back and re-runs registrar's stacking
+// block forward at the sale's day, so it reads as the delete's clawback and the sale's re-grant in one
+// transaction), the
 // per-package RLS/RPC-rule vectors (cancel_class_session_release runs with the two booking suites
 // rather than with the scheduling ones because its subject is the HOLD, not the schedule: #233's gym
 // cancel releases every reservada booking and refunds what it spent, so it reads as reservar_clase /
@@ -74,6 +77,7 @@ export const SUITE = [
   'registrar_venta_personalizado.sql',
   'registrar_venta_backdate.sql',
   'editar_venta_rules.sql',
+  'editar_venta_paquete.sql',
   'eliminar_venta_rules.sql',
   'renewal_schema_prep.sql',
   'contract_a_denials.sql',

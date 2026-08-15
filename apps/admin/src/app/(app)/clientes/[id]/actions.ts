@@ -79,7 +79,10 @@ export async function reenviarInvitacionAction(clienteId: string): Promise<Envio
  *  caught: a dropped connection or an unexpected Postgres error must reach the error boundary,
  *  not be toasted at the operator as if it were something they could fix. Both earnings
  *  surfaces (`/cuenta`, `/inicio`) recompute from raw `ventas` rows on read (#267.3), so
- *  revalidating them is enough — no stored total to correct. */
+ *  revalidating them is enough — no stored total to correct. Paquete-swap spec §4: BOTH
+ *  actions also revalidate `/asistencia` now — an edit can move `clases_restantes` (the
+ *  package swap's clawback + re-grant), and the desk's pase-de-lista gate reads that column
+ *  (togglePaseAction revalidates the same trio for the same reason). */
 export type EditarVentaActionResult = { ok: true } | { ok: false; mensaje: string };
 export type EliminarVentaActionResult = { ok: true } | { ok: false; mensaje: string };
 
@@ -89,6 +92,7 @@ export async function editarVentaAction(raw: unknown): Promise<EditarVentaAction
     revalidatePath("/clientes");
     revalidatePath("/cuenta");
     revalidatePath("/inicio");
+    revalidatePath("/asistencia");
     return { ok: true };
   } catch (e) {
     if (e instanceof VentaRefusalError) return { ok: false, mensaje: e.message };
@@ -102,6 +106,7 @@ export async function eliminarVentaAction(raw: unknown): Promise<EliminarVentaAc
     revalidatePath("/clientes");
     revalidatePath("/cuenta");
     revalidatePath("/inicio");
+    revalidatePath("/asistencia");
     return { ok: true };
   } catch (e) {
     if (e instanceof VentaRefusalError) return { ok: false, mensaje: e.message };

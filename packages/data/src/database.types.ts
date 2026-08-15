@@ -1548,9 +1548,14 @@ export type Database = {
       }
       editar_venta: {
         Args: {
+          p_custom_clases?: number
+          p_custom_dias?: number
+          p_custom_ilimitado?: boolean
+          p_custom_nombre?: string
           p_fecha?: string
           p_metodo: string
           p_monto: number
+          p_paquete_id?: string
           p_venta_id: string
         }
         Returns: undefined

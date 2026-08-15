@@ -601,6 +601,57 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     expect(fake.rpcCalls).toHaveLength(0);
   });
 
+  // Package swap (paquete-swap spec §4/§6.3) — mirrors crearVenta's own registrado/personalizado
+  // arg-spread tests above.
+  it("forwards p_paquete_id only on the registrado package-swap arm", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta(
+      { ventaId: VENTA_ID, monto: 900, metodo: "tarjeta", paquete: { tipo: "registrado", paqueteId: "p-9" } },
+      fake.client,
+    );
+    const { args } = lastRpc(fake);
+    expect(args).toMatchObject({ p_paquete_id: "p-9" });
+    expect(args).not.toHaveProperty("p_custom_nombre");
+    expect(args).not.toHaveProperty("p_custom_dias");
+    expect(args).not.toHaveProperty("p_custom_clases");
+    expect(args).not.toHaveProperty("p_custom_ilimitado");
+  });
+
+  it("forwards the custom args — NO p_custom_precio (spec §1.1) — with p_custom_clases for a finite grant", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta(
+      {
+        ventaId: VENTA_ID,
+        monto: 900,
+        metodo: "tarjeta",
+        paquete: { tipo: "personalizado", nombre: "Promo Verano", precio: 750, clases: 12, dias: 45 },
+      },
+      fake.client,
+    );
+    const { args } = lastRpc(fake);
+    expect(args).toMatchObject({ p_custom_nombre: "Promo Verano", p_custom_dias: 45, p_custom_clases: 12 });
+    // The MONTO field above is the sale's price — no p_custom_precio door on this RPC.
+    expect(args).not.toHaveProperty("p_custom_precio");
+    expect(args).not.toHaveProperty("p_custom_ilimitado");
+    expect(args).not.toHaveProperty("p_paquete_id");
+  });
+
+  it("forwards p_custom_ilimitado: true (not p_custom_clases) when the custom grant is unlimited", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta(
+      {
+        ventaId: VENTA_ID,
+        monto: 900,
+        metodo: "tarjeta",
+        paquete: { tipo: "personalizado", nombre: "Promo Verano", precio: 750, clases: null, dias: 45 },
+      },
+      fake.client,
+    );
+    const { args } = lastRpc(fake);
+    expect(args).toMatchObject({ p_custom_ilimitado: true });
+    expect(args).not.toHaveProperty("p_custom_clases");
+  });
+
   it.each([
     "No autorizado",
     "Venta no encontrada",
@@ -608,6 +659,12 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     "Monto inválido",
     "La fecha de inicio no puede ser futura",
     "La fecha de inicio no puede tener más de 30 días de antigüedad",
+    "Paquete no encontrado",
+    "Venta inválida: elige un paquete o define uno personalizado",
+    "Nombre del paquete personalizado inválido",
+    "Clases personalizadas inválidas",
+    "Vigencia personalizada inválida",
+    "Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar",
   ])(
     "types the known refusal %j as VentaRefusalError, message verbatim",
     async (mensaje) => {
@@ -663,15 +720,15 @@ describe("eliminarVenta — write orchestration (injected fake)", () => {
     expect(lastRpc(fake)).toEqual({ name: "eliminar_venta", args: { p_venta_id: VENTA_ID } });
   });
 
-  it("types the window refusal as VentaRefusalError, message verbatim", async () => {
-    const fake = makeFake(
-      {},
-      { rpcData: null, rpcError: { message: "La venta ya no se puede eliminar" } },
-    );
-    const err = await eliminarVenta({ ventaId: VENTA_ID }, fake.client).catch((e: unknown) => e);
-    expect(err).toBeInstanceOf(VentaRefusalError);
-    expect((err as Error).message).toBe("La venta ya no se puede eliminar");
-  });
+  it.each(["La venta ya no se puede eliminar", "No se puede eliminar: ya se usaron clases de esta venta"])(
+    "types the known refusal %j as VentaRefusalError, message verbatim",
+    async (mensaje) => {
+      const fake = makeFake({}, { rpcData: null, rpcError: { message: mensaje } });
+      const err = await eliminarVenta({ ventaId: VENTA_ID }, fake.client).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(VentaRefusalError);
+      expect((err as Error).message).toBe(mensaje);
+    },
+  );
 
   it("leaves an UNKNOWN failure a plain Error — the action must rethrow it, not toast it", async () => {
     const fake = makeFake({}, { rpcData: null, rpcError: { message: "canceling statement" } });

@@ -397,6 +397,16 @@ const VENTA_REFUSALS: readonly string[] = [
   // sheet left open across midnight can still send a day the RPC now refuses — advice, not a crash.
   "La fecha de inicio no puede ser futura",
   "La fecha de inicio no puede tener más de 30 días de antigüedad",
+  // Package swap refusals (paquete-swap spec §1.4), lifted verbatim from registrar_venta
+  // where one already existed there.
+  "Paquete no encontrado",
+  "Venta inválida: elige un paquete o define uno personalizado",
+  "Nombre del paquete personalizado inválido",
+  "Clases personalizadas inválidas",
+  "Vigencia personalizada inválida",
+  "Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar",
+  // eliminar_venta's floor-clip delete gate (ruling 3, spec §1.3).
+  "No se puede eliminar: ya se usaron clases de esta venta",
 ];
 
 /** An RPC refusal the operator can act on, typed so the server action can map exactly THIS to
@@ -431,6 +441,13 @@ export const editarVentaSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
     .optional(),
+  // Package swap (paquete-swap spec §4): REUSES crearVenta's discriminated union — no new
+  // schema, no second "which price wins" door. Absent = "keep the current package" (the
+  // RPC's D0.5 no-op path: a plain monto/metodo/fecha correction never claws back/re-grants).
+  // The personalizado arm's `precio` is IGNORED here — the sheet's own MONTO field above IS
+  // the sale's price, so `editar_venta` has no p_custom_precio argument (spec §1.1) and this
+  // DAL never forwards it.
+  paquete: paqueteSeleccionSchema.optional(),
 });
 
 export const eliminarVentaSchema = z.object({ ventaId: z.string().uuid() });
@@ -448,6 +465,20 @@ export async function editarVenta(raw: unknown, client?: SupabaseServer): Promis
     // Spread only when present, so an unchanged-date correction sends the exact 3-arg
     // payload it always did (p_fecha defaults null in the RPC ⇒ keeps the current fecha).
     ...(input.fecha ? { p_fecha: input.fecha } : {}),
+    // Package swap (spec §4), mirroring crearVenta's own arg-spread idiom. `paquete` absent
+    // ⇒ the payload stays byte-identical to today's, so the RPC's cheap path (D0.5) never
+    // claws back / re-grants for a plain monto/metodo/fecha correction.
+    ...(input.paquete?.tipo === "registrado" ? { p_paquete_id: forPaquete(input.paquete.paqueteId) } : {}),
+    ...(input.paquete?.tipo === "personalizado"
+      ? {
+          p_custom_nombre: input.paquete.nombre,
+          p_custom_dias: input.paquete.dias,
+          // Same SQL-can't-tell-absent-from-null discriminator crearVenta uses.
+          ...(input.paquete.clases === null
+            ? { p_custom_ilimitado: true }
+            : { p_custom_clases: input.paquete.clases }),
+        }
+      : {}),
   });
   if (error) raiseVentaError(error.message);
 }

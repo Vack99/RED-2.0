@@ -24,7 +24,7 @@ import {
 import { getCobro } from "./cobro";
 import { getOperatorGym } from "./gym";
 import { enviarInvitacion, type EnvioResult, type MailTransport } from "./invitaciones";
-import { getPaquetes, getPaseSueltoNombres } from "./paquetes";
+import { getPaquetes, getPaseSueltoNombres, type PaqueteDTO } from "./paquetes";
 import { resolverIdentidad } from "./perfil";
 import { EMAIL_EN_USO_MSG, EmailEnUsoError } from "./ventas";
 import { fmtDatosPago, fmtPrecios } from "./plantilla-ctx";
@@ -349,6 +349,11 @@ export type ClienteFichaDTO = FichaDerivada & {
   /** Contact email — the edit sheet's backfill field (S3, issue #71). Hidden/disabled once the row is
    *  claimed (`invitacion.estado === "cuenta_activa"`): the verified login email owns it then (D5). */
   email: string | null;
+  /** The gym's package catalog (paquete-swap spec §4/§5.1) — the PagoSheet's swap picker's tile
+   *  list. ZERO extra I/O: `getClienteFicha` already fetches this via `getPaquetes` for the
+   *  `{precios}` plantilla token below; this just returns the same array. Deliberately NOT pushed
+   *  into `derive.ts`/`FichaDerivada` — like `hoyIso`, it's I/O-sourced, not a pure derivation. */
+  paquetes: PaqueteDTO[];
 };
 
 /** The ficha, derived-at-read (ADR-0002): a thin fetch that defers all shaping to
@@ -488,7 +493,7 @@ export const getClienteFicha = cache(
       { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
     );
 
-    return { ...ficha, hoyIso, vecinos, invitacion: derivarInvitacion(c, tz), email: c.email };
+    return { ...ficha, hoyIso, vecinos, invitacion: derivarInvitacion(c, tz), email: c.email, paquetes };
   },
 );
 

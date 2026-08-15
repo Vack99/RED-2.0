@@ -2,6 +2,7 @@ declare
   v_gym   uuid;
   v_venta record;
   v_dias  integer;
+  v_saldo integer;
 begin
   v_gym := public.staff_gym();
   if v_gym is null then raise exception 'No autorizado'; end if;
@@ -22,7 +23,15 @@ begin
   end if;
 
   
-  perform 1 from public.clientes c where c.id = v_venta.cliente_id for update;
+  
+  select c.clases_restantes into v_saldo
+    from public.clientes c where c.id = v_venta.cliente_id
+    for update;
+
+  
+  if v_saldo is not null and v_venta.clases is not null and v_saldo - v_venta.clases < 0 then
+    raise exception 'No se puede eliminar: ya se usaron clases de esta venta';
+  end if;
 
   
   

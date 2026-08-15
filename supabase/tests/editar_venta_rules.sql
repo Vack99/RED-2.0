@@ -1,13 +1,19 @@
 -- editar_venta written-row suite — issue #269 (payment correction from the ficha; map #265, rulings
 -- #266/#267).
 --
--- editar_venta(p_venta_id, p_monto, p_metodo, p_fecha default null) is the ONLY door for correcting a
--- registered sale's amount, payment method or sold date. Its contract is a WRITE contract, so every
--- vector below re-SELECTs the ventas row after the call and asserts the PERSISTED columns — never the
--- return value (AGENTS.md, "an RPC's return value is not its contract; the rows it writes are" —
--- #78/#80). The V-vectors call the 3 positional args and so double as proof that omitting p_fecha
--- leaves `fecha` exactly where it was; the VF-vectors exercise the 4th (20260814120000, the #269
--- fast-follow that reversed ruling #266.3).
+-- editar_venta is the ONLY door for correcting a registered sale. This file owns its first four
+-- arguments — amount, payment method, sold date, and the bounds on that date; the five package
+-- arguments 20260815120000 added, and the saldo re-derive they drive, are `editar_venta_paquete.sql`'s
+-- subject. Its contract is a WRITE contract, so every vector below re-SELECTs the ventas row after the
+-- call and asserts the PERSISTED columns — never the return value (AGENTS.md, "an RPC's return value
+-- is not its contract; the rows it writes are" — #78/#80). The V-vectors call the 3 positional args
+-- and so double as proof that omitting p_fecha leaves `fecha` exactly where it was; the VF-vectors
+-- exercise the 4th (20260814120000, the #269 fast-follow that reversed ruling #266.3).
+--
+-- NOTE on why the saldo assertions here still read "unchanged" after ruling 1 ("vence follows fecha",
+-- 2026-08-15): every fecha vector in this file is an IDENTITY case of the re-derive — the clawed-back
+-- base is still live at the requested day, so nothing clamps and the start day cancels out of
+-- registrar_venta's stacking algebra. The numbers are unchanged; what they MEAN is not. See VF1.
 --
 -- Vectors:
 --   V1 — staff of the venta's own gym edits monto + metodo: BOTH persist, and NOTHING else on the row
@@ -15,9 +21,12 @@
 --        cliente_id and personalizado are each asserted by name, and then a whole-row jsonb diff
 --        (every column MINUS monto/metodo) proves it a second way — so a column added to `ventas`
 --        after this suite was written cannot start moving unnoticed. The cliente's stored running
---        balance (clases_restantes/vence/paquete_nombre — ADR-0004) is untouched: an edit is a
---        correction of the record, not a re-sale, so it must never touch the saldo. The fixture sale
---        is deliberately ~90 days old: edits carry NO window (ruling #266.3 — only destruction is
+--        balance (clases_restantes/vence/paquete_nombre — ADR-0004) is untouched: this is the CHEAP
+--        PATH, the one call shape that reaches `clientes` not at all, because neither the grant nor
+--        the sold day changed. (A package-bearing call DOES move all three, since 2026-08-15 —
+--        `editar_venta_paquete.sql` owns that half; S10 there is this same contract from the other
+--        side.) The fixture sale is deliberately ~90 days old: monto/metodo/fecha edits carry NO
+--        window (ruling #266.3 — only destruction and, since ruling 4, the package swap are
 --        windowed), so age must not refuse the write.
 --   V2 — an invalid metodo raises 'Método inválido' (the in-body domain re-assertion registrar_venta
 --        already carries, so the desk sees a human message instead of a raw 23514) and the row is left
@@ -37,11 +46,16 @@
 --   VF1 — THE FECHA EDIT: a 4-arg call writes `fecha` = midday GYM-tz on the requested day — the exact
 --        instant registrar_venta writes for a backdated sale, so the sold DAY reads the same from any
 --        timezone — monto/metodo still persist, every other ventas column is byte-unchanged, and the
---        cliente's saldo (clases_restantes/vence/paquete_nombre) does not move. That last assertion is
---        the semantic, not a detail: the reversal of #266.3 is re-ATTRIBUTION only — the day, and the
---        earnings month it counts in. Re-deriving vence from a moved fecha would be a guess (registrar's
---        stacking is path-dependent and not invertible from `ventas`), which is why delete + re-sell
---        stays the tool when the vigencia itself is wrong.
+--        cliente's saldo (clases_restantes/vence/paquete_nombre) comes back EXACTLY as it was. That
+--        last assertion changed MEANING on 2026-08-15 without changing a single number. It used to say
+--        "a fecha edit must not re-grant"; under ruling 1 ("vence follows fecha", migration
+--        20260815120000) the fecha edit DOES run the clawback + re-grant — and here the round trip is
+--        an exact IDENTITY, because nothing clamps: the base (10 − 8 = 2 clases, vence +40 − 20 = +20)
+--        is still live at the new day, so the start day cancels out of the stacking algebra
+--        (`fecha_dia + (base_vence − fecha_dia) + dias` = `base_vence + dias`) and the balance is
+--        re-granted to the same 10 / +40. The NON-identity case — a new day past the clawed-back
+--        vence, where registrar's expired-restart discard applies — is `editar_venta_paquete.sql` S5b.
+--        So this vector now pins the identity, not an absence of arithmetic.
 --   VF2 — a FUTURE fecha raises 'La fecha de inicio no puede ser futura' and writes nothing.
 --   VF3 — a fecha 31 days back raises 'La fecha de inicio no puede tener más de 30 días de antigüedad'
 --        and writes nothing.
@@ -51,8 +65,9 @@
 --        owner on 2026-08-14 (migration 20260814130000): gyms register walk-ins late, so
 --        `clientes.created_at` is a data-entry stamp rather than the day the member arrived, and the
 --        floor therefore refused precisely the forgotten sale this door exists to correct. The written
---        instant is VF1's — midday gym-tz — and the cliente's saldo plus every other ventas column
---        stay put, so "accepted" cannot quietly mean "re-derived".
+--        instant is VF1's — midday gym-tz — every other ventas column stays put, and the cliente's
+--        saldo comes back identical (4 − 4 + 4, base still live): the ruling widened WHICH dates are
+--        legal, and nothing else.
 --        VF2/VF3 are registrar_venta's two SURVIVING backdate bounds, word for word: the edit door must
 --        not be able to write a fecha the CREATE door would have refused. Each asserts the exact
 --        Spanish message the desk shows, so a reworded raise is a failure, not a silent divergence.
@@ -180,7 +195,7 @@ begin
     raise exception 'V1 FAIL: folio = % (expected 7001 — an edit never re-folios the sale)', rec.folio;
   end if;
   if rec.clases is distinct from 8 then
-    raise exception 'V1 FAIL: clases = % (expected 8 — an edit never re-grants classes)', rec.clases;
+    raise exception 'V1 FAIL: clases = % (expected 8 — a call with NO package arguments must leave the sale''s grant alone)', rec.clases;
   end if;
   if rec.vigencia_tipo is distinct from 'dias' then
     raise exception 'V1 FAIL: vigencia_tipo = % (expected dias)', rec.vigencia_tipo;
@@ -198,7 +213,7 @@ begin
     raise exception 'V1 FAIL: gym_id = % (expected gym A — the tenant stamp must survive an edit)', rec.gym_id;
   end if;
   if rec.paquete_nombre is distinct from '8 clases' then
-    raise exception 'V1 FAIL: paquete_nombre = % (expected 8 clases — wrong paquete is fixed by delete + re-sell, not by edit)', rec.paquete_nombre;
+    raise exception 'V1 FAIL: paquete_nombre = % (expected 8 clases — sending NEITHER a paquete id nor custom fields means "keep the current package"; the swap door is editar_venta_paquete.sql)', rec.paquete_nombre;
   end if;
   if rec.cliente_id is distinct from current_setting('t.cli_a', true)::uuid then
     raise exception 'V1 FAIL: cliente_id = % (expected the fixture cliente — an edit never re-assigns the sale)', rec.cliente_id;
@@ -213,10 +228,12 @@ begin
     raise exception 'V1 FAIL: a column other than monto/metodo changed. before = % / after = %', v_rest, v_after;
   end if;
 
-  -- the stored running balance is NOT the edit's business (ADR-0004)
+  -- THE CHEAP PATH: a monto/metodo-only edit changes neither the grant nor the sold day, so the
+  -- re-derive is not triggered at all and the stored running balance (ADR-0004) is not this call's
+  -- business. editar_venta_paquete.sql S10 asserts the same contract with a whole-row jsonb compare.
   select * into cli from public.clientes where id = current_setting('t.cli_a', true)::uuid;
   if cli.clases_restantes is distinct from 10 then
-    raise exception 'V1 FAIL: cliente clases_restantes = % (expected 10 — an edit is not a re-sale and must not touch the saldo)', cli.clases_restantes;
+    raise exception 'V1 FAIL: cliente clases_restantes = % (expected 10 — a monto/metodo-only edit must not reach the saldo)', cli.clases_restantes;
   end if;
   if cli.vence is distinct from current_date + 40 then
     raise exception 'V1 FAIL: cliente vence = % (expected current_date + 40 — untouched)', cli.vence;
@@ -379,17 +396,21 @@ begin
     raise exception 'VF1 FAIL: a column other than monto/metodo/fecha changed. before = % / after = %', v_rest, v_after;
   end if;
 
-  -- THE SEMANTIC: a fecha edit re-attributes the month, it never re-sells. The stored saldo is
-  -- untouched by design (a moved fecha is not invertible into a new vence — see the header).
+  -- THE SEMANTIC: since ruling 1 (2026-08-15) a fecha edit DOES claw back and re-grant — and here that
+  -- round trip is an exact IDENTITY, which is why these three numbers never moved. Base = 10 − 8 = 2
+  -- clases and vence +40 − 20 = +20, still live at hoy−5, so the start day cancels out of the stacking
+  -- algebra and the re-grant returns 2 + 8 = 10 and +20 + 20 = +40. The non-identity case (a new day
+  -- past the clawed-back vence, where registrar's expired-restart discard fires) is
+  -- editar_venta_paquete.sql S5b.
   select * into cli from public.clientes where id = current_setting('t.cli_a', true)::uuid;
   if cli.clases_restantes is distinct from 10 then
-    raise exception 'VF1 FAIL: cliente clases_restantes = % (expected 10 — a fecha edit must not re-grant classes)', cli.clases_restantes;
+    raise exception 'VF1 FAIL: cliente clases_restantes = % (expected 10 — the clawback + re-grant round trip is an identity here because nothing clamps)', cli.clases_restantes;
   end if;
   if cli.vence is distinct from current_date + 40 then
-    raise exception 'VF1 FAIL: cliente vence = % (expected current_date + 40 — a fecha edit must not re-stack the vigencia; delete + re-sell is the tool for that)', cli.vence;
+    raise exception 'VF1 FAIL: cliente vence = % (expected current_date + 40 — the base had not expired at hoy−5, so the re-derive returns the same vigencia)', cli.vence;
   end if;
   if cli.paquete_nombre is distinct from '8 clases' then
-    raise exception 'VF1 FAIL: cliente paquete_nombre = % (expected 8 clases — untouched)', cli.paquete_nombre;
+    raise exception 'VF1 FAIL: cliente paquete_nombre = % (expected 8 clases — the label is re-stamped from the latest remaining sale, which is this one)', cli.paquete_nombre;
   end if;
 
   -- The refusal vectors below demand this exact row back, monto and metodo included.
@@ -510,10 +531,10 @@ begin
     raise exception 'VF4 FAIL: cliente created_at = % (expected unchanged — the ruling drops a READ of the alta, it never rewrites it)', cli.created_at;
   end if;
   if cli.clases_restantes is distinct from 4 then
-    raise exception 'VF4 FAIL: cliente clases_restantes = % (expected 4 — a fecha edit must not re-grant classes)', cli.clases_restantes;
+    raise exception 'VF4 FAIL: cliente clases_restantes = % (expected 4 — 4 − 4 + 4, another identity: the re-derive is arithmetic, not a reset)', cli.clases_restantes;
   end if;
   if cli.vence is distinct from current_date + 20 then
-    raise exception 'VF4 FAIL: cliente vence = % (expected current_date + 20 — a fecha edit must not re-stack the vigencia)', cli.vence;
+    raise exception 'VF4 FAIL: cliente vence = % (expected current_date + 20 — the clawed-back base (+10) is still live at hoy−15, so the re-grant returns the same vigencia)', cli.vence;
   end if;
   if cli.paquete_nombre is distinct from '4 clases' then
     raise exception 'VF4 FAIL: cliente paquete_nombre = % (expected 4 clases — untouched)', cli.paquete_nombre;

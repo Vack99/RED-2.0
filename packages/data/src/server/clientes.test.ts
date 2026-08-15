@@ -1188,4 +1188,62 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     ]);
     expect(ficha?.clasesGauge?.usadas).toBe(2);
   });
+
+  // Paquete-swap spec §4: `ClienteFichaDTO.paquetes` is the SAME catalog read already fetched
+  // for the `{precios}` plantilla token (line 417 in clientes.ts) — zero extra I/O. This proves
+  // the read is threaded onto the DTO, not silently dropped after `fmtPrecios` consumes it.
+  it("threads the gym's package catalog onto the DTO as `paquetes` — zero extra I/O", async () => {
+    // Inlined rather than makeFichaFake (which hard-codes `paquetes: []`): only the `paquetes`
+    // row list differs from that helper's fixtures.
+    const rows: Record<string, Record<string, unknown>[]> = {
+      clientes: [FICHA_CLIENTE],
+      gym_membership: [
+        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+      ],
+      asistencias: [],
+      ventas: [FICHA_VENTA],
+      perfil: [],
+      plantillas: [],
+      paquetes: [
+        { id: "pq-1", nombre: "8 clases", clases: 8, vigencia_tipo: "dias", vigencia_dias: 30, precio: 800, popular: false, orden: 1 },
+        { id: "pq-2", nombre: "Ilimitado", clases: null, vigencia_tipo: "mes", vigencia_dias: null, precio: 1200, popular: true, orden: 2 },
+      ],
+      cobro: [],
+    };
+    function builder(table: string) {
+      let filtered = [...(rows[table] ?? [])];
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: () => b,
+        in: () => b,
+        is: () => b,
+        gte: () => b,
+        or: () => b,
+        order: () => b,
+        range: (from: number, to: number) => {
+          filtered = filtered.slice(from, to + 1);
+          return b;
+        },
+        limit: (n: number) => {
+          filtered = filtered.slice(0, n);
+          return b;
+        },
+        maybeSingle: () => Promise.resolve({ data: filtered[0] ?? null, error: null }),
+        then: (resolve: (v: { data: unknown; error: null; count: number }) => unknown) =>
+          resolve({ data: filtered, error: null, count: filtered.length }),
+      };
+      return b;
+    }
+    const paquetesClient = {
+      auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
+      from: (table: string) => builder(table),
+    } as unknown as SupabaseServer;
+
+    const ficha = await getClienteFicha("cli-ficha", paquetesClient);
+
+    expect(ficha?.paquetes).toEqual([
+      expect.objectContaining({ id: "pq-1", nombre: "8 clases", clases: 8, precio: 800 }),
+      expect.objectContaining({ id: "pq-2", nombre: "Ilimitado", clases: null, precio: 1200 }),
+    ]);
+  });
 });
