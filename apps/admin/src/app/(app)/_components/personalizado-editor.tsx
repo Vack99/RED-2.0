@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Eyebrow, Input } from "@gym/ui/forge/ui";
 
-import { customErrors, LIMITES, type CustomErrors, type CustomForm } from "./vender-vm";
+import { customErrors, LIMITES, type CustomErrors, type CustomForm } from "../vender/_components/vender-vm";
 
 /**
  * The PERSONALIZADO form — a promo, discount or one-off package typed at the desk.
@@ -12,16 +12,25 @@ import { customErrors, LIMITES, type CustomErrors, type CustomForm } from "./ven
  * latest venta, so whatever is typed here is what they see. Hence the hint below.
  *
  * Pure presentation: every rule lives in vender-vm (customErrors / LIMITES).
+ *
+ * LIFTED out of vender/_components (paquete-swap spec §5.1) so the payment-correction
+ * sheet's package-swap picker can render the same form. `mostrarPrecio` (default true,
+ * vender's own render) hides the PRECIO field for the sheet: its MONTO field above
+ * already IS the sale's price, so a second price input would be a "which one wins" trap.
  */
 export function PersonalizadoEditor({
   form,
   setForm,
   hasta,
+  mostrarPrecio = true,
 }: {
   form: CustomForm;
   setForm: (f: CustomForm) => void;
   /** Expiry if sold today, e.g. "25 ago" — derived by the parent in the GYM's timezone. */
   hasta: string | null;
+  /** Whether the PRECIO field renders. False for the payment-correction sheet, whose own
+   *  MONTO field is the price this form's `precio` is kept in sync with by the caller. */
+  mostrarPrecio?: boolean;
 }) {
   const [blurred, setBlurred] = React.useState<Partial<Record<keyof CustomErrors, boolean>>>({});
   const errors = customErrors(form, blurred);
@@ -41,16 +50,18 @@ export function PersonalizadoEditor({
         <Nota>Este nombre aparece en el ticket y en la cuenta del cliente.</Nota>
       </Campo>
 
-      <div className="grid grid-cols-2" style={{ gap: 12 }}>
-        <Campo label="PRECIO" error={errors.precio}>
-          <Input
-            inputMode="numeric"
-            placeholder="750"
-            value={form.precio}
-            onChange={(v: string) => set("precio", v)}
-            onBlur={() => touch("precio")}
-          />
-        </Campo>
+      <div className={mostrarPrecio ? "grid grid-cols-2" : "grid grid-cols-1"} style={{ gap: 12 }}>
+        {mostrarPrecio && (
+          <Campo label="PRECIO" error={errors.precio}>
+            <Input
+              inputMode="numeric"
+              placeholder="750"
+              value={form.precio}
+              onChange={(v: string) => set("precio", v)}
+              onBlur={() => touch("precio")}
+            />
+          </Campo>
+        )}
 
         <Campo label="VIGENCIA" error={errors.dias}>
           <Input

@@ -248,10 +248,10 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         open={pagoSheet.open}
         onClose={() => setPagoSheet((s) => ({ ...s, open: false }))}
         pago={pagoSheet.pago}
-        clienteId={c.id}
         clasesRestantes={ficha.clasesRestantes}
         vence={ficha.vence}
         hoyIso={ficha.hoyIso}
+        paquetes={ficha.paquetes}
       />
 
       {tel && (

@@ -14,8 +14,8 @@ import { calcVigenciaEnd } from "@gym/domain/rules";
 import { fmtNavegadorDia, fmtShort, isoDay, parseDay, pesos } from "@gym/format";
 import { InicioCalendar } from "../../_components/inicio-calendar";
 import { MetodoEditor } from "../../_components/metodo-editor";
+import { PaqueteTiles } from "../../_components/paquete-tiles";
 import { crearVentaAction } from "../actions";
-import { PersonalizadoEditor } from "./personalizado-editor";
 import { Recibo } from "./recibo";
 import {
   clienteListo,
@@ -776,47 +776,17 @@ function PaqueteEditor({
   inicioBackdate: boolean;
   onEditInicio: () => void;
 }) {
-  const onCustom = sel === PERSONALIZADO;
   return (
     <div className="flex flex-col" style={{ gap: 8 }}>
-      {paquetes.map((p) => {
-        const on = sel === p.id;
-        return (
-          <button
-            key={p.id}
-            onClick={() => setSel(p.id)}
-            className="forge-pressable flex items-center justify-between text-left"
-            style={{ padding: 18, background: "transparent", border: `1px solid ${on ? "var(--yellow)" : "var(--line)"}`, color: "var(--fg)", cursor: "pointer", transition: "border-color 140ms ease" }}
-          >
-            <div className="flex flex-col" style={{ gap: 4 }}>
-              <div className="uppercase font-bold" style={{ fontSize: 16, letterSpacing: -0.1 }}>{p.nombre}</div>
-              <div className="uppercase" style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.8 }}>{on && vigenciaEnd ? `Hasta ${vigenciaEnd}` : p.vigencia}</div>
-            </div>
-            <Tnum className="font-extrabold" style={{ fontSize: 22, color: on ? "var(--yellow)" : "var(--fg)", letterSpacing: -0.4 }}>{pesos(p.precio)}</Tnum>
-          </button>
-        );
-      })}
-
-      {/* Promos, discounts and one-off deals. Never becomes a paquetes row, so it can
-          never reach the gym's public catalog (spec §2). */}
-      <div style={{ border: `1px solid ${onCustom ? "var(--yellow)" : "var(--line)"}`, transition: "border-color 140ms ease" }}>
-        <button
-          onClick={() => setSel(PERSONALIZADO)}
-          className="forge-pressable flex items-center justify-between text-left"
-          style={{ width: "100%", padding: 18, background: "transparent", border: "none", color: "var(--fg)", cursor: "pointer" }}
-        >
-          <div className="flex flex-col" style={{ gap: 4 }}>
-            <div className="uppercase font-bold" style={{ fontSize: 16, letterSpacing: -0.1 }}>Personalizado</div>
-            <div className="uppercase" style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.8 }}>Promo · descuento · plan especial</div>
-          </div>
-          <Icon name="plus" size={20} color={onCustom ? "var(--gold)" : "var(--muted)"} />
-        </button>
-        {onCustom && (
-          <div style={{ padding: "0 18px 18px" }}>
-            <PersonalizadoEditor form={custom} setForm={setCustom} hasta={customHasta} />
-          </div>
-        )}
-      </div>
+      <PaqueteTiles
+        paquetes={paquetes}
+        sel={sel}
+        setSel={setSel}
+        vigenciaEnd={vigenciaEnd}
+        custom={custom}
+        setCustom={setCustom}
+        customHasta={customHasta}
+      />
 
       {/* Quiet backdate affordance (spec D6): reads "Inicia: Hoy" by default and stays out
           of the way; tap to register a sale that already happened on a past date. */}

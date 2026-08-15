@@ -3,9 +3,10 @@
 // DOM test infra (vitest.config.ts): a rule that only lives inside JSX is a rule no test can
 // reach, and the confirm's numbers are the one thing the operator acts on.
 
+import { diasRestantes } from "@gym/domain/rules";
 import { addDays, fmtShort, parseDay, pesos } from "@gym/format";
 
-import { inicioMinIso } from "../../../vender/_components/vender-vm";
+import { customValido, inicioMinIso, PERSONALIZADO, type CustomForm } from "../../../vender/_components/vender-vm";
 
 /** The corrected-date picker's floor — `hoy − 30`, the SAME bound vender's backdate picker
  *  uses, imported rather than restated so the two can't drift. Re-exported so the sheet takes
@@ -103,4 +104,95 @@ export function previewEliminarVenta(v: {
   if (resta.length === 0) return ingresos;
   const cola = queda.length > 0 ? ` → ${queda.join(", ")}` : "";
   return `Se restarán ${resta.join(" y ")}${cola}. ${ingresos}`;
+}
+
+// ── Package swap (paquete-swap spec §5.2/§6.3) ──────────────────────
+
+/** The delete gate's floor-clip predicate (ruling 3, spec §1.3/§3) — mirrors
+ *  `eliminar_venta`'s own gate exactly: `clases_restantes - clases < 0`. Landing on
+ *  EXACTLY zero is allowed (the boundary #267.4 already shipped); only strictly-below is
+ *  refused. An ilimitado sale (`clases` null) or an ilimitado balance (`clasesRestantes`
+ *  null) can never floor, so neither trips it. The RPC re-checks this — it is the real
+ *  enforcer — this only decides whether the sheet shows ELIMINAR or the muted note. */
+export function clawbackPisaCero(clases: number | null, clasesRestantes: number | null): boolean {
+  return clases !== null && clasesRestantes !== null && clasesRestantes - clases < 0;
+}
+
+/** Whether a correction actually moves the balance — mirrors `editar_venta`'s own
+ *  `v_cambio_grant or v_cambio_fecha` guard (D0.5): a monto/metodo-only edit, or a
+ *  re-post of an already-applied swap, must NOT claw back/re-grant. Drives whether the
+ *  inline preview renders and whether the FECHA hint's "se recalcula" claim is live. */
+export function rederivaSaldo(v: {
+  ventaClases: number | null;
+  ventaVigTipo: "dias" | "mes";
+  ventaVigDias: number | null;
+  nuevoClases: number | null;
+  nuevoVigTipo: "dias" | "mes";
+  nuevoVigDias: number | null;
+  fechaOriginalIso: string;
+  fechaIso: string;
+}): boolean {
+  const cambioGrant =
+    v.nuevoClases !== v.ventaClases ||
+    v.nuevoVigTipo !== v.ventaVigTipo ||
+    v.nuevoVigDias !== v.ventaVigDias;
+  const cambioFecha = v.fechaIso !== v.fechaOriginalIso;
+  return cambioGrant || cambioFecha;
+}
+
+/**
+ * The swap/re-derive preview — mirrors `editar_venta` §1.2 steps 14-15 EXACTLY, including
+ * the one-clamp rule (D0.4: the clawback's intermediate is allowed to go negative, only the
+ * FINAL re-granted number floors at zero) and registrar's own expired-restart discard (D0.9:
+ * a base vence before the re-grant date contributes nothing — the correction starts a clean
+ * run). Computed client-side from the same facts `editar_venta` reads, so the operator sees
+ * the outcome before GUARDAR fires anything.
+ *
+ * The clases fragment drops only when the NEW package is itself ilimitado (`nuevo.clases ===
+ * null`) — the one case D0.9's algorithm can never resolve to a concrete count. An ilimitado
+ * CURRENT balance does not drop it: swapping onto a finite package from an unlimited one still
+ * lands on that package's own concrete grant (the RPC's `elsif v_base_clases is null then
+ * v_new_clases := v_clases` branch), so the fragment renders that real number. `vence` is
+ * always renderable — "vence follows fecha" is the whole point of ruling 1.
+ */
+export function previewRederivarVenta(v: {
+  /** The client's stored balance BEFORE the correction; null = ilimitado. */
+  clasesRestantes: number | null;
+  /** The client's stored vence ("YYYY-MM-DD") BEFORE the correction, or null. */
+  vence: string | null;
+  /** What the STORED sale currently grants — the clawback side (`dias` already collapsed,
+   *  see `vigenciaDiasVenta`). */
+  viejo: { clases: number | null; dias: number };
+  /** What the sale will grant AFTER the correction — the re-grant side. */
+  nuevo: { clases: number | null; dias: number };
+  /** The sale's (possibly corrected) sold date, gym-tz ISO day — the re-grant anchor. */
+  fechaIso: string;
+}): string {
+  const fecha = parseDay(v.fechaIso);
+  const baseClasesCrudo = v.clasesRestantes === null ? null : v.clasesRestantes - (v.viejo.clases ?? 0);
+  const baseVence = v.vence === null ? null : addDays(parseDay(v.vence), -v.viejo.dias);
+
+  // D0.9 — the expired-restart discard: a base vence that is not still valid AT the
+  // re-grant date contributes nothing, exactly like `registrar_venta`'s own stacking rule.
+  const vigenteAlaFecha = baseVence !== null && diasRestantes(baseVence, fecha) >= 0;
+  const baseDias = vigenteAlaFecha ? diasRestantes(baseVence!, fecha) : 0;
+  const baseClases = vigenteAlaFecha ? baseClasesCrudo : 0;
+
+  // D0.4 — the ONE clamp, applied only to the final number (the intermediate clawback
+  // above is allowed to go negative — never rendered, never stored).
+  const nuevasClases =
+    v.nuevo.clases === null ? null : baseClases === null ? v.nuevo.clases : Math.max(0, baseClases + v.nuevo.clases);
+  const nuevoVence = addDays(fecha, baseDias + v.nuevo.dias);
+
+  const clasesFrag =
+    nuevasClases !== null ? `quedará en ${nuevasClases} ${nuevasClases === 1 ? "clase" : "clases"}` : null;
+  const partes = [clasesFrag, `vence ${fmtShort(nuevoVence)}`].filter((s): s is string => s !== null);
+  return `El saldo se recalcula: ${partes.join(" · ")}.`;
+}
+
+/** The PAQUETE section's own dirty bit: a picked tile counts once it is either a registrado
+ *  pick (`paqSel` set, not the personalizado sentinel) or a personalizado form that already
+ *  validates — an incomplete custom form is not yet a swap the sheet can save. */
+export function swapDirty(paqSel: string | null, custom: CustomForm): boolean {
+  return paqSel !== null && (paqSel !== PERSONALIZADO || customValido(custom));
 }
