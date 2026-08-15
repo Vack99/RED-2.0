@@ -417,6 +417,14 @@ export const editarVentaSchema = z.object({
   // an already-registered high-value sale (and block fixing its método along with it).
   monto: z.number().int().min(1),
   metodo: z.enum(METODOS),
+  // Corrected sold date (fast-follow to #269) — a gym-local "YYYY-MM-DD" day, same shape as
+  // crearVenta's fechaInicio. Absent/undefined ⇒ the RPC's `p_fecha default null` keeps the
+  // row's current fecha untouched. Format-checked here for a fast local failure; the RPC is
+  // the trust boundary and owns the real bounds.
+  fecha: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
+    .optional(),
 });
 
 export const eliminarVentaSchema = z.object({ ventaId: z.string().uuid() });
@@ -431,6 +439,9 @@ export async function editarVenta(raw: unknown, client?: SupabaseServer): Promis
     p_venta_id: input.ventaId,
     p_monto: input.monto,
     p_metodo: input.metodo,
+    // Spread only when present, so an unchanged-date correction sends the exact 3-arg
+    // payload it always did (p_fecha defaults null in the RPC ⇒ keeps the current fecha).
+    ...(input.fecha ? { p_fecha: input.fecha } : {}),
   });
   if (error) raiseVentaError(error.message);
 }

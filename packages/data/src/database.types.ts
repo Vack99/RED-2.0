@@ -1547,7 +1547,7 @@ export type Database = {
         Returns: undefined
       }
       editar_venta: {
-        Args: { p_metodo: string; p_monto: number; p_venta_id: string }
+        Args: { p_fecha?: string; p_metodo: string; p_monto: number; p_venta_id: string }
         Returns: undefined
       }
       eliminar_plantilla: { Args: { p_id: string }; Returns: undefined }

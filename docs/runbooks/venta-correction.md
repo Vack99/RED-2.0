@@ -6,8 +6,10 @@
 
 Correction shipped in-product. From a client's ficha, any staff member can now:
 
-- **Edit `monto` + `metodo` at any age** — `editar_venta(p_venta_id, p_monto, p_metodo)`, SECURITY INVOKER under `ventas_staff_update`. No compensating row, no window.
-- **Delete a sale within 30 days of its `created_at`** — `eliminar_venta(p_venta_id)`, SECURITY DEFINER, one transaction: hard-deletes the `ventas` row and claws the saldo back (subtracts the sale's `clases` and its vigencia-days, floored at 0; reverts `paquete_nombre` to the most recent remaining sale). Wrong paquete or fecha = delete + re-sell through `/vender?cliente=<id>`. Past 30 days the affordance is simply absent.
+- **Edit `monto` + `metodo` at any age** — `editar_venta(p_venta_id, p_monto, p_metodo, p_fecha)`, SECURITY INVOKER under `ventas_staff_update`. No compensating row, no window.
+- **Delete a sale within 30 days of its `created_at`** — `eliminar_venta(p_venta_id)`, SECURITY DEFINER, one transaction: hard-deletes the `ventas` row and claws the saldo back (subtracts the sale's `clases` and its vigencia-days, floored at 0; reverts `paquete_nombre` to the most recent remaining sale). Wrong paquete = delete + re-sell through `/vender?cliente=<id>`. Past 30 days the affordance is simply absent.
+
+**Amended 2026-08-14 (#269 fast-follow):** ruling #266.3 was reversed — the sold date is editable in product too. `editar_venta`'s 4th argument `p_fecha` moves a sale's `fecha` inside `registrar_venta`'s own backdate bounds (not future, no more than 30 days back, never before the client's alta) and writes midday gym-tz on the chosen day, exactly as a backdated sale does (`20260814120000_editar_venta_fecha.sql`). It re-attributes the sale's day and its **earnings month, and nothing else**: `clases_restantes`, `vence` and `paquete_nombre` stay untouched, because a moved fecha is not invertible into a new vigencia — when the vigencia is what's wrong, it is still delete + re-sell. Only a date **outside** those bounds (older than 30 days, or before the client's alta) has no in-product path; that one is still a hand-fix as `postgres` — a direct `update public.ventas set fecha = …` on the single row by `id`, which likewise re-derives no saldo.
 
 `ventas` is **no longer append-only**: `ventas_staff_update` exists, DELETE is revoked from `authenticated` outright, and UPDATE is column-scoped to `(monto, metodo)` (`20260813120000_editar_eliminar_venta.sql`; ADR-0005's 2026-08-13 note carries why).
 
@@ -15,9 +17,9 @@ Correction shipped in-product. From a client's ficha, any staff member can now:
 
 ## The one rule (past the window): the ventas ledger is append-only
 
-Since #269 `ventas` RLS is **select + insert + a column-scoped update** — `ventas_staff_update` exists, but the table grant is revoked and re-granted on `(monto, metodo)` only, so those two columns are the *only* thing any direct write can reach. There is still **no delete policy at all**: DELETE is revoked from `authenticated` outright and `eliminar_venta` (SECURITY DEFINER) is the only door, which is what keeps the 30-day window and the saldo clawback unskippable.
+Since #269 `ventas` RLS is **select + insert + a column-scoped update** — `ventas_staff_update` exists, but the table grant is revoked and re-granted on `(monto, metodo, fecha)` only (`fecha` since the 2026-08-14 fast-follow), so those three columns are the *only* thing any direct write can reach. There is still **no delete policy at all**: DELETE is revoked from `authenticated` outright and `eliminar_venta` (SECURITY DEFINER) is the only door, which is what keeps the 30-day window and the saldo clawback unskippable.
 
-For a sale **past that window** — the only case this runbook covers — nothing here has changed: **never `DELETE` the row, and never hand-`UPDATE` anything but `monto`/`metodo` (and for those, use the in-product edit below, not SQL)**. A correction is a **compensating negative `ventas` row** (the reversal, so `Σ monto` stays truthful) plus a **`saldo` fix on `clientes`**, both in **one transaction**.
+For a sale **past that window** — the only case this runbook covers — nothing here has changed: **never `DELETE` the row, and never hand-`UPDATE` anything but `monto`/`metodo`/`fecha` (and for those, use the in-product edit below, not SQL)**. A correction is a **compensating negative `ventas` row** (the reversal, so `Σ monto` stays truthful) plus a **`saldo` fix on `clientes`**, both in **one transaction**.
 
 Run **authenticated as the gym owner** — no service role needed, and none would work:
 - Nothing is deleted, and the staff RLS policies already permit the whole correction: `ventas_staff_insert` covers the negative-`monto` row (there is no sign gate) and `clientes_staff_update` grants staff direct UPDATE on the saldo columns (`20260702173309_gym_scoped_rls_policies.sql:40-50`).

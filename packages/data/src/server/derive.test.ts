@@ -430,6 +430,12 @@ describe("shapeFicha", () => {
     expect(f.vence).toBe("2026-06-16");
   });
 
+  it("derives altaIso as the gym-tz ISO day of created_at (payment-correction date-picker floor)", () => {
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
+    expect(f.altaDisplay).toBe("10 abr");
+    expect(f.altaIso).toBe("2026-04-10");
+  });
+
   it("flags primeraCompra when the member has no ventas (#77)", () => {
     expect(shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0).primeraCompra).toBe(true);
     expect(

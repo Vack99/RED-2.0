@@ -572,6 +572,35 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     });
   });
 
+  it("includes p_fecha, exact value, when a corrected date is given", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta(
+      { ventaId: VENTA_ID, monto: 900, metodo: "tarjeta", fecha: "2026-08-01" },
+      fake.client,
+    );
+    expect(lastRpc(fake)).toEqual({
+      name: "editar_venta",
+      args: { p_venta_id: VENTA_ID, p_monto: 900, p_metodo: "tarjeta", p_fecha: "2026-08-01" },
+    });
+  });
+
+  it("omits p_fecha when no date correction is given (spread-guard, keeps the current fecha)", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" }, fake.client);
+    expect(lastRpc(fake).args).not.toHaveProperty("p_fecha");
+  });
+
+  it("rejects a malformed fecha at schema parse before any write", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await expect(
+      editarVenta(
+        { ventaId: VENTA_ID, monto: 900, metodo: "tarjeta", fecha: "08/01/2026" },
+        fake.client,
+      ),
+    ).rejects.toThrow();
+    expect(fake.rpcCalls).toHaveLength(0);
+  });
+
   it.each(["No autorizado", "Venta no encontrada", "Método inválido", "Monto inválido"])(
     "types the known refusal %j as VentaRefusalError, message verbatim",
     async (mensaje) => {

@@ -10,7 +10,7 @@
 import { derivarVeredicto, type ContextoVeredicto, type HechosCliente, type VeredictoCliente } from "@gym/domain/lifecycle";
 import { diasRestantes } from "@gym/domain/rules";
 import type { PlantillaContext } from "@gym/domain/types";
-import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, MONTHS_FULL, parseDay, pesos } from "@gym/format";
+import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, MONTHS_FULL, parseDay, pesos, toIsoDay } from "@gym/format";
 
 import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
@@ -355,6 +355,11 @@ export interface FichaDerivada {
   diasGauge: DiasGauge | null;
   compradoDisplay: string;
   altaDisplay: string;
+  /** The client's alta day as a gym-tz "YYYY-MM-DD" (from `created_at`) — the payment-correction
+   *  date picker's floor bound (mirrors `ClienteLiteDTO.altaIso` / the Vender backdate floor, same
+   *  column, same `fechaEnZona` + `toIsoDay` derivation). `hoyIso`, the picker's other bound, is
+   *  already on `ClienteFichaDTO` (the wrapper this feeds) — no second copy needed here. */
+  altaIso: string;
   /** Whether the member holds today's ACCESO LIBRE visit — the ONE row the ficha's
    *  2-arg toggle writes and undoes. A class visit never sets this (#89). */
   presentHoy: boolean;
@@ -460,7 +465,9 @@ export function shapeFicha(
   // the days ring divides by zero (cliente-detalle.tsx renders diasRest / dayDenom).
   const dayDenom = latest ? (latest.vigencia_tipo === "mes" ? 30 : latest.vigencia_dias || 30) : 30;
   const compradoDisplay = latest ? fmtShort(fechaEnZona(latest.fecha, tz)) : "—";
-  const altaDisplay = fmtShort(fechaEnZona(c.created_at, tz));
+  const altaDate = fechaEnZona(c.created_at, tz);
+  const altaDisplay = fmtShort(altaDate);
+  const altaIso = toIsoDay(altaDate);
 
   const cliente = derivarCliente(c, ctx, asistencias.length, "no_leidas");
   const { clases: clasesRest, dias: diasRest } = cliente.veredicto;
@@ -514,6 +521,7 @@ export function shapeFicha(
     diasGauge,
     compradoDisplay,
     altaDisplay,
+    altaIso,
     presentHoy,
     horaHoy,
     clasesHoy,
