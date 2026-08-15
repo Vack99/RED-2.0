@@ -47,7 +47,12 @@
 --
 -- ── THE TRUTH TABLE this yields ─────────────────────────────────────────────────────────────────────
 --   1. FRESH / restarted sale (anchor == old fecha — the common case, and ruling 1's own scenario):
---      restart branch ⇒ `vence = fecha_new + dias_new`. Vence follows fecha, as ruled.
+--      restart branch ⇒ `vence = fecha_new + dias_new`. Vence follows fecha, as ruled. One cell here
+--      UNDER-credits, unavoidably: a restart-after-lapse whose fecha moves back BEFORE the lapsed
+--      base's true end (B) should carry `B − fecha_new` days and the lapsed clases — but registrar's
+--      `max()` destroyed B, so no inverse can recover it; the body writes `fecha_new + dias_new` with
+--      no carry. Provably unrecoverable, and still closer to truth than the ruling's stated fallback
+--      (delete + re-sell re-grants from TODAY's state).
 --   2. GENUINELY STACKED sale (bought while vigente; the prior base ended B > old fecha): B is recovered
 --      exactly ⇒ `vence = max(B, fecha_new) + dias_new`. Moving the fecha while B ≥ fecha_new does NOT
 --      move vence — correct, and registrar-identical: the carry ends at B no matter which day the member
@@ -57,8 +62,11 @@
 --      (a 0-day carry, whose clases legitimately carried under the vence-day-is-valid rule C9) is
 --      indistinguishable from a fresh sale — `anchor > fecha_old` is false for both. The restart reading
 --      wins, which drops that exact-day clases carry on a later re-derive. Rare (it needs the previous
---      package to have ended on the very day the next was sold), harmless to vigencia (both readings
---      give `fecha + dias` when the carry is 0 days and the fecha did not move), and accepted.
+--      package to have ended on the very day the next was sold), harmless to vigencia only while the
+--      fecha stays put (both readings give `fecha + dias` at a 0-day carry); a fecha-only edit on this
+--      shape also re-anchors the vigencia to `fecha_new` — losing `fecha_old − fecha_new` days a true
+--      exact-day stack would have kept — on top of the clases carry. Same unrecoverable-B root as the
+--      under-credit cell in item 1, and accepted with it.
 --   4. SELF-HEALING on the rows the pre-ruling era polluted: an attribution-only fecha edit
 --      (20260814120000, before ruling 1) moved `fecha` without touching the saldo, so those rows can
 --      have anchor ≠ fecha in EITHER direction, anchor < fecha included. All of them read as "no live
