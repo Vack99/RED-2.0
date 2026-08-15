@@ -260,6 +260,9 @@ export function PagoSheet({
           vence,
           viejo: { clases: pago.clases, dias: vigenciaDiasVenta(pago.vigenciaTipo, pago.vigenciaDias) },
           nuevo: { clases: nuevo.clases, dias: vigenciaDiasVenta(nuevo.vigTipo, nuevo.vigDias) },
+          // The sale's STORED day, beside the (possibly corrected) one: `vence − días` recovers the
+          // ANCHOR, and only a value later than this day is a carried base (see the vm's header).
+          fechaOriginalIso: pago.fechaIso,
           fechaIso: fecha,
         })
       : null;

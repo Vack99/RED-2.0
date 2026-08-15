@@ -18,6 +18,8 @@ declare
   v_cambio_fecha   boolean;
   v_dias_old       integer;
   v_dias_new       integer;
+  v_anchor         date;         
+  v_fecha_old_dia  date;         
   v_base_clases    integer;      
   v_base_vence     date;
   v_base_dias      integer;
@@ -56,6 +58,8 @@ begin
     raise exception 'Venta inválida: elige un paquete o define uno personalizado';
   end if;
 
+  
+  
   
   
   
@@ -138,7 +142,9 @@ begin
     v_fecha_ts := (p_fecha::timestamp + interval '12 hours') at time zone v_tz;
   end if;
   
-  v_fecha_dia := coalesce(p_fecha, (v_venta.fecha at time zone v_tz)::date);
+  
+  v_fecha_old_dia := (v_venta.fecha at time zone v_tz)::date;
+  v_fecha_dia     := coalesce(p_fecha, v_fecha_old_dia);
 
   
   v_cambio_grant   := (v_clases   is distinct from v_venta.clases)
@@ -148,7 +154,7 @@ begin
                    or (v_nombre is distinct from v_venta.paquete_nombre)
                    or (v_person is distinct from v_venta.personalizado);
   v_cambio_fecha   := p_fecha is not null
-                  and p_fecha is distinct from (v_venta.fecha at time zone v_tz)::date;
+                  and p_fecha is distinct from v_fecha_old_dia;
 
   
   
@@ -208,11 +214,24 @@ begin
                         else coalesce(v_venta.vigencia_dias, 0) end;
   v_base_clases := case when v_cli.clases_restantes is null then null
                         else v_cli.clases_restantes - coalesce(v_venta.clases, 0) end;
-  v_base_vence  := case when v_cli.vence is null then null else v_cli.vence - v_dias_old end;
+
+  
+  
+  
+  
+  
+  
+  
+  v_anchor     := case when v_cli.vence is null then null else v_cli.vence - v_dias_old end;
+  v_base_vence := case when v_anchor is null              then null
+                       when v_anchor > v_fecha_old_dia    then v_anchor
+                       else null end;
 
   
   v_dias_new := case when v_vig_tipo = 'mes' then 30 else coalesce(v_vig_dias, 0) end;
 
+  
+  
   
   
   

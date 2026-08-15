@@ -156,6 +156,15 @@ export function rederivaSaldo(v: {
  * run). Computed client-side from the same facts `editar_venta` reads, so the operator sees
  * the outcome before GUARDAR fires anything.
  *
+ * `vence − viejo.dias` recovers the sale's ANCHOR, not its base: `registrar_venta` wrote
+ * `max(base_end, fecha) + dias`, so that expression is `max(prior_base_end, old_fecha_day)`.
+ * It is a carried base only when a live one outlasted the purchase day — `anchor >
+ * fechaOriginalIso` — and otherwise IS that day, which is why the sale's OWN stored fecha is
+ * an argument here. Treating the anchor as a base cancels the corrected date straight back
+ * out of the algebra (`fecha + (anchor − fecha) + dias` = `anchor + dias`), which made a
+ * fecha-only preview claim the vigencia never moves on a fresh sale. Migration
+ * 20260815130000 is the same fix on the RPC side; this is its mirror, same test, same branch.
+ *
  * The clases fragment drops only when the NEW package is itself ilimitado (`nuevo.clases ===
  * null`) — the one case D0.9's algorithm can never resolve to a concrete count. An ilimitado
  * CURRENT balance does not drop it: swapping onto a finite package from an unlimited one still
@@ -173,12 +182,20 @@ export function previewRederivarVenta(v: {
   viejo: { clases: number | null; dias: number };
   /** What the sale will grant AFTER the correction — the re-grant side. */
   nuevo: { clases: number | null; dias: number };
+  /** The sale's STORED sold day, gym-tz ISO — `FichaPago.fechaIso`, the same value
+   *  `rederivaSaldo` compares against. Tells a carried base apart from the purchase day. */
+  fechaOriginalIso: string;
   /** The sale's (possibly corrected) sold date, gym-tz ISO day — the re-grant anchor. */
   fechaIso: string;
 }): string {
   const fecha = parseDay(v.fechaIso);
   const baseClasesCrudo = v.clasesRestantes === null ? null : v.clasesRestantes - (v.viejo.clases ?? 0);
-  const baseVence = v.vence === null ? null : addDays(parseDay(v.vence), -v.viejo.dias);
+  const anchor = v.vence === null ? null : addDays(parseDay(v.vence), -v.viejo.dias);
+  // The anchor test (see above): a base only exists when it outlasted the sale's OWN day.
+  // Anything else — a fresh sale, a restart, a row an old attribution-only fecha edit left
+  // inconsistent — carries nothing and falls through to the discard arm below.
+  const baseVence =
+    anchor !== null && diasRestantes(anchor, parseDay(v.fechaOriginalIso)) > 0 ? anchor : null;
 
   // D0.9 — the expired-restart discard: a base vence that is not still valid AT the
   // re-grant date contributes nothing, exactly like `registrar_venta`'s own stacking rule.

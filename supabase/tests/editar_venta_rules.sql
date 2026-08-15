@@ -11,9 +11,15 @@
 -- exercise the 4th (20260814120000, the #269 fast-follow that reversed ruling #266.3).
 --
 -- NOTE on why the saldo assertions here still read "unchanged" after ruling 1 ("vence follows fecha",
--- 2026-08-15): every fecha vector in this file is an IDENTITY case of the re-derive — the clawed-back
--- base is still live at the requested day, so nothing clamps and the start day cancels out of
+-- 2026-08-15): every fecha vector in this file rides a STACKED fixture, and a stack is the identity case
+-- of the re-derive. Both fixture sales were bought while the member was still vigente — `vence − días`
+-- lands well AFTER the sale's own fecha (+20 against a sale on day −3; +10 against one dated today), so
+-- it is a real carried base rather than the purchase day itself (migration 20260815130000's anchor
+-- test), it is still live at the requested day, nothing clamps, and the start day cancels out of
 -- registrar_venta's stacking algebra. The numbers are unchanged; what they MEAN is not. See VF1.
+-- Do NOT generalize this into "a fecha edit never moves the saldo": on a FRESH sale the same call moves
+-- vence to `fecha_nueva + días` — that is the ruling's own headline case, and it is pinned by
+-- editar_venta_paquete.sql S13.
 --
 -- NOTE on the FIXTURE SPLIT (same date): because a fecha edit now re-derives, it inherits the
 -- re-derive's two preconditions — 30 days from `created_at`, and top-of-stack. Attribution
@@ -427,10 +433,12 @@ begin
 
   -- THE SEMANTIC: since ruling 1 (2026-08-15) a fecha edit DOES claw back and re-grant — and here that
   -- round trip is an exact IDENTITY, which is why these three numbers never moved. Base = 10 − 8 = 2
-  -- clases and vence +40 − 20 = +20, still live at hoy−5, so the start day cancels out of the stacking
-  -- algebra and the re-grant returns 2 + 8 = 10 and +20 + 20 = +40. The non-identity case (a new day
-  -- past the clawed-back vence, where registrar's expired-restart discard fires) is
-  -- editar_venta_paquete.sql S5b.
+  -- clases and vence +40 − 20 = +20 — a REAL carried base, because +20 is later than the sale's own day
+  -- (−3), which is what tells the two readings of `vence − días` apart (20260815130000) — and it is
+  -- still live at hoy−5, so the start day cancels out of the stacking algebra and the re-grant returns
+  -- 2 + 8 = 10 and +20 + 20 = +40. The two NON-identity cases: a new day past the carried base, where
+  -- registrar's expired-restart discard fires (editar_venta_paquete.sql S5b/S14b), and a FRESH sale,
+  -- which carries nothing and whose vence therefore follows its fecha (S13).
   select * into cli from public.clientes where id = current_setting('t.cli_a', true)::uuid;
   if cli.clases_restantes is distinct from 10 then
     raise exception 'VF1 FAIL: cliente clases_restantes = % (expected 10 — the clawback + re-grant round trip is an identity here because nothing clamps)', cli.clases_restantes;
@@ -563,7 +571,7 @@ begin
     raise exception 'VF4 FAIL: cliente clases_restantes = % (expected 4 — 4 − 4 + 4, another identity: the re-derive is arithmetic, not a reset)', cli.clases_restantes;
   end if;
   if cli.vence is distinct from current_date + 20 then
-    raise exception 'VF4 FAIL: cliente vence = % (expected current_date + 20 — the clawed-back base (+10) is still live at hoy−15, so the re-grant returns the same vigencia)', cli.vence;
+    raise exception 'VF4 FAIL: cliente vence = % (expected current_date + 20 — the carried base (+10, later than the sale''s own day, so a real base) is still live at hoy−15, so the re-grant returns the same vigencia)', cli.vence;
   end if;
   if cli.paquete_nombre is distinct from '4 clases' then
     raise exception 'VF4 FAIL: cliente paquete_nombre = % (expected 4 clases — untouched)', cli.paquete_nombre;

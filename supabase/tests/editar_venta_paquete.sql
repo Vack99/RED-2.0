@@ -26,19 +26,41 @@
 --        is the load-bearing math decision of migration 20260815120000; the vector exists to pin it.
 --   S4 — SWAP DOWN UNDER WATER. Same 3-on-8 cliente swapped down to a 4-clase package: −5 + 4 = −1,
 --        clamped to exactly 0. Never negative, and never "the new package's count".
---   S5 — FECHA-ONLY RE-DERIVE, both arms. (a) the member was still vigente at the new day ⇒ the round
---        trip is an exact IDENTITY (balance and vence byte-identical), which is why
---        editar_venta_rules.sql VF1/VF5 keep passing under ruling 1. (b) the new day falls AFTER the
---        post-clawback vence ⇒ registrar_venta's expired-restart discard applies (base_dias = 0,
---        base_clases = 0), so the sale restarts the member: balance = the sale's own clases, vence =
---        the new day + the sale's own días. Both arms also assert the written instant is midday gym-tz.
+--   S5 — FECHA-ONLY RE-DERIVE on a STACKED sale, both arms. Its fixture is a sale that was bought while
+--        the member was still vigente (vence +40 against a 20-día sale ⇒ the prior base ended +20, well
+--        after the sale's own day −10), so the clawback recovers a REAL base. (a) that base is still
+--        live at the new day ⇒ the round trip is an exact IDENTITY (balance and vence byte-identical) —
+--        correct, and registrar-identical: a carry that ends on a fixed day does not move because the
+--        member paid a day earlier. (b) the new day falls AFTER the recovered base ⇒ registrar_venta's
+--        expired-restart discard applies (base_dias = 0, base_clases = 0), so the sale restarts the
+--        member: balance = the sale's own clases, vence = the new day + the sale's own días. Both arms
+--        also assert the written instant is midday gym-tz. The FRESH-sale case — where "vence follows
+--        fecha" actually has to move something — is S13, and it is a different vector on purpose:
+--        S5a's identity must never be read as "a fecha edit never moves vence" (see S13's header).
+--   S13 — THE LIVE REPRO: a FRESH sale's vence FOLLOWS ITS FECHA (migration 20260815130000). A single
+--        30-día sale on a member with no prior vigencia, moved back 3 days, must land vence on
+--        `fecha_nueva + 30`. 20260815120000 recovered `vence − dias` as "the base" — but registrar
+--        writes `max(base_end, fecha) + dias`, so on a fresh sale that expression IS the old fecha, and
+--        feeding it back as a base cancels the new fecha out (`fecha + (anchor − fecha) + dias` =
+--        `anchor + dias`): the edit was a mathematical NO-OP on vence, which is exactly what the owner
+--        hit on live (fecha moved 14 → 10 → 8 → 5 ago, vence pinned on 13 sep every time). This vector
+--        fails against that body and passes against 20260815130000's anchor test.
+--   S14 — THE OTHER SIDE OF THE SAME TEST: a GENUINELY STACKED sale, whose prior base really did end on
+--        a day of its own (B), keeps that carry. (a) moving the fecha while B is still ahead of the new
+--        day leaves vence exactly where it was — the carry ends at B no matter which day the member
+--        paid, which is what registrar itself would write. (b) moving the fecha PAST B re-anchors: the
+--        base is discarded and vence becomes the new day + the sale's own días. Together with S13 this
+--        pins the disambiguation itself: a vence that stays put is legal for a real stack and only for
+--        a real stack.
 --   S6 — IDEMPOTENCE. The identical swap payload posted twice. There is no idempotency key and none is
 --        needed: the write is an UPDATE of a row named by id, so a replay creates no second row and no
 --        folio. Between the two fires the cliente's balance is DECREMENTED by hand (an asistencia the
 --        member trained in the meantime), and the second fire must leave that decrement standing. NOTE
---        what carries that: the re-derive is a FIXED POINT on its own output (after fire 1, base_vence
---        lands exactly at the sale's fecha, so the discard can never re-fire and the clamp is
---        idempotent) — a body that re-ran the whole clawback + re-grant would ALSO leave 13. The
+--        what carries that: the re-derive is a FIXED POINT on its own output. Whichever branch fire 1
+--        took, fire 2 re-reads its own result and takes the SAME branch — a stack re-derives the same
+--        base day (`vence − días` is back to it), a restart leaves the anchor sitting exactly on the
+--        fecha, which the anchor test reads as a restart again — so a body that re-ran the whole
+--        clawback + re-grant would ALSO leave 13. The
 --        change-detection cheap path is real but is pinned by S10, not here; this vector pins the
 --        fixed-point identity plus the one-row/no-refolio facts.
 --   S7 — THE WINDOW COVERS THE RE-DERIVE, NOT JUST THE PACKAGE. A sale registered 31 days ago refuses a
@@ -83,10 +105,10 @@
 -- The gym timezone is a REAL IANA zone (America/Chihuahua, UTC-6 year-round), never UTC: every bound,
 -- the written instant and the day the re-grant stacks from are computed in the GYM's calendar, so a UTC
 -- fixture would let a gym-tz bug pass unseen. Where a vence assertion would depend on which calendar
--- the session is in, it is written against `current_date` on purpose — the re-grant algebra cancels the
--- start day out (`fecha_dia + (base_vence − fecha_dia) + dias_new` = `base_vence + dias_new`), so those
--- expectations hold in either calendar; S5b, whose whole point is the discarded base, computes the gym
--- day explicitly instead.
+-- the session is in, it is written against `current_date` on purpose — for a STACKED sale the re-grant
+-- algebra cancels the start day out (`fecha_dia + (base_vence − fecha_dia) + dias_new` =
+-- `base_vence + dias_new`), so those expectations hold in either calendar. S5b, S13 and S14, whose whole
+-- point is that the start day does NOT cancel, seed AND assert in explicit gym-tz days instead.
 --
 -- Self-asserting: every check RAISEs on mismatch; a clean run returns one 'OK' row. Wrapped in
 -- BEGIN/ROLLBACK — touches no row permanently.
@@ -113,6 +135,12 @@ declare
   v1  uuid; v2  uuid; v3  uuid; v4  uuid; v5  uuid; v6  uuid;
   v7  uuid; v8  uuid; v9  uuid; v10 uuid; v11 uuid; v12 uuid;
   v13 uuid; v14 uuid;   -- S12: the lapsed chain — v13 sold 25 days ago, v14 stacked on top 2 days ago
+  c_fresca  uuid; v_fresca  uuid;   -- S13: the live repro — a fresh sale, no prior vigencia
+  c_apilada uuid; v_apilada uuid;   -- S14: a genuinely stacked sale, prior base ended on its own day
+  -- The GYM's today. S13/S14 seed and assert in gym-tz days end to end: their whole subject is a start
+  -- day that does NOT cancel out of the algebra, so a session-tz `current_date` would make them pass or
+  -- fail depending on the hour (the gym is UTC−6).
+  v_hoy_gym date := (now() at time zone 'America/Chihuahua')::date;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'editar-venta-paquete-gym-a', 'Editar Venta Paquete A', v_tz, 'forge'),
@@ -234,6 +262,29 @@ begin
     values (gym_a, c13, 7214, '8 CLASES', 8, 'dias', 20, 750, 'efectivo', now() - interval '2 days', now() - interval '2 days')
     returning id into v14;
 
+  -- ── S13: THE LIVE REPRO. A FRESH sale — the member had no vigencia at all when they bought — of 12
+  -- clases / 30 días, sold YESTERDAY (gym-tz). registrar wrote exactly `fecha + 30`, so the stored
+  -- vence is hoy−1+30 = hoy+29 and the balance is the package's own 12. That state is what makes the
+  -- anchor ambiguous: `vence − 30` recovers hoy−1, which is the sale's own fecha and NOT a base.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('EVP Fresca', '0000000034', 12, v_hoy_gym + 29, 'MENSUAL 12', gym_a) returning id into c_fresca;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c_fresca, 7215, 'MENSUAL 12', 12, 'dias', 30, 1200, 'efectivo',
+            ((v_hoy_gym - 1)::timestamp + interval '12 hours') at time zone v_tz, now() - interval '1 day')
+    returning id into v_fresca;
+
+  -- ── S14: a GENUINELY STACKED sale. The member's PRIOR package ended on B = hoy−3 carrying 2 clases;
+  -- this sale (8 clases / 20 días) was bought 6 days ago, while that base was still live, so registrar
+  -- wrote `max(B, fecha) + 20` = B + 20 = hoy+17 and 2 + 8 = 10 clases. Here `vence − 20` = B really IS
+  -- the base, recovered exactly — and B is in the PAST, which is what makes the "re-anchor past B" arm
+  -- reachable at all (a future B could never be passed: p_fecha may not be future).
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('EVP Apilada', '0000000035', 10, v_hoy_gym + 17, '8 CLASES', gym_a) returning id into c_apilada;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c_apilada, 7216, '8 CLASES', 8, 'dias', 20, 750, 'efectivo',
+            ((v_hoy_gym - 6)::timestamp + interval '12 hours') at time zone v_tz, now() - interval '6 days')
+    returning id into v_apilada;
+
   perform set_config('t.gym_a',    gym_a::text,    true);
   perform set_config('t.gym_b',    gym_b::text,    true);
   perform set_config('t.op_a',     op_a::text,     true);
@@ -257,6 +308,10 @@ begin
   perform set_config('t.c12', c12::text, true); perform set_config('t.v12', v12::text, true);
   perform set_config('t.c13', c13::text, true); perform set_config('t.v13', v13::text, true);
                                                 perform set_config('t.v14', v14::text, true);
+  perform set_config('t.c_fresca',  c_fresca::text,  true);
+  perform set_config('t.v_fresca',  v_fresca::text,  true);
+  perform set_config('t.c_apilada', c_apilada::text, true);
+  perform set_config('t.v_apilada', v_apilada::text, true);
 
   -- S1's whole-row snapshot MINUS the eight columns the swap may write. The assertion re-computes it
   -- and demands jsonb equality: a column this suite never names by hand still cannot move unnoticed.
@@ -479,11 +534,16 @@ begin
   end if;
 end $$;
 
--- ══ S5a — FECHA-ONLY RE-DERIVE, still vigente at the new day: an exact IDENTITY ══════════════════════
--- The algebra: new_vence = fecha_dia + (base_vence − fecha_dia) + dias_old = base_vence + dias_old =
--- the vence it started with, and the balance comes back as base + the same grant. This is WHY
--- editar_venta_rules.sql's VF1/VF5 keep passing under ruling 1 — "vence follows fecha" only MOVES the
--- vigencia when the clawed-back base would have expired before the new day (S5b).
+-- ══ S5a — FECHA-ONLY RE-DERIVE of a STACKED sale, still vigente at the new day: an exact IDENTITY ════
+-- The fixture is a sale bought while the member was vigente: vence +40 against a 20-día sale sold on
+-- day −10, so the clawback recovers a base ending +20 — a real day, 30 days after the purchase, so the
+-- anchor test (`anchor > the sale's own fecha`, migration 20260815130000) resolves it as a STACK and
+-- carries it. The algebra then cancels the start day: new_vence = fecha_dia + (base_vence − fecha_dia)
+-- + dias_old = base_vence + dias_old = the vence it started with, and the balance comes back as
+-- base + the same grant. That is why editar_venta_rules.sql's VF1/VF5 keep passing under ruling 1 —
+-- their fixtures stack too. It is NOT a general rule about fecha edits: on a FRESH sale the same call
+-- moves vence to `fecha_nueva + días` (S13), and on a stacked sale whose base is already behind the new
+-- day it restarts (S5b).
 set local role authenticated;
 do $$
 declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
@@ -512,19 +572,23 @@ begin
     raise exception 'S5a FAIL: clases_restantes = % (expected 10 — the clawback + re-grant round trip is an IDENTITY when nothing clamps)', cli.clases_restantes;
   end if;
   if cli.vence is distinct from current_date + 40 then
-    raise exception 'S5a FAIL: vence = % (expected current_date + 40, unchanged — the start day cancels out of the stacking algebra while the base has not expired)', cli.vence;
+    raise exception 'S5a FAIL: vence = % (expected current_date + 40, unchanged — this sale STACKED on a base ending +20 and the start day cancels out of the algebra while that base is still ahead of the new day; a fresh sale would move, see S13)', cli.vence;
   end if;
   if cli.paquete_nombre is distinct from '8 CLASES' then
     raise exception 'S5a FAIL: cliente paquete_nombre = % (expected 8 CLASES — the re-stamp resolves to the same sale''s own name)', cli.paquete_nombre;
   end if;
 end $$;
 
--- ══ S5b — FECHA-ONLY RE-DERIVE past the clawed-back vence: registrar's expired-restart discard ═══════
--- The cliente's vence is +2 and the sale granted 20 días, so the post-clawback base expired 18 days
--- ago — before the requested day. registrar_venta discards an expired base entirely (base_dias := 0,
--- base_clases := 0), so the sale RESTARTS the member: exactly its own clases, and its own días from the
--- new start. This is the non-identity half of "vence follows fecha", and it bites exactly where
--- registrar's own C9 rule bites.
+-- ══ S5b — FECHA-ONLY RE-DERIVE with nothing to carry: registrar's expired-restart discard ═══════════
+-- The cliente's vence is +2 against a 20-día sale sold on day −1, so `vence − días` lands on day −18 —
+-- BEFORE the sale's own fecha. Two independent reasons then discard it, and the vector is happy with
+-- either: 20260815130000's anchor test refuses to read a day earlier than the purchase as a base at all
+-- (no live base ⇒ nothing to carry), and the day is in any case behind the requested one, which is
+-- registrar's own C9 expiry. So the sale RESTARTS the member: exactly its own clases, and its own días
+-- from the new start. Note the fixture's stored state is one registrar could never have written
+-- (a 20-día sale on day −1 leaves vence ≥ +19) — it is a POLLUTED row, of the shape the pre-ruling
+-- attribution-only fecha edits left behind, and the restart is exactly the self-healing 20260815130000's
+-- header promises for them.
 set local role authenticated;
 do $$
 declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
@@ -980,6 +1044,112 @@ begin
   select to_jsonb(c.*) into c_now from public.clientes c where c.id = current_setting('t.c13', true)::uuid;
   if c_now is distinct from c_all then
     raise exception 'S12 FAIL: a monto/metodo-only edit of a non-latest sale touched the cliente. before = % / after = %', c_all, c_now;
+  end if;
+end $$;
+
+-- ══ S13 — THE LIVE REPRO: a FRESH sale's vence FOLLOWS ITS FECHA ════════════════════════════════════
+-- The fixture is the shape the owner hit on live: ONE sale, 12 clases / 30 días, sold yesterday to a
+-- member with no prior vigencia, so registrar wrote vence = (hoy−1) + 30 = hoy+29 and the balance is
+-- the package's own 12. Moving the sold day back 3 days must move the vigencia with it:
+--
+--   anchor      = vence − días = (hoy+29) − 30 = hoy−1  → equals the sale's OWN fecha, so it is NOT a
+--                 base: nothing was carried, the sale started the run (20260815130000's anchor test)
+--   base_dias   = 0, base_clases = 0                     (registrar's restart arm)
+--   new_vence   = (hoy−4) + 0 + 30 = hoy+26
+--   new_clases  = 0 + 12 = 12
+--
+-- Against 20260815120000 the same call returns hoy+29 — it read hoy−1 as a base, carried a phantom
+-- 3 days (`hoy−1 − (hoy−4)`) and cancelled the new fecha straight back out of the algebra. THAT is the
+-- defect this vector exists for; it is the only vector in the file whose fixture is a fresh sale.
+set local role authenticated;
+do $$
+declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  perform public.editar_venta(current_setting('t.v_fresca', true)::uuid, 1200, 'efectivo',
+                              p_fecha := v_hoy - 4);
+end $$;
+reset role;
+do $$
+declare
+  rec        record;
+  cli        record;
+  v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
+  v_esperado timestamptz := ((v_hoy - 4)::timestamp + interval '12 hours')
+                            at time zone current_setting('t.tz', true);
+begin
+  select * into rec from public.ventas where id = current_setting('t.v_fresca', true)::uuid;
+  if rec.fecha is distinct from v_esperado then
+    raise exception 'S13 FAIL: fecha = % (expected % — midday gym-tz on the requested day)', rec.fecha, v_esperado;
+  end if;
+  if rec.clases is distinct from 12 or rec.vigencia_dias is distinct from 30 then
+    raise exception 'S13 FAIL: the package facts moved on a fecha-only call (clases=%, dias=%)', rec.clases, rec.vigencia_dias;
+  end if;
+
+  select * into cli from public.clientes where id = current_setting('t.c_fresca', true)::uuid;
+  if cli.vence is distinct from v_hoy + 26 then
+    raise exception 'S13 FAIL: vence = % (expected % — the new sold day + the sale''s own 30 días. % means the re-derive read `vence − días` as a BASE and cancelled the new fecha back out — the 20260815120000 defect, a fecha edit that moves nothing)',
+      cli.vence, v_hoy + 26, v_hoy + 29;
+  end if;
+  if cli.clases_restantes is distinct from 12 then
+    raise exception 'S13 FAIL: clases_restantes = % (expected 12 — a restart re-grants the sale''s own count, nothing carried)', cli.clases_restantes;
+  end if;
+end $$;
+
+-- ══ S14 — THE OTHER SIDE: a GENUINELY STACKED sale keeps its carry, and re-anchors past it ══════════
+-- The member's PRIOR package ended on B = hoy−3 carrying 2 clases; this sale (8 clases / 20 días) was
+-- bought 6 days ago while that base was still live, so registrar wrote max(B, hoy−6) + 20 = hoy+17 and
+-- 2 + 8 = 10 clases. Here `vence − días` = hoy−3 = B is a REAL base (it is later than the sale's own
+-- day), and the anchor test recovers it exactly.
+--
+-- (a) fecha hoy−6 → hoy−5, still on/before B: base_dias = (hoy−3) − (hoy−5) = 2, so
+--     new_vence = (hoy−5) + 2 + 20 = hoy+17 — UNCHANGED, and correctly so: the carry ends at B whatever
+--     day the member paid. This is the ONLY legal way for a fecha edit to leave vence alone (S13 is the
+--     other reading, and it must move).
+set local role authenticated;
+do $$
+declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  perform public.editar_venta(current_setting('t.v_apilada', true)::uuid, 750, 'efectivo',
+                              p_fecha := v_hoy - 5);
+end $$;
+reset role;
+do $$
+declare
+  cli   record;
+  v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  select * into cli from public.clientes where id = current_setting('t.c_apilada', true)::uuid;
+  if cli.vence is distinct from v_hoy + 17 then
+    raise exception 'S14a FAIL: vence = % (expected % — the recovered base ends on hoy−3 and is still ahead of the new sold day, so the carry, not the purchase day, sets the end)', cli.vence, v_hoy + 17;
+  end if;
+  if cli.clases_restantes is distinct from 10 then
+    raise exception 'S14a FAIL: clases_restantes = % (expected 10 — the carried 2 plus the sale''s own 8, an identity while the base is live)', cli.clases_restantes;
+  end if;
+end $$;
+
+-- (b) fecha hoy−5 → hoy−1, PAST B: the base (hoy−3) is behind the new day, registrar's discard fires,
+--     and the sale re-anchors — new_vence = (hoy−1) + 20 = hoy+19, balance = the sale's own 8. The
+--     stored state is still consistent (anchor `vence − días` = hoy−1 = the fecha), so a further
+--     re-derive reads it as the restart it now is.
+set local role authenticated;
+do $$
+declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  perform public.editar_venta(current_setting('t.v_apilada', true)::uuid, 750, 'efectivo',
+                              p_fecha := v_hoy - 1);
+end $$;
+reset role;
+do $$
+declare
+  cli   record;
+  v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  select * into cli from public.clientes where id = current_setting('t.c_apilada', true)::uuid;
+  if cli.vence is distinct from v_hoy + 19 then
+    raise exception 'S14b FAIL: vence = % (expected % — the carried base ended on hoy−3, before the new sold day, so it is discarded and the vigencia re-anchors on that day)', cli.vence, v_hoy + 19;
+  end if;
+  if cli.clases_restantes is distinct from 8 then
+    raise exception 'S14b FAIL: clases_restantes = % (expected 8 — a discarded base carries no clases either, registrar''s own restart)', cli.clases_restantes;
   end if;
 end $$;
 

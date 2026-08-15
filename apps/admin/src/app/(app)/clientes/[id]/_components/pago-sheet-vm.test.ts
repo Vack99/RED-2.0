@@ -207,78 +207,111 @@ describe("rederivaSaldo — mirrors editar_venta's v_cambio_grant OR v_cambio_fe
   });
 });
 
+/**
+ * previewRederivarVenta's two fixture families — the SAME shapes editar_venta_paquete.sql
+ * seeds, because the preview must render what the RPC will write.
+ *
+ * FRESCA: a fresh sale on 2026-08-01 of 8 clases / 20 días to a member with no live vigencia.
+ *   `registrar_venta` wrote vence = 08-01 + 20 = 08-21 — so `vence − días` lands back on the
+ *   sale's OWN day, which is an anchor and not a base (migration 20260815130000). Nothing is
+ *   carried; the correction restarts the run.
+ * APILADA: the same sale bought while a prior package was still live, ending B = 08-06 with 2
+ *   clases left. registrar wrote max(B, 08-01) + 20 = 08-26 and 2 + 8 = 10 clases, so here
+ *   `vence − días` = 08-06 IS a base — it is later than the sale's own day — and is carried.
+ */
+const FRESCA = {
+  clasesRestantes: 8,
+  vence: "2026-08-21",
+  viejo: { clases: 8, dias: 20 },
+  nuevo: { clases: 8, dias: 20 },
+  fechaOriginalIso: "2026-08-01",
+  fechaIso: "2026-08-01",
+};
+const APILADA = {
+  clasesRestantes: 10,
+  vence: "2026-08-26",
+  viejo: { clases: 8, dias: 20 },
+  nuevo: { clases: 8, dias: 20 },
+  fechaOriginalIso: "2026-08-01",
+  fechaIso: "2026-08-01",
+};
+
 describe("previewRederivarVenta — mirrors editar_venta §1.2 steps 14-15 exactly", () => {
-  it("is an exact identity when nothing clamps (D0.4's own worked example: balance 3, old grant 8, new grant 8)", () => {
+  it("THE LIVE REPRO: a FRESH sale's vence follows its fecha — 12 clases / 30 días moved back 3 days lands on fecha + 30, not on the old vence", () => {
+    // The owner's own case (2026-08-15): one 30-día sale, cliente vence 13 sep, the sold day
+    // moved 14 ago → 11 ago. anchor = 09-13 − 30 = 08-14 = the sale's own day ⇒ no base ⇒
+    // vence = 08-11 + 30 = 09-10. Reading that anchor as a base returned 13 sep every time —
+    // `fecha + (anchor − fecha) + días` cancels the corrected date straight back out.
     expect(
       previewRederivarVenta({
-        clasesRestantes: 3,
-        vence: "2026-08-21",
-        viejo: { clases: 8, dias: 20 },
-        nuevo: { clases: 8, dias: 20 },
-        fechaIso: "2026-08-01",
-      }),
-    ).toBe("El saldo se recalcula: quedará en 3 clases · vence 21 ago.");
-  });
-
-  it("clamps only the FINAL number, not the intermediate (D0.4 S3: balance 3, old grant 8, swap to 12 → 7, not 12)", () => {
-    expect(
-      previewRederivarVenta({
-        clasesRestantes: 3,
-        vence: "2026-08-21",
-        viejo: { clases: 8, dias: 20 },
+        clasesRestantes: 12,
+        vence: "2026-09-13",
+        viejo: { clases: 12, dias: 30 },
         nuevo: { clases: 12, dias: 30 },
-        fechaIso: "2026-08-01",
+        fechaOriginalIso: "2026-08-14",
+        fechaIso: "2026-08-11",
       }),
-    ).toBe("El saldo se recalcula: quedará en 7 clases · vence 31 ago.");
+    ).toBe("El saldo se recalcula: quedará en 12 clases · vence 10 sep.");
   });
 
-  it("floors the final number at zero, never negative (D0.4 S4: balance 3, old grant 8, swap to 4 → 0)", () => {
-    expect(
-      previewRederivarVenta({
-        clasesRestantes: 3,
-        vence: "2026-08-21",
-        viejo: { clases: 8, dias: 20 },
-        nuevo: { clases: 4, dias: 10 },
-        fechaIso: "2026-08-01",
-      }),
-    ).toBe("El saldo se recalcula: quedará en 0 clases · vence 11 ago.");
+  it("re-grants a FRESH sale's swap from the package alone — nothing to carry, so vence moves by the días delta", () => {
+    // 3 of 8 left (5 trained), swapped to 12 / 30 días with the sold day untouched. The restart
+    // re-grants the new package's own 12 — registrar's own behaviour at a day with no live
+    // vigencia, and the same discard editar_venta_paquete.sql S5b already pinned.
+    expect(previewRederivarVenta({ ...FRESCA, clasesRestantes: 3, nuevo: { clases: 12, dias: 30 } })).toBe(
+      "El saldo se recalcula: quedará en 12 clases · vence 31 ago.",
+    );
   });
 
-  it("discards the base entirely once the base vence is behind the re-grant date (D0.9's expired-restart)", () => {
-    expect(
-      previewRederivarVenta({
-        clasesRestantes: 3,
-        // base vence (vence − viejo.dias) lands on 2026-08-01, BEFORE the re-grant date below.
-        vence: "2026-08-21",
-        viejo: { clases: 8, dias: 20 },
-        nuevo: { clases: 8, dias: 20 },
-        fechaIso: "2026-08-15",
-      }),
-    ).toBe("El saldo se recalcula: quedará en 8 clases · vence 4 sep.");
+  it("is an exact identity on a STACKED sale whose fecha moves while the carried base is still ahead of it", () => {
+    // base 08-06 carried from 07-29: baseDias = 8, so vence = 07-29 + 8 + 20 = 08-26, unmoved.
+    // The carry ends at B whatever day the member paid — the ONE legal way for a fecha edit to
+    // leave the vigencia alone (editar_venta_paquete.sql S14a).
+    expect(previewRederivarVenta({ ...APILADA, fechaIso: "2026-07-29" })).toBe(
+      "El saldo se recalcula: quedará en 10 clases · vence 26 ago.",
+    );
+  });
+
+  it("re-anchors a STACKED sale once its fecha moves PAST the carried base (D0.9's expired-restart)", () => {
+    // 08-10 is behind B = 08-06, so the base is discarded: 0 + 8 clases, vence = 08-10 + 20.
+    expect(previewRederivarVenta({ ...APILADA, fechaIso: "2026-08-10" })).toBe(
+      "El saldo se recalcula: quedará en 8 clases · vence 30 ago.",
+    );
+  });
+
+  it("clamps only the FINAL number, not the intermediate (D0.4 S3: base 3 − 8 = −5, swap to 12 → 7, not 12)", () => {
+    // Over-consumed on a STACKED sale — the one shape where the clawback's intermediate can go
+    // negative at all (a restart zeroes it). baseDias = 08-06 − 08-01 = 5 ⇒ vence = 08-01+5+30.
+    expect(previewRederivarVenta({ ...APILADA, clasesRestantes: 3, nuevo: { clases: 12, dias: 30 } })).toBe(
+      "El saldo se recalcula: quedará en 7 clases · vence 5 sep.",
+    );
+  });
+
+  it("floors the final number at zero, never negative (D0.4 S4: −5 + 4 → 0)", () => {
+    expect(previewRederivarVenta({ ...APILADA, clasesRestantes: 3, nuevo: { clases: 4, dias: 10 } })).toBe(
+      "El saldo se recalcula: quedará en 0 clases · vence 16 ago.",
+    );
+  });
+
+  it("self-heals a row an attribution-only fecha edit left inconsistent (anchor BEFORE the sale's own day)", () => {
+    // Before ruling 1, moving `fecha` wrote no saldo, so a stored row can have anchor < fecha —
+    // a state registrar can never produce. It reads as "no live base" and the vigencia
+    // re-anchors on the corrected day: 08-03 + 20 = 08-23.
+    expect(previewRederivarVenta({ ...FRESCA, fechaOriginalIso: "2026-08-05", fechaIso: "2026-08-03" })).toBe(
+      "El saldo se recalcula: quedará en 8 clases · vence 23 ago.",
+    );
   });
 
   it("drops the clases fragment when the NEW package is itself ilimitado", () => {
-    expect(
-      previewRederivarVenta({
-        clasesRestantes: 5,
-        vence: "2026-08-21",
-        viejo: { clases: 8, dias: 20 },
-        nuevo: { clases: null, dias: 20 },
-        fechaIso: "2026-08-01",
-      }),
-    ).toBe("El saldo se recalcula: vence 21 ago.");
+    expect(previewRederivarVenta({ ...FRESCA, clasesRestantes: 5, nuevo: { clases: null, dias: 20 } })).toBe(
+      "El saldo se recalcula: vence 21 ago.",
+    );
   });
 
   it("does NOT drop the clases fragment for an ilimitado CURRENT balance swapping onto a finite package", () => {
-    expect(
-      previewRederivarVenta({
-        clasesRestantes: null,
-        vence: "2026-08-21",
-        viejo: { clases: 8, dias: 20 },
-        nuevo: { clases: 12, dias: 15 },
-        fechaIso: "2026-08-01",
-      }),
-    ).toBe("El saldo se recalcula: quedará en 12 clases · vence 16 ago.");
+    expect(previewRederivarVenta({ ...FRESCA, clasesRestantes: null, nuevo: { clases: 12, dias: 15 } })).toBe(
+      "El saldo se recalcula: quedará en 12 clases · vence 16 ago.",
+    );
   });
 });
 
