@@ -70,8 +70,9 @@ export const crearVentaSchema = z
     forzarNuevo: z.boolean().optional(),
     // Backdated sold date (spec D1) — a gym-local "YYYY-MM-DD" day, past-only. Absent /
     // undefined ⇒ a normal today-sale. Format-checked here for a fast local failure; the
-    // four real bounds (no future, 30-day cap, ≥ alta, no dead-on-arrival) are the RPC's
-    // (the trust boundary — it alone knows the gym tz + today + the client's created_at).
+    // real bounds (no future, 30-day cap, no dead-on-arrival) are the RPC's (the trust
+    // boundary — it alone knows the gym tz + today). The alta floor was DROPPED (owner
+    // ruling 2026-08-14): a sale's fecha may predate the client's alta.
     fechaInicio: z
       .string()
       .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha de inicio inválida")
@@ -391,12 +392,11 @@ const VENTA_REFUSALS: readonly string[] = [
   "Método inválido",
   "Monto inválido",
   "La venta ya no se puede eliminar",
-  // `editar_venta`'s three date bounds. Reachable from the correction sheet now that it sends a
+  // `editar_venta`'s two date bounds. Reachable from the correction sheet now that it sends a
   // corrected `fecha`: the picker mirrors these bounds, but its `hoy` is a render-time read, so a
   // sheet left open across midnight can still send a day the RPC now refuses — advice, not a crash.
   "La fecha de inicio no puede ser futura",
   "La fecha de inicio no puede tener más de 30 días de antigüedad",
-  "La fecha de inicio es anterior al alta del cliente",
 ];
 
 /** An RPC refusal the operator can act on, typed so the server action can map exactly THIS to

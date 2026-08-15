@@ -106,12 +106,11 @@ export function VenderScreen({
   const paq = sel && !esCustom ? (paquetes.find((p) => p.id === sel) ?? null) : null;
   const vigenciaEnd = paq?.hasta ?? null;
 
-  // Backdate resolution (spec D6). `altaIso` is null for a NUEVO sale — only the 30-day
-  // floor applies there (the RPC exempts a client born in the same txn). The effective
-  // date is what the label, preview, confirm and submit all read.
-  const altaIso = existing?.altaIso ?? null;
-  const inicioMin = inicioMinIso(hoyGym, altaIso);
-  const { iso: inicioIso, backdate: esBackdate } = inicioEfectivo(inicioPick, hoyGym, altaIso);
+  // Backdate resolution (spec D6). The alta floor was DROPPED (owner ruling 2026-08-14): only
+  // the 30-day cap applies, NEW or EXISTENTE alike. The effective date is what the label,
+  // preview, confirm and submit all read.
+  const inicioMin = inicioMinIso(hoyGym);
+  const { iso: inicioIso, backdate: esBackdate } = inicioEfectivo(inicioPick, hoyGym);
   const hoyGymDate = parseDay(hoyGym);
 
   // The custom package's expiry, derived in the GYM's timezone from the typed `dias`.

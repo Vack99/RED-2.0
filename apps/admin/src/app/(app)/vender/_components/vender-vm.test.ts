@@ -38,24 +38,11 @@ describe("telError — inline NUEVO phone error (#48)", () => {
   });
 });
 
-describe("inicioMinIso — the backdate picker floor (spec D6)", () => {
+describe("inicioMinIso — the backdate picker floor (spec D6; alta floor dropped 2026-08-14)", () => {
   const HOY = "2026-07-14";
 
-  it("is today − 30 for a NUEVO sale (no alta yet)", () => {
-    expect(inicioMinIso(HOY, null)).toBe("2026-06-14");
-  });
-
-  it("is today − 30 when the client's alta is older than the 30-day cap", () => {
-    expect(inicioMinIso(HOY, "2026-01-01")).toBe("2026-06-14");
-  });
-
-  it("raises to the alta when the client was created inside the 30-day window", () => {
-    expect(inicioMinIso(HOY, "2026-07-10")).toBe("2026-07-10");
-  });
-
-  it("uses the alta exactly on the boundary day", () => {
-    expect(inicioMinIso(HOY, "2026-06-14")).toBe("2026-06-14"); // == floor, either is fine
-    expect(inicioMinIso(HOY, "2026-06-15")).toBe("2026-06-15"); // one day inside → alta wins
+  it("is always today − 30, NEW or EXISTENTE alike (the alta floor was dropped)", () => {
+    expect(inicioMinIso(HOY)).toBe("2026-06-14");
   });
 });
 
@@ -63,24 +50,19 @@ describe("inicioEfectivo — clamp the pick + report backdate (spec D6)", () => 
   const HOY = "2026-07-14";
 
   it("today's pick is not a backdate", () => {
-    expect(inicioEfectivo(HOY, HOY, null)).toEqual({ iso: HOY, backdate: false });
+    expect(inicioEfectivo(HOY, HOY)).toEqual({ iso: HOY, backdate: false });
   });
 
   it("an in-range past pick is a backdate", () => {
-    expect(inicioEfectivo("2026-07-01", HOY, null)).toEqual({ iso: "2026-07-01", backdate: true });
+    expect(inicioEfectivo("2026-07-01", HOY)).toEqual({ iso: "2026-07-01", backdate: true });
   });
 
   it("a future pick reverts to today (never a forward-dated sale)", () => {
-    expect(inicioEfectivo("2026-07-20", HOY, null)).toEqual({ iso: HOY, backdate: false });
-  });
-
-  it("a pick below the alta floor reverts to today (client changed after picking)", () => {
-    // alta 10 jul raises the floor; a 05-jul pick is now out of range → today.
-    expect(inicioEfectivo("2026-07-05", HOY, "2026-07-10")).toEqual({ iso: HOY, backdate: false });
+    expect(inicioEfectivo("2026-07-20", HOY)).toEqual({ iso: HOY, backdate: false });
   });
 
   it("a pick past the 30-day cap reverts to today", () => {
-    expect(inicioEfectivo("2026-05-01", HOY, null)).toEqual({ iso: HOY, backdate: false });
+    expect(inicioEfectivo("2026-05-01", HOY)).toEqual({ iso: HOY, backdate: false });
   });
 });
 

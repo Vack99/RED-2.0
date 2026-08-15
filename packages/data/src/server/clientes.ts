@@ -46,10 +46,6 @@ export interface ClienteLiteDTO {
   email: string | null;
   /** Derived invite state + es-MX badge for the picker (ADR-0015). */
   invitacion: InvitacionDerivada;
-  /** The client's alta day as a gym-tz "YYYY-MM-DD" (from created_at) — the floor for
-   *  the Vender backdate picker (spec D6: min = max(today−30, alta); a sale can never
-   *  predate the client). The RPC is the real bound; this only constrains the calendar. */
-  altaIso: string;
   /** True when the member has never had a sale (#77) — the Vender preselect /
    *  picker marks it PRIMERA COMPRA and the receipt snapshots it. Precomputed via
    *  the ventas_count_por_cliente RPC (a grouped DB-side count, run once per read
@@ -91,7 +87,6 @@ export const getClientesLite = cache(
       paqueteLabel: c.paquete_nombre ?? "Sin paquete",
       email: c.email,
       invitacion: derivarInvitacion(c, tz),
-      altaIso: toIsoDay(fechaEnZona(c.created_at, tz)),
       primeraCompra: esPrimeraCompra(ventasPorCliente.get(c.id) ?? 0),
     }));
   },
@@ -153,11 +148,6 @@ const FICHA_VENTANA_DIAS = 30;
  *  `veredicto`, never as flat siblings a screen could read instead. */
 export interface ClienteRosterDTO extends ClienteDerivado {
   invitacion: InvitacionDerivada;
-  /** The client's alta day as a gym-tz "YYYY-MM-DD" (from created_at) — the Vender
-   *  backdate floor, mirroring getClientesLite's altaIso (same column, same
-   *  conversion). The ausente clock's own alta floor lives inside the veredicto;
-   *  this field is the picker's bound. */
-  altaIso: string;
 }
 
 /** The exact column list both roster reads select — named once so the two windows
@@ -215,7 +205,6 @@ function mapearRoster(
         alta: altaIso,
       }),
       invitacion: derivarInvitacion(c, tz),
-      altaIso,
     };
   });
 }

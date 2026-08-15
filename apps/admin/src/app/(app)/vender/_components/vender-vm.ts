@@ -80,31 +80,24 @@ export const LIMITES = {
 export const BACKDATE_MAX_DIAS = 30;
 
 /**
- * The earliest sold date the backdate picker allows — `max(today − 30, the client's alta)`,
- * as a gym-tz "YYYY-MM-DD". `altaIso` is the existing client's creation day; pass `null` for a
- * NUEVO sale (no alta yet — the RPC exempts a client created in the same txn, so only the
- * 30-day floor applies). Mirrors the RPC's bound 2 (cap) + bound 3 (≥ alta); the RPC is the
- * trust boundary, this only keeps an out-of-range day untappable.
+ * The earliest sold date the backdate picker allows — `today − 30`, as a gym-tz "YYYY-MM-DD".
+ * Mirrors the RPC's own cap; the RPC is the trust boundary, this only keeps an out-of-range
+ * day untappable. The alta floor was DROPPED (owner ruling 2026-08-14): a sale's fecha may
+ * predate the client's alta, at both doors.
  */
-export function inicioMinIso(hoyIso: string, altaIso: string | null): string {
-  const floor = toIsoDay(addDays(parseDay(hoyIso), -BACKDATE_MAX_DIAS));
-  // ISO "YYYY-MM-DD" compares lexicographically == chronologically.
-  return altaIso && altaIso > floor ? altaIso : floor;
+export function inicioMinIso(hoyIso: string): string {
+  return toIsoDay(addDays(parseDay(hoyIso), -BACKDATE_MAX_DIAS));
 }
 
 /**
  * Clamp a picked sold date into `[inicioMin, hoy]` and report whether it is a real backdate.
- * The stored pick can fall out of range when the operator changes the selected client after
- * picking a date (a later alta raises the floor); rather than reset it eagerly at every client
- * set-site, the effective date silently reverts to today, so the label, preview, confirm line
- * and submit all agree on what will actually be sent.
+ * Defensive: `inicioPick` is UI-bounded to this same range, but a sheet left open across
+ * midnight can leave a stale pick outside it once `hoy` advances — the effective date silently
+ * reverts to today, so the label, preview, confirm line and submit all agree on what will
+ * actually be sent.
  */
-export function inicioEfectivo(
-  pickIso: string,
-  hoyIso: string,
-  altaIso: string | null,
-): { iso: string; backdate: boolean } {
-  const min = inicioMinIso(hoyIso, altaIso);
+export function inicioEfectivo(pickIso: string, hoyIso: string): { iso: string; backdate: boolean } {
+  const min = inicioMinIso(hoyIso);
   const iso = pickIso >= min && pickIso <= hoyIso ? pickIso : hoyIso;
   return { iso, backdate: iso !== hoyIso };
 }

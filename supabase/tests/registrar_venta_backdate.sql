@@ -9,16 +9,18 @@
 -- (v_inicio cancels), only fecha moves [B1]; (2) lapsed member backdated BEFORE the lapse —
 -- carries [B2]; (3) lapsed member backdated AFTER the lapse — forfeits [B3]; (4) backdate ON
 -- the old vence day — inclusive, leftovers carry [B6/C9]; (5) future date rejected [A2];
--- (6) over the flat-30 cap rejected [A3]; (7) before the client's alta rejected [A4];
--- (8) dead-on-arrival (computed vence < today) rejected [E2], via a short custom package —
--- also proving the bound threads the personalizado branch; (9) NEW client backdated — exempt
--- from the created_at bound, base = 0 [A4]; (10) a NON-backdated sale writes today's fecha
--- (the now() default is preserved byte-for-byte, D1).
+-- (6) over the flat-30 cap rejected [A3]; (7) before the client's alta ACCEPTED — the [A4] floor
+-- was dropped by the owner on 2026-08-14 (20260814130000); (8) dead-on-arrival (computed vence <
+-- today) rejected [E2], via a short custom package — also proving the bound threads the
+-- personalizado branch; (9) NEW client backdated, base = 0; (10) a NON-backdated sale writes
+-- today's fecha (the now() default is preserved byte-for-byte, D1).
 --
--- created_at matters here: the backdate-target clients are seeded with a PAST created_at (90d
--- ago), because a backdate before the client's own alta is bound 3 — a client created at the
--- test-txn now() could only be backdated to today. cli_recent (created 5d ago) is the bound-3
--- fixture; the new-client vectors exercise the exempt path.
+-- The [A4] alta floor is GONE from both doors: gyms register walk-ins late, so `clientes.created_at`
+-- is a data-entry stamp rather than the day the member arrived, and the floor refused exactly the
+-- forgotten sale backdating exists for. The two surviving date bounds are the not-future guard [A2]
+-- and the flat-30 window [A3]. cli_recent (created 5d ago) is now V7's ACCEPTANCE fixture; the
+-- backdate-target clients keep their 90d-old created_at because their stacking math, not a floor,
+-- is what the vectors read.
 --
 -- Zero prod UUIDs (ADR-0013 §5): a synthetic gym + operator + catalog, all gen_random_uuid().
 -- One BEGIN/ROLLBACK so a scratch project is REUSABLE. Self-asserting: every check RAISEs on
@@ -53,7 +55,7 @@ begin
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
     values (gym_bd, '8 clases 30d', 8, 'dias', 30, 850) returning id into p_fin8_30;
 
-  -- Backdate-target clients — created 90 days ago so a within-30 backdate never trips bound 3.
+  -- Backdate-target clients — created 90 days ago, the ordinary long-standing-member shape.
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at) values
     (gym_bd, 'BD Active',   '6300000001', 5, v_today + 10, '8 clases 20d', now() - interval '90 days') returning id into cli_active;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at) values
@@ -66,7 +68,7 @@ begin
     (gym_bd, 'BD Future',   '6300000005', 5, v_today + 10, '8 clases 20d', now() - interval '90 days') returning id into cli_future;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at) values
     (gym_bd, 'BD Cap',      '6300000006', 5, v_today + 10, '8 clases 20d', now() - interval '90 days') returning id into cli_cap;
-  -- cli_recent: created 5 days ago — the bound-3 fixture (a backdate before its alta must raise).
+  -- cli_recent: created 5 days ago — V7's fixture (a backdate before its alta must now be ACCEPTED).
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at) values
     (gym_bd, 'BD Recent',   '6300000007', 5, v_today + 10, '8 clases 20d', now() - interval '5 days') returning id into cli_recent;
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at) values
@@ -213,23 +215,33 @@ begin
   if n <> 0 then raise exception 'V6 FAIL: % ventas rows written (expected 0)', n; end if;
 end $$;
 
--- ══ V7 — before the client's alta (created 5d ago, backdate 10d) rejected [A4] ════════════════════════
+-- ══ V7 — before the client's alta (created 5d ago, backdate 10d) is ACCEPTED — the [A4] floor is gone ══
+-- Owner ruling 2026-08-14 (migration 20260814130000): a walk-in trains and pays before anyone types
+-- them into the system, so `clientes.created_at` dates the DATA ENTRY, not the membership — and the
+-- floor refused precisely the late-registered sale backdating exists to record. This vector is the
+-- former refusal, inverted: the sale must land, with the ordinary stacking math and written fecha, and
+-- the two surviving bounds (V5 future, V6 flat-30) still refuse on their own.
 do $$
 declare
   ci uuid := current_setting('t.cli_recent', true)::uuid;
   today date := (now() at time zone 'America/Mexico_City')::date;
   k uuid := gen_random_uuid();
-  got boolean := false; msg text; n int;
+  c record; v record; v_dia date; v_alta date;
 begin
-  begin
-    perform public.registrar_venta(
-      p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
-      p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 10);
-  exception when others then got := true; msg := sqlerrm; end;
-  if not got then raise exception 'V7 FAIL: a backdate before the client alta was accepted'; end if;
-  if msg is distinct from 'La fecha de inicio es anterior al alta del cliente' then raise exception 'V7 FAIL: wrong error (%)', msg; end if;
-  select count(*) into n from public.ventas where idempotency_key = k;
-  if n <> 0 then raise exception 'V7 FAIL: % ventas rows written (expected 0)', n; end if;
+  perform public.registrar_venta(
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+    p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 10);
+  select clases_restantes, vence into c from public.clientes where id = ci;
+  -- base_dias = (today+10) - (today-10) = 20 (carries); +20 pack ⇒ vence = (today-10)+40 = today+30.
+  if c.clases_restantes is distinct from 13 then raise exception 'V7 FAIL: clases % (expected 5 + 8 = 13)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 30 then raise exception 'V7 FAIL: vence % (expected today+30)', c.vence; end if;
+  select fecha, monto into v from public.ventas where idempotency_key = k;
+  if v.monto is distinct from 800 then raise exception 'V7 FAIL: monto % (expected 800 — the sale row must be written)', v.monto; end if;
+  v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
+  if v_dia is distinct from today - 10 then raise exception 'V7 FAIL: ventas.fecha gym-tz day % (expected today-10, before the alta and legal)', v_dia; end if;
+  -- The ruling drops a READ of the alta; it never rewrites one.
+  select (created_at at time zone 'America/Mexico_City')::date into v_alta from public.clientes where id = ci;
+  if v_alta is distinct from today - 5 then raise exception 'V7 FAIL: cliente created_at day % (expected today-5, untouched by the sale)', v_alta; end if;
 end $$;
 
 -- ══ V8 — dead-on-arrival (computed vence < today) rejected [E2], via a short CUSTOM package ═════════════
@@ -257,7 +269,7 @@ begin
   end if;
 end $$;
 
--- ══ V9 — NEW client backdated 7d: exempt from the created_at bound, base = 0 [A4] ═════════════════════
+-- ══ V9 — NEW client backdated 7d: base = 0, and the sale still lands on the backdated day ════════════
 do $$
 declare
   today date := (now() at time zone 'America/Mexico_City')::date;

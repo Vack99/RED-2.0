@@ -38,7 +38,6 @@ const BASE: Omit<ClienteRosterDTO, "veredicto"> = {
   clasesRestLabel: "8",
   asistEsteMes: 3,
   invitacion: { estado: "sin_email", badge: "Sin email" },
-  altaIso: "2026-01-01",
 };
 
 function mk(

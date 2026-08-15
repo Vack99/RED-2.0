@@ -474,11 +474,6 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(desk.veredicto.ausencia).not.toBeNull();
     expect(online.veredicto.ausencia).not.toBeNull();
 
-    // #226 F5: altaIso is the badge's fallback anchor when ultimaVisita is null — same column/
-    // conversion as getClientesLite's altaIso, riding the existing select (zero extra reads).
-    expect(desk.altaIso).toBe("2026-06-15");
-    expect(online.altaIso).toBe("2026-05-01"); // 2026-05-02T05:00:00Z → 01 may in Chihuahua (UTC−6)
-
     // Perf (Fix 2): this month's attendance count comes from a grouped RPC in
     // Promise.all, not a whole-month asistencias row pull counted in JS.
     expect(fake.rpcCalls).toContainEqual(
@@ -518,7 +513,6 @@ describe("invite-state readers — claim_code is never selected nor exposed", ()
     expect(desk.email).toBe("ana@mail.com"); // for the NUEVO soft duplicate warn
     expect(desk.invitacion.badge).toBe("Invitada 7 jul");
     expect(desk.primeraCompra).toBe(false); // 3 ventas on record (RPC-supplied)
-    expect(desk.altaIso).toBe("2026-06-15"); // gym-tz alta day → backdate picker floor
 
     const online = lite.find((c) => c.id === "cli-online")!;
     expect(online.primeraCompra).toBe(true); // missing from the RPC result → 0 ventas

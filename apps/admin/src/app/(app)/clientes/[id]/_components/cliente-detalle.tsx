@@ -252,7 +252,6 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         clasesRestantes={ficha.clasesRestantes}
         vence={ficha.vence}
         hoyIso={ficha.hoyIso}
-        altaIso={ficha.altaIso}
       />
 
       {tel && (

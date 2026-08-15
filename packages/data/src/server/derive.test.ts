@@ -439,10 +439,9 @@ describe("shapeFicha", () => {
     expect(f.pagos[0].fechaIso).toBe("2026-05-20");
   });
 
-  it("derives altaIso as the gym-tz ISO day of created_at (payment-correction date-picker floor)", () => {
+  it("derives altaDisplay as the gym-tz day of created_at", () => {
     const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
     expect(f.altaDisplay).toBe("10 abr");
-    expect(f.altaIso).toBe("2026-04-10");
   });
 
   it("flags primeraCompra when the member has no ventas (#77)", () => {

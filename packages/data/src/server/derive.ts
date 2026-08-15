@@ -258,8 +258,8 @@ export interface FichaPago {
   metodo: "efectivo" | "transferencia" | "tarjeta";
   fecha: string;
   /** `fecha` as a gym-tz ISO day ("YYYY-MM-DD") — what the correction sheet's date picker seeds
-   *  from and compares against, since the raw `fecha` instant can't be compared to `hoyIso` /
-   *  `altaIso` without re-deriving the zone at the leaf. */
+   *  from and compares against, since the raw `fecha` instant can't be compared to `hoyIso`
+   *  without re-deriving the zone at the leaf. */
   fechaIso: string;
   clases: number | null;
   vigenciaTipo: "dias" | "mes";
@@ -359,11 +359,6 @@ export interface FichaDerivada {
   diasGauge: DiasGauge | null;
   compradoDisplay: string;
   altaDisplay: string;
-  /** The client's alta day as a gym-tz "YYYY-MM-DD" (from `created_at`) — the payment-correction
-   *  date picker's floor bound (mirrors `ClienteLiteDTO.altaIso` / the Vender backdate floor, same
-   *  column, same `fechaEnZona` + `toIsoDay` derivation). `hoyIso`, the picker's other bound, is
-   *  already on `ClienteFichaDTO` (the wrapper this feeds) — no second copy needed here. */
-  altaIso: string;
   /** Whether the member holds today's ACCESO LIBRE visit — the ONE row the ficha's
    *  2-arg toggle writes and undoes. A class visit never sets this (#89). */
   presentHoy: boolean;
@@ -475,7 +470,6 @@ export function shapeFicha(
   const compradoDisplay = latest ? fmtShort(fechaEnZona(latest.fecha, tz)) : "—";
   const altaDate = fechaEnZona(c.created_at, tz);
   const altaDisplay = fmtShort(altaDate);
-  const altaIso = toIsoDay(altaDate);
 
   const cliente = derivarCliente(c, ctx, asistencias.length, "no_leidas");
   const { clases: clasesRest, dias: diasRest } = cliente.veredicto;
@@ -529,7 +523,6 @@ export function shapeFicha(
     diasGauge,
     compradoDisplay,
     altaDisplay,
-    altaIso,
     presentHoy,
     horaHoy,
     clasesHoy,

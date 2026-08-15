@@ -43,7 +43,6 @@ export function PagoSheet({
   clasesRestantes,
   vence,
   hoyIso,
-  altaIso,
 }: {
   open: boolean;
   onClose: () => void;
@@ -57,8 +56,6 @@ export function PagoSheet({
   /** The gym's calendar day — the date picker's upper bound (never `new Date()`: that is the
    *  operator's timezone, not the gym's). */
   hoyIso: string;
-  /** The client's alta as a gym-tz ISO day — the picker's lower bound alongside the 30-day cap. */
-  altaIso: string;
 }) {
   const router = useRouter();
   const [modo, setModo] = React.useState<"detalle" | "editar" | "confirmar">("detalle");
@@ -101,7 +98,7 @@ export function PagoSheet({
   const fechaNueva = pago ? fechaEditada(pago.fechaIso, fecha) : undefined;
   const dirty = !!pago && (montoNum !== pago.monto || metodo !== pago.metodo || fechaNueva !== undefined);
   const canSave = !!pago && montoNum !== null && dirty && !busy;
-  const inicioMin = inicioMinIso(hoyIso, altaIso);
+  const inicioMin = inicioMinIso(hoyIso);
   // Render-time clock read, the agenda's `ahora` idiom (#238): this decides only what to SHOW,
   // and `eliminar_venta` re-checks the window server-side — so nothing refreshes it.
   const puedeEliminar = !!pago && dentroDeVentanaEliminar(pago.createdAt, new Date());
@@ -250,7 +247,7 @@ export function PagoSheet({
                   </div>
                   <div className="flex flex-col" style={{ gap: 8 }}>
                     <Eyebrow style={{ paddingLeft: 2 }}>FECHA</Eyebrow>
-                    {/* Same calendar and the same bounds as vender's backdate (not future, ≥ alta,
+                    {/* Same calendar and the same bounds as vender's backdate (not future,
                         ≤ 30 días back) — inline rather than a nested Sheet, which would fight this
                         one's scrim and Esc handler. */}
                     <div style={{ border: `1px solid ${calOpen ? "var(--yellow)" : "var(--line)"}`, transition: "border-color 140ms ease" }}>

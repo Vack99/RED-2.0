@@ -112,6 +112,7 @@ begin
   
   
   
+  
   if v_inicio > v_hoy then
     raise exception 'La fecha de inicio no puede ser futura';
   end if;
@@ -131,12 +132,6 @@ begin
       where c.id = p_cliente_id and c.gym_id = v_gym
       for update;
     if not found then raise exception 'Cliente no encontrado'; end if;
-
-    
-    
-    if v_inicio < (v_cli.created_at at time zone v_tz)::date then
-      raise exception 'La fecha de inicio es anterior al alta del cliente';
-    end if;
 
     
     

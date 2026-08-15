@@ -119,9 +119,8 @@ describe("fechaEditada — the sold date travels only when it CHANGED", () => {
 });
 
 describe("picker bounds — the SAME floor as vender's backdate", () => {
-  it("clamps to the later of the 30-day cap and the client's alta", () => {
-    expect(inicioMinIso("2026-08-14", "2026-01-01")).toBe("2026-07-15"); // old alta → the cap binds
-    expect(inicioMinIso("2026-08-14", "2026-08-10")).toBe("2026-08-10"); // recent alta binds instead
+  it("is always hoy − 30 (the alta floor was dropped, owner ruling 2026-08-14)", () => {
+    expect(inicioMinIso("2026-08-14")).toBe("2026-07-15");
   });
 });
 

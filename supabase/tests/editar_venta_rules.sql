@@ -45,10 +45,15 @@
 --   VF2 — a FUTURE fecha raises 'La fecha de inicio no puede ser futura' and writes nothing.
 --   VF3 — a fecha 31 days back raises 'La fecha de inicio no puede tener más de 30 días de antigüedad'
 --        and writes nothing.
---   VF4 — the ALTA FLOOR, on its own fixture sale: a cliente registered 10 days ago, edited to a fecha
---        15 days back — inside the 30-day window, but before the client existed — raises 'La fecha de
---        inicio es anterior al alta del cliente' and writes nothing.
---        VF2/VF3/VF4 are registrar_venta's own three backdate bounds, word for word: the edit door must
+--   VF4 — A PRE-ALTA FECHA IS ACCEPTED, on its own fixture sale: a cliente registered 10 days ago,
+--        edited to a fecha 15 days back — inside the 30-day window, but before that client's ROW
+--        existed — WRITES. The alta floor that used to refuse this was dropped from both doors by the
+--        owner on 2026-08-14 (migration 20260814130000): gyms register walk-ins late, so
+--        `clientes.created_at` is a data-entry stamp rather than the day the member arrived, and the
+--        floor therefore refused precisely the forgotten sale this door exists to correct. The written
+--        instant is VF1's — midday gym-tz — and the cliente's saldo plus every other ventas column
+--        stay put, so "accepted" cannot quietly mean "re-derived".
+--        VF2/VF3 are registrar_venta's two SURVIVING backdate bounds, word for word: the edit door must
 --        not be able to write a fecha the CREATE door would have refused. Each asserts the exact
 --        Spanish message the desk shows, so a reworded raise is a failure, not a silent divergence.
 --   VF5 — THE INCLUSIVE EDGES: both bounds are strict (`> v_hoy`, `< v_hoy - 30`), so the boundary
@@ -87,7 +92,7 @@ declare
   -- A REAL IANA zone, not UTC: every fecha bound and the written instant are computed in the GYM's
   -- timezone, so a UTC fixture would let a gym-tz bug pass unseen. Chihuahua is UTC-6 year-round.
   v_tz      constant text := 'America/Chihuahua';
-  v_alta_n  timestamptz := now() - interval '10 days';  -- VF4's cliente: young enough that an in-window fecha predates it
+  v_alta_n  timestamptz := now() - interval '10 days';  -- VF4's cliente: young enough that an in-window fecha predates its alta
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'editar-venta-suite-gym-a', 'Editar Venta Suite A', v_tz, 'forge'),
@@ -102,8 +107,8 @@ begin
     (op_a, gym_a, 'operator'),
     (op_b, gym_b, 'operator');
 
-  -- created_at 120 days back on purpose: VF1 backdates this sale's fecha, and registrar's alta floor
-  -- (mirrored by editar_venta) refuses any fecha before the client existed.
+  -- An ordinary long-standing member (alta 120 days back) — the V-vectors and VF1/VF2/VF3/VF5 all
+  -- ride this one. VF4 gets its own recent-alta cliente below.
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, created_at)
     values ('EV Cliente', '0000000010', 10, current_date + 40, '8 clases', gym_a, now() - interval '120 days')
     returning id into cli_a;
@@ -112,7 +117,7 @@ begin
     values (gym_a, cli_a, 7001, '8 clases', 8, 'dias', 20, 750, 'efectivo', v_fecha, v_created)
     returning id into v_venta;
 
-  -- VF4's own cliente + sale, so the alta refusal is asserted on a row no other vector touches.
+  -- VF4's own cliente + sale, so the pre-alta acceptance is asserted on a row no other vector touches.
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, created_at)
     values ('EV Cliente Nuevo', '0000000011', 4, current_date + 20, '4 clases', gym_a, v_alta_n)
     returning id into cli_n;
@@ -126,16 +131,19 @@ begin
   perform set_config('t.op_a',    op_a::text,      true);
   perform set_config('t.op_b',    op_b::text,      true);
   perform set_config('t.cli_a',   cli_a::text,     true);
+  perform set_config('t.cli_n',   cli_n::text,     true);
   perform set_config('t.venta',   v_venta::text,   true);
   perform set_config('t.venta_n', v_venta_n::text, true);
   perform set_config('t.tz',      v_tz,            true);
   perform set_config('t.fecha',   v_fecha::text,   true);
   perform set_config('t.created', v_created::text, true);
+  perform set_config('t.alta_n',  v_alta_n::text,  true);
   -- Whole-row snapshot MINUS the two editable columns. V1 re-computes it after the call and demands
   -- jsonb equality: a column this suite never names by hand still cannot move unnoticed.
   perform set_config('t.venta_rest',
     (select (to_jsonb(v.*) - 'monto' - 'metodo')::text from public.ventas v where v.id = v_venta), true);
-  -- VF4's row is only ever REFUSED, so the whole row — monto and metodo included — must survive.
+  -- VF4's row before its (accepted) edit. The assertion subtracts the three columns the call is
+  -- allowed to touch and demands byte-equality on the rest, the same catch-all shape as V1/VF1.
   perform set_config('t.venta_n_all',
     (select to_jsonb(v.*)::text from public.ventas v where v.id = v_venta_n), true);
 end $$;
@@ -452,43 +460,71 @@ begin
   end if;
 end $$;
 
--- ══ VF4 — THE ALTA FLOOR: in-window, but before the client existed → REFUSED ═════════════════════════
+-- ══ VF4 — A PRE-ALTA FECHA IS ACCEPTED: in-window, but before the client's row existed → WRITES ══════
 -- Its cliente was registered 10 days ago and the fecha is 15 days back: comfortably inside the 30-day
--- window, so ONLY the alta floor can refuse it. Without that floor a sale could be attributed to a
--- month in which its client did not yet exist.
+-- window, and before that cliente's `created_at`. Until 2026-08-14 the alta floor refused exactly this;
+-- the owner dropped it at both doors (20260814130000) because a walk-in is routinely typed into the
+-- system days after they first paid, which made the floor strictest on the forgotten sale it was
+-- supposed to let the operator fix. `clientes.created_at` is unchanged by the ruling — it is simply no
+-- longer read as a floor. monto/metodo are deliberately DIFFERENT from the seeded values (400/efectivo)
+-- so a no-op call cannot pass this vector by leaving the row as it found it.
 set local role authenticated;
 do $$
-declare
-  v_msg text;
-  v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
 begin
-  v_msg := null;
-  begin
-    perform public.editar_venta(current_setting('t.venta_n', true)::uuid, 400, 'efectivo',
-                                p_fecha := v_hoy - 15);
-  exception when others then v_msg := sqlerrm;
-  end;
-  if v_msg is distinct from 'La fecha de inicio es anterior al alta del cliente' then
-    raise exception 'VF4 FAIL: got % (expected La fecha de inicio es anterior al alta del cliente — registrar_venta''s third bound, verbatim)', coalesce(v_msg, '<no error raised>');
-  end if;
+  perform public.editar_venta(current_setting('t.venta_n', true)::uuid, 450, 'transferencia',
+                              p_fecha := v_hoy - 15);
 end $$;
 reset role;
 do $$
 declare
-  v_all   jsonb := current_setting('t.venta_n_all', true)::jsonb;
-  v_after jsonb;
+  rec        record;
+  cli        record;
+  v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
+  v_esperado timestamptz := ((v_hoy - 15)::timestamp + interval '12 hours')
+                            at time zone current_setting('t.tz', true);
+  v_rest     jsonb := (current_setting('t.venta_n_all', true)::jsonb) - 'monto' - 'metodo' - 'fecha';
+  v_after    jsonb;
 begin
-  select to_jsonb(v.*) into v_after from public.ventas v where v.id = current_setting('t.venta_n', true)::uuid;
-  if v_after is distinct from v_all then
-    raise exception 'VF4 FAIL: the refused call still wrote. before = % / after = %', v_all, v_after;
+  select * into rec from public.ventas where id = current_setting('t.venta_n', true)::uuid;
+  if rec.fecha is distinct from v_esperado then
+    raise exception 'VF4 FAIL: fecha = % (expected % — a fecha before the cliente''s alta is ACCEPTED since 2026-08-14, written at midday gym-tz like any other)', rec.fecha, v_esperado;
+  end if;
+  if rec.monto is distinct from 450 then
+    raise exception 'VF4 FAIL: monto = % (expected 450 — the accepted pre-alta call must still write monto)', rec.monto;
+  end if;
+  if rec.metodo is distinct from 'transferencia' then
+    raise exception 'VF4 FAIL: metodo = % (expected transferencia — the accepted pre-alta call must still write metodo)', rec.metodo;
+  end if;
+
+  -- the catch-all: every column except the three the call may touch, byte-for-byte
+  select to_jsonb(v.*) - 'monto' - 'metodo' - 'fecha' into v_after from public.ventas v where v.id = rec.id;
+  if v_after is distinct from v_rest then
+    raise exception 'VF4 FAIL: a column other than monto/metodo/fecha changed. before = % / after = %', v_rest, v_after;
+  end if;
+
+  -- Dropping the floor widened WHICH dates are legal, nothing else: the cliente row — created_at
+  -- included — is still none of this call's business.
+  select * into cli from public.clientes where id = current_setting('t.cli_n', true)::uuid;
+  if cli.created_at is distinct from (current_setting('t.alta_n', true)::timestamptz) then
+    raise exception 'VF4 FAIL: cliente created_at = % (expected unchanged — the ruling drops a READ of the alta, it never rewrites it)', cli.created_at;
+  end if;
+  if cli.clases_restantes is distinct from 4 then
+    raise exception 'VF4 FAIL: cliente clases_restantes = % (expected 4 — a fecha edit must not re-grant classes)', cli.clases_restantes;
+  end if;
+  if cli.vence is distinct from current_date + 20 then
+    raise exception 'VF4 FAIL: cliente vence = % (expected current_date + 20 — a fecha edit must not re-stack the vigencia)', cli.vence;
+  end if;
+  if cli.paquete_nombre is distinct from '4 clases' then
+    raise exception 'VF4 FAIL: cliente paquete_nombre = % (expected 4 clases — untouched)', cli.paquete_nombre;
   end if;
 end $$;
 
 -- ══ VF5 — THE INCLUSIVE EDGES: p_fecha = hoy and p_fecha = hoy-30 are ACCEPTED, not refused ═══════════
 -- registrar_venta's bounds are `> v_hoy` and `< v_hoy - 30` (both strict), so the boundary values
--- themselves are legal — this is the ruling the mirror exists for. cli_a's alta is 120 days back, so
--- neither edge trips the alta floor. Two separate calls, each on the same fixture venta, each asserted
--- to have actually written (a distinct monto/metodo per call rules out a false pass from a stale row).
+-- themselves are legal — this is the ruling the mirror exists for. Two separate calls, each on the same
+-- fixture venta, each asserted to have actually written (a distinct monto/metodo per call rules out a
+-- false pass from a stale row).
 set local role authenticated;
 do $$
 declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;

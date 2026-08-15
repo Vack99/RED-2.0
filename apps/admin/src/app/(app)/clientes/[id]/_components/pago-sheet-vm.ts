@@ -7,9 +7,9 @@ import { addDays, fmtShort, parseDay, pesos } from "@gym/format";
 
 import { inicioMinIso } from "../../../vender/_components/vender-vm";
 
-/** The corrected-date picker's floor — `max(hoy − 30, la alta del cliente)`, the SAME bound
- *  vender's backdate picker uses, imported rather than restated so the two can't drift.
- *  Re-exported so the sheet takes all of its rules from this module. */
+/** The corrected-date picker's floor — `hoy − 30`, the SAME bound vender's backdate picker
+ *  uses, imported rather than restated so the two can't drift. Re-exported so the sheet takes
+ *  all of its rules from this module. */
 export { inicioMinIso };
 
 /** Deletion is windowed at 30 days from REGISTRATION (#266.2) — `created_at`, never the
