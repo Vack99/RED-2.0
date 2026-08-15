@@ -257,6 +257,10 @@ export interface FichaPago {
   monto: number;
   metodo: "efectivo" | "transferencia" | "tarjeta";
   fecha: string;
+  /** `fecha` as a gym-tz ISO day ("YYYY-MM-DD") — what the correction sheet's date picker seeds
+   *  from and compares against, since the raw `fecha` instant can't be compared to `hoyIso` /
+   *  `altaIso` without re-deriving the zone at the leaf. */
+  fechaIso: string;
   clases: number | null;
   vigenciaTipo: "dias" | "mes";
   vigenciaDias: number | null;
@@ -442,22 +446,26 @@ export function shapeFicha(
     .filter((a) => a.class_session_id !== null)
     .map((a) => ({ hora: a.hora ? a.hora.slice(0, 5) : null, clase: etiquetaClase(a.class_session, tz) }));
 
-  const pagos: FichaPago[] = ventas.map((v) => ({
-    id: v.id,
-    folio: v.folio,
-    fechaDisplay: fmtShort(fechaEnZona(v.fecha, tz)),
-    paquete: v.paquete_nombre,
-    montoDisplay: pesos(v.monto),
-    metodoDisplay: metodoLabel(v.metodo),
-    monto: v.monto,
-    metodo: v.metodo as FichaPago["metodo"],
-    fecha: v.fecha,
-    clases: v.clases,
-    vigenciaTipo: v.vigencia_tipo as FichaPago["vigenciaTipo"],
-    vigenciaDias: v.vigencia_dias,
-    createdAt: v.created_at,
-    mes: MONTHS_FULL[fechaEnZona(v.fecha, tz).getMonth()],
-  }));
+  const pagos: FichaPago[] = ventas.map((v) => {
+    const fechaGym = fechaEnZona(v.fecha, tz);
+    return {
+      id: v.id,
+      folio: v.folio,
+      fechaDisplay: fmtShort(fechaGym),
+      paquete: v.paquete_nombre,
+      montoDisplay: pesos(v.monto),
+      metodoDisplay: metodoLabel(v.metodo),
+      monto: v.monto,
+      metodo: v.metodo as FichaPago["metodo"],
+      fecha: v.fecha,
+      fechaIso: toIsoDay(fechaGym),
+      clases: v.clases,
+      vigenciaTipo: v.vigencia_tipo as FichaPago["vigenciaTipo"],
+      vigenciaDias: v.vigencia_dias,
+      createdAt: v.created_at,
+      mes: MONTHS_FULL[fechaGym.getMonth()],
+    };
+  });
 
   const latest = ventas[0];
   const totalClases = latest?.clases ?? null;

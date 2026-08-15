@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   dentroDeVentanaEliminar,
+  fechaEditada,
+  inicioMinIso,
   montoEditado,
   previewEliminarVenta,
   vigenciaDiasVenta,
@@ -102,5 +104,22 @@ describe("montoEditado", () => {
 
   it("has NO upper cap — a paquete's precio is unbounded, so a high-value sale stays correctable", () => {
     expect(montoEditado("150000")).toBe(150_000);
+  });
+});
+
+describe("fechaEditada — the sold date travels only when it CHANGED", () => {
+  it("omits the arg for the seeded date, so the RPC keeps the stored timestamp", () => {
+    expect(fechaEditada("2026-08-10", "2026-08-10")).toBeUndefined();
+  });
+
+  it("sends the picked ISO day once the operator moves it", () => {
+    expect(fechaEditada("2026-08-10", "2026-08-03")).toBe("2026-08-03");
+  });
+});
+
+describe("picker bounds — the SAME floor as vender's backdate", () => {
+  it("clamps to the later of the 30-day cap and the client's alta", () => {
+    expect(inicioMinIso("2026-08-14", "2026-01-01")).toBe("2026-07-15"); // old alta → the cap binds
+    expect(inicioMinIso("2026-08-14", "2026-08-10")).toBe("2026-08-10"); // recent alta binds instead
   });
 });

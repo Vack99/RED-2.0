@@ -5,6 +5,13 @@
 
 import { addDays, fmtShort, parseDay, pesos } from "@gym/format";
 
+import { inicioMinIso } from "../../../vender/_components/vender-vm";
+
+/** The corrected-date picker's floor — `max(hoy − 30, la alta del cliente)`, the SAME bound
+ *  vender's backdate picker uses, imported rather than restated so the two can't drift.
+ *  Re-exported so the sheet takes all of its rules from this module. */
+export { inicioMinIso };
+
 /** Deletion is windowed at 30 days from REGISTRATION (#266.2) — `created_at`, never the
  *  backdatable sold `fecha`. Past it the affordance is simply absent (no disabled state);
  *  `docs/runbooks/venta-correction.md` stays the escape hatch. Editing has no window. */
@@ -33,6 +40,14 @@ export function vigenciaDiasVenta(tipo: "dias" | "mes", dias: number | null): nu
 export function montoEditado(raw: string): number | null {
   const n = Number(raw.trim());
   return Number.isInteger(n) && n >= 1 ? n : null;
+}
+
+/** The `fecha` the action sends, or `undefined` to omit it — mirroring vender's `esBackdate`
+ *  semantics (`vender.tsx`): a day the operator did NOT change is not a correction, and omitting
+ *  the arg makes `editar_venta` take its `p_fecha default null` and leave the stored timestamp
+ *  (and its time-of-day) exactly as it was. Only a real change travels. */
+export function fechaEditada(originalIso: string, pickIso: string): string | undefined {
+  return pickIso === originalIso ? undefined : pickIso;
 }
 
 /**

@@ -410,6 +410,8 @@ describe("shapeFicha", () => {
       monto: 800,
       metodo: "efectivo",
       fecha: "2026-05-20T18:00:00Z",
+      // 18:00Z = 12:00 Chihuahua (-6) — the gym's calendar day, the picker's seed.
+      fechaIso: "2026-05-20",
       clases: 8,
       vigenciaTipo: "dias",
       vigenciaDias: 30,
@@ -428,6 +430,13 @@ describe("shapeFicha", () => {
     const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
     expect(f.clasesRestantes).toBe(5);
     expect(f.vence).toBe("2026-06-16");
+  });
+
+  it("resolves a pago's fechaIso in the GYM's zone, not UTC — the picker seeds from it", () => {
+    // 03:00Z on the 21st is still 21:00 on the 20th in Chihuahua (-6): seeding the picker
+    // from the UTC day would open it on a date the sale was never made on.
+    const f = shapeFicha(clienteRow, [], [venta({ fecha: "2026-05-21T03:00:00Z" })], CTX, TZ_FORGE, [], "FORGE", 0);
+    expect(f.pagos[0].fechaIso).toBe("2026-05-20");
   });
 
   it("derives altaIso as the gym-tz ISO day of created_at (payment-correction date-picker floor)", () => {

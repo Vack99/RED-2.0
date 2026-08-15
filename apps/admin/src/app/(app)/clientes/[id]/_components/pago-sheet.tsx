@@ -7,20 +7,32 @@ import { Sheet } from "@gym/ui/forge/sheet";
 import { forgeToast } from "@gym/ui/forge/toaster";
 import { Button, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import type { FichaPago } from "@gym/data/server/derive";
-import { pesos } from "@gym/format";
+import { fmtShort, isoDay, parseDay, pesos } from "@gym/format";
+import { InicioCalendar } from "../../../_components/inicio-calendar";
 import { MetodoEditor } from "../../../_components/metodo-editor";
 import { editarVentaAction, eliminarVentaAction } from "../actions";
-import { dentroDeVentanaEliminar, montoEditado, previewEliminarVenta, vigenciaDiasVenta } from "./pago-sheet-vm";
+import {
+  dentroDeVentanaEliminar,
+  fechaEditada,
+  inicioMinIso,
+  montoEditado,
+  previewEliminarVenta,
+  vigenciaDiasVenta,
+} from "./pago-sheet-vm";
 
 /**
  * One sale, opened from HISTORIAL DE PAGOS (#269) — the desk's correction surface.
  *
- * It's the gym's data (owner ruling 2026-08-13): monto + método are correctable at ANY age,
- * and only DESTRUCTION is windowed (#266.2/3). So GUARDAR is always available and ELIMINAR is
- * simply ABSENT past 30 days from registration — never a disabled button explaining a rule.
- * Deleting swaps this panel for a confirm that previews the exact clawback (#267.6) instead of
- * a `window.confirm`, because the numbers are the whole decision. A wrong paquete or fecha
- * isn't editable by ruling — the hint deep-links VENDER, which can backdate.
+ * Three modes, the agenda's QuickGlanceSheet → EditorSheet shape: `detalle` is what a tap
+ * opens (the whole sale, read-only — most taps are a look, not a correction), and EDITAR is
+ * the deliberate step into `editar`. `confirmar` is the delete's own panel.
+ *
+ * It's the gym's data (owner ruling 2026-08-13): monto, método and the sold fecha are
+ * correctable at ANY age, and only DESTRUCTION is windowed (#266.2/3). So GUARDAR is always
+ * available and ELIMINAR is simply ABSENT past 30 days from registration — never a disabled
+ * button explaining a rule. Deleting swaps this panel for a confirm that previews the exact
+ * clawback (#267.6) instead of a `window.confirm`, because the numbers are the whole decision.
+ * A wrong PAQUETE still isn't an edit — the hint deep-links VENDER, which can backdate.
  */
 export function PagoSheet({
   open,
@@ -29,6 +41,8 @@ export function PagoSheet({
   clienteId,
   clasesRestantes,
   vence,
+  hoyIso,
+  altaIso,
 }: {
   open: boolean;
   onClose: () => void;
@@ -39,24 +53,40 @@ export function PagoSheet({
   clasesRestantes: number | null;
   /** The client's stored vence ("YYYY-MM-DD"), or null. */
   vence: string | null;
+  /** The gym's calendar day — the date picker's upper bound (never `new Date()`: that is the
+   *  operator's timezone, not the gym's). */
+  hoyIso: string;
+  /** The client's alta as a gym-tz ISO day — the picker's lower bound alongside the 30-day cap. */
+  altaIso: string;
 }) {
   const router = useRouter();
+  const [modo, setModo] = React.useState<"detalle" | "editar" | "confirmar">("detalle");
   const [monto, setMonto] = React.useState("");
   const [metodo, setMetodo] = React.useState<FichaPago["metodo"] | null>(null);
-  const [confirmar, setConfirmar] = React.useState(false);
+  const [fecha, setFecha] = React.useState("");
+  const [calOpen, setCalOpen] = React.useState(false);
   const [busy, setBusy] = React.useState(false);
 
+  // Every tap on a pago row lands on `detalle`, never on a half-edited form.
   React.useEffect(() => {
-    if (open && pago) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional re-seed on open (mirrors EditarClienteSheet)
-      setMonto(String(pago.monto));
-      setMetodo(pago.metodo);
-      setConfirmar(false);
-    }
-  }, [open, pago]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset on open (mirrors EditarClienteSheet)
+    if (open) setModo("detalle");
+  }, [open]);
+
+  // The fields are seeded ENTERING `editar`, not on open — so leaving via CANCELAR really
+  // discards (the next EDITAR re-reads the stored sale) with no second reset path to keep in step.
+  const abrirEditar = () => {
+    if (!pago) return;
+    setMonto(String(pago.monto));
+    setMetodo(pago.metodo);
+    setFecha(pago.fechaIso);
+    setCalOpen(false);
+    setModo("editar");
+  };
 
   const montoNum = montoEditado(monto);
-  const dirty = !!pago && (montoNum !== pago.monto || metodo !== pago.metodo);
+  const fechaNueva = pago ? fechaEditada(pago.fechaIso, fecha) : undefined;
+  const dirty = !!pago && (montoNum !== pago.monto || metodo !== pago.metodo || fechaNueva !== undefined);
   const canSave = !!pago && montoNum !== null && dirty && !busy;
   // Render-time clock read, the agenda's `ahora` idiom (#238): this decides only what to SHOW,
   // and `eliminar_venta` re-checks the window server-side — so nothing refreshes it.
@@ -67,7 +97,9 @@ export function PagoSheet({
     if (!canSave || !pago || montoNum === null || !metodo) return;
     setBusy(true);
     try {
-      const res = await editarVentaAction({ ventaId: pago.id, monto: montoNum, metodo });
+      // `fecha` rides only when the operator actually moved it — omitted, the RPC keeps the
+      // stored timestamp untouched (mirrors vender's `esBackdate` spread).
+      const res = await editarVentaAction({ ventaId: pago.id, monto: montoNum, metodo, fecha: fechaNueva });
       if (!res.ok) {
         // The RPC refused with a reason it wrote for a human ('No autorizado', 'Método
         // inválido', …) — keep the sheet open and toast it verbatim, like the vender path.
@@ -106,7 +138,7 @@ export function PagoSheet({
   return (
     <Sheet open={open} onClose={onClose}>
       {pago &&
-        (confirmar ? (
+        (modo === "confirmar" ? (
           /* Confirm step — the duplicate-guard idiom (vender.tsx): one alert banner, then the
              two choices stacked. The banner IS the disclosure (#267.6 + #266.1). */
           <div style={{ padding: "8px 22px 24px" }}>
@@ -135,7 +167,7 @@ export function PagoSheet({
               <Button variant="danger" full disabled={busy} onClick={eliminar}>
                 {busy ? "ELIMINANDO…" : "SÍ, ELIMINAR"}
               </Button>
-              <Button variant="secondary" full disabled={busy} onClick={() => setConfirmar(false)}>
+              <Button variant="secondary" full disabled={busy} onClick={() => setModo("detalle")}>
                 CANCELAR
               </Button>
             </div>
@@ -149,60 +181,112 @@ export function PagoSheet({
               </H1>
             </div>
 
-            {/* What this sale WAS — the facts the correction can't change. */}
-            <div style={{ padding: "0 22px" }}>
-              <Dato k="FOLIO" v={`F-${pago.folio}`} />
-              <Dato k="FECHA" v={pago.fechaDisplay} />
-              <Dato k="CLASES" v={pago.clases === null ? "Ilimitado" : String(pago.clases)} />
-              <Dato k="VIGENCIA" v={`${dias} días`} />
-            </div>
-
-            {/* What it can: monto + método, at any age (#266.3). */}
-            <div className="flex flex-col" style={{ padding: "18px 16px 0", gap: 18 }}>
-              <label className="flex flex-col" style={{ gap: 8 }}>
-                <Eyebrow style={{ paddingLeft: 2 }}>MONTO</Eyebrow>
-                <Input inputMode="numeric" placeholder="850" value={monto} onChange={setMonto} />
-              </label>
-              <div className="flex flex-col" style={{ gap: 8 }}>
-                <Eyebrow style={{ paddingLeft: 2 }}>MÉTODO</Eyebrow>
-                <MetodoEditor metodo={metodo} setMetodo={setMetodo} />
-              </div>
-            </div>
-
-            <div style={{ borderTop: "1px solid var(--line)", margin: "24px 0 0", padding: "20px 16px 0" }}>
-              <Button variant="primary" size="lg" full icon="check" disabled={!canSave} onClick={guardar}>
-                {busy ? "GUARDANDO…" : "GUARDAR"}
-              </Button>
-
-              {/* Wrong paquete or fecha is NOT an edit (ruling #266.3) — it's a re-sell on the
-                  backdate-capable VENDER flow. Offered at any age; deleting the old one is a
-                  separate, windowed act below. */}
-              <button
-                onClick={() => router.push(`/vender?cliente=${clienteId}`)}
-                className="forge-pressable"
-                style={{ width: "100%", marginTop: 14, padding: "4px 2px", background: "transparent", border: "none", textAlign: "left", cursor: "pointer", fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}
-              >
-                ¿Paquete o fecha equivocados?{" "}
-                <span className="uppercase font-bold" style={{ color: "var(--gold)", letterSpacing: 0.6 }}>
-                  Vuelve a venderle
-                </span>
-              </button>
-
-              {puedeEliminar && (
-                <div style={{ marginTop: 14 }}>
-                  <Button variant="danger" size="sm" full icon="trash" onClick={() => setConfirmar(true)}>
-                    ELIMINAR VENTA
-                  </Button>
+            {modo === "detalle" ? (
+              <>
+                {/* The whole sale, read-only — a tap on a pago row is a LOOK far more often
+                    than a correction, so nothing is editable until EDITAR is pressed. */}
+                <div style={{ padding: "0 22px" }}>
+                  <Dato k="FOLIO" v={`F-${pago.folio}`} />
+                  <Dato k="FECHA" v={pago.fechaDisplay} />
+                  <Dato k="CLASES" v={pago.clases === null ? "Ilimitado" : String(pago.clases)} />
+                  <Dato k="VIGENCIA" v={`${dias} días`} />
+                  <Dato k="MONTO" v={pago.montoDisplay} />
+                  <Dato k="MÉTODO" v={pago.metodoDisplay} />
                 </div>
-              )}
-            </div>
+
+                <div style={{ padding: "20px 16px 0" }}>
+                  <Button variant="primary" size="lg" full icon="edit" onClick={abrirEditar}>
+                    EDITAR
+                  </Button>
+
+                  {/* A wrong PAQUETE is not an edit (ruling #266.3) — it's a re-sell on the
+                      backdate-capable VENDER flow. Offered at any age; deleting the old one is a
+                      separate, windowed act below. */}
+                  <button
+                    onClick={() => router.push(`/vender?cliente=${clienteId}`)}
+                    className="forge-pressable"
+                    style={{ width: "100%", marginTop: 14, padding: "4px 2px", background: "transparent", border: "none", textAlign: "left", cursor: "pointer", fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}
+                  >
+                    ¿Paquete equivocado?{" "}
+                    <span className="uppercase font-bold" style={{ color: "var(--gold)", letterSpacing: 0.6 }}>
+                      Vuelve a venderle
+                    </span>
+                  </button>
+
+                  {puedeEliminar && (
+                    <div style={{ marginTop: 14 }}>
+                      <Button variant="danger" size="sm" full icon="trash" onClick={() => setModo("confirmar")}>
+                        ELIMINAR VENTA
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                {/* What a correction can change: monto, método and the sold fecha, at any age (#266.3). */}
+                <div className="flex flex-col" style={{ padding: "0 16px", gap: 18 }}>
+                  <label className="flex flex-col" style={{ gap: 8 }}>
+                    <Eyebrow style={{ paddingLeft: 2 }}>MONTO</Eyebrow>
+                    <Input inputMode="numeric" placeholder="850" value={monto} onChange={setMonto} />
+                  </label>
+                  <div className="flex flex-col" style={{ gap: 8 }}>
+                    <Eyebrow style={{ paddingLeft: 2 }}>MÉTODO</Eyebrow>
+                    <MetodoEditor metodo={metodo} setMetodo={setMetodo} />
+                  </div>
+                  <div className="flex flex-col" style={{ gap: 8 }}>
+                    <Eyebrow style={{ paddingLeft: 2 }}>FECHA</Eyebrow>
+                    {/* Same calendar and the same bounds as vender's backdate (not future, ≥ alta,
+                        ≤ 30 días back) — inline rather than a nested Sheet, which would fight this
+                        one's scrim and Esc handler. */}
+                    <div style={{ border: `1px solid ${calOpen ? "var(--yellow)" : "var(--line)"}`, transition: "border-color 140ms ease" }}>
+                      <button
+                        onClick={() => setCalOpen((o) => !o)}
+                        className="forge-pressable flex items-center justify-between text-left"
+                        style={{ width: "100%", padding: 15, background: "transparent", border: "none", color: "var(--fg)", cursor: "pointer" }}
+                      >
+                        <Tnum className="uppercase font-bold" style={{ fontSize: 13, letterSpacing: 0.4, color: fechaNueva ? "var(--gold)" : "var(--fg)" }}>
+                          {fmtShort(parseDay(fecha))}
+                        </Tnum>
+                        <Icon name="cal" size={16} color="var(--muted)" />
+                      </button>
+                      {calOpen && (
+                        <InicioCalendar
+                          hoy={parseDay(hoyIso)}
+                          min={parseDay(inicioMinIso(hoyIso, altaIso))}
+                          sel={parseDay(fecha)}
+                          onPick={(d) => {
+                            setFecha(isoDay(d));
+                            setCalOpen(false);
+                          }}
+                        />
+                      )}
+                    </div>
+                    <div style={{ paddingLeft: 2, fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
+                      Corrige el día en que se cobró. No mueve el saldo ni la vigencia.
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{ borderTop: "1px solid var(--line)", margin: "24px 0 0", padding: "20px 16px 0" }}>
+                  <Button variant="primary" size="lg" full icon="check" disabled={!canSave} onClick={guardar}>
+                    {busy ? "GUARDANDO…" : "GUARDAR"}
+                  </Button>
+                  <div style={{ marginTop: 10 }}>
+                    <Button variant="secondary" full disabled={busy} onClick={() => setModo("detalle")}>
+                      CANCELAR
+                    </Button>
+                  </div>
+                </div>
+              </>
+            )}
           </>
         ))}
     </Sheet>
   );
 }
 
-/** One immutable fact of the sale: uppercase label, tnum value — the ficha's own detail idiom. */
+/** One fact of the sale: uppercase label, tnum value — the ficha's own detail idiom. */
 function Dato({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex items-center justify-between" style={{ padding: "11px 0", borderBottom: "1px solid var(--line)" }}>

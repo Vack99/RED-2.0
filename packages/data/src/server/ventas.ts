@@ -391,6 +391,12 @@ const VENTA_REFUSALS: readonly string[] = [
   "Método inválido",
   "Monto inválido",
   "La venta ya no se puede eliminar",
+  // `editar_venta`'s three date bounds. Reachable from the correction sheet now that it sends a
+  // corrected `fecha`: the picker mirrors these bounds, but its `hoy` is a render-time read, so a
+  // sheet left open across midnight can still send a day the RPC now refuses — advice, not a crash.
+  "La fecha de inicio no puede ser futura",
+  "La fecha de inicio no puede tener más de 30 días de antigüedad",
+  "La fecha de inicio es anterior al alta del cliente",
 ];
 
 /** An RPC refusal the operator can act on, typed so the server action can map exactly THIS to

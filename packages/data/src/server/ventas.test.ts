@@ -601,7 +601,15 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     expect(fake.rpcCalls).toHaveLength(0);
   });
 
-  it.each(["No autorizado", "Venta no encontrada", "Método inválido", "Monto inválido"])(
+  it.each([
+    "No autorizado",
+    "Venta no encontrada",
+    "Método inválido",
+    "Monto inválido",
+    "La fecha de inicio no puede ser futura",
+    "La fecha de inicio no puede tener más de 30 días de antigüedad",
+    "La fecha de inicio es anterior al alta del cliente",
+  ])(
     "types the known refusal %j as VentaRefusalError, message verbatim",
     async (mensaje) => {
       const fake = makeFake({}, { rpcData: null, rpcError: { message: mensaje } });
