@@ -15,6 +15,14 @@
 -- base is still live at the requested day, so nothing clamps and the start day cancels out of
 -- registrar_venta's stacking algebra. The numbers are unchanged; what they MEAN is not. See VF1.
 --
+-- NOTE on the FIXTURE SPLIT (same date): because a fecha edit now re-derives, it inherits the
+-- re-derive's two preconditions — 30 days from `created_at`, and top-of-stack. Attribution
+-- (monto/metodo) inherits neither. So gym A's cliente carries TWO sales: folio 7001, registered ~90
+-- days ago, which the V-vectors edit to prove attribution is any-age and legal on a non-latest sale;
+-- and folio 7003, registered today with the SAME grant, which the VF-vectors move the fecha of. The
+-- arithmetic in every VF assertion is unchanged by the split — the two sales grant the same 8 clases /
+-- 20 días — and both preconditions are owned as vectors by `editar_venta_paquete.sql` (S7 / S12).
+--
 -- Vectors:
 --   V1 — staff of the venta's own gym edits monto + metodo: BOTH persist, and NOTHING else on the row
 --        moves. folio, clases, vigencia_tipo/vigencia_dias, fecha, created_at, gym_id, paquete_nombre,
@@ -25,9 +33,10 @@
 --        PATH, the one call shape that reaches `clientes` not at all, because neither the grant nor
 --        the sold day changed. (A package-bearing call DOES move all three, since 2026-08-15 —
 --        `editar_venta_paquete.sql` owns that half; S10 there is this same contract from the other
---        side.) The fixture sale is deliberately ~90 days old: monto/metodo/fecha edits carry NO
---        window (ruling #266.3 — only destruction and, since ruling 4, the package swap are
---        windowed), so age must not refuse the write.
+--        side.) The fixture sale is deliberately ~90 days old AND deliberately not the latest of its
+--        cliente: attribution carries NO window (#266.3 — destruction and, since 2026-08-15, the whole
+--        saldo re-derive are windowed on created_at) and no top-of-stack precondition either, so
+--        neither age nor a newer sale beside it may refuse this write.
 --   V2 — an invalid metodo raises 'Método inválido' (the in-body domain re-assertion registrar_venta
 --        already carries, so the desk sees a human message instead of a raw 23514) and the row is left
 --        exactly as V1 wrote it. 'pendiente' is the probe on purpose: it was legal until
@@ -101,6 +110,7 @@ declare
   cli_a     uuid;
   cli_n     uuid;
   v_venta   uuid;
+  v_venta_f uuid;   -- the VF-vectors' sale: same cliente, same grant, registered TODAY
   v_venta_n uuid;
   v_fecha   timestamptz := now() - interval '92 days';  -- backdated sold date
   v_created timestamptz := now() - interval '90 days';  -- registered later, and far outside the 30d delete window
@@ -132,6 +142,19 @@ begin
     values (gym_a, cli_a, 7001, '8 clases', 8, 'dias', 20, 750, 'efectivo', v_fecha, v_created)
     returning id into v_venta;
 
+  -- THE FIXTURE SPLIT (2026-08-15). Since 20260815120000 a fecha edit RE-DERIVES the saldo, and the
+  -- re-derive carries ruling 4's 30-day window on `created_at` — while monto/metodo, which move no
+  -- saldo, stay any-age (#266.3). So the two halves need two sales: `v_venta` above stays 90 days old
+  -- and keeps proving the any-age half (V1/V2/V3/V3b), and this one — registered TODAY, with the SAME
+  -- grant so every VF assertion's arithmetic is unchanged — owns the fecha vectors. It is inserted
+  -- LAST, which also makes it the TOP of the cliente's stack: the only sale a re-derive is allowed to
+  -- move, since the clawback's linear inverse cannot undo an older sale out of a saldo a later one
+  -- rewrote (editar_venta_paquete.sql S12). V1 editing the older sale's monto/metodo therefore also
+  -- proves that precondition governs the re-derive and not attribution.
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, cli_a, 7003, '8 clases', 8, 'dias', 20, 750, 'efectivo', now() - interval '3 days', now())
+    returning id into v_venta_f;
+
   -- VF4's own cliente + sale, so the pre-alta acceptance is asserted on a row no other vector touches.
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, created_at)
     values ('EV Cliente Nuevo', '0000000011', 4, current_date + 20, '4 clases', gym_a, v_alta_n)
@@ -148,15 +171,21 @@ begin
   perform set_config('t.cli_a',   cli_a::text,     true);
   perform set_config('t.cli_n',   cli_n::text,     true);
   perform set_config('t.venta',   v_venta::text,   true);
+  perform set_config('t.venta_f', v_venta_f::text, true);
   perform set_config('t.venta_n', v_venta_n::text, true);
   perform set_config('t.tz',      v_tz,            true);
   perform set_config('t.fecha',   v_fecha::text,   true);
   perform set_config('t.created', v_created::text, true);
+  perform set_config('t.created_f',
+    (select v.created_at::text from public.ventas v where v.id = v_venta_f), true);
   perform set_config('t.alta_n',  v_alta_n::text,  true);
   -- Whole-row snapshot MINUS the two editable columns. V1 re-computes it after the call and demands
   -- jsonb equality: a column this suite never names by hand still cannot move unnoticed.
   perform set_config('t.venta_rest',
     (select (to_jsonb(v.*) - 'monto' - 'metodo')::text from public.ventas v where v.id = v_venta), true);
+  -- The same catch-all for the VF-vectors' sale; they subtract 'fecha' from it as well.
+  perform set_config('t.venta_f_rest',
+    (select (to_jsonb(v.*) - 'monto' - 'metodo')::text from public.ventas v where v.id = v_venta_f), true);
   -- VF4's row before its (accepted) edit. The assertion subtracts the three columns the call is
   -- allowed to touch and demands byte-equality on the rest, the same catch-all shape as V1/VF1.
   perform set_config('t.venta_n_all',
@@ -358,7 +387,7 @@ set local role authenticated;
 do $$
 declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
 begin
-  perform public.editar_venta(current_setting('t.venta', true)::uuid, 1100, 'efectivo',
+  perform public.editar_venta(current_setting('t.venta_f', true)::uuid, 1100, 'efectivo',
                               p_fecha := v_hoy - 5);
 end $$;
 reset role;
@@ -373,10 +402,10 @@ declare
   -- write, which is the value that flips day (and month) for a reader an hour to either side.
   v_esperado timestamptz := ((v_hoy - 5)::timestamp + interval '12 hours')
                             at time zone current_setting('t.tz', true);
-  v_rest     jsonb := (current_setting('t.venta_rest', true)::jsonb) - 'fecha';
+  v_rest     jsonb := (current_setting('t.venta_f_rest', true)::jsonb) - 'fecha';
   v_after    jsonb;
 begin
-  select * into rec from public.ventas where id = current_setting('t.venta', true)::uuid;
+  select * into rec from public.ventas where id = current_setting('t.venta_f', true)::uuid;
   if rec.fecha is distinct from v_esperado then
     raise exception 'VF1 FAIL: fecha = % (expected % — midday gym-tz on the requested day, registrar_venta''s write convention)', rec.fecha, v_esperado;
   end if;
@@ -386,8 +415,8 @@ begin
   if rec.metodo is distinct from 'efectivo' then
     raise exception 'VF1 FAIL: metodo = % (expected efectivo — the other two columns still persist on a 4-arg call)', rec.metodo;
   end if;
-  if rec.created_at is distinct from current_setting('t.created', true)::timestamptz then
-    raise exception 'VF1 FAIL: created_at = % (expected unchanged — moving the SOLD date must not move the REGISTRATION stamp, which is what the 30-day delete window is anchored on)', rec.created_at;
+  if rec.created_at is distinct from current_setting('t.created_f', true)::timestamptz then
+    raise exception 'VF1 FAIL: created_at = % (expected unchanged — moving the SOLD date must not move the REGISTRATION stamp, which is what the 30-day delete AND re-derive windows are anchored on)', rec.created_at;
   end if;
 
   -- the catch-all: every column except the three the call is allowed to touch, byte-for-byte
@@ -429,7 +458,7 @@ declare
 begin
   v_msg := null;
   begin
-    perform public.editar_venta(current_setting('t.venta', true)::uuid, 1, 'transferencia',
+    perform public.editar_venta(current_setting('t.venta_f', true)::uuid, 1, 'transferencia',
                                 p_fecha := v_hoy + 1);
   exception when others then v_msg := sqlerrm;
   end;
@@ -443,7 +472,7 @@ declare
   v_all   jsonb := current_setting('t.venta_all', true)::jsonb;
   v_after jsonb;
 begin
-  select to_jsonb(v.*) into v_after from public.ventas v where v.id = current_setting('t.venta', true)::uuid;
+  select to_jsonb(v.*) into v_after from public.ventas v where v.id = current_setting('t.venta_f', true)::uuid;
   if v_after is distinct from v_all then
     raise exception 'VF2 FAIL: the refused call still wrote. before = % / after = %', v_all, v_after;
   end if;
@@ -461,7 +490,7 @@ declare
 begin
   v_msg := null;
   begin
-    perform public.editar_venta(current_setting('t.venta', true)::uuid, 1, 'transferencia',
+    perform public.editar_venta(current_setting('t.venta_f', true)::uuid, 1, 'transferencia',
                                 p_fecha := v_hoy - 31);
   exception when others then v_msg := sqlerrm;
   end;
@@ -475,7 +504,7 @@ declare
   v_all   jsonb := current_setting('t.venta_all', true)::jsonb;
   v_after jsonb;
 begin
-  select to_jsonb(v.*) into v_after from public.ventas v where v.id = current_setting('t.venta', true)::uuid;
+  select to_jsonb(v.*) into v_after from public.ventas v where v.id = current_setting('t.venta_f', true)::uuid;
   if v_after is distinct from v_all then
     raise exception 'VF3 FAIL: the refused call still wrote. before = % / after = %', v_all, v_after;
   end if;
@@ -550,7 +579,7 @@ set local role authenticated;
 do $$
 declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
 begin
-  perform public.editar_venta(current_setting('t.venta', true)::uuid, 1200, 'tarjeta', p_fecha := v_hoy);
+  perform public.editar_venta(current_setting('t.venta_f', true)::uuid, 1200, 'tarjeta', p_fecha := v_hoy);
 end $$;
 reset role;
 do $$
@@ -558,10 +587,10 @@ declare
   rec        record;
   v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
   v_esperado timestamptz := (v_hoy::timestamp + interval '12 hours') at time zone current_setting('t.tz', true);
-  v_rest     jsonb := (current_setting('t.venta_rest', true)::jsonb) - 'fecha';
+  v_rest     jsonb := (current_setting('t.venta_f_rest', true)::jsonb) - 'fecha';
   v_after    jsonb;
 begin
-  select * into rec from public.ventas where id = current_setting('t.venta', true)::uuid;
+  select * into rec from public.ventas where id = current_setting('t.venta_f', true)::uuid;
   if rec.fecha is distinct from v_esperado then
     raise exception 'VF5 FAIL: fecha (hoy) = % (expected % — midday gym-tz TODAY, the upper edge, must be ACCEPTED not refused)', rec.fecha, v_esperado;
   end if;
@@ -581,7 +610,7 @@ set local role authenticated;
 do $$
 declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
 begin
-  perform public.editar_venta(current_setting('t.venta', true)::uuid, 1300, 'transferencia', p_fecha := v_hoy - 30);
+  perform public.editar_venta(current_setting('t.venta_f', true)::uuid, 1300, 'transferencia', p_fecha := v_hoy - 30);
 end $$;
 reset role;
 do $$
@@ -589,10 +618,10 @@ declare
   rec        record;
   v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
   v_esperado timestamptz := ((v_hoy - 30)::timestamp + interval '12 hours') at time zone current_setting('t.tz', true);
-  v_rest     jsonb := (current_setting('t.venta_rest', true)::jsonb) - 'fecha';
+  v_rest     jsonb := (current_setting('t.venta_f_rest', true)::jsonb) - 'fecha';
   v_after    jsonb;
 begin
-  select * into rec from public.ventas where id = current_setting('t.venta', true)::uuid;
+  select * into rec from public.ventas where id = current_setting('t.venta_f', true)::uuid;
   if rec.fecha is distinct from v_esperado then
     raise exception 'VF5 FAIL: fecha (hoy-30) = % (expected % — midday gym-tz on hoy-30, the lower edge, must be ACCEPTED not refused)', rec.fecha, v_esperado;
   end if;

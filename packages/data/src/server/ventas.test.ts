@@ -652,6 +652,40 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     expect(args).not.toHaveProperty("p_custom_clases");
   });
 
+  // FIX2 — editarVentaSchema's personalizado arm drops crearVenta's 1..100 000 precio bound:
+  // precio is IGNORED on this door (MONTO above is the sale's price), so a value that would be
+  // a schema-parse refusal on crearVenta must be a no-op here, never a doomed write.
+  it("does not reject a personalizado precio beyond crearVenta's 100 000 cap (FIX2 — precio is ignored on this door)", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await editarVenta(
+      {
+        ventaId: VENTA_ID,
+        monto: 900,
+        metodo: "tarjeta",
+        paquete: { tipo: "personalizado", nombre: "Promo Verano", precio: 999_999, clases: 12, dias: 45 },
+      },
+      fake.client,
+    );
+    const { args } = lastRpc(fake);
+    expect(args).toMatchObject({ p_custom_nombre: "Promo Verano", p_custom_dias: 45, p_custom_clases: 12 });
+    expect(args).not.toHaveProperty("p_custom_precio");
+  });
+
+  it("does not require precio at all on the personalizado arm (FIX2 — it's not part of this schema)", async () => {
+    const fake = makeFake({}, { rpcData: null });
+    await expect(
+      editarVenta(
+        {
+          ventaId: VENTA_ID,
+          monto: 900,
+          metodo: "tarjeta",
+          paquete: { tipo: "personalizado", nombre: "Promo Verano", clases: 12, dias: 45 },
+        },
+        fake.client,
+      ),
+    ).resolves.toBeUndefined();
+  });
+
   it.each([
     "No autorizado",
     "Venta no encontrada",
@@ -664,7 +698,8 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     "Nombre del paquete personalizado inválido",
     "Clases personalizadas inválidas",
     "Vigencia personalizada inválida",
-    "Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar",
+    "Ya pasaron 30 días: esta venta ya no se puede recalcular",
+    "Solo la venta más reciente puede cambiar de paquete o fecha",
   ])(
     "types the known refusal %j as VentaRefusalError, message verbatim",
     async (mensaje) => {

@@ -3,14 +3,19 @@ import { describe, expect, it } from "vitest";
 import { CUSTOM_VACIO, PERSONALIZADO, type CustomForm } from "../../../vender/_components/vender-vm";
 import {
   clawbackPisaCero,
+  customPaqueteValido,
+  debeSeedCustom,
   dentroDeVentanaEliminar,
+  esVentaMasReciente,
   fechaEditada,
   fechaSeed,
   inicioMinIso,
   montoEditado,
   previewEliminarVenta,
   previewRederivarVenta,
+  razonSwapBloqueado,
   rederivaSaldo,
+  siguientePaqSel,
   swapDirty,
   vigenciaDiasVenta,
 } from "./pago-sheet-vm";
@@ -33,8 +38,8 @@ describe("previewEliminarVenta", () => {
     );
   });
 
-  it("floors the balance at zero and SAYS so (#267.4) — used classes are never a refusal", () => {
-    expect(previewEliminarVenta({ ...EJEMPLO, clasesRestantes: 2 })).toBe(
+  it("lands on EXACTLY zero at the boundary — clawbackPisaCero's own allowed case (ruling 3 REVERSED #267.4: strictly negative is now a refusal, never reachable here)", () => {
+    expect(previewEliminarVenta({ ...EJEMPLO, clasesRestantes: 8 })).toBe(
       "Se restarán 8 clases y 30 días → quedará en 0 clases, vence 8 sep. Se restarán $850 de los ingresos de agosto.",
     );
   });
@@ -294,5 +299,103 @@ describe("swapDirty — the PAQUETE section's own dirty bit", () => {
 
   it("is true for PERSONALIZADO once its form validates", () => {
     expect(swapDirty(PERSONALIZADO, VALIDO)).toBe(true);
+  });
+
+  it("is true even when precio would fail vender's own cap — FIX2 regression, precio never gates this door", () => {
+    expect(swapDirty(PERSONALIZADO, { ...VALIDO, precio: "999999" })).toBe(true);
+  });
+});
+
+describe("customPaqueteValido — the sheet's PERSONALIZADO gate ignores precio entirely (FIX2)", () => {
+  const BASE: CustomForm = { nombre: "Promo Verano", precio: "", clases: "10", ilimitado: false, dias: "20" };
+
+  it("is savable when precio fails vender's own entero() regex — the dead-GUARDAR vector: a MONTO like '850.00' synced into precio", () => {
+    expect(customPaqueteValido({ ...BASE, precio: "850.00" })).toBe(true);
+  });
+
+  it("is savable past vender's 100 000 personalizado cap — MONTO governs the price on this door, uncapped", () => {
+    expect(customPaqueteValido({ ...BASE, precio: "150000" })).toBe(true);
+  });
+
+  it("is savable with precio left blank entirely", () => {
+    expect(customPaqueteValido({ ...BASE, precio: "" })).toBe(true);
+  });
+
+  it("still refuses an incomplete nombre — precio aside, the OTHER fields still gate", () => {
+    expect(customPaqueteValido({ ...BASE, nombre: "ab" })).toBe(false);
+  });
+
+  it("still refuses clases/dias out of bounds — precio aside, the OTHER fields still gate", () => {
+    expect(customPaqueteValido({ ...BASE, dias: "0" })).toBe(false);
+    expect(customPaqueteValido({ ...BASE, ilimitado: false, clases: "0" })).toBe(false);
+  });
+
+  it("never needs clases when ilimitado is on", () => {
+    expect(customPaqueteValido({ ...BASE, ilimitado: true, clases: "" })).toBe(true);
+  });
+});
+
+describe("siguientePaqSel — tapping the selected tile again deselects (FIX3a/b)", () => {
+  it("selects a fresh tile from nothing picked", () => {
+    expect(siguientePaqSel(null, "paquete-1")).toBe("paquete-1");
+  });
+
+  it("deselects (back to null, 'sin cambio') when the SAME tile is tapped again", () => {
+    expect(siguientePaqSel("paquete-1", "paquete-1")).toBeNull();
+  });
+
+  it("switches straight to a different tile — a real selection change, not a deselect", () => {
+    expect(siguientePaqSel("paquete-1", "paquete-2")).toBe("paquete-2");
+  });
+
+  it("deselects PERSONALIZADO the same way a registrado tile deselects", () => {
+    expect(siguientePaqSel(PERSONALIZADO, PERSONALIZADO)).toBeNull();
+  });
+});
+
+describe("debeSeedCustom — the custom form seeds ONCE, on first entry (FIX3c)", () => {
+  it("seeds the first time PERSONALIZADO is entered", () => {
+    expect(debeSeedCustom(false, PERSONALIZADO)).toBe(true);
+  });
+
+  it("does NOT reseed once already seeded — surviving a switch away and back to PERSONALIZADO", () => {
+    expect(debeSeedCustom(true, PERSONALIZADO)).toBe(false);
+  });
+
+  it("never seeds for a registrado pick or a deselect", () => {
+    expect(debeSeedCustom(false, "paquete-1")).toBe(false);
+    expect(debeSeedCustom(false, null)).toBe(false);
+  });
+});
+
+describe("esVentaMasReciente — mirrors editar_venta's own (created_at, id) desc tiebreak (FIX4)", () => {
+  it("is true when the venta is the FIRST row of `pagos` (ficha.pagos' own created_at desc, id desc order)", () => {
+    expect(esVentaMasReciente("v2", [{ id: "v2" }, { id: "v1" }])).toBe(true);
+  });
+
+  it("is false for any sale that isn't the first row", () => {
+    expect(esVentaMasReciente("v1", [{ id: "v2" }, { id: "v1" }])).toBe(false);
+  });
+
+  it("is false against an empty list (a venta the ficha somehow doesn't carry)", () => {
+    expect(esVentaMasReciente("v1", [])).toBe(false);
+  });
+});
+
+describe("razonSwapBloqueado — why the PAQUETE picker + FECHA field hide (FIX4)", () => {
+  it("is null when the swap door is open (latest sale, inside the window)", () => {
+    expect(razonSwapBloqueado(true, true)).toBeNull();
+  });
+
+  it("names the window FIRST — mirrors the RPC's own check order (window before the latest-sale guard)", () => {
+    expect(razonSwapBloqueado(false, false)).toBe("Ya pasaron 30 días: esta venta ya no se puede recalcular.");
+  });
+
+  it("names the window even when the sale WOULD be the latest", () => {
+    expect(razonSwapBloqueado(false, true)).toBe("Ya pasaron 30 días: esta venta ya no se puede recalcular.");
+  });
+
+  it("names the latest-sale guard once the window itself is fine", () => {
+    expect(razonSwapBloqueado(true, false)).toBe("Solo la venta más reciente puede cambiar de paquete o fecha.");
   });
 });

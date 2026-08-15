@@ -404,7 +404,14 @@ const VENTA_REFUSALS: readonly string[] = [
   "Nombre del paquete personalizado inválido",
   "Clases personalizadas inválidas",
   "Vigencia personalizada inválida",
-  "Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar",
+  // The window covers the WHOLE re-derive (package OR fecha change), not just the package
+  // change alone — generalized from "el paquete de esta venta ya no se puede cambiar" once a
+  // fecha-only edit was found to re-grant exactly as much as a swap does (FIX6).
+  "Ya pasaron 30 días: esta venta ya no se puede recalcular",
+  // "Only the top of the stack can re-derive" (FIX4/FIX6): a re-derive (package or fecha
+  // change) on any sale but the cliente's own latest would silently destroy a later sale's
+  // grant, so it is refused outright rather than approximated.
+  "Solo la venta más reciente puede cambiar de paquete o fecha",
   // eliminar_venta's floor-clip delete gate (ruling 3, spec §1.3).
   "No se puede eliminar: ya se usaron clases de esta venta",
 ];
@@ -425,12 +432,29 @@ function raiseVentaError(message: string): never {
   throw new Error(message);
 }
 
+/** `editarVenta`'s OWN package-selection schema (FIX2) — the registrado arm is
+ *  `paqueteSeleccionSchema`'s, reused as-is; the personalizado arm drops `precio`. `precio` is
+ *  IGNORED on this door (the sheet's own MONTO field above is the sale's price, and
+ *  `editar_venta` takes no `p_custom_precio` argument, spec §1.1) — enforcing crearVenta's
+ *  1..100 000 bound here refused a legitimate correction (a MONTO like "850.00", which
+ *  `montoEditado` accepts but `precio`'s stricter digits-only parse doesn't; or any MONTO over
+ *  100 000) against a field the sheet never even renders (`PersonalizadoEditor`'s
+ *  `mostrarPrecio={false}`). `crearVenta`/vender keep `paqueteSeleccionSchema`'s own precio
+ *  bound untouched — this is a SEPARATE schema, not a mutation of the shared one. */
+const paqueteSeleccionEditarSchema = z.discriminatedUnion("tipo", [
+  paqueteSeleccionSchema.options[0],
+  paqueteSeleccionSchema.options[1].omit({ precio: true }),
+]);
+
 export const editarVentaSchema = z.object({
   ventaId: z.string().uuid(),
-  // A positive integer, with NO ceiling — matching `editar_venta`'s own one-sided bound. The
-  // personalizado `precio` cap above governs a paquete being INVENTED; a sale's monto can also come
-  // from `paquetes.precio`, which has no CHECK and no ceiling, so a cap here would refuse to correct
-  // an already-registered high-value sale (and block fixing its método along with it).
+  // A positive integer, with NO ceiling — matching `editar_venta`'s own one-sided bound.
+  // crearVenta's SEPARATE personalizado `precio` cap (1..100 000, above) governs a paquete
+  // being INVENTED there; a sale's monto can also come from `paquetes.precio`, which has no
+  // CHECK and no ceiling, so a cap here would refuse to correct an already-registered
+  // high-value sale (and block fixing its método along with it). This schema's own
+  // personalizado arm doesn't bound precio at all (FIX2, `paqueteSeleccionEditarSchema`
+  // below) — precio is ignored on this door entirely; MONTO is this field.
   monto: z.number().int().min(1),
   metodo: z.enum(METODOS),
   // Corrected sold date (fast-follow to #269) — a gym-local "YYYY-MM-DD" day, same shape as
@@ -441,13 +465,11 @@ export const editarVentaSchema = z.object({
     .string()
     .regex(/^\d{4}-\d{2}-\d{2}$/, "Fecha inválida")
     .optional(),
-  // Package swap (paquete-swap spec §4): REUSES crearVenta's discriminated union — no new
-  // schema, no second "which price wins" door. Absent = "keep the current package" (the
-  // RPC's D0.5 no-op path: a plain monto/metodo/fecha correction never claws back/re-grants).
-  // The personalizado arm's `precio` is IGNORED here — the sheet's own MONTO field above IS
-  // the sale's price, so `editar_venta` has no p_custom_precio argument (spec §1.1) and this
-  // DAL never forwards it.
-  paquete: paqueteSeleccionSchema.optional(),
+  // Package swap (paquete-swap spec §4): `paqueteSeleccionEditarSchema` above, not
+  // crearVenta's own union — same registrado arm, but the personalizado arm doesn't bound
+  // `precio` (FIX2). Absent = "keep the current package" (the RPC's D0.5 no-op path: a plain
+  // monto/metodo/fecha correction never claws back/re-grants).
+  paquete: paqueteSeleccionEditarSchema.optional(),
 });
 
 export const eliminarVentaSchema = z.object({ ventaId: z.string().uuid() });

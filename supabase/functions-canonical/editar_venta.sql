@@ -151,8 +151,22 @@ begin
                   and p_fecha is distinct from (v_venta.fecha at time zone v_tz)::date;
 
   
-  if v_cambio_paquete and v_venta.created_at < now() - interval '30 days' then
-    raise exception 'Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar';
+  
+  
+  if (v_cambio_grant or v_cambio_fecha) and v_venta.created_at < now() - interval '30 days' then
+    raise exception 'Ya pasaron 30 días: esta venta ya no se puede recalcular';
+  end if;
+
+  
+  
+  
+  
+  if (v_cambio_grant or v_cambio_fecha)
+     and exists (select 1 from public.ventas v
+                  where v.cliente_id = v_venta.cliente_id
+                    and v.gym_id = v_gym
+                    and (v.created_at, v.id) > (v_venta.created_at, p_venta_id)) then
+    raise exception 'Solo la venta más reciente puede cambiar de paquete o fecha';
   end if;
 
   
@@ -176,7 +190,7 @@ begin
                                 where v.cliente_id = c.id and v.gym_id = v_gym
                                 order by v.created_at desc, v.id desc
                                 limit 1)
-       where c.id = v_venta.cliente_id;
+       where c.id = v_venta.cliente_id and c.gym_id = v_gym;   
     end if;
     
     return;
@@ -222,6 +236,11 @@ begin
 
   
   
+  
+  
+  
+  
+  
   update public.clientes c
      set clases_restantes = v_new_clases,
          vence            = v_new_vence,
@@ -229,5 +248,5 @@ begin
                               where v.cliente_id = c.id and v.gym_id = v_gym
                               order by v.created_at desc, v.id desc
                               limit 1)
-   where c.id = v_venta.cliente_id;
+   where c.id = v_venta.cliente_id and c.gym_id = v_gym;
 end;

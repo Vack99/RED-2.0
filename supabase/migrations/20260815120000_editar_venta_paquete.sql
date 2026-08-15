@@ -17,8 +17,12 @@
 -- re-grant core the swap uses. What made the re-derive a guess in that header was the missing inverse;
 -- what makes it sound now is that the inverse and the forward pass run in the SAME transaction, from
 -- the same locked rows, so nothing is reconstructed from history — the sale's own stored grant is
--- subtracted and registrar_venta's stacking block is replayed at the new day. When nothing clamps the
--- round trip is an exact IDENTITY (editar_venta_rules.sql VF1/VF5 keep passing untouched, unchanged).
+-- subtracted and registrar_venta's stacking block is replayed at the new day. That subtraction is a
+-- LINEAR inverse (`vence − dias_old`, `clases_restantes − clases_old`), and it recovers the pre-sale
+-- base ONLY while this sale is still the last one that touched the saldo — the top-of-stack
+-- precondition enforced below is what makes the sentence above true rather than merely plausible.
+-- When nothing clamps the round trip is an exact IDENTITY (editar_venta_rules.sql VF1/VF5 keep passing
+-- untouched, unchanged).
 --
 -- ── ONE core, one RPC ──────────────────────────────────────────────────────────────────────────────
 -- `editar_venta` grows the package arguments; there is no second function. A fecha-only re-derive is
@@ -62,11 +66,30 @@
 -- and the second identical payload degenerates to a monto/metodo write with the same values.
 -- (`registrar_venta` needs a key because it INSERTs; this does not. Pinned by S6.)
 --
--- ── The window is scoped to the PACKAGE change only ─────────────────────────────────────────────────
--- Ruling 4 windows "the swap": `v_cambio_paquete` past 30 days from `created_at` is refused, while
--- monto/metodo/fecha stay any-age as #266.3 shipped. Windowing the fecha path too was considered and
--- rejected — the owner windowed the swap only, and a window he did not ask for is a lock on the gym's
--- own data.
+-- ── ONLY THE TOP OF THE STACK CAN RE-DERIVE ────────────────────────────────────────────────────────
+-- The clawback is a LINEAR inverse of what this sale granted, so it reconstructs the pre-sale base only
+-- while no LATER sale has stacked on top of it. registrar_venta's stacking is NOT linear — its
+-- expired-restart discard throws the carried base away — so a later sale's grant cannot be recovered by
+-- subtracting an earlier sale's numbers. Concretely: V1 (8 clases / 20 días, sold 25 days ago, lapsed)
+-- then V2 (the same package, sold 2 days ago) leaves the member on V2's restart, 8 clases / vence +18.
+-- Swapping V1 onto a 12-clase mes package would take 8 − 8 = 0 for "the base", re-grant at V1's day and
+-- write 12 clases / vence +28 — V2's whole grant silently destroyed and V1's counted twice.
+-- So whenever the call would re-derive (`v_cambio_grant or v_cambio_fecha`), another venta of the same
+-- cliente with a later (created_at, id) refuses it: 'Solo la venta más reciente puede cambiar de
+-- paquete o fecha'. That is the same tuple order the paquete_nombre re-stamp subselect uses, so "the
+-- latest sale" means one thing in this function. Monto/metodo-only edits move no saldo and stay legal
+-- on ANY sale (S12), which is what keeps an older sale's ATTRIBUTION correctable.
+--
+-- ── The window covers the whole RE-DERIVE, not just the package change ─────────────────────────────
+-- Ruling 4 windows "the swap" at 30 days from `created_at`; the guard is written over the predicate
+-- that TRIGGERS the re-derive (`v_cambio_grant or v_cambio_fecha`). A fecha-only edit re-grants exactly
+-- as much as a swap does, and on a sale of unbounded age the discard arm makes it a re-grant of the
+-- whole package: a 100-clase / 365-día sale dated 400 days ago, member long since down to 5, "corrected"
+-- to 10 days ago walks away with 100 clases and vence +355. Windowing the re-grant but not the fecha
+-- that drives it leaves that door open under a different argument name, so the refusal is stated over
+-- the recalculation itself: 'Ya pasaron 30 días: esta venta ya no se puede recalcular'. monto/metodo
+-- stay any-age (#266.3), and so does a pure RENAME (a package with the same grant, no fecha change): it
+-- moves no saldo, so it is attribution like they are.
 --
 -- ── registrar's dead-on-arrival refusal is NOT replicated ───────────────────────────────────────────
 -- `registrar_venta` raises 'La venta ya estaría vencida en la fecha de inicio' to stop the desk
@@ -76,6 +99,13 @@
 -- `vence` falls before the sale's day, `base_dias := 0` and `base_clases := 0`, exactly as registrar
 -- does — so "vence follows fecha" bites precisely where registrar's own rule bites, and a stacked
 -- purchase's vence legitimately does not move when the member was still vigente at the sale date.
+--
+-- ── The ilimitado arm is deliberately LOSSY ─────────────────────────────────────────────────────────
+-- Swapping onto an ilimitado package nulls the balance, which erases the carried count, and swapping
+-- back re-grants only the new package's own clases (`v_base_clases is null` ⇒ `v_new_clases := v_clases`)
+-- — the round trip does NOT restore what was carried. That is inherent to null-means-ilimitado
+-- (ADR-0004): a null balance holds no number to carry. It is not repaired here; the sheet's inline
+-- preview shows the resulting saldo before the write, and that is the operator's warning.
 --
 -- Expand-only (grant re-scope, two function replacements), idempotent (drop-if-exists + create-or-
 -- replace, grants re-apply cleanly), safe out of order on the live project.
@@ -270,9 +300,23 @@ begin
   v_cambio_fecha   := p_fecha is not null
                   and p_fecha is distinct from (v_venta.fecha at time zone v_tz)::date;
 
-  -- Ruling 4, scoped to the package change alone: monto/metodo/fecha stay any-age (#266.3).
-  if v_cambio_paquete and v_venta.created_at < now() - interval '30 days' then
-    raise exception 'Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar';
+  -- Ruling 4's window, written over the RE-DERIVE and not over the package change alone (see header):
+  -- a fecha-only edit re-grants exactly as much as a swap does. monto/metodo — and a pure rename, which
+  -- moves no saldo — stay any-age (#266.3).
+  if (v_cambio_grant or v_cambio_fecha) and v_venta.created_at < now() - interval '30 days' then
+    raise exception 'Ya pasaron 30 días: esta venta ya no se puede recalcular';
+  end if;
+
+  -- The top-of-stack precondition (see header): the clawback is a LINEAR inverse, so it only recovers
+  -- the pre-sale base while nothing has stacked on top of this sale. A later sale of the same cliente
+  -- makes the subtraction meaningless and would silently destroy that later sale's grant, so the
+  -- re-derive is refused outright rather than approximated. Monto/metodo-only edits never reach here.
+  if (v_cambio_grant or v_cambio_fecha)
+     and exists (select 1 from public.ventas v
+                  where v.cliente_id = v_venta.cliente_id
+                    and v.gym_id = v_gym
+                    and (v.created_at, v.id) > (v_venta.created_at, p_venta_id)) then
+    raise exception 'Solo la venta más reciente puede cambiar de paquete o fecha';
   end if;
 
   -- The venta row is rewritten BEFORE the clientes write, so the paquete_nombre subselect below sees
@@ -296,7 +340,7 @@ begin
                                 where v.cliente_id = c.id and v.gym_id = v_gym
                                 order by v.created_at desc, v.id desc
                                 limit 1)
-       where c.id = v_venta.cliente_id;
+       where c.id = v_venta.cliente_id and c.gym_id = v_gym;   -- defense in depth (see below)
     end if;
     -- A monto/metodo-only edit reaches `clientes` not at all.
     return;
@@ -342,6 +386,11 @@ begin
 
   -- No dead-on-arrival refusal here (see header): on a correction, "already expired" is often the
   -- truth being recorded.
+  --
+  -- `c.gym_id = v_gym` is DEFENSE IN DEPTH, not a live gate: the cliente is reached through a venta this
+  -- body already pinned to `v_gym`, and the subselect inside carries the same predicate. It exists so
+  -- the tenant filter is on the MUTATING statement as well as inside it — the house form — and so a
+  -- future path that reaches this update with a cliente_id from somewhere else cannot write cross-gym.
   update public.clientes c
      set clases_restantes = v_new_clases,
          vence            = v_new_vence,
@@ -349,7 +398,7 @@ begin
                               where v.cliente_id = c.id and v.gym_id = v_gym
                               order by v.created_at desc, v.id desc
                               limit 1)
-   where c.id = v_venta.cliente_id;
+   where c.id = v_venta.cliente_id and c.gym_id = v_gym;
 end;
 $function$;
 
@@ -425,6 +474,9 @@ begin
   -- survives as a belt — the gate above already proved the subtraction cannot go below zero — because
   -- an ilimitado-balance row still reaches this line and the null arm must keep its meaning.
   -- paquete_nombre reverts to the most recent REMAINING sale; null when none remain (#267.5).
+  -- `c.gym_id = v_gym` is defense in depth, matching editar_venta above: the cliente is reached through
+  -- a venta already pinned to v_gym and the subselect carries the same predicate, but the tenant filter
+  -- belongs on the mutating statement too (the house form).
   update public.clientes c
      set clases_restantes = case when c.clases_restantes is null then null
                                  else greatest(0, c.clases_restantes - coalesce(v_venta.clases, 0)) end,
@@ -433,7 +485,7 @@ begin
                             where v.cliente_id = c.id and v.gym_id = v_gym
                             order by v.created_at desc, v.id desc
                             limit 1)
-   where c.id = v_venta.cliente_id;
+   where c.id = v_venta.cliente_id and c.gym_id = v_gym;
 end;
 $function$;
 

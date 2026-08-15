@@ -1241,9 +1241,27 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
 
     const ficha = await getClienteFicha("cli-ficha", paquetesClient);
 
+    // FIX1's root cause: the RAW vigencia facts ride alongside the display string, so a
+    // consumer (the correction sheet's swap preview) never has to re-derive them by parsing
+    // `vigencia` — which reads "30 días" identically for a 'dias' package of 30 and a 'mes'
+    // package, but the RPC keys its whole re-derive off `vigencia_tipo`, not the day count.
     expect(ficha?.paquetes).toEqual([
-      expect.objectContaining({ id: "pq-1", nombre: "8 clases", clases: 8, precio: 800 }),
-      expect.objectContaining({ id: "pq-2", nombre: "Ilimitado", clases: null, precio: 1200 }),
+      expect.objectContaining({
+        id: "pq-1",
+        nombre: "8 clases",
+        clases: 8,
+        precio: 800,
+        vigenciaTipo: "dias",
+        vigenciaDias: 30,
+      }),
+      expect.objectContaining({
+        id: "pq-2",
+        nombre: "Ilimitado",
+        clases: null,
+        precio: 1200,
+        vigenciaTipo: "mes",
+        vigenciaDias: null,
+      }),
     ]);
   });
 });

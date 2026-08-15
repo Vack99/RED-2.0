@@ -16,21 +16,25 @@ import { PaqueteTiles } from "../../../_components/paquete-tiles";
 import {
   CUSTOM_VACIO,
   customSeleccion,
-  customValido,
   PERSONALIZADO,
   type CustomForm,
 } from "../../../vender/_components/vender-vm";
 import { editarVentaAction, eliminarVentaAction } from "../actions";
 import {
   clawbackPisaCero,
+  customPaqueteValido,
+  debeSeedCustom,
   dentroDeVentanaEliminar,
+  esVentaMasReciente,
   fechaEditada,
   fechaSeed,
   inicioMinIso,
   montoEditado,
   previewEliminarVenta,
   previewRederivarVenta,
+  razonSwapBloqueado,
   rederivaSaldo,
+  siguientePaqSel,
   swapDirty,
   vigenciaDiasVenta,
 } from "./pago-sheet-vm";
@@ -62,6 +66,7 @@ export function PagoSheet({
   vence,
   hoyIso,
   paquetes,
+  pagos,
 }: {
   open: boolean;
   onClose: () => void;
@@ -76,6 +81,10 @@ export function PagoSheet({
   hoyIso: string;
   /** The gym's package catalog — the swap picker's tiles (paquete-swap spec §5.3). */
   paquetes: PaqueteDTO[];
+  /** `ficha.pagos` — the SAME list the historial renders, already read `created_at desc, id
+   *  desc` (derive.ts). FIX4: the sheet reads this to tell whether `pago` is the cliente's own
+   *  most-recent sale, the RPC's own "only the top of the stack can re-derive" precondition. */
+  pagos: FichaPago[];
 }) {
   const router = useRouter();
   const [modo, setModo] = React.useState<"detalle" | "editar" | "confirmar">("detalle");
@@ -89,6 +98,11 @@ export function PagoSheet({
   // selection always means "swap to this," never "this is what's already there."
   const [paqSel, setPaqSel] = React.useState<string | null>(null);
   const [custom, setCustom] = React.useState<CustomForm>(CUSTOM_VACIO);
+  // Whether the custom form has already been seeded from the CURRENT sale once this `editar`
+  // session started (FIX3c). A ref, not state: flipping it must never itself trigger a
+  // re-render, and `debeSeedCustom` is the pure decision this only feeds — switching to a
+  // registrado tile and back to PERSONALIZADO must NOT re-seed and wipe what was typed.
+  const customSeeded = React.useRef(false);
 
   // Every tap on a pago row lands on `detalle`, never on a half-edited form.
   React.useEffect(() => {
@@ -108,30 +122,35 @@ export function PagoSheet({
     // is current" match would be a guess. Selection always means "swap to this."
     setPaqSel(null);
     setCustom(CUSTOM_VACIO);
+    customSeeded.current = false;
     setModo("editar");
   };
 
-  // Picking a tile (paquete-swap spec §5.3). A registrado pick reseeds MONTO to the
-  // package's own price (ruling 4 — still editable); PERSONALIZADO leaves MONTO alone, since
-  // it IS the personalizado price. Picking PERSONALIZADO for the first time seeds the form
-  // from the CURRENT sale's own facts, so "this custom package had the wrong number of days"
-  // is a two-tap fix rather than a blank form.
+  // Picking a tile (paquete-swap spec §5.3, FIX3). Tapping the tile ALREADY selected
+  // DESELECTS it (`siguientePaqSel`, FIX3a) — back to null, "sin cambio: manten el paquete
+  // actual" — instead of re-running the monto reseed below; every OTHER tap is a real
+  // selection change. A registrado pick reseeds MONTO to the package's own price (ruling 4 —
+  // still editable, FIX3b: only on that real change, never on a deselect or a re-tap).
+  // PERSONALIZADO leaves MONTO alone, since it IS the personalizado price, and seeds the
+  // custom form from the CURRENT sale's own facts EXACTLY ONCE per `editar` session
+  // (`debeSeedCustom`, FIX3c) — so switching to a registrado tile and back does not wipe
+  // whatever the operator already typed.
   const selectPaq = (id: string) => {
-    if (id === PERSONALIZADO) {
-      if (paqSel !== PERSONALIZADO && pago) {
-        setCustom({
-          nombre: pago.paquete,
-          precio: monto,
-          clases: pago.clases === null ? "" : String(pago.clases),
-          ilimitado: pago.clases === null,
-          dias: String(vigenciaDiasVenta(pago.vigenciaTipo, pago.vigenciaDias)),
-        });
-      }
-    } else {
-      const p = paquetes.find((pp) => pp.id === id);
+    const next = siguientePaqSel(paqSel, id);
+    if (next !== null && next !== PERSONALIZADO) {
+      const p = paquetes.find((pp) => pp.id === next);
       if (p) setMonto(String(p.precio));
+    } else if (next === PERSONALIZADO && debeSeedCustom(customSeeded.current, next) && pago) {
+      setCustom({
+        nombre: pago.paquete,
+        precio: monto,
+        clases: pago.clases === null ? "" : String(pago.clases),
+        ilimitado: pago.clases === null,
+        dias: String(vigenciaDiasVenta(pago.vigenciaTipo, pago.vigenciaDias)),
+      });
+      customSeeded.current = true;
     }
-    setPaqSel(id);
+    setPaqSel(next);
   };
 
   const montoLabelRef = React.useRef<HTMLLabelElement | null>(null);
@@ -140,10 +159,14 @@ export function PagoSheet({
   // panel doesn't exist yet when it runs. Entering `editar` later leaves nothing
   // focused; restore it ourselves. `[data-autofocus]` on the MONTO Input below is the
   // SAME marker the Sheet queries, kept for the shared idiom even though this effect
-  // — not the Sheet's — is what calls `.focus()` here.
+  // — not the Sheet's — is what calls `.focus()` here. FIX5f: MONTO now sits BELOW the
+  // PAQUETE tile catalog, so `preventScroll` alone can leave it stranded above the fold once
+  // the on-screen keyboard rises — scroll it into view explicitly, after focusing.
   React.useEffect(() => {
     if (modo !== "editar") return;
-    montoLabelRef.current?.querySelector<HTMLInputElement>("[data-autofocus]")?.focus({ preventScroll: true });
+    const input = montoLabelRef.current?.querySelector<HTMLInputElement>("[data-autofocus]");
+    input?.focus({ preventScroll: true });
+    input?.scrollIntoView({ block: "center" });
   }, [modo]);
 
   const montoNum = montoEditado(monto);
@@ -159,11 +182,13 @@ export function PagoSheet({
   // below zero, ELIMINAR is replaced by a muted note rather than disabled.
   const clipeado = !!pago && clawbackPisaCero(pago.clases, clasesRestantes);
   const puedeEliminar = dentroVentana && !clipeado;
-
-  // The personalizado form's PRECIO is kept in sync with the live MONTO field everywhere
-  // validity is checked (spec §5.3) — the sheet's own PRECIO input is hidden
-  // (`mostrarPrecio={false}`), so `custom.precio` itself is never the live source of truth.
-  const customConMonto: CustomForm = { ...custom, precio: monto };
+  // FIX4: the RPC now also refuses ANY re-derive (package OR fecha change) on a sale that
+  // isn't the cliente's own latest, or past the same 30-day window — 'Solo la venta más
+  // reciente puede cambiar de paquete o fecha' / 'Ya pasaron 30 días: esta venta ya no se
+  // puede recalcular'. `esMasReciente` mirrors the RPC's own `(created_at, id) desc` tiebreak
+  // off `pagos`, the SAME list already ordered that way (derive.ts) — no re-sort here.
+  const esMasReciente = !!pago && esVentaMasReciente(pago.id, pagos);
+  const puedeSwap = dentroVentana && esMasReciente;
 
   // The custom package's expiry, anchored on the (possibly corrected) sold `fecha` — the
   // re-grant date "vence follows fecha" swaps onto (vender's own `customHasta` idiom).
@@ -173,13 +198,14 @@ export function PagoSheet({
     return fmtShort(calcVigenciaEnd(parseDay(fecha), dias2));
   })();
 
-  // The swap target's facts, or "keep the stored ones" when nothing is picked (D0.5's own
-  // no-op path). A registrado tile carries no raw vigencia_tipo (`PaqueteDTO` is a display
-  // read, not the RPC's trust boundary — it re-resolves the real paquetes row itself), but
-  // every package's `vigencia` label already collapses 'mes' to "30 días", identically to a
-  // 'dias' package of 30 — so the digits in that label ARE the exact day count this preview
-  // needs; parsing them is exact, never a guess about the money math.
-  const swapResuelto = paqSel === null || paqSel !== PERSONALIZADO || customValido(customConMonto);
+  // The PERSONALIZADO door's own validity gate (FIX2) — nombre/clases/días/ilimitado ONLY,
+  // NEVER precio: the sheet's MONTO field above already IS the price
+  // (`mostrarPrecio={false}` hides the form's own PRECIO input), so gating on
+  // vender's `customValido` here silently disabled GUARDAR off a field the operator never
+  // sees — a MONTO like "850.00" fails `entero()`'s digits-only regex even though
+  // `montoEditado` accepts it, and a MONTO over 100 000 failed vender's personalizado cap.
+  // MONTO's own validity is `montoEditado`'s job, uncapped, entirely separate.
+  const swapResuelto = paqSel !== PERSONALIZADO || customPaqueteValido(custom);
   // `fecha` is "" until `abrirEditar` first seeds it — guard every date-parsing computation
   // below on it being populated, or the very first render (still in `detalle`, before EDITAR
   // is ever tapped) would hand `parseDay`/`fmtShort` an empty string.
@@ -198,8 +224,11 @@ export function PagoSheet({
             };
           }
           const p = paquetes.find((pp) => pp.id === paqSel);
-          if (!p) return null;
-          return { clases: p.clases, vigTipo: "dias" as const, vigDias: Number(p.vigencia.replace(/\D/g, "")) || 0 };
+          // FIX1: the RAW facts, straight off the DTO — never re-derived by parsing the
+          // DISPLAY `vigencia` string ("30 días" reads identically for a 'dias' package of 30
+          // and a 'mes' package, but the RPC keys its whole re-derive off `vigencia_tipo`, not
+          // the day count alone; a 'mes' catalog row used to silently disagree with the RPC).
+          return p ? { clases: p.clases, vigTipo: p.vigenciaTipo, vigDias: p.vigenciaDias } : null;
         })();
 
   const cambia =
@@ -230,9 +259,9 @@ export function PagoSheet({
 
   const dirty =
     !!pago &&
-    (montoNum !== pago.monto || metodo !== pago.metodo || fechaNueva !== undefined || swapDirty(paqSel, customConMonto));
+    (montoNum !== pago.monto || metodo !== pago.metodo || fechaNueva !== undefined || swapDirty(paqSel, custom));
   const canSave =
-    !!pago && montoNum !== null && dirty && !busy && (paqSel !== PERSONALIZADO || customValido(customConMonto));
+    !!pago && montoNum !== null && dirty && !busy && (paqSel !== PERSONALIZADO || customPaqueteValido(custom));
 
   const guardar = async () => {
     if (!canSave || !pago || montoNum === null || !metodo) return;
@@ -241,6 +270,10 @@ export function PagoSheet({
       // `fecha` rides only when the operator actually moved it — omitted, the RPC keeps the
       // stored timestamp untouched (mirrors vender's `esBackdate` spread). `paquete` rides only
       // when a tile was picked — omitted, the RPC's D0.5 no-op path never claws back/re-grants.
+      // The personalizado arm's `precio` is IGNORED on this door (MONTO above is the price;
+      // `editarVentaSchema`'s own personalizado arm drops the bound, FIX2) — still synced from
+      // the live MONTO field here rather than left blank, since a wire payload that names a
+      // price is cheaper to read in a log than one that silently omits it.
       const res = await editarVentaAction({
         ventaId: pago.id,
         monto: montoNum,
@@ -250,7 +283,7 @@ export function PagoSheet({
           paqSel === null
             ? undefined
             : paqSel === PERSONALIZADO
-              ? customSeleccion(customConMonto)
+              ? customSeleccion({ ...custom, precio: monto })
               : { tipo: "registrado" as const, paqueteId: paqSel },
       });
       if (!res.ok) {
@@ -260,12 +293,13 @@ export function PagoSheet({
         return;
       }
       // Reads the NEW package name once a swap was posted — falls back to the sale's own
-      // stored name when nothing was swapped.
+      // stored name when nothing was swapped. FIX5c: shown AS STORED (trimmed), never
+      // uppercased — the nombre the operator typed is what the client's own cuenta will show.
       const nombreNuevo =
         paqSel === null
           ? pago.paquete
           : paqSel === PERSONALIZADO
-            ? custom.nombre.trim().toUpperCase()
+            ? custom.nombre.trim()
             : (paquetes.find((p) => p.id === paqSel)?.nombre ?? pago.paquete);
       forgeToast({ tone: "success", title: "Venta actualizada", body: `${nombreNuevo} · ${pesos(montoNum)}` });
       onClose();
@@ -387,7 +421,7 @@ export function PagoSheet({
                     at any age (#266.3) — the swap itself windowed 30 d from registration
                     (paquete-swap D0.7, same bound as ELIMINAR). */}
                 <div className="flex flex-col" style={{ padding: "0 16px", gap: 18 }}>
-                  {dentroVentana && (
+                  {puedeSwap && (
                     <div className="flex flex-col" style={{ gap: 10 }}>
                       <Eyebrow style={{ paddingLeft: 2 }}>PAQUETE</Eyebrow>
                       {/* The picker starts with NOTHING selected (spec §5.3) — `ventas` stores
@@ -397,7 +431,7 @@ export function PagoSheet({
                         Actual: <span className="font-semibold" style={{ color: "var(--fg)" }}>{pago.paquete}</span>
                         {" · "}
                         {pago.clases === null ? "Ilimitado" : `${pago.clases} ${pago.clases === 1 ? "clase" : "clases"}`} ·{" "}
-                        {dias} días
+                        {dias} {dias === 1 ? "día" : "días"}
                       </div>
                       <PaqueteTiles
                         paquetes={paquetes}
@@ -420,44 +454,59 @@ export function PagoSheet({
                     <Eyebrow style={{ paddingLeft: 2 }}>MÉTODO</Eyebrow>
                     <MetodoEditor metodo={metodo} setMetodo={setMetodo} />
                   </div>
-                  <div className="flex flex-col" style={{ gap: 8 }}>
-                    <Eyebrow style={{ paddingLeft: 2 }}>FECHA</Eyebrow>
-                    {/* Same calendar and the same bounds as vender's backdate (not future,
-                        ≤ 30 días back) — inline rather than a nested Sheet, which would fight this
-                        one's scrim and Esc handler. */}
-                    <div style={{ border: `1px solid ${calOpen ? "var(--yellow)" : "var(--line)"}`, transition: "border-color 140ms ease" }}>
-                      <button
-                        onClick={() => setCalOpen((o) => !o)}
-                        className="forge-pressable flex items-center justify-between text-left"
-                        style={{ width: "100%", padding: 15, background: "transparent", border: "none", color: "var(--fg)", cursor: "pointer" }}
-                      >
-                        <Tnum className="uppercase font-bold" style={{ fontSize: 13, letterSpacing: 0.4, color: fechaNueva ? "var(--gold)" : "var(--fg)" }}>
-                          {fmtShort(parseDay(fecha))}
-                        </Tnum>
-                        <Icon name="cal" size={16} color="var(--muted)" />
-                      </button>
-                      {calOpen && (
-                        <InicioCalendar
-                          hoy={parseDay(hoyIso)}
-                          min={parseDay(inicioMin)}
-                          // Display-only clamp (vender's `inicioEfectivo` idiom): a >30d-old
-                          // `fecha` would otherwise open the calendar on a month with every
-                          // day disabled. The FECHA text above and the omission logic in
-                          // `fechaNueva` keep reading the real `fecha` state.
-                          sel={parseDay(fechaSeed(fecha, inicioMin, hoyIso))}
-                          onPick={(d) => {
-                            setFecha(isoDay(d));
-                            setCalOpen(false);
-                          }}
-                        />
-                      )}
+                  {puedeSwap ? (
+                    <div className="flex flex-col" style={{ gap: 8 }}>
+                      <Eyebrow style={{ paddingLeft: 2 }}>FECHA</Eyebrow>
+                      {/* Same calendar and the same bounds as vender's backdate (not future,
+                          ≤ 30 días back) — inline rather than a nested Sheet, which would fight this
+                          one's scrim and Esc handler. */}
+                      <div style={{ border: `1px solid ${calOpen ? "var(--yellow)" : "var(--line)"}`, transition: "border-color 140ms ease" }}>
+                        <button
+                          onClick={() => setCalOpen((o) => !o)}
+                          className="forge-pressable flex items-center justify-between text-left"
+                          style={{ width: "100%", padding: 15, background: "transparent", border: "none", color: "var(--fg)", cursor: "pointer" }}
+                        >
+                          <Tnum className="uppercase font-bold" style={{ fontSize: 13, letterSpacing: 0.4, color: fechaNueva ? "var(--gold)" : "var(--fg)" }}>
+                            {fmtShort(parseDay(fecha))}
+                          </Tnum>
+                          <Icon name="cal" size={16} color="var(--muted)" />
+                        </button>
+                        {calOpen && (
+                          <InicioCalendar
+                            hoy={parseDay(hoyIso)}
+                            min={parseDay(inicioMin)}
+                            // Display-only clamp (vender's `inicioEfectivo` idiom): a >30d-old
+                            // `fecha` would otherwise open the calendar on a month with every
+                            // day disabled. The FECHA text above and the omission logic in
+                            // `fechaNueva` keep reading the real `fecha` state.
+                            sel={parseDay(fechaSeed(fecha, inicioMin, hoyIso))}
+                            onPick={(d) => {
+                              setFecha(isoDay(d));
+                              setCalOpen(false);
+                            }}
+                          />
+                        )}
+                      </div>
+                      <div style={{ paddingLeft: 2, fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
+                        {/* FIX5e: conditional on whether picking GUARDAR right now would actually
+                            recalculate anything (`rederivaSaldo`) — asserting "se recalcula" on a
+                            no-op fecha (nothing picked yet, or the operator landed back on the
+                            stored day) over-promises. Was a static "No mueve el saldo ni la
+                            vigencia", FALSE under ruling 1 ("vence follows fecha"). */}
+                        {cambia
+                          ? "Corrige el día en que se cobró. La vigencia se recalcula desde ese día."
+                          : "Corrige el día en que se cobró."}
+                      </div>
                     </div>
+                  ) : (
+                    // FIX4: the picker above is likewise absent — the RPC refuses ANY re-derive
+                    // (package or fecha change) on a non-latest sale or past the swap window, so
+                    // showing either affordance here would be a dead control the round trip
+                    // rejects. One muted line, never a disabled button explaining the rule.
                     <div style={{ paddingLeft: 2, fontSize: 11.5, color: "var(--muted)", lineHeight: 1.5 }}>
-                      {/* Was "No mueve el saldo ni la vigencia" — FALSE under ruling 1 ("vence
-                          follows fecha"): a corrected fecha now re-derives the balance. */}
-                      Corrige el día en que se cobró. La vigencia se recalcula desde ese día.
+                      {razonSwapBloqueado(dentroVentana, esMasReciente)}
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div style={{ borderTop: "1px solid var(--line)", margin: "24px 0 0", padding: "20px 16px 0" }}>

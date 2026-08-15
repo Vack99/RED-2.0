@@ -35,12 +35,17 @@
 --   S6 — IDEMPOTENCE. The identical swap payload posted twice. There is no idempotency key and none is
 --        needed: the write is an UPDATE of a row named by id, so a replay creates no second row and no
 --        folio, and the change-detection flags make the second call degenerate to a monto/metodo write
---        with the same values. Asserts the balance after call 2 equals the balance after call 1, that
---        exactly one ventas row exists for the cliente, and that `folio` never moved.
---   S7 — THE WINDOW IS SCOPED TO THE PACKAGE. A sale registered 31 days ago refuses a swap with
---        'Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar' and writes NOTHING (both
---        rows byte-identical) — and then the SAME sale ACCEPTS a monto/metodo/fecha edit, because
---        ruling 4 windows the swap and #266.3 left the rest any-age.
+--        with the same values. Between the two fires the cliente's balance is DECREMENTED by hand (an
+--        asistencia the member trained in the meantime), and the second fire must leave that decrement
+--        standing: a replay that re-ran the clawback + re-grant would silently restore the class. Also
+--        asserts exactly one ventas row exists for the cliente and that `folio` never moved.
+--   S7 — THE WINDOW COVERS THE RE-DERIVE, NOT JUST THE PACKAGE. A sale registered 31 days ago refuses a
+--        swap with 'Ya pasaron 30 días: esta venta ya no se puede recalcular', and refuses a FECHA-only
+--        edit with the same message — a fecha edit re-grants exactly as much as a swap does, and on a
+--        sale of unbounded age the expired-restart discard makes it a re-grant of the whole package.
+--        Both refusals write NOTHING (both rows byte-identical). The SAME sale then ACCEPTS a
+--        monto/metodo-only edit, with the cliente row byte-identical: the window covers the
+--        RECALCULATION, and attribution stays any-age (#266.3).
 --   S8 — CROSS-TENANT, both directions: gym B staff on gym A's venta gets 'Venta no encontrada'; gym A
 --        staff passing a gym-B `p_paquete_id` gets 'Paquete no encontrado' — the paquete lookup is
 --        tenant-scoped, so another gym's catalog is a refusal and not a leak. Nothing written either time.
@@ -54,6 +59,17 @@
 --   S11 — RENAME-ONLY. A swap onto a package with identical clases/vigencia but a different nombre:
 --        both `ventas.paquete_nombre` and the cliente's display label follow, while clases_restantes
 --        and vence stay byte-identical — a rename is not a re-grant.
+--   S12 — ONLY THE TOP OF THE STACK CAN RE-DERIVE. The clawback is a LINEAR inverse of what the sale
+--        granted, and registrar_venta's stacking is not linear (its expired-restart discard throws the
+--        carried base away), so subtracting an EARLIER sale's numbers cannot recover a LATER sale's
+--        grant. The fixture is the lapsed chain that proves it: V1 (8 clases / 20 días) sold 25 days
+--        ago and long expired, then V2 (the same package) sold 2 days ago, which restarted the member
+--        on 8 clases / vence +18. Swapping V1 onto the 12-clase mes package would read 8 − 8 = 0 as
+--        "the base", re-grant at V1's own day and write 12 clases / vence +28 — V2's whole grant
+--        destroyed and V1's counted twice. So the swap is REFUSED with 'Solo la venta más reciente
+--        puede cambiar de paquete o fecha' and both rows stay byte-identical; the same non-latest sale
+--        then ACCEPTS a monto/metodo edit, because attribution moves no saldo and stays correctable
+--        forever.
 --
 -- Fixtures are 100% transaction-local (fresh gen_random_uuid gym/auth.users/gym_membership/clientes/
 -- paquetes/ventas rows, zero prod UUIDs — a live-gym lookup 22P02s in staff_gym() on a fresh scratch
@@ -91,9 +107,10 @@ declare
   pk_igual  uuid;  -- gym A: same grant as the fixture sale, different nombre (S11)
   pk_b      uuid;  -- gym B: the cross-tenant paquete id (S8)
   c1  uuid; c2  uuid; c3  uuid; c4  uuid; c5  uuid; c6  uuid;
-  c7  uuid; c8  uuid; c9  uuid; c10 uuid; c11 uuid; c12 uuid;
+  c7  uuid; c8  uuid; c9  uuid; c10 uuid; c11 uuid; c12 uuid; c13 uuid;
   v1  uuid; v2  uuid; v3  uuid; v4  uuid; v5  uuid; v6  uuid;
   v7  uuid; v8  uuid; v9  uuid; v10 uuid; v11 uuid; v12 uuid;
+  v13 uuid; v14 uuid;   -- S12: the lapsed chain — v13 sold 25 days ago, v14 stacked on top 2 days ago
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'editar-venta-paquete-gym-a', 'Editar Venta Paquete A', v_tz, 'forge'),
@@ -202,6 +219,19 @@ begin
     values (gym_a, c12, 7212, 'VIEJO NOMBRE', 8, 'dias', 20, 800, 'efectivo', now() - interval '3 days', now() - interval '3 days')
     returning id into v12;
 
+  -- ── S12: the LAPSED CHAIN. v13 (8 clases / 20 días) was sold 25 days ago and expired on day −5;
+  -- v14, the same package sold 2 days ago, hit registrar_venta's expired-restart discard and left the
+  -- member on exactly its own grant: 8 clases, vence (hoy − 2) + 20 = +18. The stored saldo therefore
+  -- describes v14 alone — subtracting v13's numbers from it recovers nothing, which is the whole point.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('EVP Pila', '0000000033', 8, current_date + 18, '8 CLASES', gym_a) returning id into c13;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c13, 7213, '8 CLASES', 8, 'dias', 20, 750, 'efectivo', now() - interval '25 days', now() - interval '25 days')
+    returning id into v13;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c13, 7214, '8 CLASES', 8, 'dias', 20, 750, 'efectivo', now() - interval '2 days', now() - interval '2 days')
+    returning id into v14;
+
   perform set_config('t.gym_a',    gym_a::text,    true);
   perform set_config('t.gym_b',    gym_b::text,    true);
   perform set_config('t.op_a',     op_a::text,     true);
@@ -223,6 +253,8 @@ begin
   perform set_config('t.c10', c10::text, true); perform set_config('t.v10', v10::text, true);
   perform set_config('t.c11', c11::text, true); perform set_config('t.v11', v11::text, true);
   perform set_config('t.c12', c12::text, true); perform set_config('t.v12', v12::text, true);
+  perform set_config('t.c13', c13::text, true); perform set_config('t.v13', v13::text, true);
+                                                perform set_config('t.v14', v14::text, true);
 
   -- S1's whole-row snapshot MINUS the eight columns the swap may write. The assertion re-computes it
   -- and demands jsonb equality: a column this suite never names by hand still cannot move unnoticed.
@@ -238,6 +270,8 @@ begin
   perform set_config('t.v10_all', (select to_jsonb(v.*)::text from public.ventas   v where v.id = v10), true);
   perform set_config('t.c10_all', (select to_jsonb(c.*)::text from public.clientes c where c.id = c10), true);
   perform set_config('t.c11_all', (select to_jsonb(c.*)::text from public.clientes c where c.id = c11), true);
+  perform set_config('t.v13_all', (select to_jsonb(v.*)::text from public.ventas   v where v.id = v13), true);
+  perform set_config('t.c13_all', (select to_jsonb(c.*)::text from public.clientes c where c.id = c13), true);
 end $$;
 
 select set_config('request.jwt.claims',
@@ -530,10 +564,20 @@ do $$
 declare c jsonb;
 begin
   select to_jsonb(x.*) into c from public.clientes x where x.id = current_setting('t.c7', true)::uuid;
-  perform set_config('t.c7_after1', c::text, true);
   if (c ->> 'clases_restantes')::int is distinct from 14 then
     raise exception 'S6 FAIL: the first call did not land (clases_restantes = %, expected 14)', c ->> 'clases_restantes';
   end if;
+
+  -- The member TRAINS between the two fires. A replay is not a fresh transaction in a frozen world: the
+  -- realistic double-submit is a second tab posted after a visit was consumed, and the balance the
+  -- replay must not touch is the DECREMENTED one. Re-running the clawback + re-grant would recompute
+  -- 14 from the sale's facts and silently hand the class back.
+  update public.clientes set clases_restantes = clases_restantes - 1
+    where id = current_setting('t.c7', true)::uuid;
+
+  -- The baseline is taken AFTER the decrement, so the jsonb catch-all below pins the consumed balance.
+  select to_jsonb(x.*) into c from public.clientes x where x.id = current_setting('t.c7', true)::uuid;
+  perform set_config('t.c7_after1', c::text, true);
 end $$;
 
 set local role authenticated;
@@ -554,6 +598,9 @@ begin
   if v_after2 is distinct from v_after1 then
     raise exception 'S6 FAIL: the replay moved the saldo again. after 1 = % / after 2 = %', v_after1, v_after2;
   end if;
+  if (v_after2 ->> 'clases_restantes')::int is distinct from 13 then
+    raise exception 'S6 FAIL: clases_restantes = % (expected 13 — the class consumed between the two fires must survive the replay; 14 means the second call re-ran the clawback + re-grant instead of taking the cheap path)', v_after2 ->> 'clases_restantes';
+  end if;
 
   select count(*) into n from public.ventas where cliente_id = current_setting('t.c7', true)::uuid;
   if n <> 1 then
@@ -565,10 +612,17 @@ begin
   end if;
 end $$;
 
--- ══ S7 — THE WINDOW IS SCOPED TO THE PACKAGE: swap refused past 30 days, the rest still accepted ═════
+-- ══ S7 — THE WINDOW COVERS THE RE-DERIVE: swap AND fecha refused past 30 days; attribution accepted ══
+-- The sale is 31 days old and is the cliente's only one, so the top-of-stack precondition (S12) cannot
+-- be what refuses these calls — the window is. Ruling 4 windows "the swap", and the guard is written
+-- over the predicate that TRIGGERS the re-derive: a fecha-only edit re-grants exactly as much as a swap
+-- does, and on a sale of unbounded age the expired-restart discard turns it into a re-grant of the whole
+-- package. What stays any-age is what moves no saldo — monto and metodo (#266.3).
 set local role authenticated;
 do $$
-declare v_msg text;
+declare
+  v_msg text;
+  v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
 begin
   v_msg := null;
   begin
@@ -576,8 +630,18 @@ begin
                                 p_paquete_id := current_setting('t.pk_mes', true)::uuid);
   exception when others then v_msg := sqlerrm;
   end;
-  if v_msg is distinct from 'Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar' then
-    raise exception 'S7 FAIL: got % (expected Ya pasaron 30 días: el paquete de esta venta ya no se puede cambiar — ruling 4''s window, anchored on created_at like the delete''s)', coalesce(v_msg, '<no error raised>');
+  if v_msg is distinct from 'Ya pasaron 30 días: esta venta ya no se puede recalcular' then
+    raise exception 'S7 FAIL (swap): got % (expected Ya pasaron 30 días: esta venta ya no se puede recalcular — ruling 4''s window, anchored on created_at like the delete''s)', coalesce(v_msg, '<no error raised>');
+  end if;
+
+  -- The same window, reached through the OTHER argument: a fecha-only correction of a 31-day-old sale.
+  v_msg := null;
+  begin
+    perform public.editar_venta(current_setting('t.v8', true)::uuid, 900, 'efectivo', p_fecha := v_hoy - 2);
+  exception when others then v_msg := sqlerrm;
+  end;
+  if v_msg is distinct from 'Ya pasaron 30 días: esta venta ya no se puede recalcular' then
+    raise exception 'S7 FAIL (fecha): got % (expected Ya pasaron 30 días: esta venta ya no se puede recalcular — windowing the swap but not the fecha that drives the same re-grant would leave the door open under a different argument name)', coalesce(v_msg, '<no error raised>');
   end if;
 end $$;
 reset role;
@@ -591,48 +655,40 @@ begin
   select to_jsonb(v.*) into v_now from public.ventas   v where v.id = current_setting('t.v8', true)::uuid;
   select to_jsonb(c.*) into c_now from public.clientes c where c.id = current_setting('t.c8', true)::uuid;
   if v_now is distinct from v_all then
-    raise exception 'S7 FAIL: the refused swap still wrote the venta. before = % / after = %', v_all, v_now;
+    raise exception 'S7 FAIL: a refused call still wrote the venta. before = % / after = %', v_all, v_now;
   end if;
   if c_now is distinct from c_all then
-    raise exception 'S7 FAIL: the refused swap still moved the saldo. before = % / after = %', c_all, c_now;
+    raise exception 'S7 FAIL: a refused call still moved the saldo. before = % / after = %', c_all, c_now;
   end if;
 end $$;
 
--- …and the SAME 31-day-old sale accepts a monto/metodo/fecha edit: the window covers the package only.
+-- …and the SAME 31-day-old sale still accepts a monto/metodo edit: attribution is any-age (#266.3).
 set local role authenticated;
 do $$
-declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
 begin
-  perform public.editar_venta(current_setting('t.v8', true)::uuid, 999, 'tarjeta', p_fecha := v_hoy - 2);
+  perform public.editar_venta(current_setting('t.v8', true)::uuid, 999, 'tarjeta');
 end $$;
 reset role;
 do $$
 declare
-  rec        record;
-  cli        record;
-  v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
-  v_esperado timestamptz := ((v_hoy - 2)::timestamp + interval '12 hours')
-                            at time zone current_setting('t.tz', true);
+  v_all jsonb := current_setting('t.v8_all', true)::jsonb;
+  c_all jsonb := current_setting('t.c8_all', true)::jsonb;
+  v_now jsonb;
+  c_now jsonb;
 begin
-  select * into rec from public.ventas where id = current_setting('t.v8', true)::uuid;
-  if rec.monto is distinct from 999 or rec.metodo is distinct from 'tarjeta' then
-    raise exception 'S7 FAIL: the any-age monto/metodo edit was refused too (monto=%, metodo=% — the window must cover the PACKAGE only, #266.3)', rec.monto, rec.metodo;
+  select to_jsonb(v.*) into v_now from public.ventas v where v.id = current_setting('t.v8', true)::uuid;
+  if (v_now ->> 'monto')::int is distinct from 999 or v_now ->> 'metodo' is distinct from 'tarjeta' then
+    raise exception 'S7 FAIL: the any-age monto/metodo edit was refused too (monto=%, metodo=% — the window must cover the RECALCULATION only, #266.3)', v_now ->> 'monto', v_now ->> 'metodo';
   end if;
-  if rec.fecha is distinct from v_esperado then
-    raise exception 'S7 FAIL: fecha = % (expected % — the fecha edit is any-age as well)', rec.fecha, v_esperado;
-  end if;
-  if rec.paquete_nombre is distinct from 'FUERA DE VENTANA' or rec.clases is distinct from 8 or rec.vigencia_tipo is distinct from 'mes' then
-    raise exception 'S7 FAIL: the package facts moved on a package-less call (nombre=%, clases=%, tipo=%)', rec.paquete_nombre, rec.clases, rec.vigencia_tipo;
+  -- Everything except the two attribution columns is byte-identical: the fecha the refused call asked
+  -- for did not sneak in, and no package fact moved on a package-less call.
+  if (v_now - 'monto' - 'metodo') is distinct from (v_all - 'monto' - 'metodo') then
+    raise exception 'S7 FAIL: the monto/metodo edit moved something else on the venta. before = % / after = %', v_all, v_now;
   end if;
 
-  -- The fecha edit DOES re-derive (ruling 1), and here it is an identity: 5 − 8 + 8 = 5, and
-  -- (+30 − 30) + 30 = +30.
-  select * into cli from public.clientes where id = current_setting('t.c8', true)::uuid;
-  if cli.clases_restantes is distinct from 5 then
-    raise exception 'S7 FAIL: clases_restantes = % (expected 5 — the re-derive is an identity when nothing clamps)', cli.clases_restantes;
-  end if;
-  if cli.vence is distinct from current_date + 30 then
-    raise exception 'S7 FAIL: vence = % (expected current_date + 30 — unchanged, the base had not expired at the new day)', cli.vence;
+  select to_jsonb(c.*) into c_now from public.clientes c where c.id = current_setting('t.c8', true)::uuid;
+  if c_now is distinct from c_all then
+    raise exception 'S7 FAIL: a monto/metodo-only edit touched the cliente. before = % / after = %', c_all, c_now;
   end if;
 end $$;
 
@@ -842,6 +898,86 @@ begin
   end if;
   if cli.vence is distinct from current_date + 40 then
     raise exception 'S11 FAIL: vence = % (expected current_date + 40, byte-identical — a rename is not a re-grant)', cli.vence;
+  end if;
+end $$;
+
+-- ══ S12 — ONLY THE TOP OF THE STACK CAN RE-DERIVE: the lapsed chain ═════════════════════════════════
+-- v13 (8 clases / 20 días) was sold 25 days ago and expired on day −5; v14, the same package sold 2 days
+-- ago, hit registrar_venta's expired-restart discard and left the member on ITS grant alone — 8 clases,
+-- vence +18. The stored saldo therefore describes v14, and the clawback's linear inverse
+-- (`clases_restantes − clases_old`, `vence − dias_old`) cannot undo v13 out of it: it would read
+-- 8 − 8 = 0 as "the base", carry (+18 − 20) = −2 forward from v13's own day 25 days back, and write
+-- 12 clases / vence +28 — v14's whole grant destroyed and v13's counted twice. v13 is INSIDE the 30-day
+-- window, so nothing else can refuse this; only the top-of-stack precondition can.
+set local role authenticated;
+do $$
+declare v_msg text;
+begin
+  v_msg := null;
+  begin
+    perform public.editar_venta(current_setting('t.v13', true)::uuid, 1200, 'efectivo',
+                                p_paquete_id := current_setting('t.pk_mes', true)::uuid);
+  exception when others then v_msg := sqlerrm;
+  end;
+  if v_msg is distinct from 'Solo la venta más reciente puede cambiar de paquete o fecha' then
+    raise exception 'S12 FAIL (swap): got % (expected Solo la venta más reciente puede cambiar de paquete o fecha — a later sale of the same cliente makes the clawback''s linear inverse meaningless)', coalesce(v_msg, '<no error raised>');
+  end if;
+
+  -- The same refusal through the fecha door: it runs the identical clawback + re-grant.
+  v_msg := null;
+  begin
+    perform public.editar_venta(current_setting('t.v13', true)::uuid, 750, 'efectivo',
+                                p_fecha := (now() at time zone current_setting('t.tz', true))::date - 20);
+  exception when others then v_msg := sqlerrm;
+  end;
+  if v_msg is distinct from 'Solo la venta más reciente puede cambiar de paquete o fecha' then
+    raise exception 'S12 FAIL (fecha): got % (expected Solo la venta más reciente puede cambiar de paquete o fecha)', coalesce(v_msg, '<no error raised>');
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  v_all jsonb := current_setting('t.v13_all', true)::jsonb;
+  c_all jsonb := current_setting('t.c13_all', true)::jsonb;
+  v_now jsonb;
+  c_now jsonb;
+begin
+  select to_jsonb(v.*) into v_now from public.ventas   v where v.id = current_setting('t.v13', true)::uuid;
+  select to_jsonb(c.*) into c_now from public.clientes c where c.id = current_setting('t.c13', true)::uuid;
+  if v_now is distinct from v_all then
+    raise exception 'S12 FAIL: the refused re-derive still wrote the venta. before = % / after = %', v_all, v_now;
+  end if;
+  if c_now is distinct from c_all then
+    raise exception 'S12 FAIL: the refused re-derive still moved the saldo — v14''s grant would have been the casualty. before = % / after = %', c_all, c_now;
+  end if;
+end $$;
+
+-- …and the SAME non-latest sale accepts a monto/metodo edit: attribution moves no saldo, so an older
+-- sale's amount and payment method stay correctable forever.
+set local role authenticated;
+do $$
+begin
+  perform public.editar_venta(current_setting('t.v13', true)::uuid, 640, 'tarjeta');
+end $$;
+reset role;
+do $$
+declare
+  v_all jsonb := current_setting('t.v13_all', true)::jsonb;
+  c_all jsonb := current_setting('t.c13_all', true)::jsonb;
+  v_now jsonb;
+  c_now jsonb;
+begin
+  select to_jsonb(v.*) into v_now from public.ventas v where v.id = current_setting('t.v13', true)::uuid;
+  if (v_now ->> 'monto')::int is distinct from 640 or v_now ->> 'metodo' is distinct from 'tarjeta' then
+    raise exception 'S12 FAIL: a monto/metodo edit of a NON-latest sale was refused (monto=%, metodo=% — the precondition governs the re-derive, not attribution)', v_now ->> 'monto', v_now ->> 'metodo';
+  end if;
+  if (v_now - 'monto' - 'metodo') is distinct from (v_all - 'monto' - 'metodo') then
+    raise exception 'S12 FAIL: the monto/metodo edit moved something else on the venta. before = % / after = %', v_all, v_now;
+  end if;
+
+  select to_jsonb(c.*) into c_now from public.clientes c where c.id = current_setting('t.c13', true)::uuid;
+  if c_now is distinct from c_all then
+    raise exception 'S12 FAIL: a monto/metodo-only edit of a non-latest sale touched the cliente. before = % / after = %', c_all, c_now;
   end if;
 end $$;
 

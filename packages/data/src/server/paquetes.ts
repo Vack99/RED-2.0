@@ -20,6 +20,14 @@ export interface PaqueteDTO {
   clases: number | null;
   /** Display vigencia, e.g. "20 días" — a mes package reads "30 días" (flat 30, ruling C1). */
   vigencia: string;
+  /** The RAW vigencia facts `vigencia` is rendered FROM — same fields FichaPago/`editar_venta`
+   *  carry (paquete-swap FIX1). A consumer that needs the real day count (e.g. the correction
+   *  sheet's swap preview) reads these, never `vigencia`: parsing the display string back into
+   *  digits silently agrees with a 'dias' package (whose label already says "N días") and
+   *  silently DISAGREES with a 'mes' one (stored as 30 flat días, but `vigenciaTipo` says
+   *  'mes' — the RPC keys its whole re-derive off `vigencia_tipo`, not the day count alone). */
+  vigenciaTipo: "dias" | "mes";
+  vigenciaDias: number | null;
   /** Expiry if bought today (fmtShort), e.g. "16 jun" — for the "Hasta …" hint. */
   hasta: string;
   precio: number;
@@ -57,6 +65,8 @@ export const getPaquetes = cache(
         nombre: p.nombre,
         clases: p.clases,
         vigencia: p.vigencia_tipo === "mes" ? "30 días" : `${p.vigencia_dias} días`,
+        vigenciaTipo: p.vigencia_tipo === "mes" ? ("mes" as const) : ("dias" as const),
+        vigenciaDias: p.vigencia_dias,
         hasta: fmtShort(calcVigenciaEnd(hoy, vigencia)),
         precio: p.precio,
         popular: p.popular,
@@ -135,6 +145,8 @@ export const getPlanesEditor = cache(
         nombre: p.nombre,
         clases: p.clases,
         vigencia: p.vigencia_tipo === "mes" ? "30 días" : `${p.vigencia_dias} días`,
+        vigenciaTipo: p.vigencia_tipo === "mes" ? ("mes" as const) : ("dias" as const),
+        vigenciaDias: p.vigencia_dias,
         hasta: fmtShort(calcVigenciaEnd(hoy, vigencia)),
         precio: p.precio,
         popular: p.popular,

@@ -1,5 +1,16 @@
 # Paquete-swap edit — implementation SPEC (2026-08-15)
 
+> **AMENDED post-review (same day).** The adversarial review wave changed four things the sections
+> below still describe in their original form — the MIGRATION and suites are the truth:
+> 1. Re-derives (package OR fecha change) REFUSE on a non-latest sale — the linear clawback inverse
+>    is only valid top-of-stack (`Solo la venta más reciente puede cambiar de paquete o fecha`).
+> 2. The 30 d `created_at` window covers the WHOLE re-derive, not just the package change (D0.7/F1
+>    superseded); string generalized to `Ya pasaron 30 días: esta venta ya no se puede recalcular`.
+>    A pure rename (same grant, no fecha change) stays any-age.
+> 3. `editarVentaSchema` uses `paqueteSeleccionEditarSchema` (personalizado arm omits `precio`);
+>    the sheet validates custom fields via `customPaqueteValido`, never the hidden precio.
+> 4. `PaqueteDTO` carries raw `vigenciaTipo`/`vigenciaDias`; the display-string parse is gone.
+
 Owner rulings this is designed to (LOCKED 2026-08-15, thread #266):
 
 1. **Vence follows fecha** — editing a sale's `fecha` re-derives the cliente's vigencia/balance.

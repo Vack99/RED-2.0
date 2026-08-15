@@ -46,6 +46,9 @@ begin
   
   
   
+  
+  
+  
   update public.clientes c
      set clases_restantes = case when c.clases_restantes is null then null
                                  else greatest(0, c.clases_restantes - coalesce(v_venta.clases, 0)) end,
@@ -54,5 +57,5 @@ begin
                             where v.cliente_id = c.id and v.gym_id = v_gym
                             order by v.created_at desc, v.id desc
                             limit 1)
-   where c.id = v_venta.cliente_id;
+   where c.id = v_venta.cliente_id and c.gym_id = v_gym;
 end;

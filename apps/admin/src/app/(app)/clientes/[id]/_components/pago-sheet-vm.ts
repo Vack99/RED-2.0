@@ -6,7 +6,7 @@
 import { diasRestantes } from "@gym/domain/rules";
 import { addDays, fmtShort, parseDay, pesos } from "@gym/format";
 
-import { customValido, inicioMinIso, PERSONALIZADO, type CustomForm } from "../../../vender/_components/vender-vm";
+import { customErrors, inicioMinIso, PERSONALIZADO, type CustomForm } from "../../../vender/_components/vender-vm";
 
 /** The corrected-date picker's floor — `hoy − 30`, the SAME bound vender's backdate picker
  *  uses, imported rather than restated so the two can't drift. Re-exported so the sheet takes
@@ -70,8 +70,16 @@ export function fechaSeed(fechaIso: string, minIso: string, hoyIso: string): str
  * reads the outcome before anything happens. Every fragment drops out when the fact behind it
  * doesn't exist — an ilimitado sale subtracts no clases (so it claims no resulting count), an
  * ilimitado balance has no count to land on, a 0-day vigencia moves no date — because the
- * dialog must never assert a number it cannot know. Used classes are NOT a refusal (#267.4):
- * the balance floors at zero and the copy says so ("quedará en 0 clases").
+ * dialog must never assert a number it cannot know.
+ *
+ * The `Math.max(0, …)` below is now DEFENSIVE ONLY, never load-bearing: this confirm is
+ * reachable exclusively through the sheet's `puedeEliminar`, which already gates on
+ * `!clawbackPisaCero(pago.clases, clasesRestantes)` (ruling 3, 2026-08-15) — so by the time
+ * this function runs, `clasesRestantes - clases` is always ≥ 0. This REVERSES what used to be
+ * documented here: "used classes are NOT a refusal (#267.4) — the balance floors at zero and
+ * the copy says so" was true before ruling 3 and is false now — a clawback that would floor
+ * IS a refusal (the muted note ELIMINAR gets replaced by), not an outcome this dialog ever
+ * gets asked to describe.
  */
 export function previewEliminarVenta(v: {
   /** What the sale granted; null = ilimitado. */
@@ -190,9 +198,69 @@ export function previewRederivarVenta(v: {
   return `El saldo se recalcula: ${partes.join(" · ")}.`;
 }
 
+/**
+ * The PERSONALIZADO door's own validity gate on the correction sheet (FIX2) — nombre/clases/
+ * días/ilimitado ONLY, never precio. `editar_venta` takes no `p_custom_precio` argument (the
+ * sheet's MONTO field above IS the sale's price, spec §1.1), so vender's own `customValido` —
+ * which also checks `precio` against `entero()`'s digits-only regex and vender's 100 000 cap —
+ * silently disabled GUARDAR off a field the operator never sees (`PersonalizadoEditor` renders
+ * with `mostrarPrecio={false}`): a MONTO like "850.00" fails `entero()` even though
+ * `montoEditado` accepts it (it parses via `Number()`, not a strict regex), and a MONTO over
+ * 100 000 failed vender's own personalizado cap. MONTO's own validity is `montoEditado`'s job,
+ * uncapped, entirely separate — this never reads `custom.precio` at all.
+ */
+export function customPaqueteValido(f: CustomForm): boolean {
+  const e = customErrors(f, { nombre: true, precio: true, clases: true, dias: true });
+  return !e.nombre && !e.clases && !e.dias;
+}
+
 /** The PAQUETE section's own dirty bit: a picked tile counts once it is either a registrado
  *  pick (`paqSel` set, not the personalizado sentinel) or a personalizado form that already
- *  validates — an incomplete custom form is not yet a swap the sheet can save. */
+ *  validates — an incomplete custom form is not yet a swap the sheet can save. Uses
+ *  `customPaqueteValido` (FIX2), not vender's `customValido`: precio never gates this door. */
 export function swapDirty(paqSel: string | null, custom: CustomForm): boolean {
-  return paqSel !== null && (paqSel !== PERSONALIZADO || customValido(custom));
+  return paqSel !== null && (paqSel !== PERSONALIZADO || customPaqueteValido(custom));
+}
+
+// ── Tile picker tap semantics (paquete-swap FIX3) ───────────────────
+
+/** Tapping the tile ALREADY selected DESELECTS it — back to `null`, "sin cambio: manten el
+ *  paquete actual" — instead of re-running the monto reseed; every OTHER tap is a real
+ *  selection change. Pure so the toggle is unit-tested without the DOM infra this repo lacks
+ *  (see the file header); the monto/custom SIDE EFFECTS a real change triggers stay in the
+ *  sheet, where the state they write already lives. */
+export function siguientePaqSel(actual: string | null, tocado: string): string | null {
+  return actual === tocado ? null : tocado;
+}
+
+/** Whether entering PERSONALIZADO should seed the custom form from the current sale's own
+ *  facts — TRUE only the very first time, per `editar` session. Without this, re-entering
+ *  PERSONALIZADO after switching to a registrado tile and back would re-seed and silently
+ *  wipe whatever the operator had already typed (FIX3c). `yaSembrado` is the sheet's own
+ *  one-shot flag (a ref, reset on `abrirEditar`) — this only decides what it MEANS. */
+export function debeSeedCustom(yaSembrado: boolean, siguiente: string | null): boolean {
+  return siguiente === PERSONALIZADO && !yaSembrado;
+}
+
+// ── "Only the top of the stack can re-derive" (paquete-swap FIX4) ──────────────────────────
+
+/** Whether `ventaId` is the cliente's own most-recently-written sale — mirrors `editar_venta`'s
+ *  own `(created_at, id) desc` tiebreak exactly (the RPC's "only the top of the stack can
+ *  re-derive" precondition, `editar_venta_paquete.sql`). `pagos` is `ficha.pagos`, already read
+ *  `order by created_at desc, id desc` (derive.ts / clientes.ts — the SAME tuple order), so the
+ *  FIRST row IS the latest; this never re-sorts, which would risk drifting from that exact
+ *  order. The RPC re-checks this — it is the real enforcer — this only decides whether the
+ *  sheet shows the PAQUETE/FECHA affordances or the muted note. */
+export function esVentaMasReciente(ventaId: string, pagos: { id: string }[]): boolean {
+  return pagos[0]?.id === ventaId;
+}
+
+/** Why the PAQUETE picker + FECHA field are hidden (FIX4), or `null` when the swap door is
+ *  open. Checked in the SAME order `editar_venta` itself raises them (window first, then the
+ *  latest-sale guard) — a sale that is both past-window and non-latest names the window, which
+ *  is what the RPC would actually refuse with first. */
+export function razonSwapBloqueado(dentroVentana: boolean, esMasReciente: boolean): string | null {
+  if (!dentroVentana) return "Ya pasaron 30 días: esta venta ya no se puede recalcular.";
+  if (!esMasReciente) return "Solo la venta más reciente puede cambiar de paquete o fecha.";
+  return null;
 }

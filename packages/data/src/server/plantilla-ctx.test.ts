@@ -9,6 +9,8 @@ const paquete = (over: Partial<PaqueteDTO> = {}): PaqueteDTO => ({
   nombre: "8 clases",
   clases: 8,
   vigencia: "30 días",
+  vigenciaTipo: "dias",
+  vigenciaDias: 30,
   hasta: "16 jun",
   precio: 800,
   popular: false,
