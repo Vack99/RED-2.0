@@ -50,6 +50,16 @@ export function fechaEditada(originalIso: string, pickIso: string): string | und
   return pickIso === originalIso ? undefined : pickIso;
 }
 
+/** The calendar's displayed `sel` day, clamped into `[minIso, hoyIso]` — vender's
+ *  `inicioEfectivo` clamp (`vender-vm.ts`), display-only. A sale older than the 30-day cap
+ *  seeds `fecha` outside the picker's own range, which would otherwise open the calendar on a
+ *  month with every day disabled. The real `fecha` state is untouched by this: the FECHA field
+ *  text and `fechaEditada`'s omission logic keep reading it directly, so an untouched old date
+ *  still sends nothing. */
+export function fechaSeed(fechaIso: string, minIso: string, hoyIso: string): string {
+  return fechaIso >= minIso && fechaIso <= hoyIso ? fechaIso : hoyIso;
+}
+
 /**
  * The delete confirm's disclosure (#267.6): what leaves the balance, where it lands, and the
  * money that leaves that month's earnings — the LAST sentence is also the analytics warning

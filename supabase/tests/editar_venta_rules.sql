@@ -51,6 +51,11 @@
 --        VF2/VF3/VF4 are registrar_venta's own three backdate bounds, word for word: the edit door must
 --        not be able to write a fecha the CREATE door would have refused. Each asserts the exact
 --        Spanish message the desk shows, so a reworded raise is a failure, not a silent divergence.
+--   VF5 — THE INCLUSIVE EDGES: both bounds are strict (`> v_hoy`, `< v_hoy - 30`), so the boundary
+--        values themselves — `p_fecha := hoy` and `p_fecha := hoy - 30` — are ACCEPTED, not refused.
+--        Each writes its expected midday-gym-tz instant. Pins the edges so a future `>=`/`<=` off-by-one
+--        tightening on either bound turns this suite red instead of silently stranding the picker's
+--        leftmost enabled day.
 --
 -- Fixtures are 100% transaction-local (fresh gen_random_uuid gym/auth.users/gym_membership/cliente/
 -- venta rows, zero prod UUIDs — a live-gym lookup 22P02s in staff_gym() on a fresh scratch project),
@@ -476,6 +481,73 @@ begin
   select to_jsonb(v.*) into v_after from public.ventas v where v.id = current_setting('t.venta_n', true)::uuid;
   if v_after is distinct from v_all then
     raise exception 'VF4 FAIL: the refused call still wrote. before = % / after = %', v_all, v_after;
+  end if;
+end $$;
+
+-- ══ VF5 — THE INCLUSIVE EDGES: p_fecha = hoy and p_fecha = hoy-30 are ACCEPTED, not refused ═══════════
+-- registrar_venta's bounds are `> v_hoy` and `< v_hoy - 30` (both strict), so the boundary values
+-- themselves are legal — this is the ruling the mirror exists for. cli_a's alta is 120 days back, so
+-- neither edge trips the alta floor. Two separate calls, each on the same fixture venta, each asserted
+-- to have actually written (a distinct monto/metodo per call rules out a false pass from a stale row).
+set local role authenticated;
+do $$
+declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  perform public.editar_venta(current_setting('t.venta', true)::uuid, 1200, 'tarjeta', p_fecha := v_hoy);
+end $$;
+reset role;
+do $$
+declare
+  rec        record;
+  v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
+  v_esperado timestamptz := (v_hoy::timestamp + interval '12 hours') at time zone current_setting('t.tz', true);
+  v_rest     jsonb := (current_setting('t.venta_rest', true)::jsonb) - 'fecha';
+  v_after    jsonb;
+begin
+  select * into rec from public.ventas where id = current_setting('t.venta', true)::uuid;
+  if rec.fecha is distinct from v_esperado then
+    raise exception 'VF5 FAIL: fecha (hoy) = % (expected % — midday gym-tz TODAY, the upper edge, must be ACCEPTED not refused)', rec.fecha, v_esperado;
+  end if;
+  if rec.monto is distinct from 1200 then
+    raise exception 'VF5 FAIL: monto = % (expected 1200 — the accepted edge call must still write)', rec.monto;
+  end if;
+  if rec.metodo is distinct from 'tarjeta' then
+    raise exception 'VF5 FAIL: metodo = % (expected tarjeta)', rec.metodo;
+  end if;
+  select to_jsonb(v.*) - 'monto' - 'metodo' - 'fecha' into v_after from public.ventas v where v.id = rec.id;
+  if v_after is distinct from v_rest then
+    raise exception 'VF5 FAIL: a column other than monto/metodo/fecha changed on the hoy edge. before = % / after = %', v_rest, v_after;
+  end if;
+end $$;
+
+set local role authenticated;
+do $$
+declare v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  perform public.editar_venta(current_setting('t.venta', true)::uuid, 1300, 'transferencia', p_fecha := v_hoy - 30);
+end $$;
+reset role;
+do $$
+declare
+  rec        record;
+  v_hoy      date := (now() at time zone current_setting('t.tz', true))::date;
+  v_esperado timestamptz := ((v_hoy - 30)::timestamp + interval '12 hours') at time zone current_setting('t.tz', true);
+  v_rest     jsonb := (current_setting('t.venta_rest', true)::jsonb) - 'fecha';
+  v_after    jsonb;
+begin
+  select * into rec from public.ventas where id = current_setting('t.venta', true)::uuid;
+  if rec.fecha is distinct from v_esperado then
+    raise exception 'VF5 FAIL: fecha (hoy-30) = % (expected % — midday gym-tz on hoy-30, the lower edge, must be ACCEPTED not refused)', rec.fecha, v_esperado;
+  end if;
+  if rec.monto is distinct from 1300 then
+    raise exception 'VF5 FAIL: monto = % (expected 1300 — the accepted edge call must still write)', rec.monto;
+  end if;
+  if rec.metodo is distinct from 'transferencia' then
+    raise exception 'VF5 FAIL: metodo = % (expected transferencia)', rec.metodo;
+  end if;
+  select to_jsonb(v.*) - 'monto' - 'metodo' - 'fecha' into v_after from public.ventas v where v.id = rec.id;
+  if v_after is distinct from v_rest then
+    raise exception 'VF5 FAIL: a column other than monto/metodo/fecha changed on the hoy-30 edge. before = % / after = %', v_rest, v_after;
   end if;
 end $$;
 

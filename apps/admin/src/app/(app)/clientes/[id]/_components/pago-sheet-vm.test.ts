@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   dentroDeVentanaEliminar,
   fechaEditada,
+  fechaSeed,
   inicioMinIso,
   montoEditado,
   previewEliminarVenta,
@@ -121,5 +122,15 @@ describe("picker bounds — the SAME floor as vender's backdate", () => {
   it("clamps to the later of the 30-day cap and the client's alta", () => {
     expect(inicioMinIso("2026-08-14", "2026-01-01")).toBe("2026-07-15"); // old alta → the cap binds
     expect(inicioMinIso("2026-08-14", "2026-08-10")).toBe("2026-08-10"); // recent alta binds instead
+  });
+});
+
+describe("fechaSeed — the calendar's displayed sel, clamped display-only (#269 fast-follow)", () => {
+  it("passes an in-range fecha through untouched", () => {
+    expect(fechaSeed("2026-08-01", "2026-07-15", "2026-08-14")).toBe("2026-08-01");
+  });
+
+  it("reverts a >30d-old sale's fecha to hoy, so the calendar doesn't open on a dead month", () => {
+    expect(fechaSeed("2026-05-01", "2026-07-15", "2026-08-14")).toBe("2026-08-14");
   });
 });

@@ -14,6 +14,7 @@ import { editarVentaAction, eliminarVentaAction } from "../actions";
 import {
   dentroDeVentanaEliminar,
   fechaEditada,
+  fechaSeed,
   inicioMinIso,
   montoEditado,
   previewEliminarVenta,
@@ -84,10 +85,23 @@ export function PagoSheet({
     setModo("editar");
   };
 
+  const montoLabelRef = React.useRef<HTMLLabelElement | null>(null);
+  // The Sheet's own autofocus (sheet.tsx:142-166) fires exactly once, on the initial
+  // slide-in — and every open lands on `detalle` (the effect above), so the editar
+  // panel doesn't exist yet when it runs. Entering `editar` later leaves nothing
+  // focused; restore it ourselves. `[data-autofocus]` on the MONTO Input below is the
+  // SAME marker the Sheet queries, kept for the shared idiom even though this effect
+  // — not the Sheet's — is what calls `.focus()` here.
+  React.useEffect(() => {
+    if (modo !== "editar") return;
+    montoLabelRef.current?.querySelector<HTMLInputElement>("[data-autofocus]")?.focus({ preventScroll: true });
+  }, [modo]);
+
   const montoNum = montoEditado(monto);
   const fechaNueva = pago ? fechaEditada(pago.fechaIso, fecha) : undefined;
   const dirty = !!pago && (montoNum !== pago.monto || metodo !== pago.metodo || fechaNueva !== undefined);
   const canSave = !!pago && montoNum !== null && dirty && !busy;
+  const inicioMin = inicioMinIso(hoyIso, altaIso);
   // Render-time clock read, the agenda's `ahora` idiom (#238): this decides only what to SHOW,
   // and `eliminar_venta` re-checks the window server-side — so nothing refreshes it.
   const puedeEliminar = !!pago && dentroDeVentanaEliminar(pago.createdAt, new Date());
@@ -226,9 +240,9 @@ export function PagoSheet({
               <>
                 {/* What a correction can change: monto, método and the sold fecha, at any age (#266.3). */}
                 <div className="flex flex-col" style={{ padding: "0 16px", gap: 18 }}>
-                  <label className="flex flex-col" style={{ gap: 8 }}>
+                  <label ref={montoLabelRef} className="flex flex-col" style={{ gap: 8 }}>
                     <Eyebrow style={{ paddingLeft: 2 }}>MONTO</Eyebrow>
-                    <Input inputMode="numeric" placeholder="850" value={monto} onChange={setMonto} />
+                    <Input inputMode="numeric" placeholder="850" value={monto} onChange={setMonto} autoFocus />
                   </label>
                   <div className="flex flex-col" style={{ gap: 8 }}>
                     <Eyebrow style={{ paddingLeft: 2 }}>MÉTODO</Eyebrow>
@@ -253,8 +267,12 @@ export function PagoSheet({
                       {calOpen && (
                         <InicioCalendar
                           hoy={parseDay(hoyIso)}
-                          min={parseDay(inicioMinIso(hoyIso, altaIso))}
-                          sel={parseDay(fecha)}
+                          min={parseDay(inicioMin)}
+                          // Display-only clamp (vender's `inicioEfectivo` idiom): a >30d-old
+                          // `fecha` would otherwise open the calendar on a month with every
+                          // day disabled. The FECHA text above and the omission logic in
+                          // `fechaNueva` keep reading the real `fecha` state.
+                          sel={parseDay(fechaSeed(fecha, inicioMin, hoyIso))}
                           onPick={(d) => {
                             setFecha(isoDay(d));
                             setCalOpen(false);
