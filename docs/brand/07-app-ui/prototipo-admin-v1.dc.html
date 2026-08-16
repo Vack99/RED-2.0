@@ -1,0 +1,826 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+body { margin:0; background:#EAE7E3; font-family:'Hanken Grotesk',sans-serif; -webkit-font-smoothing:antialiased; }
+a { color:#703E56; text-decoration:none; } a:hover { color:#8A4A6C; }
+input, button { font-family:'Hanken Grotesk',sans-serif; }
+@keyframes lm-fade { from { opacity:0; } to { opacity:1; } }
+@keyframes lm-rise { from { opacity:0; transform:translateY(12px); } to { opacity:1; transform:none; } }
+@keyframes lm-shift { from { transform:translateY(150px); } to { transform:none; } }
+@keyframes lm-draw { from { stroke-dashoffset:44; } to { stroke-dashoffset:0; } }
+@keyframes lm2-out { to { opacity:0; } }
+@keyframes lm2-merge { from { transform:translate(-15px,-69px) scale(2.44); } to { transform:none; } }
+@keyframes lm2-lift { to { transform:translateY(-56px); } }
+@keyframes scr-in { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+@keyframes sheet-up { from { transform:translateY(100%); } to { transform:none; } }
+@keyframes scrim-in { from { opacity:0; } to { opacity:1; } }
+@keyframes toast-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { * { animation-duration:0.001ms !important; animation-delay:0ms !important; } }
+</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:18px;padding:48px 24px 64px;box-sizing:border-box;color:#201B14">
+
+  <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+    <div style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.18em;color:#6B6257">IBOOKIT · PROTOTIPO INTERACTIVO 1 · SOBRE EL TABLERO 6</div>
+    <div style="font-size:13px;color:#6B6257">Toca cualquier cosa: dock, clases, clientes, plantillas. Los datos cambian de verdad.</div>
+  </div>
+
+  <div style="position:relative;width:390px;height:844px;background:#FAF8F4;border:1px solid #DDD9D2;border-radius:38px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 24px 60px rgba(32,27,20,0.16)">
+
+    <div key="{{ screenKey }}" style="flex:1;min-height:0;display:flex;flex-direction:column;animation:scr-in 0.22s cubic-bezier(0.2,0.7,0.3,1) both">
+
+      <sc-if value="{{ isLogin }}" hint-placeholder-val="{{ true }}">
+        <div data-screen-label="/login" style="flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 40px;box-sizing:border-box">
+          <div style="animation:lm-shift 0.6s cubic-bezier(0.3,0.7,0.2,1) 2150ms both">
+            <div style="position:relative;height:150px;color:#201B14">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="84" height="84" aria-hidden="true" style="position:absolute;top:0;left:50%;margin-left:-42px">
+                <g fill="none" stroke="currentColor" stroke-width="2.5" style="animation:lm2-out 0.35s ease-out 1550ms forwards">
+                  <rect x="6" y="6" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 0ms both"></rect>
+                  <rect x="26" y="6" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 60ms both"></rect>
+                  <rect x="46" y="6" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 120ms both"></rect>
+                  <rect x="6" y="26" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 180ms both"></rect>
+                  <rect x="26" y="26" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 240ms both"></rect>
+                  <rect x="6" y="46" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 300ms both"></rect>
+                  <rect x="26" y="46" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 360ms both"></rect>
+                  <rect x="46" y="46" width="12" height="12" rx="3" style="stroke-dasharray:44;animation:lm-draw 0.45s ease-out 420ms both"></rect>
+                </g>
+              </svg>
+              <div style="position:absolute;top:104px;left:0;width:100%;display:flex;justify-content:center;font:600 38px/1 'Hanken Grotesk',sans-serif;letter-spacing:-0.02em;animation:lm2-lift 0.6s cubic-bezier(0.3,0.7,0.2,1) 2150ms forwards">
+                <span style="white-space:nowrap"><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">i</span><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">B</span><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">o</span><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">o</span><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">k</span><span style="position:relative;display:inline-block"><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">ı</span><span style="position:absolute;left:1px;top:4px;width:7px;height:7px;background:#8A4A6C;border-radius:0 2.5px 2.5px 2.5px;animation:lm2-merge 0.55s cubic-bezier(0.3,0.7,0.2,1) 1550ms both, lm-fade 0.3s ease-out 900ms both"></span></span><span style="display:inline-block;animation:lm-fade 0.5s ease-out 950ms both">t</span></span>
+              </div>
+              <div style="position:absolute;top:100px;left:0;width:100%;text-align:center;font:600 11px/1 'Hanken Grotesk',sans-serif;letter-spacing:0.08em;color:#6B6257;animation:lm-fade 0.4s ease-out 2550ms both">ADMINISTRADOR</div>
+            </div>
+          </div>
+          <form onSubmit="{{ onLogin }}" style="margin-top:26px;display:flex;flex-direction:column">
+            <div style="animation:lm-rise 0.4s cubic-bezier(0.2,0.7,0.3,1) 2800ms both">
+              <label for="lg-email" style="display:block;font:600 10px/1 'Hanken Grotesk',sans-serif;letter-spacing:0.14em;color:#6B6257;margin:0 0 8px">CORREO</label>
+              <input id="lg-email" type="email" required="required" defaultValue="operador@estudio.mx" autoComplete="email" style="width:100%;background:#FFFFFF;border:1px solid #E4E2DE;border-radius:14px;padding:14px 16px;font:400 15px/1.2 'Hanken Grotesk',sans-serif;color:#201B14;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298;box-shadow:0 0 0 3px rgba(138,74,108,0.12)">
+            </div>
+            <div style="animation:lm-rise 0.4s cubic-bezier(0.2,0.7,0.3,1) 2910ms both;margin-top:16px">
+              <label for="lg-pass" style="display:block;font:600 10px/1 'Hanken Grotesk',sans-serif;letter-spacing:0.14em;color:#6B6257;margin:0 0 8px">CONTRASEÑA</label>
+              <input id="lg-pass" type="password" required="required" defaultValue="estudio2026" autoComplete="current-password" style="width:100%;background:#FFFFFF;border:1px solid #E4E2DE;border-radius:14px;padding:14px 16px;font:400 15px/1.2 'Hanken Grotesk',sans-serif;color:#201B14;letter-spacing:0.12em;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298;box-shadow:0 0 0 3px rgba(138,74,108,0.12)">
+            </div>
+            <button type="submit" style="margin-top:22px;background:#8A4A6C;color:#FFFFFF;border:none;border-radius:14px;padding:16px;font:600 15px/1 'Hanken Grotesk',sans-serif;cursor:pointer;animation:lm-rise 0.4s cubic-bezier(0.2,0.7,0.3,1) 3020ms both" style-hover="background:#7F4563">{{ loginLabel }}</button>
+            <div style="text-align:center;margin-top:18px;font:400 13px/1 'Hanken Grotesk',sans-serif;animation:lm-rise 0.4s cubic-bezier(0.2,0.7,0.3,1) 3130ms both"><span onClick="{{ onForgot }}" style="color:#703E56;cursor:pointer">¿Olvidaste tu contraseña?</span></div>
+          </form>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isInicio }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/inicio" style="flex:1;min-height:0;overflow-y:auto;padding:26px 24px 16px;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.18em;color:#6B6257">SÁB 8 AGO · {{ estudioUpper }}</span>
+            <span onClick="{{ goCuenta }}" style="width:30px;height:30px;border-radius:50%;border:1px solid #E4E2DE;background:#FFFFFF;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;color:#6B6257;cursor:pointer">E</span>
+          </div>
+          <div style="margin-top:16px;border:1px solid #E4E2DE;border-radius:20px;background:#FFFFFF;padding:16px 18px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.14em;color:#703E56;font-weight:600">EN CURSO · 09:00</span><span style="font-variant-numeric:tabular-nums;font-size:12px;color:#6B6257">{{ liveInside }}/12 dentro</span></div>
+            <div style="margin-top:6px;font-size:22px;font-weight:600;letter-spacing:-0.02em">Box <span style="font-size:13px;font-weight:400;color:#6B6257">· Coach Karla</span></div>
+            <div onClick="{{ goPaseLive }}" style="margin-top:12px;display:flex;justify-content:center;padding:13px;border-radius:14px;background:#8A4A6C;color:#FFFFFF;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:#7F4563" style-active="transform:scale(0.98)">Pasar lista →</div>
+          </div>
+          <div style="margin-top:8px;display:flex;gap:8px">
+            <div onClick="{{ goNuevo }}" style="flex:1;display:flex;justify-content:center;align-items:center;padding:14px 0;border:1px solid #201B14;border-radius:16px;font-size:13.5px;font-weight:600;cursor:pointer" style-hover="background:rgba(32,27,20,0.05)">＋ Nuevo cliente</div>
+            <div onClick="{{ goApartar }}" style="flex:1;display:flex;justify-content:center;align-items:center;padding:14px 0;border:1px solid #E4E2DE;border-radius:16px;background:#FFFFFF;font-size:13.5px;font-weight:600;color:#5B5248;cursor:pointer" style-hover="border-color:#BAB5AD">Apartar lugar</div>
+          </div>
+          <div style="margin-top:22px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">MEMBRESÍAS</span><span style="font-variant-numeric:tabular-nums;font-size:10px;color:#6B6257">41 SOCIOS</span></div>
+          <div style="margin-top:9px;border:1px solid #E4E2DE;border-radius:20px;background:#FFFFFF;padding:15px 16px 4px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:15px;font-weight:600">Por renovar</span><span style="font-variant-numeric:tabular-nums;font-size:24px;font-weight:600;color:#8F5408">5</span></div>
+            <div style="margin-top:1px;font-size:11px;color:#6B6257">Vencen en 10 días o menos, o les queda 1 clase</div>
+            <div style="margin-top:12px;display:grid;grid-template-columns:repeat(6, 1fr)">
+              <div style="text-align:center"><div style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;color:#8F5408">2</div><div style="margin-top:1px;font-size:8.5px;font-weight:600;letter-spacing:0.1em;color:#6B6257">HOY</div></div>
+              <div style="text-align:center"><div style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;color:#8F5408">1</div><div style="margin-top:1px;font-size:8.5px;font-weight:600;letter-spacing:0.1em;color:#6B6257">MAÑ</div></div>
+              <div style="text-align:center"><div style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;color:#8F5408">2</div><div style="margin-top:1px;font-size:8.5px;font-weight:600;letter-spacing:0.1em;color:#6B6257">2–3D</div></div>
+              <div style="text-align:center"><div style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;color:#BAB5AD">0</div><div style="margin-top:1px;font-size:8.5px;font-weight:600;letter-spacing:0.1em;color:#BAB5AD">4–5D</div></div>
+              <div style="text-align:center"><div style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;color:#BAB5AD">0</div><div style="margin-top:1px;font-size:8.5px;font-weight:600;letter-spacing:0.1em;color:#BAB5AD">6–10D</div></div>
+              <div style="text-align:center"><div style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;color:#BAB5AD">0</div><div style="margin-top:1px;font-size:8.5px;font-weight:600;letter-spacing:0.1em;color:#BAB5AD">CLASES</div></div>
+            </div>
+            <div style="margin-top:12px;padding:10px 0;border-top:1px solid #E4E2DE;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:13.5px;font-weight:600">Aún a tiempo <span style="font-size:11px;font-weight:400;color:#6B6257">· vencieron hace 1–15 días</span></span><span style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600">17</span></div>
+            <div onClick="{{ goRenovar }}" style="padding:11px 0;border-top:1px solid #E4E2DE;text-align:center;font-size:12.5px;font-weight:600;color:#703E56;cursor:pointer">Ver los 22 en Clientes →</div>
+          </div>
+          <div onClick="{{ goAgenda }}" style="margin-top:auto;padding:18px 0 6px;display:flex;justify-content:space-between;align-items:baseline;cursor:pointer"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">{{ inicioMeta }}</span><span style="font-size:12px;font-weight:600;color:#703E56">Agenda →</span></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isAgenda }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/agenda" style="flex:1;min-height:0;overflow-y:auto;padding:26px 24px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-size:26px;font-weight:600;letter-spacing:-0.02em">Agenda</span>
+            <span onClick="{{ onMonth }}" style="display:flex;align-items:center;gap:6px;padding:9px 13px;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF;cursor:pointer" style-hover="border-color:#BAB5AD"><span style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:400">{{ monthLabel }}</span><span style="font-size:9px;color:#6B6257">▾</span></span>
+          </div>
+          <div style="margin-top:18px;display:flex;align-items:center;gap:8px">
+            <span onClick="{{ onPrevWeek }}" style="width:34px;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid #E4E2DE;border-radius:13px;background:#FFFFFF;font-size:15px;color:#6B6257;cursor:pointer" style-hover="border-color:#BAB5AD">‹</span>
+            <div style="flex:1;display:flex;gap:6px">
+              <sc-for list="{{ days }}" as="d" hint-placeholder-count="6">
+                <div onClick="{{ d.onClick }}" style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;border-radius:12px;cursor:pointer;background:{{ d.bg }}"><span style="font-size:9px;font-weight:600;letter-spacing:0.1em;color:{{ d.labelColor }}">{{ d.label }}</span><span style="font-variant-numeric:tabular-nums;font-size:13px;font-weight:{{ d.numWeight }};color:{{ d.numColor }}">{{ d.num }}</span></div>
+              </sc-for>
+            </div>
+            <span onClick="{{ onNextWeek }}" style="width:34px;height:44px;display:flex;align-items:center;justify-content:center;border:1px solid #E4E2DE;border-radius:13px;background:#FFFFFF;font-size:15px;color:#6B6257;cursor:pointer" style-hover="border-color:#BAB5AD">›</span>
+          </div>
+          <div style="margin-top:20px;display:flex;justify-content:space-between;align-items:baseline">
+            <span style="display:flex;align-items:center;gap:8px"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">{{ dayHeading }}</span><sc-if value="{{ showHoyPill }}" hint-placeholder-val="{{ false }}"><span onClick="{{ onHoy }}" style="font-size:9px;font-weight:600;letter-spacing:0.1em;padding:3px 9px;border-radius:999px;background:#201B14;color:#FAF8F4;cursor:pointer">HOY</span></sc-if></span>
+            <span style="font-variant-numeric:tabular-nums;font-size:10px;color:#6B6257">{{ dayMeta }}</span>
+          </div>
+          <div style="margin-top:4px;display:flex;flex-direction:column">
+            <sc-for list="{{ dayClasses }}" as="c" hint-placeholder-count="5">
+              <div onClick="{{ c.onClick }}" style="padding:14px 0;border-bottom:1px solid #E4E2DE;cursor:pointer" style-hover="background:rgba(32,27,20,0.02)">
+                <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="display:flex;gap:14px;align-items:baseline"><span style="font-variant-numeric:tabular-nums;font-size:14px;font-weight:600">{{ c.time }}</span><span style="font-size:15px;font-weight:400">{{ c.name }}</span><span style="font-size:12px;color:#6B6257">{{ c.coach }}</span></span><span style="font-variant-numeric:tabular-nums;font-size:{{ c.rightSize }};font-weight:{{ c.rightWeight }};color:{{ c.rightColor }}">{{ c.right }}</span></div>
+                <div style="margin-top:9px;height:2px;border-radius:1px;background:#E4E2DE"><div style="width:{{ c.pct }};height:2px;border-radius:1px;background:{{ c.barColor }}"></div></div>
+              </div>
+            </sc-for>
+          </div>
+          <div onClick="{{ onNuevaClase }}" style="margin-top:14px;text-align:center;font-size:13px;font-weight:600;color:#703E56;cursor:pointer">+ Nueva clase</div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isPase }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/asistencia" style="flex:1;min-height:0;overflow-y:auto;padding:26px 24px 16px">
+          <div style="font-size:26px;font-weight:600;letter-spacing:-0.02em">Pase de lista</div>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:8px">
+            <span onClick="{{ onPasePrev }}" style="width:34px;height:38px;display:flex;align-items:center;justify-content:center;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF;font-size:15px;color:#6B6257;cursor:pointer" style-hover="border-color:#BAB5AD">‹</span>
+            <span style="flex:1;display:flex;justify-content:center;align-items:center;gap:8px;padding:11px 0;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF"><span style="font-variant-numeric:tabular-nums;font-size:12px;font-weight:600">{{ paseDateLabel }}</span><span style="font-size:9px;font-weight:600;letter-spacing:0.1em;padding:3px 8px;border-radius:999px;background:{{ paseTagBg }};color:{{ paseTagFg }}">{{ paseTag }}</span></span>
+            <span onClick="{{ onPaseNext }}" style="width:34px;height:38px;display:flex;align-items:center;justify-content:center;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF;font-size:15px;color:{{ paseNextColor }};cursor:pointer">›</span>
+          </div>
+          <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+            <sc-for list="{{ paseChips }}" as="p" hint-placeholder-count="3">
+              <span onClick="{{ p.onClick }}" style="padding:9px 15px;border-radius:999px;cursor:pointer;background:{{ p.bg }};border:1px solid {{ p.border }};color:{{ p.color }};font-variant-numeric:tabular-nums;font-size:11px;font-weight:{{ p.weight }}">{{ p.label }}</span>
+            </sc-for>
+          </div>
+          <input value="{{ paseQuery }}" onChange="{{ onPaseQuery }}" placeholder="Buscar cliente…" style="margin-top:14px;width:100%;padding:13px 15px;border:1px solid #E4E2DE;border-radius:14px;background:#FFFFFF;font:400 14px/1 'Hanken Grotesk',sans-serif;color:#201B14;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298;box-shadow:0 0 0 3px rgba(138,74,108,0.10)">
+          <div style="margin-top:22px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">CON RESERVA</span><span style="font-variant-numeric:tabular-nums;font-size:10px;color:#6B6257">{{ paseInsideMeta }}</span></div>
+          <div style="margin-top:2px;display:flex;flex-direction:column">
+            <sc-for list="{{ paseRoster }}" as="r" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #E4E2DE;min-height:44px;box-sizing:border-box">
+                <span><span style="display:block;font-size:15px;font-weight:400">{{ r.name }}</span><sc-if value="{{ r.note }}" hint-placeholder-val="{{ false }}"><span style="display:block;margin-top:2px;font-size:11px;color:{{ r.noteColor }}">{{ r.note }}</span></sc-if></span>
+                <sc-if value="{{ r.marked }}" hint-placeholder-val="{{ false }}"><span onClick="{{ r.onMark }}" style="font-variant-numeric:tabular-nums;font-size:12px;color:#116C38;cursor:pointer">✓ {{ r.time }}</span></sc-if>
+                <sc-if value="{{ r.unmarked }}" hint-placeholder-val="{{ true }}"><span onClick="{{ r.onMark }}" style="padding:10px 18px;border:1px solid #201B14;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#201B14;color:#FAF8F4">Marcar</span></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top:22px;font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">TODOS</div>
+          <div style="margin-top:2px;display:flex;flex-direction:column">
+            <sc-for list="{{ paseWalkins }}" as="w" hint-placeholder-count="2">
+              <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #E4E2DE;min-height:44px;box-sizing:border-box">
+                <span><span style="display:block;font-size:15px;font-weight:400">{{ w.name }}</span><span style="display:block;margin-top:2px;font-size:11px;color:{{ w.noteColor }}">{{ w.note }}</span></span>
+                <sc-if value="{{ w.marked }}" hint-placeholder-val="{{ false }}"><span onClick="{{ w.onMark }}" style="font-variant-numeric:tabular-nums;font-size:12px;color:#116C38;cursor:pointer">✓ {{ w.time }}</span></sc-if>
+                <sc-if value="{{ w.unmarked }}" hint-placeholder-val="{{ true }}"><span onClick="{{ w.onMark }}" style="padding:10px 18px;border:1px solid #201B14;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#201B14;color:#FAF8F4">Marcar</span></sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ paseLate }}" hint-placeholder-val="{{ false }}">
+            <div style="margin-top:16px;padding-top:12px;border-top:1px solid #E4E2DE;text-align:center;font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.12em;color:#8F5408">MARCAR AQUÍ CUENTA COMO CAPTURA TARDÍA</div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isClientes }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/clientes" style="flex:1;min-height:0;overflow-y:auto;padding:26px 24px 16px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:26px;font-weight:600;letter-spacing:-0.02em">Clientes</span><span style="font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257">{{ clientCount }}</span></div>
+          <input value="{{ clientQuery }}" onChange="{{ onClientQuery }}" placeholder="Buscar por nombre o teléfono…" style="margin-top:16px;width:100%;padding:13px 15px;border:1px solid #E4E2DE;border-radius:14px;background:#FFFFFF;font:400 14px/1 'Hanken Grotesk',sans-serif;color:#201B14;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298;box-shadow:0 0 0 3px rgba(138,74,108,0.10)">
+          <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+            <sc-for list="{{ clientChips }}" as="f" hint-placeholder-count="4">
+              <span onClick="{{ f.onClick }}" style="padding:9px 14px;border-radius:999px;cursor:pointer;background:{{ f.bg }};border:1px solid {{ f.border }};color:{{ f.color }};font-size:11px;font-weight:600">{{ f.label }}</span>
+            </sc-for>
+          </div>
+          <div style="margin-top:20px;display:flex;flex-direction:column">
+            <sc-for list="{{ clientRows }}" as="c" hint-placeholder-count="6">
+              <div onClick="{{ c.onClick }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 0;border-top:1px solid #E4E2DE;cursor:pointer;min-height:44px;box-sizing:border-box" style-hover="background:rgba(32,27,20,0.02)">
+                <span><span style="display:block;font-size:15px;font-weight:400">{{ c.name }}</span><span style="display:block;margin-top:2px;font-size:11.5px;color:#6B6257">{{ c.sub }}</span></span>
+                <span style="font-size:9.5px;font-weight:600;letter-spacing:0.1em;color:{{ c.tagColor }}">{{ c.tag }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{ noClients }}" hint-placeholder-val="{{ false }}">
+            <div style="padding:34px 0;text-align:center;font-size:13px;color:#6B6257">{{ emptyCopy }}</div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isFicha }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/clientes/[id]" style="flex:1;min-height:0;overflow-y:auto;padding:28px 26px 22px;display:flex;flex-direction:column">
+          <div style="display:flex;justify-content:space-between;align-items:baseline"><span onClick="{{ goClientes }}" style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.16em;color:#6B6257;cursor:pointer">← CLIENTES</span><span onClick="{{ onEditarCliente }}" style="font-size:12px;font-weight:600;color:#5B5248;cursor:pointer">Editar</span></div>
+          <div style="margin-top:24px;font-size:30px;font-weight:600;letter-spacing:-0.02em">{{ cl.name }}</div>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap"><span style="width:7px;height:7px;border-radius:50%;background:{{ cl.dot }}"></span><span style="font-size:13.5px;font-weight:600">{{ cl.status }}</span><span style="font-size:13px;color:#6B6257">{{ cl.planLine }}</span><sc-if value="{{ cl.alert }}" hint-placeholder-val="{{ false }}"><span style="font-size:13px;font-weight:600;color:#B7332C">{{ cl.alert }}</span></sc-if></div>
+          <div style="margin-top:26px;display:flex;align-items:baseline;gap:10px"><span style="font-variant-numeric:tabular-nums;font-size:38px;font-weight:600;line-height:1;letter-spacing:-0.02em">{{ cl.big }}</span><span style="font-size:14px;color:#6B6257">días restantes</span><span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257">{{ cl.expiry }}</span></div>
+          <div style="margin-top:12px;height:2px;background:#E4E2DE"><div style="width:{{ cl.bar }};height:2px;background:{{ cl.barColor }}"></div></div>
+          <div style="margin-top:22px;display:flex;gap:10px">
+            <div onClick="{{ onAsistencia }}" style="flex:1;display:flex;justify-content:center;padding:14px;border-radius:14px;background:#8A4A6C;color:#FFFFFF;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:#7F4563">✓ Asistencia</div>
+            <div onClick="{{ onRenovar }}" style="flex:1;display:flex;justify-content:center;align-items:center;padding:14px;border-radius:14px;border:1px solid #201B14;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:rgba(32,27,20,0.05)">Renovar</div>
+          </div>
+          <div onClick="{{ openContactar }}" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;padding:15px 2px;border-top:1px solid #E4E2DE;border-bottom:1px solid #E4E2DE;cursor:pointer"><span style="white-space:nowrap;font-size:13.5px;font-weight:600">Contactar <span style="font-size:11px;font-weight:400;color:#6B6257">· WhatsApp, correo, invitación</span></span><span style="color:#6B6257">→</span></div>
+          <div style="margin-top:24px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">HISTORIAL</span><span style="font-variant-numeric:tabular-nums;font-size:10px;color:#6B6257">{{ cl.meta }}</span></div>
+          <div style="margin-top:2px;display:flex;flex-direction:column">
+            <sc-for list="{{ fichaHist }}" as="h" hint-placeholder-count="4">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid #E4E2DE"><span style="display:flex;gap:14px;align-items:baseline"><span style="font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257;width:44px">{{ h.d }}</span><span style="font-size:13.5px">{{ h.t }}</span></span><span style="font-variant-numeric:tabular-nums;font-size:13px;font-weight:600">{{ h.amt }}</span></div>
+            </sc-for>
+          </div>
+          <div onClick="{{ goHistorial }}" style="margin-top:auto;padding-top:14px;border-top:1px solid #E4E2DE;display:flex;justify-content:center;cursor:pointer"><span style="font-size:12.5px;font-weight:600;color:#703E56">Ver todo el historial →</span></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isHistorial }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/clientes/[id]/historial" style="flex:1;min-height:0;overflow-y:auto;padding:28px 26px 22px;display:flex;flex-direction:column">
+          <div onClick="{{ goFicha }}" style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.16em;color:#6B6257;cursor:pointer">← {{ cl.nameUpper }}</div>
+          <div style="margin-top:22px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:24px;font-weight:600;letter-spacing:-0.02em">Historial</span><span style="font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257">{{ cl.year }}</span></div>
+          <div style="margin-top:16px;display:flex;gap:20px;border-bottom:1px solid #E4E2DE">
+            <sc-for list="{{ histTabs }}" as="t" hint-placeholder-count="3">
+              <span onClick="{{ t.onClick }}" style="font-variant-numeric:tabular-nums;font-size:11px;font-weight:{{ t.weight }};letter-spacing:0.12em;color:{{ t.color }};border-bottom:2px solid {{ t.line }};padding-bottom:10px;margin-bottom:-1px;cursor:pointer">{{ t.label }}</span>
+            </sc-for>
+          </div>
+          <sc-for list="{{ histGroups }}" as="g" hint-placeholder-count="3">
+            <div style="margin-top:18px">
+              <div style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">{{ g.month }}</div>
+              <div style="margin-top:2px;display:flex;flex-direction:column">
+                <sc-for list="{{ g.items }}" as="h" hint-placeholder-count="3">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline;padding:11px 0;border-bottom:1px solid #E4E2DE"><span style="display:flex;gap:14px;align-items:baseline"><span style="font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257;width:44px">{{ h.d }}</span><span style="font-size:13.5px">{{ h.t }}</span></span><span style="font-variant-numeric:tabular-nums;font-size:13px;font-weight:600">{{ h.amt }}</span></div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-for>
+          <div style="margin-top:auto;padding-top:16px;border-top:1px solid #E4E2DE;display:flex;justify-content:center"><span style="font-variant-numeric:tabular-nums;font-size:10.5px;letter-spacing:0.12em;color:#6B6257">{{ cl.since }}</span></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isMensaje }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/clientes/[id]/mensaje" style="flex:1;min-height:0;overflow-y:auto;padding:26px 24px 22px;display:flex;flex-direction:column">
+          <div onClick="{{ goFicha }}" style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.16em;color:#6B6257;cursor:pointer">← FICHA · {{ cl.nameUpper }}</div>
+          <div style="margin-top:16px;font-size:26px;font-weight:600;letter-spacing:-0.02em">Enviar mensaje</div>
+          <div style="margin-top:18px;font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">PLANTILLA</div>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:7px">
+            <sc-for list="{{ templates }}" as="t" hint-placeholder-count="4">
+              <div onClick="{{ t.onClick }}" style="display:flex;justify-content:space-between;align-items:center;padding:13px 16px;border-radius:14px;background:#FFFFFF;cursor:pointer;border:{{ t.border }}"><span style="font-size:13.5px;font-weight:600;color:{{ t.color }}">{{ t.label }}</span><span style="font-size:12px;font-weight:600">{{ t.check }}</span></div>
+            </sc-for>
+          </div>
+          <div style="margin-top:20px;font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">VISTA PREVIA</div>
+          <div style="margin-top:8px;padding:13px 15px 8px;border-radius:16px;border-top-left-radius:5px;background:#D9FDD3;border:1px solid rgba(17,27,33,0.08)">
+            <div style="font-size:13px;line-height:1.55;color:#111B21;white-space:pre-line">{{ msgBody }}</div>
+            <div style="margin-top:4px;text-align:right;font-variant-numeric:tabular-nums;font-size:9px;color:rgba(17,27,33,0.5)">9:41 ✓✓</div>
+          </div>
+          <div style="margin-top:10px;font-size:11px;line-height:1.5;color:#6B6257">Se llena sola con nombre, plan y fecha. Los textos se editan en Cuenta → Plantillas de WhatsApp.</div>
+          <div onClick="{{ onEnviar }}" style="margin-top:auto;padding-top:16px"><div style="display:flex;justify-content:center;align-items:center;gap:8px;padding:16px;border-radius:16px;background:#116C38;color:#FFFFFF;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:#0E5C2F">Enviar por WhatsApp</div></div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isNuevo }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/clientes/nuevo" style="flex:1;min-height:0;overflow-y:auto;padding:24px 24px 20px;display:flex;flex-direction:column">
+          <div onClick="{{ goInicio }}" style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.16em;color:#6B6257;cursor:pointer">← INICIO</div>
+          <div style="margin-top:16px;font-size:26px;font-weight:600;letter-spacing:-0.02em">Nuevo cliente</div>
+          <div style="margin-top:14px;display:flex;padding:3px;border:1px solid #E4E2DE;border-radius:999px;background:#FFFFFF">
+            <span onClick="{{ onTabNuevo }}" style="flex:1;text-align:center;padding:10px 0;border-radius:999px;cursor:pointer;background:{{ nuevoBg }};color:{{ nuevoFg }};font-size:12px;font-weight:600">NUEVO</span>
+            <span onClick="{{ onTabExistente }}" style="flex:1;text-align:center;padding:10px 0;border-radius:999px;cursor:pointer;background:{{ existBg }};color:{{ existFg }};font-size:12px;font-weight:600">EXISTENTE</span>
+          </div>
+          <div style="margin-top:16px;display:flex;flex-direction:column;gap:11px">
+            <div><div style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">NOMBRE</div><input value="{{ nName }}" onChange="{{ onNName }}" placeholder="Nombre y apellido" style="margin-top:6px;width:100%;padding:12px 14px;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF;font:400 14px/1 'Hanken Grotesk',sans-serif;color:#201B14;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298"></div>
+            <div><div style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">TELÉFONO <span style="color:#BAB5AD;letter-spacing:0.06em">· OPCIONAL</span></div><input value="{{ nPhone }}" onChange="{{ onNPhone }}" placeholder="10 dígitos" style="margin-top:6px;width:100%;padding:12px 14px;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF;font:400 14px/1 'Hanken Grotesk',sans-serif;color:#201B14;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298"></div>
+            <div><div style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">CORREO <span style="color:#BAB5AD;letter-spacing:0.06em">· OPCIONAL · LE LLEGA SU RECIBO</span></div><input value="{{ nMail }}" onChange="{{ onNMail }}" placeholder="maria@correo.mx" style="margin-top:6px;width:100%;padding:12px 14px;border:1px solid #E4E2DE;border-radius:12px;background:#FFFFFF;font:400 14px/1 'Hanken Grotesk',sans-serif;color:#201B14;outline:none;box-sizing:border-box" style-focus="border-color:#AE8298"></div>
+          </div>
+          <div style="margin-top:18px;font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">PLAN</div>
+          <div style="margin-top:7px;display:flex;flex-direction:column;gap:8px">
+            <sc-for list="{{ plans }}" as="p" hint-placeholder-count="3">
+              <div onClick="{{ p.onClick }}" style="display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border-radius:14px;cursor:pointer;background:{{ p.bg }};border:{{ p.border }}"><span style="font-size:14px;font-weight:600;color:{{ p.color }}">{{ p.label }} <span style="font-size:11px;font-weight:400;color:#6B6257">{{ p.sub }}</span></span><span style="font-variant-numeric:tabular-nums;font-size:15px;font-weight:600;color:{{ p.priceColor }}">{{ p.price }}</span></div>
+            </sc-for>
+          </div>
+          <div onClick="{{ onCambiarInicio }}" style="margin-top:14px;display:flex;justify-content:space-between;align-items:center;padding:13px 15px;border:1px solid #E4E2DE;border-radius:14px;background:#FFFFFF;cursor:pointer"><span style="display:flex;gap:10px;align-items:baseline"><span style="font-size:10px;font-weight:600;letter-spacing:0.12em;color:#6B6257">INICIO</span><span style="font-size:14px;font-weight:400">Hoy · SÁB 8 AGO</span></span><span style="font-size:12px;font-weight:600;color:#703E56">Cambiar</span></div>
+          <div style="margin-top:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span style="font-size:10px;font-weight:600;letter-spacing:0.12em;color:#6B6257">PAGO</span>
+            <sc-for list="{{ pagos }}" as="g" hint-placeholder-count="3">
+              <span onClick="{{ g.onClick }}" style="padding:9px 14px;border-radius:999px;cursor:pointer;background:{{ g.bg }};border:1px solid {{ g.border }};color:{{ g.color }};font-size:11px;font-weight:600">{{ g.label }}</span>
+            </sc-for>
+          </div>
+          <div style="margin-top:auto;padding-top:18px">
+            <div onClick="{{ onCobrar }}" style="display:flex;justify-content:center;padding:16px;border-radius:16px;background:#8A4A6C;color:#FFFFFF;font-size:15px;font-weight:600;cursor:pointer" style-hover="background:#7F4563">{{ cobrarLabel }}</div>
+            <div style="margin-top:8px;text-align:center;font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.12em;color:#6B6257">VENCE 7 SEP · RECIBO E INVITACIÓN POR CORREO</div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isCuenta }}" hint-placeholder-val="{{ false }}">
+        <div data-screen-label="/cuenta" style="flex:1;min-height:0;overflow-y:auto;padding:26px 24px 16px">
+          <div style="font-size:26px;font-weight:600;letter-spacing:-0.02em">Cuenta</div>
+          <div style="margin-top:4px;font-size:13px;color:#6B6257">{{ estudio }} · ibookit.mx</div>
+          <div style="margin-top:20px;border:1px solid #E4E2DE;border-radius:16px;background:#FFFFFF;padding:16px">
+            <div style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">COBRADO EN AGOSTO</div>
+            <div style="margin-top:6px;display:flex;align-items:baseline;gap:10px"><span style="font-variant-numeric:tabular-nums;font-size:30px;font-weight:600;letter-spacing:-0.02em">{{ cobrado }}</span><span style="font-variant-numeric:tabular-nums;font-size:12px;color:#6B6257">{{ ventas }} ventas</span></div>
+          </div>
+          <div style="margin-top:20px;display:flex;flex-direction:column">
+            <sc-for list="{{ cuentaRows }}" as="r" hint-placeholder-count="6">
+              <div onClick="{{ r.onClick }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 0;border-top:1px solid #E4E2DE;cursor:pointer;min-height:48px;box-sizing:border-box" style-hover="background:rgba(32,27,20,0.02)">
+                <span style="display:flex;align-items:center;gap:10px"><span><span style="display:block;font-size:15px;font-weight:400">{{ r.label }}</span><sc-if value="{{ r.sub }}" hint-placeholder-val="{{ false }}"><span style="display:block;margin-top:2px;font-size:11.5px;color:#6B6257">{{ r.sub }}</span></sc-if></span><sc-if value="{{ r.badge }}" hint-placeholder-val="{{ false }}"><span style="min-width:20px;text-align:center;padding:2px 7px;border-radius:999px;background:#B7332C;color:#FFFFFF;font-variant-numeric:tabular-nums;font-size:11px;font-weight:600">{{ r.badge }}</span></sc-if></span>
+                <span style="color:#BAB5AD">›</span>
+              </div>
+            </sc-for>
+            <div style="border-top:1px solid #E4E2DE"></div>
+          </div>
+          <div onClick="{{ onLogout }}" style="margin-top:28px;text-align:center;font-size:13px;font-weight:600;color:#B7332C;cursor:pointer">Cerrar sesión</div>
+        </div>
+      </sc-if>
+
+    </div>
+
+    <sc-if value="{{ showDock }}" hint-placeholder-val="{{ false }}">
+      <div style="border-top:1px solid #E4E2DE;padding:8px 12px 22px;background:#FAF8F4">
+        <div style="position:relative;display:flex;gap:0">
+          <div style="position:absolute;top:0;bottom:0;width:20%;left:{{ pillLeft }};padding:0 2px;box-sizing:border-box;transition:left 220ms cubic-bezier(0.3,0.7,0.2,1)"><div style="width:100%;height:100%;border-radius:13px;background:#201B14"></div></div>
+          <span onClick="{{ dockInicio }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0;border-radius:13px;cursor:pointer;color:{{ fgInicio }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11 L12 4.5 L20 11"></path><path d="M6 10.5 V19.5 H18 V10.5"></path></svg><span style="font-size:9px;font-weight:600;letter-spacing:0.08em">INICIO</span></span>
+          <span onClick="{{ dockAgenda }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0;border-radius:13px;cursor:pointer;color:{{ fgAgenda }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5.5" width="16" height="15" rx="2.5"></rect><path d="M4 10 H20 M8.5 3.5 V7 M15.5 3.5 V7"></path></svg><span style="font-size:9px;font-weight:600;letter-spacing:0.08em">AGENDA</span></span>
+          <span onClick="{{ dockPase }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0;border-radius:13px;cursor:pointer;color:{{ fgPase }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="8.2"></circle><path d="M8.6 12.4 L11 14.8 L15.6 9.6"></path></svg><span style="font-size:9px;font-weight:600;letter-spacing:0.08em">PASE</span></span>
+          <span onClick="{{ dockClientes }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0;border-radius:13px;cursor:pointer;color:{{ fgClientes }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="3.2"></circle><path d="M3.8 19 C3.8 15.9 6.2 14.3 9 14.3 C11.8 14.3 14.2 15.9 14.2 19"></path><circle cx="16.8" cy="9.6" r="2.5"></circle><path d="M16.2 14.5 C18.7 14.7 20.4 16.2 20.4 18.6"></path></svg><span style="font-size:9px;font-weight:600;letter-spacing:0.08em">CLIENTES</span></span>
+          <span onClick="{{ dockCuenta }}" style="position:relative;flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 0;border-radius:13px;cursor:pointer;color:{{ fgCuenta }}"><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.4" r="3.4"></circle><path d="M5.6 19.5 C5.6 15.9 8.4 13.9 12 13.9 C15.6 13.9 18.4 15.9 18.4 19.5"></path></svg><span style="font-size:9px;font-weight:600;letter-spacing:0.08em">CUENTA</span></span>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ anySheet }}" hint-placeholder-val="{{ false }}">
+      <div onClick="{{ closeSheet }}" style="position:absolute;inset:0;background:rgba(32,27,20,0.44);animation:scrim-in 0.2s ease-out both"></div>
+    </sc-if>
+
+    <sc-if value="{{ sheetClase }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:0;right:0;bottom:0;max-height:86%;overflow-y:auto;background:#FAF8F4;border-radius:24px 24px 0 0;padding:20px 24px 28px;box-shadow:0 -10px 30px rgba(32,27,20,0.18);animation:sheet-up 0.3s cubic-bezier(0.2,0.8,0.3,1) both">
+        <div onClick="{{ closeSheet }}" style="width:36px;height:4px;border-radius:2px;background:#E4E2DE;margin:0 auto;cursor:pointer"></div>
+        <div style="margin-top:18px;display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span style="white-space:nowrap;font-size:20px;font-weight:600;letter-spacing:-0.02em">{{ sc.name }} <span style="font-size:13px;font-weight:400;color:#6B6257">· Coach {{ sc.coach }}</span></span><span style="font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.12em;font-weight:600;color:{{ sc.whenColor }}">{{ sc.when }}</span></div>
+        <div style="margin-top:14px;display:flex;align-items:baseline;gap:10px"><span style="font-variant-numeric:tabular-nums;font-size:30px;font-weight:600;line-height:1;letter-spacing:-0.02em">{{ sc.big }}</span><span style="font-size:13.5px;color:#6B6257">{{ sc.bigUnit }}</span><span style="margin-left:auto;font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257">{{ sc.ratio }}</span></div>
+        <div style="margin-top:10px;height:2px;background:#E4E2DE"><div style="width:{{ sc.pct }};height:2px;background:{{ sc.barColor }}"></div></div>
+        <sc-if value="{{ sc.canApartar }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ onApartar }}" style="margin-top:18px;display:flex;justify-content:center;padding:14px;border-radius:14px;background:#8A4A6C;color:#FFFFFF;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:#7F4563">＋ Apartar lugar</div>
+          <div style="margin-top:18px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">RESERVAS</span><span style="font-variant-numeric:tabular-nums;font-size:10px;color:#6B6257">{{ sc.booked }}</span></div>
+        </sc-if>
+        <div style="margin-top:8px;display:flex;flex-direction:column">
+          <sc-for list="{{ sheetRoster }}" as="r" hint-placeholder-count="4">
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid #E4E2DE;min-height:44px;box-sizing:border-box">
+              <span><span style="display:block;font-size:14px;font-weight:400">{{ r.name }}</span><sc-if value="{{ r.note }}" hint-placeholder-val="{{ false }}"><span style="display:block;margin-top:1px;font-size:11px;color:{{ r.noteColor }}">{{ r.note }}</span></sc-if></span>
+              <sc-if value="{{ r.marked }}" hint-placeholder-val="{{ false }}"><span onClick="{{ r.onMark }}" style="font-variant-numeric:tabular-nums;font-size:12px;color:#116C38;cursor:pointer">✓ {{ r.time }}</span></sc-if>
+              <sc-if value="{{ r.showMark }}" hint-placeholder-val="{{ false }}"><span onClick="{{ r.onMark }}" style="padding:9px 16px;border:1px solid #201B14;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer" style-hover="background:#201B14;color:#FAF8F4">Marcar</span></sc-if>
+            </div>
+          </sc-for>
+        </div>
+        <sc-if value="{{ sc.lateNote }}" hint-placeholder-val="{{ false }}">
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid #E4E2DE;text-align:center;font-variant-numeric:tabular-nums;font-size:10px;letter-spacing:0.12em;color:#8F5408">MARCAR AQUÍ CUENTA COMO CAPTURA TARDÍA</div>
+        </sc-if>
+        <sc-if value="{{ sc.showPase }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ goPaseFromSheet }}" style="padding:13px 0;text-align:center;font-size:12.5px;font-weight:600;color:#703E56;cursor:pointer">Pasar lista completo →</div>
+        </sc-if>
+        <sc-if value="{{ sc.showEditar }}" hint-placeholder-val="{{ false }}">
+          <div onClick="{{ openEditar }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 2px 0;cursor:pointer"><span style="white-space:nowrap;font-size:13.5px;font-weight:600">Editar clase <span style="font-size:11px;font-weight:400;color:#6B6257">· horario, coach, cupo, cancelar</span></span><span style="color:#6B6257">→</span></div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sheetEditar }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:0;right:0;bottom:0;max-height:86%;overflow-y:auto;background:#FAF8F4;border-radius:24px 24px 0 0;padding:20px 24px 28px;box-shadow:0 -10px 30px rgba(32,27,20,0.18);animation:sheet-up 0.3s cubic-bezier(0.2,0.8,0.3,1) both">
+        <div onClick="{{ backToClase }}" style="width:36px;height:4px;border-radius:2px;background:#E4E2DE;margin:0 auto;cursor:pointer"></div>
+        <div style="margin-top:18px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:20px;font-weight:600;letter-spacing:-0.02em">Editar clase</span><span style="font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257">{{ sc.tag }}</span></div>
+        <div style="margin-top:14px;display:flex;padding:3px;border:1px solid #E4E2DE;border-radius:999px;background:#FFFFFF">
+          <span onClick="{{ onScopeHoy }}" style="flex:1;text-align:center;padding:10px 0;border-radius:999px;cursor:pointer;background:{{ scopeHoyBg }};color:{{ scopeHoyFg }};font-size:12px;font-weight:600">SOLO HOY</span>
+          <span onClick="{{ onScopeSerie }}" style="flex:1;text-align:center;padding:10px 0;border-radius:999px;cursor:pointer;background:{{ scopeSerieBg }};color:{{ scopeSerieFg }};font-size:12px;font-weight:600">TODA LA SERIE</span>
+        </div>
+        <div style="margin-top:10px;display:flex;flex-direction:column">
+          <div onClick="{{ onCambiarHorario }}" style="display:flex;justify-content:space-between;align-items:center;padding:16px 2px;border-bottom:1px solid #E4E2DE;cursor:pointer"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">HORARIO</span><span style="display:flex;align-items:center;gap:12px"><span style="font-size:14px;font-weight:600">Hoy · {{ sc.time }}</span><span style="font-size:12px;font-weight:600;color:#703E56">Cambiar</span></span></div>
+          <div onClick="{{ onCambiarCoach }}" style="display:flex;justify-content:space-between;align-items:center;padding:16px 2px;border-bottom:1px solid #E4E2DE;cursor:pointer"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">COACH</span><span style="display:flex;align-items:center;gap:12px"><span style="font-size:14px;font-weight:600">{{ sc.coach }}</span><span style="font-size:12px;font-weight:600;color:#703E56">Cambiar</span></span></div>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:11px 2px;border-bottom:1px solid #E4E2DE"><span style="font-size:10px;font-weight:600;letter-spacing:0.14em;color:#6B6257">CUPO</span><span style="display:flex;align-items:center;gap:10px"><span onClick="{{ onCupoMinus }}" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:1px solid #E4E2DE;border-radius:10px;background:#FFFFFF;font-size:15px;color:#6B6257;cursor:pointer" style-hover="border-color:#BAB5AD">−</span><span style="font-variant-numeric:tabular-nums;font-size:16px;font-weight:600;width:28px;text-align:center">{{ cupoValue }}</span><span onClick="{{ onCupoPlus }}" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;border:1px solid #E4E2DE;border-radius:10px;background:#FFFFFF;font-size:15px;color:#6B6257;cursor:pointer" style-hover="border-color:#BAB5AD">＋</span></span></div>
+        </div>
+        <div style="margin-top:6px;font-size:11px;color:#6B6257;padding:0 2px">{{ sc.booked }} reservas hechas · si bajas el cupo, nadie pierde su lugar</div>
+        <div onClick="{{ onGuardar }}" style="margin-top:16px;display:flex;justify-content:center;padding:14px;border-radius:14px;background:#8A4A6C;color:#FFFFFF;font-size:14px;font-weight:600;cursor:pointer" style-hover="background:#7F4563">Guardar cambios</div>
+        <div onClick="{{ onCancelarClase }}" style="margin-top:16px;display:flex;justify-content:space-between;align-items:center;padding:15px 2px 0;border-top:1px solid #E4E2DE;cursor:pointer"><span style="white-space:nowrap;font-size:13.5px;font-weight:600;color:#B7332C">{{ cancelLabel }} <span style="font-size:11px;font-weight:400;color:#6B6257">{{ cancelSub }}</span></span><span style="color:#6B6257">→</span></div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ sheetContactar }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:0;right:0;bottom:0;background:#FAF8F4;border-radius:24px 24px 0 0;padding:20px 24px 28px;box-shadow:0 -10px 30px rgba(32,27,20,0.18);animation:sheet-up 0.3s cubic-bezier(0.2,0.8,0.3,1) both">
+        <div onClick="{{ closeSheet }}" style="width:36px;height:4px;border-radius:2px;background:#E4E2DE;margin:0 auto;cursor:pointer"></div>
+        <div style="margin-top:16px;display:flex;justify-content:space-between;align-items:baseline"><span style="font-size:15px;font-weight:600">Contactar a {{ cl.first }}</span><span style="font-variant-numeric:tabular-nums;font-size:11px;color:#6B6257">{{ cl.phone }}</span></div>
+        <div style="margin-top:10px;display:flex;flex-direction:column">
+          <div onClick="{{ goMensaje }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 2px;border-top:1px solid #E4E2DE;cursor:pointer"><span style="white-space:nowrap;font-size:14px;font-weight:600">Mandar WhatsApp <span style="font-size:11px;font-weight:400;color:#6B6257">· plantillas</span></span><span style="color:#6B6257">→</span></div>
+          <div onClick="{{ onLlamar }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 2px;border-top:1px solid #E4E2DE;cursor:pointer"><span style="font-size:14px;font-weight:600">Llamar</span><span style="color:#6B6257">→</span></div>
+          <div onClick="{{ onCopiar }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 2px;border-top:1px solid #E4E2DE;cursor:pointer"><span style="white-space:nowrap;font-size:14px;font-weight:600">Copiar correo <span style="font-size:11px;font-weight:400;color:#6B6257">· {{ cl.email }}</span></span><span style="color:#6B6257">⧉</span></div>
+          <div onClick="{{ onReenviar }}" style="display:flex;justify-content:space-between;align-items:center;padding:15px 2px;border-top:1px solid #E4E2DE;cursor:pointer"><span style="white-space:nowrap;font-size:14px;font-weight:600">Reenviar invitación <span style="font-size:11px;font-weight:400;color:#6B6257">· enviada 28 JUL</span></span><span style="color:#6B6257">→</span></div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;left:20px;right:20px;bottom:96px;display:flex;justify-content:center;pointer-events:none">
+        <div key="{{ toastKey }}" style="max-width:100%;padding:11px 18px;border-radius:999px;background:#201B14;color:#FAF8F4;font-size:12.5px;font-weight:600;text-align:center;box-shadow:0 10px 24px rgba(32,27,20,0.28);animation:toast-in 0.2s cubic-bezier(0.2,0.7,0.3,1) both">{{ toast }}</div>
+      </div>
+    </sc-if>
+
+  </div>
+
+  <sc-if value="{{ showRoute }}" hint-placeholder-val="{{ true }}">
+    <div style="display:flex;align-items:center;gap:14px;font-size:11.5px;color:#6B6257">
+      <span style="font-variant-numeric:tabular-nums;letter-spacing:0.1em">{{ routeLabel }}</span>
+      <span style="width:1px;height:12px;background:#D8D2C6"></span>
+      <span onClick="{{ onReset }}" style="color:#703E56;font-weight:600;cursor:pointer">Reiniciar</span>
+    </div>
+  </sc-if>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:520,&quot;height&quot;:1040},&quot;estudio&quot;:{&quot;editor&quot;:&quot;text&quot;,&quot;default&quot;:&quot;Estudio Centro&quot;,&quot;tsType&quot;:&quot;string&quot;},&quot;showRoute&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Prototipo&quot;}}">
+class Component extends DCLogic {
+  state = {
+    screen: 'login', loggingIn: false,
+    sheet: null, sheetClassId: null,
+    weekOffset: 0, day: 8,
+    checkins: { 'c2|Ana Torres': '09:02', 'c2|Luis Mata': '08:58', 'c1|Ana Torres': '07:04', 'c1|Luis Mata': '06:58', 'c1|Karla Peña': '07:00', 'c1|Marta Gil': '07:07' },
+    extraBooked: {}, cupo: {}, scope: 'hoy', cancelArmed: false,
+    paseDay: 8, paseClassId: 'c2', paseQuery: '',
+    clientQuery: '', clientFilter: 'Todos', clientId: 'ana',
+    histTab: 'TODO', tmpl: 'Recordatorio',
+    nuevoTab: 'NUEVO', plan: 'mensual', pago: 'Efectivo', nName: '', nPhone: '', nMail: '',
+    toast: null, toastSeq: 0, seq: 0
+  };
+
+  clients = [
+    { id:'ana', name:'Ana Torres', first:'Ana', sub:'Mensualidad · vence 28 AGO', tag:'VIGENTE', tagColor:'#116C38', dot:'#116C38', status:'Vigente', planLine:'· Mensualidad', big:'20', expiry:'VENCE 28 AGO', bar:'66%', barColor:'#116C38', phone:'55 1234 5678', email:'ana@correo.mx', meta:'4 VISITAS · 2 PAGOS', since:'SOCIA DESDE ENE 2026', year:'$1,300 EN 2026', planName:'Mensualidad', expDate:'28 AGO', filters:['Vigentes'], price:650,
+      hist:[{m:'AGOSTO',d:'8 AGO',t:'Box · 09:00'},{m:'AGOSTO',d:'5 AGO',t:'Functional · 18:00'},{m:'JULIO',d:'28 JUL',t:'Mensualidad · efectivo',amt:'$650'},{m:'JULIO',d:'28 JUL',t:'Box · 09:00'},{m:'JULIO',d:'15 JUL',t:'Functional · 18:00'},{m:'JULIO',d:'12 JUL',t:'Box · 09:00'},{m:'JUNIO',d:'28 JUN',t:'Mensualidad · tarjeta',amt:'$650'}] },
+    { id:'diego', name:'Diego Ruiz', first:'Diego', sub:'Mensualidad · vence 10 AGO', tag:'2 DÍAS', tagColor:'#8F5408', dot:'#8F5408', status:'Por renovar', planLine:'· Mensualidad', big:'2', expiry:'VENCE 10 AGO', bar:'8%', barColor:'#8F5408', phone:'55 8842 1190', email:'diego@correo.mx', meta:'6 VISITAS · 3 PAGOS', since:'SOCIO DESDE MAR 2025', year:'$1,950 EN 2026', planName:'Mensualidad', expDate:'10 AGO', filters:['Vigentes','Por renovar'], price:650,
+      hist:[{m:'AGOSTO',d:'7 AGO',t:'Box · 09:00'},{m:'AGOSTO',d:'4 AGO',t:'Fuerza · 18:00'},{m:'JULIO',d:'11 JUL',t:'Mensualidad · efectivo',amt:'$650'},{m:'JULIO',d:'9 JUL',t:'Box · 09:00'},{m:'JUNIO',d:'11 JUN',t:'Mensualidad · tarjeta',amt:'$650'}] },
+    { id:'elena', name:'Elena Soto', first:'Elena', sub:'10 clases · saldo 1', tag:'1 CLASE', tagColor:'#8F5408', dot:'#B7332C', status:'Vigente', planLine:'· 10 clases ·', alert:'queda 1', big:'12', expiry:'VENCE 24 AGO', bar:'40%', barColor:'#116C38', phone:'55 2210 7745', email:'elena@correo.mx', meta:'9 VISITAS · 1 PAGO', since:'SOCIA DESDE JUN 2026', year:'$550 EN 2026', planName:'10 clases', expDate:'24 AGO', filters:['Vigentes','Por renovar'], price:550,
+      hist:[{m:'AGOSTO',d:'6 AGO',t:'Movilidad · 13:00'},{m:'AGOSTO',d:'3 AGO',t:'Box · 09:00'},{m:'JULIO',d:'24 JUL',t:'10 clases · tarjeta',amt:'$550'},{m:'JULIO',d:'22 JUL',t:'Functional · 11:00'}] },
+    { id:'karla', name:'Karla Peña', first:'Karla', sub:'Registro online · sin plan', tag:'NUEVA', tagColor:'#703E56', dot:'#703E56', status:'Sin plan', planLine:'· Registro online', big:'0', expiry:'SIN VENCIMIENTO', bar:'0%', barColor:'#BAB5AD', phone:'55 4417 3320', email:'karla@correo.mx', meta:'0 VISITAS · 0 PAGOS', since:'REGISTRO 6 AGO 2026', year:'$0 EN 2026', planName:'sin plan', expDate:'—', filters:['Online'], price:650, hist:[] },
+    { id:'luis', name:'Luis Mata', first:'Luis', sub:'Mensualidad · venció 30 JUL', tag:'VENCIDO', tagColor:'#6B6257', dot:'#B7332C', status:'Vencido', planLine:'· Mensualidad', big:'0', expiry:'VENCIÓ 30 JUL', bar:'0%', barColor:'#B7332C', phone:'55 9931 5508', email:'luis@correo.mx', meta:'12 VISITAS · 4 PAGOS', since:'SOCIO DESDE SEP 2024', year:'$2,600 EN 2026', planName:'Mensualidad', expDate:'30 JUL', filters:[], price:650,
+      hist:[{m:'JULIO',d:'29 JUL',t:'Box · 09:00'},{m:'JULIO',d:'1 JUL',t:'Mensualidad · efectivo',amt:'$650'},{m:'JUNIO',d:'28 JUN',t:'Fuerza · 18:00'}] },
+    { id:'maria', name:'María Vela', first:'María', sub:'Pase suelto · 8 AGO', tag:'VIGENTE', tagColor:'#116C38', dot:'#116C38', status:'Vigente', planLine:'· Pase suelto', big:'1', expiry:'VENCE HOY', bar:'12%', barColor:'#116C38', phone:'55 6650 2214', email:'maria@correo.mx', meta:'1 VISITA · 1 PAGO', since:'REGISTRO 8 AGO 2026', year:'$120 EN 2026', planName:'Pase suelto', expDate:'8 AGO', filters:['Vigentes'], price:120,
+      hist:[{m:'AGOSTO',d:'8 AGO',t:'Pase suelto · efectivo',amt:'$120'}] },
+    { id:'gabriel', name:'Gabriel Ponce', first:'Gabriel', sub:'8 clases · quedan 7', tag:'VIGENTE', tagColor:'#116C38', dot:'#116C38', status:'Vigente', planLine:'· 8 clases · quedan 7', big:'25', expiry:'VENCE 11 SEP', bar:'70%', barColor:'#116C38', phone:'55 3388 4471', email:'gabriel@correo.mx', meta:'1 VISITA · 1 PAGO', since:'SOCIO DESDE AGO 2026', year:'$799 EN 2026', planName:'8 clases', expDate:'11 SEP', filters:['Vigentes'], price:799,
+      hist:[{m:'AGOSTO',d:'13 AGO',t:'Fuerza · 18:00'},{m:'AGOSTO',d:'12 AGO',t:'8 Clases · efectivo',amt:'$799'}] }
+  ];
+
+  classes = [
+    { id:'c1', time:'07:00', name:'Functional', coach:'Ana', cap:14, booked:14, roster:['Ana Torres','Luis Mata','Karla Peña','Marta Gil','Diego Ruiz','Elena Soto'] },
+    { id:'c2', time:'09:00', name:'Box', coach:'Karla', cap:12, booked:8, roster:['Ana Torres','Luis Mata','Diego Ruiz','Karla Peña','Elena Soto','Marta Gil','Iván Ríos','Sofía Lara'] },
+    { id:'c3', time:'11:00', name:'Functional', coach:'Ana', cap:14, booked:9, roster:['Ana Torres','Marta Gil','Iván Ríos','Sofía Lara','Elena Soto','Luis Mata','Karla Peña','Diego Ruiz','María Vela'] },
+    { id:'c4', time:'13:00', name:'Movilidad', coach:'Luis', cap:10, booked:4, roster:['Luis Mata','Sofía Lara','Marta Gil','Gabriel Ponce'] },
+    { id:'c5', time:'18:00', name:'Box', coach:'Karla', cap:12, booked:10, roster:['Ana Torres','Diego Ruiz','Karla Peña','Elena Soto','Marta Gil','Iván Ríos','Sofía Lara','Gabriel Ponce','María Vela','Luis Mata'] }
+  ];
+
+  notes = { 'Diego Ruiz': ['Vence en 2 días', '#8F5408'], 'Elena Soto': ['Saldo · 1 clase', '#8F5408'], 'Luis Mata': ['Vencido 30 JUL', '#B7332C'] };
+
+  dayNums(off) { return [3,4,5,6,7,8].map(n => n + off * 7); }
+  dayLabels = ['L','M','M','J','V','S'];
+  monthFor(off) { return off > 0 ? 'AGOSTO' : (off < 0 ? 'AGOSTO' : 'AGOSTO'); }
+
+  isToday() { return this.state.weekOffset === 0 && this.state.day === 8; }
+
+  classState(id) {
+    const { weekOffset, day } = this.state;
+    if (weekOffset < 0 || (weekOffset === 0 && day < 8)) return 'done';
+    if (weekOffset > 0 || day > 8) return 'upcoming';
+    if (id === 'c1') return 'done';
+    if (id === 'c2') return 'live';
+    return 'upcoming';
+  }
+
+  cap(c) { return this.state.cupo[c.id] ?? c.cap; }
+  booked(c) { return c.booked + (this.state.extraBooked[c.id] || 0); }
+  insideCount(id) { return Object.keys(this.state.checkins).filter(k => k.split('|')[0] === id).length; }
+
+  say(msg) {
+    const seq = this.state.toastSeq + 1;
+    this.setState({ toast: msg, toastSeq: seq });
+    setTimeout(() => { if (this.state.toastSeq === seq) this.setState({ toast: null }); }, 2100);
+  }
+
+  go(screen) { this.setState({ screen, sheet: null, seq: this.state.seq + 1 }); }
+
+  toggleMark(classId, name) {
+    const key = classId + '|' + name;
+    const next = Object.assign({}, this.state.checkins);
+    if (next[key]) { delete next[key]; this.setState({ checkins: next }); this.say(name + ' · check quitado'); }
+    else {
+      const base = this.classes.find(c => c.id === classId);
+      const mins = 2 + (name.length % 7);
+      const t = base.time.slice(0, 3) + String(mins).padStart(2, '0');
+      next[key] = t;
+      this.setState({ checkins: next });
+      this.say(name + ' dentro · ' + t);
+    }
+  }
+
+  rosterFor(classId, opts) {
+    const c = this.classes.find(x => x.id === classId);
+    if (!c) return [];
+    const st = opts && opts.state ? opts.state : this.classState(classId);
+    const limit = opts && opts.limit ? opts.limit : c.roster.length;
+    return c.roster.slice(0, limit).map(name => {
+      const time = this.state.checkins[classId + '|' + name];
+      const note = this.notes[name];
+      const missed = st === 'done' && !time;
+      return {
+        name, time, marked: !!time,
+        showMark: !time && (st === 'live' || st === 'done'),
+        unmarked: !time,
+        note: missed ? 'No asistió' : (note ? note[0] : null),
+        noteColor: missed ? '#6B6257' : (note ? note[1] : '#6B6257'),
+        onMark: () => this.toggleMark(classId, name)
+      };
+    });
+  }
+
+  msgFor(tmpl, cl) {
+    const n = cl.first, plan = cl.planName, d = cl.expDate;
+    if (tmpl === 'Recibo') return 'Hola ' + n + ' 👋\n\nRecibimos tu pago de ' + plan + '. Tu recibo va adjunto por correo.\n\nGracias — Estudio Centro';
+    if (tmpl === 'Renovación') return 'Hola ' + n + ' 👋\n\nTu ' + plan + ' vence el ' + d + '. ¿Te la renovamos hoy y no pierdes días?\n\n— Estudio Centro';
+    if (tmpl === 'Última llamada') return 'Hola ' + n + ', te extrañamos 🥊\n\nTu ' + plan + ' venció el ' + d + '. Esta semana te guardamos tu lugar al mismo precio.\n\n— Estudio Centro';
+    return 'Hola ' + n + ' 👋\n\nTe quedan ' + cl.big + ' días de tu ' + plan + ' — vence el ' + d + '.\n\n¡Te esperamos en el estudio! — Estudio Centro';
+  }
+
+  renderVals() {
+    const s = this.state;
+    const estudio = this.props.estudio ?? 'Estudio Centro';
+    const screen = s.screen;
+    const cl = this.clients.find(c => c.id === s.clientId) || this.clients[0];
+    const dockMap = { inicio: 0, agenda: 1, pase: 2, clientes: 3, cuenta: 4 };
+    const dockScreens = ['inicio','agenda','pase','clientes','cuenta'];
+    const activeDock = dockMap[screen];
+    const fg = k => (dockMap[screen] === k ? '#FAF8F4' : '#6B6257');
+
+    const nums = this.dayNums(s.weekOffset);
+    const days = nums.map((n, i) => ({
+      label: this.dayLabels[i], num: n,
+      bg: (n === s.day ? '#201B14' : 'transparent'),
+      labelColor: (n === s.day ? '#BAB5AD' : '#6B6257'),
+      numColor: (n === s.day ? '#FFFFFF' : '#6B6257'),
+      numWeight: (n === s.day ? '600' : '400'),
+      onClick: () => this.setState({ day: n })
+    }));
+
+    const dayClasses = this.classes.map(c => {
+      const st = this.classState(c.id);
+      const cap = this.cap(c), bk = this.booked(c), inside = this.insideCount(c.id);
+      const pct = Math.round((st === 'live' ? inside / cap : bk / cap) * 100) + '%';
+      return {
+        time: c.time, name: c.name, coach: c.coach,
+        right: st === 'live' ? ('EN CURSO · ' + inside + '/' + cap) : (bk + '/' + cap),
+        rightColor: st === 'live' ? '#703E56' : '#6B6257',
+        rightWeight: st === 'live' ? '600' : '400',
+        rightSize: st === 'live' ? '11px' : '12px',
+        pct, barColor: st === 'live' ? '#8A4A6C' : '#201B14',
+        onClick: () => this.setState({ sheet: 'clase', sheetClassId: c.id })
+      };
+    });
+
+    const sheetClassId = s.sheetClassId;
+    const scRaw = this.classes.find(c => c.id === sheetClassId);
+    let sc = {}, sheetRoster = [];
+    if (scRaw) {
+      const st = this.classState(scRaw.id);
+      const cap = this.cap(scRaw), bk = this.booked(scRaw), inside = this.insideCount(scRaw.id);
+      const dayLabel = this.isToday() ? 'HOY' : ('DÍA ' + s.day);
+      sc = {
+        name: scRaw.name, coach: scRaw.coach, time: scRaw.time, booked: bk, tag: scRaw.name.toUpperCase() + ' · ' + this.dayLabels[nums.indexOf(s.day)],
+        when: st === 'live' ? 'EN CURSO' : (dayLabel + ' ' + scRaw.time),
+        whenColor: st === 'live' ? '#703E56' : '#6B6257',
+        big: st === 'upcoming' ? String(Math.max(cap - bk, 0)) : String(inside),
+        bigUnit: st === 'upcoming' ? 'lugares libres' : (st === 'live' ? ('de ' + cap + ' dentro') : ('asistieron de ' + bk + ' reservas')),
+        ratio: st === 'upcoming' ? (bk + '/' + cap) : '',
+        pct: Math.round((st === 'upcoming' ? bk / cap : inside / cap) * 100) + '%',
+        barColor: st === 'upcoming' ? '#201B14' : '#116C38',
+        canApartar: st === 'upcoming', showEditar: st !== 'done', showPase: st === 'live',
+        lateNote: st === 'done'
+      };
+      sheetRoster = this.rosterFor(scRaw.id, { state: st, limit: st === 'upcoming' ? 4 : 6 });
+    }
+
+    const paseClass = this.classes.find(c => c.id === s.paseClassId) || this.classes[1];
+    const paseChips = this.classes.slice(0, 3).map(c => ({
+      label: c.id === s.paseClassId ? (c.time + ' ' + c.name.toUpperCase()) : c.time,
+      bg: c.id === s.paseClassId ? '#201B14' : 'transparent',
+      border: c.id === s.paseClassId ? '#201B14' : '#E4E2DE',
+      color: c.id === s.paseClassId ? '#FFFFFF' : '#6B6257',
+      weight: c.id === s.paseClassId ? '600' : '400',
+      onClick: () => this.setState({ paseClassId: c.id })
+    })).concat([{ label: 'LIBRE', bg: 'transparent', border: '#E4E2DE', color: '#6B6257', weight: '400', onClick: () => this.say('Pase libre · sin clase asignada') }]);
+
+    const q = s.paseQuery.trim().toLowerCase();
+    const paseRoster = this.rosterFor(paseClass.id, { state: 'live' }).filter(r => !q || r.name.toLowerCase().includes(q));
+    const walkinNames = this.clients.map(c => c.name).filter(n => !paseClass.roster.includes(n));
+    const paseWalkins = walkinNames.filter(n => !q || n.toLowerCase().includes(q)).map(name => {
+      const time = s.checkins[paseClass.id + '|' + name];
+      const note = this.notes[name];
+      const c = this.clients.find(x => x.name === name);
+      return {
+        name, time, marked: !!time, unmarked: !time,
+        note: note ? note[0] : (c ? c.sub : ''),
+        noteColor: note ? note[1] : '#6B6257',
+        onMark: () => this.toggleMark(paseClass.id, name)
+      };
+    });
+
+    const filters = ['Todos','Vigentes 74','Por renovar 6','Online 3'];
+    const cq = s.clientQuery.trim().toLowerCase();
+    const clientRows = this.clients.filter(c => {
+      const f = s.clientFilter;
+      const okF = f === 'Todos' || c.filters.includes(f.replace(/\s\d+$/, ''));
+      const okQ = !cq || c.name.toLowerCase().includes(cq) || c.phone.replace(/\s/g, '').includes(cq);
+      return okF && okQ;
+    }).map(c => Object.assign({}, c, { onClick: () => this.setState({ screen: 'ficha', clientId: c.id, seq: s.seq + 1 }) }));
+
+    const histFiltered = cl.hist.filter(h => s.histTab === 'TODO' || (s.histTab === 'PAGOS' ? !!h.amt : !h.amt));
+    const groupOrder = [];
+    const groupMap = {};
+    histFiltered.forEach(h => {
+      if (!groupMap[h.m]) { groupMap[h.m] = []; groupOrder.push(h.m); }
+      groupMap[h.m].push({ d: h.d, t: h.t, amt: h.amt || '' });
+    });
+
+    const planDefs = [
+      { id:'mensual', label:'Mensualidad', sub:'· 30 días', price:650 },
+      { id:'diez', label:'10 clases', sub:'· 60 días', price:550 },
+      { id:'custom', label:'Personalizado', sub:'', price:0 }
+    ];
+    const activePlan = planDefs.find(p => p.id === s.plan) || planDefs[0];
+
+    return {
+      estudio, estudioUpper: estudio.toUpperCase(),
+      showRoute: this.props.showRoute ?? true,
+      routeLabel: ({ login:'/login', inicio:'/inicio', agenda:'/agenda', pase:'/asistencia', clientes:'/clientes', ficha:'/clientes/' + cl.id, historial:'/clientes/' + cl.id + '/historial', mensaje:'/clientes/' + cl.id + '/mensaje', nuevo:'/clientes/nuevo', cuenta:'/cuenta' })[screen] + (s.sheet ? ' · ' + s.sheet : ''),
+      screenKey: screen + '-' + s.seq,
+      isLogin: screen === 'login', isInicio: screen === 'inicio', isAgenda: screen === 'agenda',
+      isPase: screen === 'pase', isClientes: screen === 'clientes', isFicha: screen === 'ficha',
+      isHistorial: screen === 'historial', isMensaje: screen === 'mensaje', isNuevo: screen === 'nuevo', isCuenta: screen === 'cuenta',
+      showDock: dockScreens.includes(screen),
+      pillLeft: (activeDock === undefined ? 0 : activeDock * 20) + '%',
+      fgInicio: fg(0), fgAgenda: fg(1), fgPase: fg(2), fgClientes: fg(3), fgCuenta: fg(4),
+      dockInicio: () => this.go('inicio'), dockAgenda: () => this.go('agenda'), dockPase: () => this.go('pase'),
+      dockClientes: () => this.go('clientes'), dockCuenta: () => this.go('cuenta'),
+
+      loginLabel: s.loggingIn ? 'Entrando…' : 'Entrar',
+      onLogin: (e) => {
+        e.preventDefault();
+        if (s.loggingIn) return;
+        this.setState({ loggingIn: true });
+        setTimeout(() => { this.setState({ loggingIn: false, screen: 'inicio', seq: this.state.seq + 1 }); }, 650);
+      },
+      onForgot: () => this.say('Te enviamos un enlace a tu correo'),
+
+      liveInside: this.insideCount('c2'),
+      goPaseLive: () => this.setState({ screen: 'pase', paseClassId: 'c2', paseDay: 8, sheet: null, seq: s.seq + 1 }),
+      goNuevo: () => this.go('nuevo'),
+      goApartar: () => this.setState({ screen: 'agenda', sheet: 'clase', sheetClassId: 'c5', seq: s.seq + 1 }),
+      goRenovar: () => this.setState({ screen: 'clientes', clientFilter: 'Por renovar 6', clientQuery: '', sheet: null, seq: s.seq + 1 }),
+      goAgenda: () => this.go('agenda'),
+      goCuenta: () => this.go('cuenta'),
+      goInicio: () => this.go('inicio'),
+      goClientes: () => this.go('clientes'),
+      goFicha: () => this.go('ficha'),
+      goHistorial: () => this.setState({ screen: 'historial', histTab: 'TODO', seq: s.seq + 1 }),
+      goMensaje: () => this.setState({ screen: 'mensaje', sheet: null, seq: s.seq + 1 }),
+
+      monthLabel: this.monthFor(s.weekOffset),
+      onMonth: () => this.say('Calendario del mes · maqueta'),
+      onPrevWeek: () => this.setState({ weekOffset: s.weekOffset - 1, day: s.day - 7 }),
+      onNextWeek: () => this.setState({ weekOffset: s.weekOffset + 1, day: s.day + 7 }),
+      onHoy: () => this.setState({ weekOffset: 0, day: 8 }),
+      showHoyPill: !this.isToday(),
+      dayHeading: (['LUNES','MARTES','MIÉRCOLES','JUEVES','VIERNES','SÁBADO'][Math.max(nums.indexOf(s.day), 0)]) + ' ' + s.day + (this.isToday() ? ' · HOY' : ''),
+      dayMeta: this.classes.length + ' clases · ' + this.classes.reduce((a, c) => a + this.booked(c), 0) + '/' + this.classes.reduce((a, c) => a + this.cap(c), 0),
+      days, dayClasses,
+      onNuevaClase: () => this.say('Nueva clase · maqueta'),
+
+      anySheet: !!s.sheet, sheetClase: s.sheet === 'clase', sheetEditar: s.sheet === 'editar', sheetContactar: s.sheet === 'contactar',
+      closeSheet: () => this.setState({ sheet: null, cancelArmed: false }),
+      backToClase: () => this.setState({ sheet: 'clase', cancelArmed: false }),
+      sc, sheetRoster,
+      onApartar: () => {
+        const next = Object.assign({}, s.extraBooked);
+        next[sheetClassId] = (next[sheetClassId] || 0) + 1;
+        this.setState({ extraBooked: next });
+        this.say('Lugar apartado · quedan ' + Math.max(this.cap(scRaw) - this.booked(scRaw) - 1, 0));
+      },
+      openEditar: () => this.setState({ sheet: 'editar' }),
+      goPaseFromSheet: () => this.setState({ screen: 'pase', paseClassId: sheetClassId, sheet: null, seq: s.seq + 1 }),
+      scopeHoyBg: s.scope === 'hoy' ? '#201B14' : 'transparent', scopeHoyFg: s.scope === 'hoy' ? '#FAF8F4' : '#6B6257',
+      scopeSerieBg: s.scope === 'serie' ? '#201B14' : 'transparent', scopeSerieFg: s.scope === 'serie' ? '#FAF8F4' : '#6B6257',
+      onScopeHoy: () => this.setState({ scope: 'hoy' }), onScopeSerie: () => this.setState({ scope: 'serie' }),
+      cupoValue: scRaw ? this.cap(scRaw) : 12,
+      onCupoMinus: () => { const n = Object.assign({}, s.cupo); n[sheetClassId] = Math.max(this.cap(scRaw) - 1, 1); this.setState({ cupo: n }); },
+      onCupoPlus: () => { const n = Object.assign({}, s.cupo); n[sheetClassId] = this.cap(scRaw) + 1; this.setState({ cupo: n }); },
+      onCambiarHorario: () => this.say('Selector de horario · maqueta'),
+      onCambiarCoach: () => this.say('Selector de coach · maqueta'),
+      onGuardar: () => { this.setState({ sheet: 'clase' }); this.say(s.scope === 'serie' ? 'Serie actualizada' : 'Clase actualizada'); },
+      cancelLabel: s.cancelArmed ? '¿Cancelar de verdad?' : 'Cancelar clase',
+      cancelSub: s.cancelArmed ? '· toca otra vez para confirmar' : ('· avisa a los ' + (scRaw ? this.booked(scRaw) : 0) + ' con reserva'),
+      onCancelarClase: () => {
+        if (!s.cancelArmed) { this.setState({ cancelArmed: true }); return; }
+        this.setState({ sheet: null, cancelArmed: false });
+        this.say('Clase cancelada · avisados ' + (scRaw ? this.booked(scRaw) : 0));
+      },
+
+      paseDateLabel: (['DOM','LUN','MAR','MIÉ','JUE','VIE','SÁB'][((s.paseDay + 5) % 7 + 7) % 7]) + ' ' + s.paseDay + ' AGO',
+      paseTag: s.paseDay === 8 ? 'HOY' : 'CAPTURA TARDÍA',
+      paseTagBg: s.paseDay === 8 ? '#201B14' : 'rgba(143,84,8,0.12)',
+      paseTagFg: s.paseDay === 8 ? '#FAF8F4' : '#8F5408',
+      paseNextColor: s.paseDay >= 8 ? '#BAB5AD' : '#6B6257',
+      paseLate: s.paseDay < 8,
+      onPasePrev: () => this.setState({ paseDay: s.paseDay - 1 }),
+      onPaseNext: () => { if (s.paseDay < 8) this.setState({ paseDay: s.paseDay + 1 }); },
+      paseChips, paseRoster, paseWalkins,
+      paseQuery: s.paseQuery, onPaseQuery: (e) => this.setState({ paseQuery: e.target.value }),
+      paseInsideMeta: this.insideCount(paseClass.id) + '/' + this.booked(paseClass) + ' DENTRO',
+
+      clientCount: this.clients.length + ' de 82',
+      clientQuery: s.clientQuery, onClientQuery: (e) => this.setState({ clientQuery: e.target.value }),
+      clientChips: filters.map(f => ({
+        label: f,
+        bg: s.clientFilter === f ? '#201B14' : 'transparent',
+        border: s.clientFilter === f ? '#201B14' : '#E4E2DE',
+        color: s.clientFilter === f ? '#FFFFFF' : '#6B6257',
+        onClick: () => this.setState({ clientFilter: f })
+      })),
+      clientRows, noClients: clientRows.length === 0,
+      emptyCopy: cq ? 'Nadie con ese nombre.' : 'Nadie en este filtro.',
+      inicioMeta: 'HOY · ' + this.classes.length + ' CLASES · ' + this.classes.reduce((a, c) => a + this.booked(c), 0) + '/' + this.classes.reduce((a, c) => a + this.cap(c), 0),
+
+      cl: Object.assign({}, cl, { nameUpper: cl.name.toUpperCase() }),
+      fichaHist: cl.hist.slice(0, 4).map(h => ({ d: h.d, t: h.t, amt: h.amt || '' })),
+      onEditarCliente: () => this.say('Editar datos de ' + cl.first),
+      onAsistencia: () => { this.toggleMark('c2', cl.name); },
+      onRenovar: () => this.say('Renovado · ' + cl.planName + ' $' + cl.price),
+      openContactar: () => this.setState({ sheet: 'contactar' }),
+      onLlamar: () => this.say('Llamando a ' + cl.phone),
+      onCopiar: () => this.say('Correo copiado · ' + cl.email),
+      onReenviar: () => this.say('Invitación reenviada'),
+
+      histTabs: ['TODO','VISITAS','PAGOS'].map(t => ({
+        label: t, weight: s.histTab === t ? '600' : '400',
+        color: s.histTab === t ? '#201B14' : '#6B6257',
+        line: s.histTab === t ? '#201B14' : 'transparent',
+        onClick: () => this.setState({ histTab: t })
+      })),
+      histGroups: groupOrder.map(m => ({ month: m, items: groupMap[m] })),
+
+      templates: ['Recordatorio','Recibo','Renovación','Última llamada'].map(t => ({
+        label: t,
+        border: s.tmpl === t ? '1.5px solid #201B14' : '1px solid #E4E2DE',
+        color: s.tmpl === t ? '#201B14' : '#6B6257',
+        check: s.tmpl === t ? '✓' : '',
+        onClick: () => this.setState({ tmpl: t })
+      })),
+      msgBody: this.msgFor(s.tmpl, cl),
+      onEnviar: () => { this.setState({ screen: 'ficha', seq: s.seq + 1 }); this.say('WhatsApp abierto con el texto listo'); },
+
+      nuevoBg: s.nuevoTab === 'NUEVO' ? '#201B14' : 'transparent', nuevoFg: s.nuevoTab === 'NUEVO' ? '#FAF8F4' : '#6B6257',
+      existBg: s.nuevoTab === 'EXISTENTE' ? '#201B14' : 'transparent', existFg: s.nuevoTab === 'EXISTENTE' ? '#FAF8F4' : '#6B6257',
+      onTabNuevo: () => this.setState({ nuevoTab: 'NUEVO' }), onTabExistente: () => this.setState({ nuevoTab: 'EXISTENTE' }),
+      nName: s.nName, nPhone: s.nPhone, nMail: s.nMail,
+      onNName: (e) => this.setState({ nName: e.target.value }),
+      onNPhone: (e) => this.setState({ nPhone: e.target.value }),
+      onNMail: (e) => this.setState({ nMail: e.target.value }),
+      plans: planDefs.map(p => ({
+        label: p.label, sub: p.sub,
+        price: p.price ? '$' + p.price : '—',
+        priceColor: s.plan === p.id ? '#201B14' : '#6B6257',
+        color: s.plan === p.id ? '#201B14' : '#6B6257',
+        bg: p.id === 'custom' ? 'transparent' : '#FFFFFF',
+        border: s.plan === p.id ? '1.5px solid #8A4A6C' : (p.id === 'custom' ? '1px dashed #BAB5AD' : '1px solid #E4E2DE'),
+        onClick: () => this.setState({ plan: p.id })
+      })),
+      pagos: ['Efectivo','Tarjeta','Transferencia'].map(g => ({
+        label: g,
+        bg: s.pago === g ? '#201B14' : 'transparent',
+        border: s.pago === g ? '#201B14' : '#E4E2DE',
+        color: s.pago === g ? '#FFFFFF' : '#6B6257',
+        onClick: () => this.setState({ pago: g })
+      })),
+      cobrarLabel: activePlan.price ? ('Cobrar $' + activePlan.price) : 'Definir precio',
+      onCambiarInicio: () => this.say('Puedes retroceder hasta 30 días'),
+      onCobrar: () => {
+        if (!s.nName.trim()) { this.say('Falta el nombre'); return; }
+        this.setState({ screen: 'inicio', nName: '', nPhone: '', nMail: '', seq: s.seq + 1 });
+        this.say(activePlan.price ? ('Cobrado $' + activePlan.price + ' · ' + s.pago) : 'Cliente creado');
+      },
+
+      cobrado: '$18,450', ventas: '32',
+      cuentaRows: [
+        { label:'Planes y precios' }, { label:'Clases y coaches' }, { label:'Contenido público' },
+        { label:'Plantillas de WhatsApp' }, { label:'Mensajes recibidos', badge:'2' },
+        { label:'Respaldo mensual', sub:'Exportar CSV del mes' }
+      ].map(r => Object.assign({}, r, { sub: r.sub || null, badge: r.badge || null, onClick: () => this.say(r.label + ' · maqueta') })),
+      onLogout: () => this.setState({ screen: 'login', sheet: null, seq: s.seq + 1 }),
+
+      toast: s.toast, toastKey: 't' + s.toastSeq,
+      onReset: () => this.setState({
+        screen: 'login', sheet: null, weekOffset: 0, day: 8, paseDay: 8, paseClassId: 'c2', paseQuery: '',
+        clientQuery: '', clientFilter: 'Todos', clientId: 'ana', histTab: 'TODO', tmpl: 'Recordatorio',
+        nuevoTab: 'NUEVO', plan: 'mensual', pago: 'Efectivo', nName: '', nPhone: '', nMail: '',
+        extraBooked: {}, cupo: {}, scope: 'hoy', cancelArmed: false, toast: null,
+        checkins: { 'c2|Ana Torres': '09:02', 'c2|Luis Mata': '08:58', 'c1|Ana Torres': '07:04', 'c1|Luis Mata': '06:58', 'c1|Karla Peña': '07:00', 'c1|Marta Gil': '07:07' },
+        seq: s.seq + 1
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>
