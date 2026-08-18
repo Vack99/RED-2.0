@@ -99,6 +99,11 @@ export interface BrandModule {
  * The brand modules the platform ships (ADR-0012 §4): the neutral **base** (the
  * `DEFAULT_BRAND` — Phase 4), plus **forge** and **red**. The census is a
  * deliberate tripwire (`brand.test.ts`): a new module is a conscious code act.
+ *
+ * COUPLED to the database: `gym.brand_module_id` carries a CHECK against exactly
+ * these ids (20260817120000_constrain_gym_brand_module_id.sql, #273). A new
+ * module's deploy ships a migration extending that CHECK (and the
+ * gym_brand_module_id_check.sql suite's accepted-ids vector) in the same change.
  */
 export const brands: Record<BrandId, BrandModule> = {
   base: {

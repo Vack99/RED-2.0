@@ -63,6 +63,7 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 export const SUITE = [
   'rls_cross_tenant_denial.sql',
   'gym_tenant_anon_read.sql',
+  'gym_brand_module_id_check.sql',
   'gym_membership_rls.sql',
   'folio_per_gym.sql',
   'rekey_gym_scoped.sql',
