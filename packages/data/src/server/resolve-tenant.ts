@@ -18,6 +18,10 @@ export interface Tenant {
   brandModuleId: string;
 }
 
+/** The calling deployment's identity (`gym_domain.app` / the RPC's `p_app`, #275) —
+ *  one name for the noun instead of an inlined union at every seam. */
+export type AppScope = "admin" | "client";
+
 /**
  * Anon client for the pre-auth host→gym lookup: it reads only the anon-select
  * `gym`/`gym_domain` rows (ADR-0013 §3), so it needs no cookies/session and runs
@@ -120,7 +124,7 @@ interface Resolved<T> {
 async function resolveHostUncached(
   client: SupabaseServer,
   hostname: string,
-  app: "admin" | "client" | undefined,
+  app: AppScope | undefined,
 ): Promise<Resolved<HostResolution>> {
   // Through the RPC, not the table: `gym_domain` stopped being anon-readable in #216
   // (one anonymous call returned the platform's whole customer census). The definer
@@ -143,7 +147,7 @@ async function resolveHostUncached(
 async function cachedHost(
   client: SupabaseServer,
   hostname: string,
-  app: "admin" | "client" | undefined,
+  app: AppScope | undefined,
 ): Promise<HostResolution> {
   const key = `${app ?? ""}|${hostname}`;
   const cached = hostCache.get(key);
@@ -184,7 +188,7 @@ export async function resolveTenant(
   host: string | null,
   override: string | null,
   client: SupabaseServer = anonClient(),
-  app?: "admin" | "client",
+  app?: AppScope,
 ): Promise<Tenant | null> {
   const hostname = host?.split(":")[0].toLowerCase() ?? "";
 

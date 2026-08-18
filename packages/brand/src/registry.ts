@@ -122,8 +122,13 @@ export const brands: Record<BrandId, BrandModule> = {
     tokens: forgeTokens,
     css: tokensToCss(forgeTokens),
     copy: {
+      // `description` is BRAND voice, not app copy: it feeds both apps' meta
+      // description, and the member site is the surface where it's actually
+      // read (search/social) — "administración del gimnasio" leaked the admin
+      // app's framing onto members' tabs (#274 review). The tagline IS the
+      // locked brand line, so it doubles as the description.
       name: "FORGE",
-      description: "FORGE — administración del gimnasio.",
+      description: "FORGE — aquí se forja tu mejor versión.",
       tagline: "Aquí se forja tu mejor versión",
     },
     logo: ForgeLockup,
@@ -141,7 +146,7 @@ export const brands: Record<BrandId, BrandModule> = {
     css: tokensToCss(redTokens),
     copy: {
       name: "RED",
-      description: "RED — administración del gimnasio.",
+      description: "RED — entrenamiento con beneficios de luz roja.",
       tagline: "Con beneficios de luz roja",
     },
     logo: RedLockup,

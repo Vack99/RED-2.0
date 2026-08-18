@@ -19,7 +19,12 @@ const outfit = Outfit({
 // hardcoded "Forge". Dynamic because it reads the request's `x-brand`.
 export async function generateMetadata(): Promise<Metadata> {
   const { copy } = await resolveBrand();
-  return { title: copy.name, description: copy.description };
+  return {
+    // A template, mirroring the client layout: a page that titles itself would
+    // otherwise replace the marca name outright in the tab.
+    title: { default: copy.name, template: `%s — ${copy.name}` },
+    description: copy.description,
+  };
 }
 
 // theme-color is derived from the marca's `canvas` token (light + dark) rather
