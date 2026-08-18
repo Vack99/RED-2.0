@@ -39,7 +39,7 @@ import type { Database } from "@gym/data";
 export async function proxy(request: NextRequest) {
   const override =
     request.nextUrl.searchParams.get("gym") ?? request.cookies.get("gym")?.value ?? null;
-  const tenant = await resolveTenant(request.headers.get("host"), override);
+  const tenant = await resolveTenant(request.headers.get("host"), override, undefined, "client");
 
   let response = NextResponse.next({
     request: { headers: tenantHeaders(request.headers, tenant) },

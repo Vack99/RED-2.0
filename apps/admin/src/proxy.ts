@@ -30,7 +30,7 @@ import type { Database } from '@gym/data'
 export async function proxy(request: NextRequest) {
   const override =
     request.nextUrl.searchParams.get('gym') ?? request.cookies.get('gym')?.value ?? null
-  const tenant = await resolveTenant(request.headers.get('host'), override)
+  const tenant = await resolveTenant(request.headers.get('host'), override, undefined, 'admin')
 
   // The forwarded header set, rebuilt on demand: `setAll` mutates `request.cookies`
   // (and therefore `request.headers`) before re-cloning, so this cannot be hoisted to

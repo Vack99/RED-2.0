@@ -230,6 +230,88 @@ describe("resolveTenant cache", () => {
   });
 });
 
+// App-scoped host resolution (#275): `gym_domain.app` is `not null check (app in
+// ('admin','client'))` — every row IS scoped, there is no NULL-app row at the DB
+// layer. The canonical RPC's `(p_app is null or d.app = p_app)` therefore means: a
+// caller that DECLARES its app identity only matches rows scoped to that same app
+// (`gym_id_por_host.sql`); a caller that declares NO identity (`p_app` null, the
+// two proxies' sibling call sites this ticket leaves alone) matches ANY row
+// regardless of its scope — that is the "permissive default" the ticket names.
+describe("resolveTenant app scoping (#275)", () => {
+  type ScopedDomainRow = { hostname: string; gym_id: string; app: "admin" | "client" };
+
+  const SCOPED_DOMAINS: ScopedDomainRow[] = [
+    { hostname: "admin-only.localhost", gym_id: "gym-red", app: "admin" },
+    { hostname: "client-only.localhost", gym_id: "gym-forge", app: "client" },
+  ];
+
+  function scopedHostRpc(domains: ScopedDomainRow[]) {
+    return (_fn: string, args: { p_hostname: string; p_app: "admin" | "client" | null }) => {
+      const row = domains.find(
+        (d) => d.hostname === args.p_hostname && (args.p_app === null || d.app === args.p_app),
+      );
+      return Promise.resolve({ data: row?.gym_id ?? null, error: null });
+    };
+  }
+
+  function scopedDb() {
+    return {
+      from: () => gymTable(GYMS as unknown as Record<string, unknown>[]),
+      rpc: scopedHostRpc(SCOPED_DOMAINS),
+    } as unknown as SupabaseServer;
+  }
+
+  function spyScopedDb() {
+    const from = vi.fn(() => gymTable(GYMS as unknown as Record<string, unknown>[]));
+    const rpc = vi.fn(scopedHostRpc(SCOPED_DOMAINS));
+    return { client: { from, rpc } as unknown as SupabaseServer, rpc };
+  }
+
+  it("passes the declared app identity as p_app on the RPC call", async () => {
+    const { client, rpc } = spyScopedDb();
+    await resolveTenant("admin-only.localhost", null, client, "admin");
+    expect(rpc).toHaveBeenCalledWith("gym_id_por_host", {
+      p_hostname: "admin-only.localhost",
+      p_app: "admin",
+    });
+  });
+
+  it("resolves a matching-app hostname", async () => {
+    expect(
+      await resolveTenant("admin-only.localhost", null, scopedDb(), "admin"),
+    ).toMatchObject({ slug: "red" });
+    expect(
+      await resolveTenant("client-only.localhost", null, scopedDb(), "client"),
+    ).toMatchObject({ slug: "forge" });
+  });
+
+  it("does NOT resolve a hostname scoped to the other app", async () => {
+    expect(await resolveTenant("admin-only.localhost", null, scopedDb(), "client")).toBeNull();
+    expect(await resolveTenant("client-only.localhost", null, scopedDb(), "admin")).toBeNull();
+  });
+
+  it("no declared app → p_app null → resolves regardless of the row's scope (permissive default)", async () => {
+    const { client, rpc } = spyScopedDb();
+    expect(await resolveTenant("admin-only.localhost", null, client)).toMatchObject({
+      slug: "red",
+    });
+    expect(rpc).toHaveBeenCalledWith("gym_id_por_host", {
+      p_hostname: "admin-only.localhost",
+      p_app: null,
+    });
+  });
+
+  it("caches per app identity — an admin-scoped resolution is never served to a client-arm call for the same hostname", async () => {
+    const { client, rpc } = spyScopedDb();
+    await resolveTenant("admin-only.localhost", null, client, "admin");
+    expect(rpc.mock.calls.length).toBe(1);
+    // Same hostname, different app identity → must NOT be a cache hit: a fresh RPC
+    // call happens, and it correctly resolves to NO tenant (host is admin-scoped).
+    expect(await resolveTenant("admin-only.localhost", null, client, "client")).toBeNull();
+    expect(rpc.mock.calls.length).toBe(2);
+  });
+});
+
 // fetchTokenOverrides is the `gym.token_overrides` read `brandCss` merges onto the
 // module baseline (grill (b)). Same TTL-cache discipline as hostCache/slugCache
 // (positive + negative caching; a transient error is returned but never cached).

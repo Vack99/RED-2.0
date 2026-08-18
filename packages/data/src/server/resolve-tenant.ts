@@ -120,22 +120,36 @@ interface Resolved<T> {
 async function resolveHostUncached(
   client: SupabaseServer,
   hostname: string,
+  app: "admin" | "client" | undefined,
 ): Promise<Resolved<HostResolution>> {
   // Through the RPC, not the table: `gym_domain` stopped being anon-readable in #216
   // (one anonymous call returned the platform's whole customer census). The definer
   // projection answers "which gym owns THIS hostname" and cannot be turned into a scan.
-  const { data: gymId, error } = await client.rpc("gym_id_por_host", { p_hostname: hostname });
+  // `p_app` app-scopes the match (#275): a caller that declares its app identity only
+  // matches `gym_domain` rows scoped to that same app (the column is `not null`, so
+  // every row is scoped to exactly one). A caller that declares NO identity — the
+  // `app ?? null` below — is the permissive default: it matches a hostname's row
+  // regardless of which app that row is scoped to (canonical `p_app is null` arm).
+  const { data: gymId, error } = await client.rpc("gym_id_por_host", {
+    p_hostname: hostname,
+    p_app: app ?? null,
+  });
   if (error) return { value: { matched: false, tenant: null }, cacheable: false };
   if (!gymId) return { value: { matched: false, tenant: null }, cacheable: true };
   const gym = await gymTenant(client, "id", gymId);
   return { value: { matched: true, tenant: gym.value }, cacheable: gym.cacheable };
 }
 
-async function cachedHost(client: SupabaseServer, hostname: string): Promise<HostResolution> {
-  const cached = hostCache.get(hostname);
+async function cachedHost(
+  client: SupabaseServer,
+  hostname: string,
+  app: "admin" | "client" | undefined,
+): Promise<HostResolution> {
+  const key = `${app ?? ""}|${hostname}`;
+  const cached = hostCache.get(key);
   if (cached) return cached.value;
-  const resolved = await resolveHostUncached(client, hostname);
-  if (resolved.cacheable) hostCache.set(hostname, resolved.value);
+  const resolved = await resolveHostUncached(client, hostname, app);
+  if (resolved.cacheable) hostCache.set(key, resolved.value);
   return resolved.value;
 }
 
@@ -161,17 +175,21 @@ async function cachedSlug(client: SupabaseServer, slug: string): Promise<Tenant 
  * in PARALLEL — the host lookup and (only when a `?gym=` override is present) the slug
  * lookup — before the precedence rule above picks the winner. Resolution is
  * bit-identical to the pre-cache code; the cache only avoids repeat round trips.
- * Server-only, async. `client` is injectable for tests (ADR-0001).
+ * Server-only, async. `client` is injectable for tests (ADR-0001). The caller may
+ * declare its `app` identity (#275): a `gym_domain` row scoped to an app then resolves
+ * only for that app's caller, while a caller that declares no `app` still resolves
+ * either app's rows (the permissive default this ticket leaves unchanged).
  */
 export async function resolveTenant(
   host: string | null,
   override: string | null,
   client: SupabaseServer = anonClient(),
+  app?: "admin" | "client",
 ): Promise<Tenant | null> {
   const hostname = host?.split(":")[0].toLowerCase() ?? "";
 
   const [hostResolution, overrideTenant] = await Promise.all([
-    cachedHost(client, hostname),
+    cachedHost(client, hostname, app),
     override ? cachedSlug(client, override) : Promise.resolve(null),
   ]);
 
