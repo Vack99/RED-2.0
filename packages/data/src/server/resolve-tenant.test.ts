@@ -1,7 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { SupabaseServer } from "./supabase";
-import { clearTenantCache, resolveTenant, tenantHeaders, type Tenant } from "./resolve-tenant";
+import {
+  clearTenantCache,
+  fetchTokenOverrides,
+  resolveTenant,
+  tenantHeaders,
+  type Tenant,
+} from "./resolve-tenant";
 
 // resolveTenant is the DB-backed host→gym seam both proxies run (ADR-0012 §5, as
 // amended 2026-07-02). These arms pin host-wins precedence — a `gym_domain` row ›
@@ -221,6 +227,52 @@ describe("resolveTenant cache", () => {
     const beforeReResolve = from.mock.calls.length;
     await resolveTenant("a.localhost", null, client); // evicted → must re-query
     expect(from.mock.calls.length).toBe(beforeReResolve + 1);
+  });
+});
+
+// fetchTokenOverrides is the `gym.token_overrides` read `brandCss` merges onto the
+// module baseline (grill (b)). Same TTL-cache discipline as hostCache/slugCache
+// (positive + negative caching; a transient error is returned but never cached).
+describe("fetchTokenOverrides", () => {
+  const OVERRIDES_ROW = {
+    id: "gym-red",
+    slug: "red",
+    brand_module_id: "red",
+    token_overrides: { light: { yellow: "#111111" } },
+  } as unknown as Record<string, unknown>;
+
+  it("returns the row's token_overrides", async () => {
+    const client = { from: () => gymTable([OVERRIDES_ROW]) } as unknown as SupabaseServer;
+    expect(await fetchTokenOverrides("red", client)).toEqual({ light: { yellow: "#111111" } });
+  });
+
+  it("serves a repeat call from cache within the TTL — zero further DB reads", async () => {
+    const from = vi.fn(() => gymTable([OVERRIDES_ROW]));
+    const client = { from } as unknown as SupabaseServer;
+    expect(await fetchTokenOverrides("red", client)).toEqual({ light: { yellow: "#111111" } });
+    expect(from.mock.calls.length).toBe(1);
+    expect(await fetchTokenOverrides("red", client)).toEqual({ light: { yellow: "#111111" } });
+    expect(from.mock.calls.length).toBe(1); // cache hit, no new trip
+  });
+
+  it("an unknown slug resolves to undefined, and that miss is cached", async () => {
+    const from = vi.fn(() => gymTable([]));
+    const client = { from } as unknown as SupabaseServer;
+    expect(await fetchTokenOverrides("banana", client)).toBeUndefined();
+    expect(from.mock.calls.length).toBe(1);
+    expect(await fetchTokenOverrides("banana", client)).toBeUndefined();
+    expect(from.mock.calls.length).toBe(1); // negative cached, no re-query
+  });
+
+  it("a transient error resolves to undefined for this request but is NOT cached", async () => {
+    const erring = { erred: false };
+    const from = vi.fn(() => gymTable([OVERRIDES_ROW], erring));
+    const client = { from } as unknown as SupabaseServer;
+    expect(await fetchTokenOverrides("red", client)).toBeUndefined();
+    expect(from.mock.calls.length).toBe(1);
+    // Not cached → the next call re-queries and now succeeds.
+    expect(await fetchTokenOverrides("red", client)).toEqual({ light: { yellow: "#111111" } });
+    expect(from.mock.calls.length).toBe(2);
   });
 });
 

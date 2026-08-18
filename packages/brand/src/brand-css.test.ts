@@ -43,6 +43,24 @@ describe("brandCss", () => {
     expect(brandCss(brands.red)).toBe(brands.red.css);
   });
 
+  // The #272 regression pin: retiring the purple demo fixture means forge and red now
+  // ALWAYS take live `token_overrides` off `gym` (currently `{}` for all 4 live rows).
+  // Both empty forms, on both modules, must stay byte-identical to the baseline.
+  it("pins the empty-overrides fast path for forge and red, both `{}` and `undefined`", () => {
+    expect(brandCss(brands.forge, {})).toBe(brands.forge.css);
+    expect(brandCss(brands.forge, undefined)).toBe(brands.forge.css);
+    expect(brandCss(brands.red, {})).toBe(brands.red.css);
+    expect(brandCss(brands.red, undefined)).toBe(brands.red.css);
+  });
+
+  it("pins malformed live-fetched overrides (non-object, junk keys) to the intact baseline", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(brandCss(brands.forge, "garbage")).toBe(brands.forge.css);
+    expect(brandCss(brands.red, { light: { notakey: "#fff" } })).toBe(brands.red.css);
+    expect(brandCss(brands.forge, { light: { canvas: 123 } })).toBe(brands.forge.css);
+    warn.mockRestore();
+  });
+
   it("fails safe to the intact baseline on an INVALID payload — never half-branded", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     // A valid canvas next to a hostile yellow: the whole payload is rejected.

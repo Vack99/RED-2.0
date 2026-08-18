@@ -5,7 +5,6 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./forge/logo": "./src/forge/logo.tsx",
     "./red/neon.css": "./src/red/neon.css",
     "./red/recibo.css": "./src/red/recibo.css"
   },

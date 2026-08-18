@@ -59,10 +59,10 @@ export default async function RootLayout({
   const signedIn = Boolean(data?.claims?.sub);
 
   // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
-  // (b)): the app fetches the override DATA (the fixture seam this phase) and
+  // (b)): the app fetches the override DATA (the resolved tenant's `gym` row) and
   // passes it as an argument — `brandCss` validates it (zod-guarded before it
   // reaches this sink) and fast-paths to the precomputed baseline when empty.
-  const css = brandCss(brand, fetchTokenOverrides(brand.id));
+  const css = brandCss(brand, await fetchTokenOverrides());
 
   // Font vars always apply; the seam appends `dark` only for a dark-default brand
   // (kept alongside, never overwritten) and carries the `data-brand` the RED glow

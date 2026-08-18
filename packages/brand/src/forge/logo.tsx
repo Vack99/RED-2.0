@@ -6,8 +6,7 @@ import { FMARK_BARS } from "./mark-geometry";
 // Forge brand mark + wordmark, ported from the prototype's brand.jsx. The F-mark
 // geometry (the SINGLE SOURCE OF TRUTH consumed here, by the ignition mark, and by
 // the app icon) lives in its own leaf module `./mark-geometry` — re-exported below
-// so the `./forge/logo` subpath keeps publishing it, and so `./logo` and
-// `./ignition-mark` can each draw the mark without a circular import.
+// so `./logo` and `./ignition-mark` can each draw the mark without a circular import.
 export * from "./mark-geometry";
 
 export function FMark({ size = 28 }: { size?: number }) {

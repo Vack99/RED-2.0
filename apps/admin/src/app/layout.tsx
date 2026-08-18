@@ -53,11 +53,11 @@ export default async function RootLayout({
   // `x-brand` header against the registry (absent/forged → DEFAULT_BRAND).
   //
   // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
-  // (b)): the app fetches the override DATA (the fixture seam this phase) and
+  // (b)): the app fetches the override DATA (the resolved tenant's `gym` row) and
   // passes it as an argument — `brandCss` validates it (zod-guarded before it
   // reaches this sink) and fast-paths to the precomputed baseline when empty.
   const brand = await resolveBrand();
-  const css = brandCss(brand, fetchTokenOverrides(brand.id));
+  const css = brandCss(brand, await fetchTokenOverrides());
 
   // `data-brand` is the hook the brand's own stylesheets select on (@gym/brand's
   // red/neon.css). Without it the RED hero's neon classes are inert here and its

@@ -1,8 +1,7 @@
 // @gym/brand — the shared brand home consumed by both apps (ADR-0012 §4). The `.`
 // surface carries the brand-module registry (tokens + logo + optional animation);
 // host→gym→brand resolution lives in `@gym/data`'s `resolveTenant` (ADR-0012 §5,
-// amended). The concrete Forge logo has its own `./forge/logo` subpath (admin imports
-// it directly).
+// amended).
 export type { BrandId } from "./brand-id";
 export { DEFAULT_BRAND } from "./brand-id";
 export type { BrandModule } from "./registry";

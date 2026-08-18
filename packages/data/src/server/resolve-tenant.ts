@@ -93,12 +93,15 @@ class TtlCache<T> {
 
 const hostCache = new TtlCache<HostResolution>();
 const slugCache = new TtlCache<Tenant | null>();
+const overridesCache = new TtlCache<unknown>();
 
-/** Drop all cached host/slug resolutions. Exported for tests (cache-hit, TTL, and
- *  eviction assertions need a clean cache between cases); harmless in production. */
+/** Drop all cached host/slug/overrides resolutions. Exported for tests (cache-hit,
+ *  TTL, and eviction assertions need a clean cache between cases); harmless in
+ *  production. */
 export function clearTenantCache(): void {
   hostCache.clear();
   slugCache.clear();
+  overridesCache.clear();
 }
 
 /** A resolved value plus whether it is safe to CACHE. `cacheable` is false only when a
@@ -196,6 +199,35 @@ async function gymTenant(
     value: data ? { id: data.id, slug: data.slug, brandModuleId: data.brand_module_id } : null,
     cacheable: true,
   };
+}
+
+/** Load a gym row's `token_overrides` jsonb by slug, uncached. A miss (unknown slug)
+ *  resolves to `undefined`, cacheable (negative caching). A transient PostgREST error
+ *  also resolves to `undefined`, but flagged non-cacheable — same discipline as
+ *  `gymTenant`. */
+async function overridesUncached(client: SupabaseServer, slug: string): Promise<Resolved<unknown>> {
+  const { data, error } = await client.from("gym").select("token_overrides").eq("slug", slug).maybeSingle();
+  if (error) return { value: undefined, cacheable: false };
+  return { value: data?.token_overrides, cacheable: true };
+}
+
+/**
+ * `gym.token_overrides` by slug — the per-gym palette-override jsonb `brandCss`
+ * merges onto the module baseline (grill (b)). Same 60s TTL cache discipline as
+ * `hostCache`/`slugCache` (positive + negative caching; a transient read error is
+ * returned for this request but never cached). `client` is injectable for tests
+ * (ADR-0001); defaults to the anon client, matching the `gym_anon_select` RLS policy
+ * (`USING (true)`) this read relies on.
+ */
+export async function fetchTokenOverrides(
+  slug: string,
+  client: SupabaseServer = anonClient(),
+): Promise<unknown> {
+  const cached = overridesCache.get(slug);
+  if (cached) return cached.value;
+  const resolved = await overridesUncached(client, slug);
+  if (resolved.cacheable) overridesCache.set(slug, resolved.value);
+  return resolved.value;
 }
 
 /**
