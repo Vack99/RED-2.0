@@ -10,10 +10,16 @@ import { brandHtmlSeam, resolveBrand } from "../lib/brand";
 import { fetchTokenOverrides } from "../lib/token-overrides";
 
 // Title/description come from the resolved marca's copy — no hardcoded "Gym".
-// Dynamic because it reads the request's `x-brand`.
+// Dynamic because it reads the request's `x-brand`. A TEMPLATE, not a plain
+// string: every public page sets its own title ("Inicio", "Reservar", …), and a
+// plain root title would be replaced outright — the tab would never carry the
+// gym's name on any page that titles itself.
 export async function generateMetadata(): Promise<Metadata> {
   const { copy } = await resolveBrand();
-  return { title: copy.name, description: copy.description };
+  return {
+    title: { default: copy.name, template: `%s — ${copy.name}` },
+    description: copy.description,
+  };
 }
 
 // The RED mock's type system (Outfit = UI, JetBrains Mono = data/badges/eyebrows),
