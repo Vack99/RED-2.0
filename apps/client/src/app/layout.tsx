@@ -9,10 +9,12 @@ import { PublicHeader } from "./_components/public-header";
 import { brandHtmlSeam, resolveBrand } from "../lib/brand";
 import { fetchTokenOverrides } from "../lib/token-overrides";
 
-export const metadata: Metadata = {
-  title: "Gym",
-  description: "Panel del socio — plataforma multi-inquilino.",
-};
+// Title/description come from the resolved marca's copy — no hardcoded "Gym".
+// Dynamic because it reads the request's `x-brand`.
+export async function generateMetadata(): Promise<Metadata> {
+  const { copy } = await resolveBrand();
+  return { title: copy.name, description: copy.description };
+}
 
 // The RED mock's type system (Outfit = UI, JetBrains Mono = data/badges/eyebrows),
 // self-hosted as WOFF2 at build time (CSP-safe — no Google Fonts request at
