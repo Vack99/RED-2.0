@@ -32,6 +32,30 @@ changed function first (MCP `deploy_edge_function`, or `npx -y supabase@latest
 functions deploy <slug> --project-ref hjppxawglmukfvsgmcog [--no-verify-jwt]`),
 then acknowledge with `EDGE_DEPLOY_OK=1 git push`.
 
+# Browser-level session shield (the `test:e2e` gate)
+
+`pnpm test:e2e` is the repo's only browser test: `apps/client/e2e/session.spec.ts`, three
+Chromium checks that a member who logs in **stays** logged in (lands on `/reservar`, survives a
+fresh browser context, is redirected past `/entrar`, and gets a drawer CTA aimed at `/reservar`).
+It exists because the 465dcf4 defect was invisible below the browser — server-side token rotation
+was healthy for 8 days while the session-blind auth surface walked members back to a password
+form, and every unit test passed the whole time.
+
+**Like `test:denial`, it is NOT in CI or pre-commit** — it needs a real login against a real auth
+server, which pre-commit can't provide — and for the same reason it is **a documented pre-merge
+convention: any change to the auth/session surface runs `pnpm test:e2e` green before it
+fast-forwards to `main`.** Arm it with the `red-demo` sandbox twin (a dev-only gym whose password
+is committed on purpose — `docs/superpowers/plans/2026-07-05-slice-45-red-demo-twin.md`):
+
+```
+pnpm exec playwright install chromium   # once per machine — pnpm install never provisions the browser
+E2E_EMAIL=demo@red-demo.test E2E_PASSWORD='RedDemo!2026' pnpm test:e2e
+```
+
+Unset credentials skip the suite rather than fail it. `NEVER run next dev` (it fork-bombs on Node
+24): the Playwright `webServer` runs `next build && next start`, which is also the only faithful
+target — the `__Host-` cookie prefix is constant-folded into the production build.
+
 # Database RPC contract tests (the `test:denial` gate)
 
 The 52 `public` functions — **31 of them write rows** (`registrar_venta`, `reclamar_o_crear_cliente`,

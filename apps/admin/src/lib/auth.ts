@@ -6,6 +6,7 @@
  *
  *  - the dynamic /icon favicon route -> null (public; a tab paints its favicon
  *      before sign-in, so gating it would break the RED-admin login favicon)
+ *  - the /api/cron/alertas handler   -> null (machine route; see below)
  *  - unauthenticated + not on /login  -> "/login"
  *  - authenticated + on /login        -> "/inicio"
  *  - otherwise                        -> null (pass through)
@@ -15,6 +16,12 @@ export function decideRedirect(authed: boolean, pathname: string): string | null
   // matcher runs on it and stamps `x-brand` (which the route needs). It must stay
   // reachable pre-auth — the login page shows the favicon too.
   if (pathname === "/icon") return null;
+  // The daily alert cron (Vercel Cron → /api/cron/alertas) arrives with no session
+  // cookie and authenticates with CRON_SECRET inside the handler. Gating it would
+  // answer the scheduler a 307 to /login — a "successful" invocation that never ran
+  // the check. Listed exactly, not by prefix, so a future route under /api cannot
+  // become public by accident; every path here must carry its own auth.
+  if (pathname === "/api/cron/alertas") return null;
   const isLogin = pathname === "/login";
   if (!authed && !isLogin) return "/login";
   if (authed && isLogin) return "/inicio";

@@ -220,6 +220,12 @@ Ordered by leverage. Nothing here is applied yet.
 - SinMembresia sign-out escape hatch (`cerrar-sesion-link.tsx`): the /entrar redirect would otherwise trap a wrong-account member (live session, no membership in this gym) with no path back to the login form — found by the final adversarial review pass.
 - **C1 prefetch exclusion investigated and REJECTED** (recorded in `proxy.ts` doc-comment): Next 16 strips flight headers before the proxy runs; a matcher-level skip breaks marca stamping; a `purpose: prefetch` in-handler skip relocates rotation into the RSC render where rotated tokens are discarded (manufactures P2-2). Revisit only if `invalid_grant` appears in auth logs.
 
+### Shielding (§D — second pass, same day)
+
+- **e2e browser shield LIVE**: `pnpm test:e2e` (apps/client/e2e/session.spec.ts, Playwright/chromium vs a real `next build`+`next start`): login survives a fresh browser context; /entrar bounces a live session; zero `/registro` CTAs render for a signed-in member. Pre-merge convention for auth-surface changes, documented in AGENTS.md (armed with the red-demo twin creds; NOT in pre-commit).
+- **The shield caught a live gap on its first run**: the home hero CTA + schedule rows still hardcoded `/registro` — now session-aware like the drawer.
+- **Daily alert cron**: `/api/cron/alertas` (admin app, 12:00 UTC) counts 24h `invalid_grant` + `send-email` non-2xx via the management logs API; nonzero OR a failed query → email to the owner (fail-loud 502; an expired PAT can never read as all-clear). Owner must arm Vercel env: `CRON_SECRET`, `SUPABASE_ACCESS_TOKEN` (dedicated PAT, analytics-read), `ALERT_EMAIL`.
+
 ### Deferred (deliberate)
 
 C3 (`getClaims` dedupe), C4 (tenant off critical path), C5–C7 (httpOnly/signing-key follow-through, canonical hosts, domain move — own spec pass), §D e2e (no e2e infra exists in the repo; the routing gate ships untested at the browser level — named debt), shared-constant for `confirmacion`, shared password-normalization module, admin login-form trim asymmetry (outside the DAL, latent).

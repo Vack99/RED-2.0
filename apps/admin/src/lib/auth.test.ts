@@ -24,4 +24,13 @@ describe("decideRedirect", () => {
     expect(decideRedirect(false, "/icon")).toBeNull();
     expect(decideRedirect(true, "/icon")).toBeNull();
   });
+
+  it("lets the alert cron through unauthenticated (it carries CRON_SECRET, not a session)", () => {
+    expect(decideRedirect(false, "/api/cron/alertas")).toBeNull();
+  });
+
+  it("does not open the rest of /api to unauthenticated callers", () => {
+    expect(decideRedirect(false, "/api/cron")).toBe("/login");
+    expect(decideRedirect(false, "/api/cron/alertas/otra")).toBe("/login");
+  });
 });

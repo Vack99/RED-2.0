@@ -13,6 +13,12 @@ node_modules/
 # testing
 /coverage
 
+# playwright (pnpm test:e2e) — run artifacts only; the config + spec are source
+test-results/
+playwright-report/
+blob-report/
+.playwright/
+
 # next.js (un-anchored: the Next project now lives under apps/admin)
 .next/
 out/
