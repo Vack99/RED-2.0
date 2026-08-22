@@ -62,9 +62,12 @@ export function PublicHeader({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const reservar: Href = signedIn ? "/reservar" : "/registro";
 
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
+
+  // After the hooks and after the early return: built once per render, not once per nav item.
+  const reservar: Href = signedIn ? "/reservar" : "/registro";
+  const nav = navPublica(reservar);
 
   return (
     // Fragment, not a wrapper: the drawer + backdrop are SIBLINGS of the header, never nested in it —
@@ -130,7 +133,7 @@ export function PublicHeader({
         </div>
 
         <nav className="flex-1 py-3">
-          {navPublica(reservar).map((item, i) => (
+          {nav.map((item, i) => (
             <Link
               key={item.label}
               href={item.href}

@@ -193,3 +193,37 @@ Ordered by leverage. Nothing here is applied yet.
 6. **Slice 5 (shielding):** D guards land alongside their related fixes; e2e test should land BEFORE Slice 3 changes so it proves the improvement.
 
 **Definition of done:** Katya/Camila resolved and confirmed booking; a returning member with a prior session reaches `/reservar` logged-in across days and across normal mobile network flakiness (proven by e2e); false-wrong-password states are distinguishable to members; guards green in `pnpm test`.
+
+---
+
+## Execution session results (2026-08-21)
+
+### Slice 0 — evidence (checklist ran against LIVE, read-only)
+
+- **Katya (`katya_jauregui@hotmail.com`)**: fully activated 08-13 23:55 (auth row + `clientes.auth_user_id` linked + terms stamped). Her activation session stayed alive and **auto-refreshed for 8 days** — last rotation 08-21 21:56:48 UTC, status 200 — and **37 seconds later she signed in with her password anyway** (new session 21:57:25). Server-side persistence works; the browser flow put her in front of a password form regardless. Not P1-1/P1-2.
+- **Camila (`camilitarguez@icloud.com`)**: **P1-1 CONFIRMED.** Invite sent 08-14 00:36 (`invitacion_enviada_at` set, claim_code `FOKKTA8E`), never activated, NO `auth.users` row. Her "wrong password" is a login attempt against a nonexistent account. Same state: Camila Reyes (`Camisofi48@gmail.com`), invited 08-14, unactivated.
+- **Auth logs (24h)**: **ZERO `invalid_grant`** — the P2-1/P2-2 race class is not occurring in prod. 4× `invalid_credentials` 20:44–20:45 from `red.ibookit.lat` (consistent with an accountless member retrying). No real 429s.
+- **Re-login epidemic confirmed at scale**: members hold stacks of password-login sessions (elsa 8 in 4 days, sandynuta 7, vallesyeira 6, yolandaaraly 6) while old sessions keep refreshing server-side.
+- **P2-4 stale**: `/.well-known/jwks.json` is actively fetched — asymmetric signing keys are LIVE; `getClaims()` verifies locally, not via network `getUser()`.
+- `auth.audit_log_entries` is empty on hosted Supabase (audit rides the 24h log pipeline); Resend dashboard not checked (no access from this session).
+
+### Corrected root cause (not in the analysis above)
+
+**The auth surface is session-blind.** `/entrar` and `/registro` never checked claims, and the public-header drawer's "Clases" + "Reservar clase" CTAs targeted `/registro` for everyone — signed-in members included. A member whose session the proxy had just refreshed successfully was still funneled: drawer CTA → `/registro` → "¿Ya tienes cuenta? Entrar" → password form. Katya's 37-second gap is exactly that walk. The doc's race mechanisms (P2-1/P2-2) are real-but-latent; they were not the live pain.
+
+### Shipped (branch `session-persistence-fix`)
+
+- `/entrar` + `/registro`: live session (`getClaims`) → `redirect("/reservar")`.
+- Drawer "Clases" / "Reservar clase" → `/reservar` when signed in.
+- Proxy fail-soft: a `setAll` batch that is deletions-only (auth-js `_removeSession` after a failed refresh) is suppressed — a transient refresh failure can no longer wipe a device's cookies (`esBorradoTotal` + tests); `getClaims()` throw no longer 500s the request.
+- §B quick wins: `over_request_rate_limit`/429 → distinct honest copy; password trim parity across ALL set/verify sites + one-shot raw retry for pre-parity hashes (retry gated to genuine credential failures, its own throttle mapped honestly); `?error=confirmacion` now renders a banner on `/entrar`; `solicitarReset` failures logged (packages/data JSON log shape), outward copy unchanged.
+- **C1 prefetch exclusion investigated and REJECTED** (recorded in `proxy.ts` doc-comment): Next 16 strips flight headers before the proxy runs; a matcher-level skip breaks marca stamping; a `purpose: prefetch` in-handler skip relocates rotation into the RSC render where rotated tokens are discarded (manufactures P2-2). Revisit only if `invalid_grant` appears in auth logs.
+
+### Deferred (deliberate)
+
+C3 (`getClaims` dedupe), C4 (tenant off critical path), C5–C7 (httpOnly/signing-key follow-through, canonical hosts, domain move — own spec pass), §D e2e (no e2e infra exists in the repo; the routing gate ships untested at the browser level — named debt), shared-constant for `confirmacion`, shared password-normalization module, admin login-form trim asymmetry (outside the DAL, latent).
+
+### Owner actions (Slice 1 — member recovery)
+
+- **Camila**: no code fixes her — she needs her ACTIVAR email. Have her search inbox/spam for "ACTIVAR MI CUENTA", or Narda re-sends the invite from her ficha. Claim code `FOKKTA8E` is still unclaimed. Same for Camila Reyes if she reports trouble.
+- **Katya**: nothing to do — after this deploy her existing session carries her straight to `/reservar`.

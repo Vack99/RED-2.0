@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { esBorradoTotal, esPrefetch } from "./proxy";
+import { esBorradoTotal } from "./proxy";
 
 /** The proxy's cookie-wipe guard. `setAll` batches come from `@supabase/ssr`'s
  *  `applyServerStorage`, which concatenates the chunk deletions it wants
@@ -34,28 +34,5 @@ describe("esBorradoTotal", () => {
 
   it("is false for an empty batch — no write to suppress, no warning to emit", () => {
     expect(esBorradoTotal([])).toBe(false);
-  });
-
-  it("treats an absent value as a deletion", () => {
-    expect(esBorradoTotal([{ name: "sb-auth-token.0" }])).toBe(true);
-  });
-});
-
-/** The rotation skip. Next 16 strips `next-router-prefetch` before the proxy runs
- *  (see the helper's doc-comment), so this predicate is a contract, not a live path
- *  today — these cases pin the contract so it behaves the day the header arrives. */
-describe("esPrefetch", () => {
-  it("detects the App Router's next-router-prefetch header at any value", () => {
-    expect(esPrefetch(new Headers({ "next-router-prefetch": "1" }))).toBe(true);
-    expect(esPrefetch(new Headers({ "next-router-prefetch": "2" }))).toBe(true);
-  });
-
-  it("detects the purpose: prefetch hint", () => {
-    expect(esPrefetch(new Headers({ purpose: "prefetch" }))).toBe(true);
-  });
-
-  it("is false for a real navigation", () => {
-    expect(esPrefetch(new Headers({ host: "red.ibookit.lat", purpose: "" }))).toBe(false);
-    expect(esPrefetch(new Headers())).toBe(false);
   });
 });

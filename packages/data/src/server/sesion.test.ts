@@ -94,6 +94,33 @@ describe("iniciarSesion — error map + trim parity", () => {
     });
   });
 
+  it("never retries a padded input when the FIRST error was not a credential rejection", async () => {
+    // A 500 means the server never weighed the password: a second attempt proves nothing and
+    // spends another slot against the rate limit.
+    const { signInWithPassword, client } = conError({ code: "unexpected_failure", status: 500 });
+
+    const res = await iniciarSesion("ana@correo.mx", "secreta123 ", client);
+
+    expect(res).toEqual({ ok: false, error: "Correo o contraseña incorrectos." });
+    expect(signInWithPassword).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps a rate limit hit BY THE RETRY to the throttle copy, not to 'wrong password'", async () => {
+    const signInWithPassword = vi
+      .fn()
+      .mockResolvedValueOnce({ error: { code: "invalid_credentials", status: 400 } })
+      .mockResolvedValueOnce({ error: { code: "over_request_rate_limit", status: 429 } });
+    const client = { auth: { signInWithPassword } } as unknown as SupabaseServer;
+
+    const res = await iniciarSesion("ana@correo.mx", "secreta123 ", client);
+
+    expect(res).toEqual({
+      ok: false,
+      error: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
+    });
+    expect(signInWithPassword).toHaveBeenCalledTimes(2);
+  });
+
   it("never retries when trimming changed nothing (one attempt, one failure)", async () => {
     const { signInWithPassword, client } = conError({ code: "invalid_credentials", status: 400 });
 

@@ -13,6 +13,17 @@ import { createClient, type SupabaseServer } from "./supabase";
 /** A discriminated result so the actions render one message surface. */
 export type SesionResultado = { ok: true } | { ok: false; error: string };
 
+/** GoTrue throttles by IP+email; the 429 arrives as `over_request_rate_limit` (and the raw
+ *  status, for any 429-class code the SDK adds later). BOTH sign-in attempts in
+ *  `iniciarSesion` map through this: a throttled attempt that reports "wrong password" is
+ *  the precise lie this function exists to stop telling, and the retry is no exception. */
+const esLimiteDeIntentos = (error: {
+  code?: string | undefined;
+  status?: number | undefined;
+}): boolean => error.code === "over_request_rate_limit" || error.status === 429;
+
+const DEMASIADOS_INTENTOS = "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.";
+
 /** Email+password sign-in. A wrong credential collapses to one opaque message
  *  (never reveal which field failed) — but an unconfirmed email, and a throttled
  *  attempt, are surfaced distinctly (not "wrong password"): the first so the form
@@ -44,21 +55,25 @@ export async function iniciarSesion(
       error: "Confirma tu correo antes de entrar. Revisa el enlace que te enviamos.",
     };
   }
-  // GoTrue throttles by IP+email; the 429 arrives as `over_request_rate_limit` (and the
-  // status, for any 429-class code the SDK adds later).
-  if (error.code === "over_request_rate_limit" || error.status === 429) {
-    return {
-      ok: false,
-      error: "Demasiados intentos. Espera unos minutos e inténtalo de nuevo.",
-    };
-  }
+  if (esLimiteDeIntentos(error)) return { ok: false, error: DEMASIADOS_INTENTOS };
+
   // Legacy cohort: a hash set before trim parity can hold edge whitespace, so the padded
   // input the trimmed attempt just rejected may be the literally correct one. One retry,
-  // only on a genuine credential failure (never on a throttle — that would spend a second
-  // attempt against the limit) and only when trimming actually changed something.
-  if (password !== password.trim()) {
-    const crudo = await supabase.auth.signInWithPassword({ email: correo, password });
-    if (!crudo.error) return { ok: true };
+  // and only when the server actually WEIGHED the credential and rejected it — the two
+  // distinct-copy failures already returned above, so what remains to allow is an explicit
+  // `invalid_credentials` or a bare 400. A 500, a network fault or any unknown shape means
+  // nothing was checked: retrying spends a second attempt against the rate limit and proves
+  // nothing.
+  const credencialRechazada = error.code === "invalid_credentials" || error.status === 400;
+  if (credencialRechazada && password !== password.trim()) {
+    const { error: errorCrudo } = await supabase.auth.signInWithPassword({
+      email: correo,
+      password,
+    });
+    if (!errorCrudo) return { ok: true };
+    // The retry is the attempt that can tip the limit — mapping only the first one would
+    // reintroduce the false "wrong password" through the back door.
+    if (esLimiteDeIntentos(errorCrudo)) return { ok: false, error: DEMASIADOS_INTENTOS };
   }
   return { ok: false, error: "Correo o contraseña incorrectos." };
 }
@@ -77,12 +92,17 @@ export async function solicitarReset(
   const supabase = client ?? (await createClient());
   const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo });
   if (error) {
-    console.error("solicitarReset: resetPasswordForEmail falló", {
-      code: error.code,
-      status: error.status,
-      message: error.message,
-      redirectTo,
-    });
+    // One structured line, the shape every other log in this package uses (legal.ts) — the
+    // only sink that exists (no log drain, no observability package anywhere in the repo).
+    console.warn(
+      JSON.stringify({
+        event: "reset-password-send-error",
+        code: error.code,
+        status: error.status,
+        redirectTo,
+        error: error.message,
+      }),
+    );
   }
   return { ok: true };
 }

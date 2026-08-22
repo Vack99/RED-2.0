@@ -26,9 +26,12 @@ export function validarPasswordRequerida(password: string): string | null {
   return null;
 }
 
-/** Setting a new password enforces the 8-char floor the reset action also guards. */
+/** Setting a new password enforces the 8-char floor on the TRIMMED value — the same rule
+ *  the reset/activation actions guard and `actualizarPassword` stores, so an inline pass
+ *  can't become a server-side reject (or, worse, a stored password whose trailing space the
+ *  login form then trims away). */
 export function validarPasswordNueva(password: string): string | null {
-  if (password.length < 8) return "Mínimo 8 caracteres.";
+  if (password.trim().length < 8) return "Mínimo 8 caracteres.";
   return null;
 }
 
