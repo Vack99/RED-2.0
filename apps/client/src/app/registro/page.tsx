@@ -1,6 +1,8 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 import { getMarketingGym } from "@gym/data/server/marketing";
+import { createClient } from "@gym/data/server/supabase";
 import { identidadLegalCompleta, renderAvisoSimplificado } from "@gym/domain/legal";
 
 import { resolverIdentidadLegalPublica } from "../../lib/aviso-legal";
@@ -20,8 +22,17 @@ import { RegistroForm } from "./_components/registro-form";
  * falls back to the static AuthShell. UI only: the form drives the already-shipped
  * Phase-3 registration + claim-by-match flow, now with the Turnstile captcha.
  * The invite door lives at /activar (ADR-0015 amended); /registro is plain signup.
+ *
+ * A LIVE session never reaches the form (same gate as /entrar): this page takes no query
+ * params — the invite/`?codigo=` rail belongs to /activar — so there is nothing an
+ * already-signed-in member could be here to do except re-register themselves. The
+ * `getClaims()` check (never `getSession()` — ADR-0001) sends them to the panel instead.
  */
 export default async function RegistroPage() {
+  const supabase = await createClient();
+  const { data } = await supabase.auth.getClaims();
+  if (data?.claims?.sub) redirect("/reservar");
+
   const hostGym = (await headers()).get("x-gym");
 
   if (!hostGym) {

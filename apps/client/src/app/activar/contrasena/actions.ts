@@ -26,8 +26,11 @@ export async function activarContrasenaAction(
   _prev: ActivarContrasenaActionState,
   formData: FormData,
 ): Promise<ActivarContrasenaActionState> {
-  const password = String(formData.get("password") ?? "");
-  const confirmar = String(formData.get("confirmar") ?? "");
+  // Both trimmed before the floor + match checks, so they measure what `actualizarPassword`
+  // will store (and `iniciarSesion` will verify): otherwise an autofilled password with a
+  // trailing space read as "no coinciden" against a hand-typed confirmation.
+  const password = String(formData.get("password") ?? "").trim();
+  const confirmar = String(formData.get("confirmar") ?? "").trim();
   const acepta = formData.get("acepta") === "on";
   const codigo = parseCodigoInvitacion(formData.get("codigo"));
 

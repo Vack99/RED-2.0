@@ -14,7 +14,9 @@ export async function restablecerAction(
   _prev: RestablecerActionState,
   formData: FormData,
 ): Promise<RestablecerActionState> {
-  const password = String(formData.get("password") ?? "");
+  // Trimmed before the floor is measured, so this check counts the characters
+  // `actualizarPassword` will actually store (and `iniciarSesion` will verify).
+  const password = String(formData.get("password") ?? "").trim();
   if (password.length < 8) {
     return { status: "error", error: "La contraseña debe tener al menos 8 caracteres." };
   }

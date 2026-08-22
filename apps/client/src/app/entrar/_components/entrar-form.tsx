@@ -17,6 +17,13 @@ import {
 const LOGIN_INICIAL: EntrarActionState = { status: "idle" };
 const RESET_INICIAL: ResetActionState = { status: "idle" };
 
+// `/auth/confirm` bounces a link it could not exchange to `/entrar?error=confirmacion`
+// (expired, already used, or opened in another browser). The page reads the param; this
+// is the copy it becomes — the same banner surface a failed sign-in uses, because landing
+// on an unexplained login form is exactly the dead end the redirect used to produce.
+const ENLACE_INVALIDO =
+  "El enlace de tu correo ya expiró o ya se usó. Entra con tu contraseña o pide uno nuevo.";
+
 // Underline field styling (the mock's `.field`): uppercase micro-label, a
 // bottom-ruled input that turns accent on focus and danger when invalid. Paint is
 // brand-token only — the danger hue is the semantic `--red` (no Tailwind utility
@@ -31,11 +38,16 @@ const INPUT =
  * already-shipped Phase-3 server actions. Client-side validation gates the round
  * trip so obvious typos surface as inline field errors; a wrong credential still
  * collapses to the action's single opaque banner. No prefilled credentials.
+ *
+ * `enlaceInvalido` (server-resolved from `?error=confirmacion`) seeds that same banner
+ * with the dead-email-link explanation; a real sign-in attempt then supersedes it.
  */
-export function EntrarForm() {
+export function EntrarForm({ enlaceInvalido = false }: { readonly enlaceInvalido?: boolean }) {
   const [mode, setMode] = useState<"login" | "reset">("login");
   const [loginState, dispatchLogin, loginPending] = useActionState(entrarAction, LOGIN_INICIAL);
   const [resetState, dispatchReset, resetPending] = useActionState(resetAction, RESET_INICIAL);
+  const aviso =
+    loginState.status === "error" ? loginState.error : enlaceInvalido ? ENLACE_INVALIDO : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -134,7 +146,7 @@ export function EntrarForm() {
         <p className="mt-3.5 text-[13px] text-muted">Accede para reservar y ver tu membresía</p>
       </div>
 
-      {loginState.status === "error" && (
+      {aviso && (
         <div
           role="alert"
           className="flex items-start gap-2 border px-4 py-3 text-[12.5px] font-medium"
@@ -144,7 +156,7 @@ export function EntrarForm() {
             <path d="M10 3l8 14H2z" />
             <path d="M10 9v3M10 14v.5" />
           </svg>
-          <span>{loginState.error}</span>
+          <span>{aviso}</span>
         </div>
       )}
 

@@ -30,7 +30,10 @@ import { createClient, type SupabaseServer } from "./supabase";
 export const registroSchema = z.object({
   nombre: z.string().trim().min(3, "El nombre es demasiado corto"),
   email: z.string().trim().email("Correo inválido"),
-  password: z.string().min(8, "La contraseña debe tener al menos 8 caracteres"),
+  // Trimmed BEFORE the floor is measured, on the same rule `iniciarSesion` verifies with
+  // (sesion.ts): a password stored with an autofilled trailing space could never be typed
+  // back identically, so the member met a "wrong password" on a password that was right.
+  password: z.string().trim().min(8, "La contraseña debe tener al menos 8 caracteres"),
   telefono: z.string().refine(isTelValido, "Teléfono inválido (10 dígitos)"),
   acepta: z
     .boolean()

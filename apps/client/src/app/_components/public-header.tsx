@@ -13,12 +13,14 @@ type Href = ComponentProps<typeof Link>["href"];
 /** The public nav destinations, in drawer order (mock `cm-dnav`). The drawer is the nav hub for the
  *  sibling marketing pages: Nosotros (#52) and Contacto (#53) land alongside this landing off the same
  *  base, so they are typed `as Route` — Next's sanctioned marker for an intentional cross-slice route
- *  that resolves on assembly (the guard stays live for every co-present route). "Clases" is the booking
- *  funnel: a logged-out prospect must register before reserving, so it (and every "Reservar" CTA)
- *  targets /registro. */
-const NAV: { href: Href; label: string; tag?: string }[] = [
+ *  that resolves on assembly (the guard stays live for every co-present route). "Clases" and the
+ *  drawer's "Reservar clase" CTA are the booking funnel, so both take `reservar`: /registro for a
+ *  logged-out prospect (who must register before reserving), /reservar for a signed-in member —
+ *  funneling a member with a live session back to the signup form is what made returning members
+ *  re-enter credentials they never actually lost. */
+const navPublica = (reservar: Href): { href: Href; label: string; tag?: string }[] => [
   { href: "/", label: "Inicio" },
-  { href: "/registro", label: "Clases", tag: "Hoy" },
+  { href: reservar, label: "Clases", tag: "Hoy" },
   { href: "/precios", label: "Precios" },
   { href: "/nosotros" as Route, label: "Nosotros" },
   { href: "/contacto" as Route, label: "Contacto" },
@@ -47,7 +49,8 @@ const RUTAS_SIN_HEADER = new Set(["/entrar", "/registro", "/restablecer"]);
  *
  * `signedIn` (server-resolved via `getClaims()` in the layout — never re-derived here) swaps the
  * top-right "Entrar" link for a members' affordance into `/reservar`, so a returning member isn't
- * offered the sign-in page they already passed (B5).
+ * offered the sign-in page they already passed (B5) — and it now steers the booking funnel
+ * ("Clases" + the drawer CTA) the same way, instead of sending them to /registro.
  */
 export function PublicHeader({
   logo,
@@ -59,6 +62,7 @@ export function PublicHeader({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const reservar: Href = signedIn ? "/reservar" : "/registro";
 
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
 
@@ -126,7 +130,7 @@ export function PublicHeader({
         </div>
 
         <nav className="flex-1 py-3">
-          {NAV.map((item, i) => (
+          {navPublica(reservar).map((item, i) => (
             <Link
               key={item.label}
               href={item.href}
@@ -152,7 +156,7 @@ export function PublicHeader({
 
         <div className="border-t border-line px-6 py-6">
           <Link
-            href="/registro"
+            href={reservar}
             onClick={close}
             className="flex justify-center bg-accent px-5 py-3.5 text-xs font-bold uppercase tracking-[0.16em] text-accent-fg hover:opacity-90"
           >
