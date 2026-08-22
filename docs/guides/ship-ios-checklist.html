@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>iBookit → App Store · runsheet</title>
+<style>
+  :root{
+    --bg:#0d0b10; --panel:#16131b; --panel2:#1d1922; --line:#2c2634;
+    --ink:#ece8f1; --dim:#9a92a8; --faint:#6b6478;
+    --plum:#7b3f6e; --plum-lite:#c07fb2;
+    --ok:#3fb27f; --warn:#e0a13a; --stop:#e05a5a; --info:#5b8fd6;
+    --r:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.55 "Segoe UI",system-ui,-apple-system,sans-serif}
+  a{color:var(--plum-lite)}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 120px}
+
+  /* ---------- header ---------- */
+  header{position:sticky;top:0;z-index:20;background:rgba(13,11,16,.93);
+    backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+    margin:-28px -20px 24px;padding:16px 20px}
+  .htop{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  h1{font-size:19px;margin:0;letter-spacing:-.2px}
+  h1 small{display:block;font-weight:400;font-size:12px;color:var(--faint);letter-spacing:0}
+  .spacer{flex:1}
+  .bar{height:8px;background:var(--panel2);border-radius:99px;overflow:hidden;flex:1 1 220px;min-width:160px}
+  .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--plum),var(--plum-lite));
+    transition:width .3s ease}
+  .pct{font-variant-numeric:tabular-nums;font-size:13px;color:var(--dim);min-width:96px;text-align:right}
+  button{font:inherit;font-size:12px;color:var(--dim);background:var(--panel2);
+    border:1px solid var(--line);border-radius:8px;padding:6px 11px;cursor:pointer}
+  button:hover{color:var(--ink);border-color:var(--plum)}
+  button.on{color:#fff;background:var(--plum);border-color:var(--plum)}
+
+  /* ---------- callouts ---------- */
+  .call{border:1px solid var(--line);border-left:3px solid var(--warn);background:var(--panel);
+    border-radius:var(--r);padding:14px 16px;margin:0 0 18px}
+  .call.stop{border-left-color:var(--stop)}
+  .call h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.9px;color:var(--warn)}
+  .call.stop h3{color:var(--stop)}
+  .call ol,.call ul{margin:0;padding-left:20px;color:var(--dim);font-size:13.5px}
+  .call li{margin:5px 0}
+  .call b{color:var(--ink)}
+
+  /* ---------- map ---------- */
+  .map{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:0 0 26px}
+  .mcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:12px 13px}
+  .mcard .n{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--plum-lite)}
+  .mcard .e{font-size:13px;margin:5px 0 9px;color:var(--ink)}
+  .mcard .m{font-size:12px;color:var(--dim)}
+  .mcard .m span{display:block}
+  .mcard.opt{opacity:.62}
+
+  /* ---------- stages ---------- */
+  .stage{margin:0 0 10px;border:1px solid var(--line);border-radius:var(--r);overflow:hidden;background:var(--panel)}
+  .shead{display:flex;align-items:center;gap:12px;padding:13px 16px;cursor:pointer;
+    background:linear-gradient(90deg,rgba(123,63,110,.18),transparent)}
+  .shead h2{font-size:15px;margin:0;flex:1}
+  .shead .sub{font-size:12px;color:var(--faint);font-weight:400;margin-left:8px}
+  .chev{color:var(--faint);transition:transform .2s}
+  .stage.closed .chev{transform:rotate(-90deg)}
+  .stage.closed .steps{display:none}
+  .scount{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
+  .sbar{width:70px;height:5px;background:var(--panel2);border-radius:99px;overflow:hidden}
+  .sbar > i{display:block;height:100%;width:0;background:var(--plum-lite)}
+  .steps{padding:4px 0 8px}
+
+  /* ---------- step rows ---------- */
+  .st{display:flex;gap:12px;padding:9px 16px 9px 14px;border-top:1px solid rgba(44,38,52,.55);align-items:flex-start}
+  .st:first-child{border-top:0}
+  .st:hover{background:rgba(255,255,255,.017)}
+  .st input{appearance:none;width:19px;height:19px;flex:0 0 19px;margin:2px 0 0;border:1.5px solid #4a4256;
+    border-radius:6px;cursor:pointer;background:transparent;position:relative}
+  .st input:hover{border-color:var(--plum-lite)}
+  .st input:checked{background:var(--plum);border-color:var(--plum)}
+  .st input:checked::after{content:"";position:absolute;left:6px;top:2px;width:5px;height:10px;
+    border:solid #fff;border-width:0 2px 2px 0;transform:rotate(43deg)}
+  .st .body{flex:1;min-width:0}
+  .num{display:inline-block;font-variant-numeric:tabular-nums;font-size:11.5px;font-weight:700;
+    color:var(--plum-lite);background:rgba(123,63,110,.2);border-radius:5px;padding:1px 6px;margin-right:8px}
+  .ttl{font-size:14.5px}
+  .det{font-size:13px;color:var(--dim);margin-top:4px}
+  .det b{color:#e6dcea;font-weight:600}
+  .det code{background:var(--panel2);border:1px solid var(--line);border-radius:4px;
+    padding:0 4px;font-size:12px;color:#d9c5e4}
+  .st.done .ttl{color:var(--faint);text-decoration:line-through;text-decoration-color:#4a4256}
+  .st.done .det{opacity:.42}
+  .tags{margin-top:6px;display:flex;gap:6px;flex-wrap:wrap}
+  .tag{font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;border-radius:5px;padding:2px 7px;
+    border:1px solid;font-weight:600}
+  .t-stop{color:var(--stop);border-color:rgba(224,90,90,.4);background:rgba(224,90,90,.09)}
+  .t-trap{color:var(--warn);border-color:rgba(224,161,58,.4);background:rgba(224,161,58,.09)}
+  .t-wait{color:var(--info);border-color:rgba(91,143,214,.4);background:rgba(91,143,214,.09)}
+  .t-money{color:var(--ok);border-color:rgba(63,178,127,.4);background:rgba(63,178,127,.09)}
+  .t-once{color:var(--plum-lite);border-color:rgba(192,127,178,.4);background:rgba(192,127,178,.1)}
+
+  body.hide-done .st.done{display:none}
+  footer{margin-top:34px;color:var(--faint);font-size:12px;text-align:center}
+  @media print{
+    header{position:static}
+    body{background:#fff;color:#000}
+    .stage,.mcard,.call{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="htop">
+    <h1>iBookit → iOS App Store<small>runsheet from docs/guides/2026-08-16-ship-ios-app-step-by-step.md</small></h1>
+    <div class="spacer"></div>
+    <div class="bar"><i id="gbar"></i></div>
+    <div class="pct" id="gpct">0 / 0</div>
+    <button id="tgl">Hide done</button>
+    <button id="exp">Collapse all</button>
+    <button id="rst">Reset</button>
+  </div>
+</header>
+
+<div class="call stop">
+  <h3>Settle these three first — each can re-price the whole plan, none needs an Apple account</h3>
+  <ol>
+    <li><b>Hermes <code>Intl.DateTimeFormat</code></b> with <code>timeZone:'America/Mexico_City'</code> + <code>formatToParts</code> on a real Android device. An hour reading <b>18</b> = UTC leaked (fail); <b>12</b> = pass. → step 1.2b</li>
+    <li><b>Metro resolves <code>@gym/domain/rules</code></b> — raw <code>.ts</code>, subpath exports, pnpm isolated linker, no build step. A red kills the share-the-pure-packages premise. → step 1.2b</li>
+    <li><b>Does Apple issue a CFDI</b> for a third-party IAP subscription in Mexico? Buy any third-party sub on a Mexican Apple ID with your RFC set, watch for the EDICOM email. <b>One hour.</b> Decides all of Stage 3.</li>
+  </ol>
+</div>
+
+<div class="call">
+  <h3>Read this before you promise anyone a date</h3>
+  <ul>
+    <li><b>Stage 1 ships a shell, not the app.</b> Stage 1.5 is the app: <b>44–60 solo-dev days</b>, of which 15–20 is foundation before the first sector screen exists.</li>
+    <li><b>Stage 2A's "3–7 days" is a compliance punch list run against a finished app</b> — none of it can be done first. That clock starts after Stage 1.5.</li>
+    <li><b>The binary you submit must already contain 2A.1, 2A.4 and 2A.6.</b> None of them can be added by a form or an OTA update.</li>
+    <li><b>Stage 3 is optional and the ruling is: don't.</b> Ship free + web billing (Stage 3-alt). Adding IAP spends Guideline 3.1.3(f) permanently.</li>
+  </ul>
+</div>
+
+<div class="map" id="map"></div>
+<div id="stages"></div>
+
+<footer>Ticks are stored in this browser only (localStorage). Print to PDF for a paper copy.</footer>
+</div>
+
+<script>
+const STAGES = [
+ {id:"s0", n:"Stage 0", h:"Apple developer account", sub:"~2 h of typing + 24 h→weeks of waiting · $99 USD/yr",
+  ends:"An active membership; App Store Connect opens", money:"$99 USD/yr (~$1,750–2,000 MXN [?])", time:"45 min + 24 h→weeks wait",
+  steps:[
+  ["0.0","Publish the privacy page and the support page","Verify <b>both return 200</b> from your PC <b>and from cellular data</b>. Decide <code>ibooki.lat</code> vs <code>ibookit.lat</code> here and write it down — the locked product domain and the live infra disagree.",["trap"]],
+  ["0.1","Enroll as <b>Individual</b>, never Organization","Organization needs a D-U-N-S number and a legal entity. Write down your exact legal name, letter for letter, from your passport.",[]],
+  ["0.2","Fix the name on your Apple Account first","<code>account.apple.com</code> → Personal Information → first/last name = your <b>legal</b> name. Not \"Aaron\", not \"iBookit\".",["trap"]],
+  ["0.3","Two-factor ON with a trusted phone number","Same page → Sign-In and Security. This is how 2FA works with no Apple device.",[]],
+  ["0.4","Start enrollment on the WEB","<code>developer.apple.com/programs/enroll/</code> → Start Your Enrollment. <b>Not</b> the Apple Developer app.",[]],
+  ["0.5","Accept the Apple Developer Agreement","→ Enroll Now.",[]],
+  ["0.6","Enter identity info","Legal name, phone, <b>physical street address</b> — P.O. boxes are rejected. Entity type: Individual.",[]],
+  ["0.7","Identity verification","Upload the passport photo page if prompted. Use the passport, not the INE — Apple publishes no Mexico ID list.",[]],
+  ["0.8","Accept the Program License Agreement (DPLA)","",[]],
+  ["0.9","Pay $99 with <b>your own</b> card","<b>Read the peso amount on the checkout screen</b> — Apple publishes it nowhere. A card not in your own legal name delays enrollment and triggers an ID request.",["money"]],
+  ["0.10","Wait — and never pay twice","Contact support at the <b>24-hour</b> mark. Never re-enroll: a duplicate charge plus a refund chase on top of a multi-week wait. Meanwhile you can do <b>steps 1.1–1.5 only</b>; 1.6 onward needs an active membership.",["wait","trap"]],
+  ["0.11","Turn <b>Auto-renew ON</b>","<code>developer.apple.com/account</code> → Membership details. It is <b>opt-in</b> on the web path — miss it and a year later the app vanishes for new downloads and you lose Certificates access.",["trap"]],
+  ["0.12","Open App Store Connect once, and stop","<code>appstoreconnect.apple.com</code>. <b>Create nothing.</b>",[]]
+ ]},
+
+ {id:"s1", n:"Stage 1", h:"Code → an app file, from Windows, no Mac", sub:"1–2 days · $0 on EAS free tier",
+  ends:"A build in App Store Connect, on your iPhone via TestFlight", money:"$0 (EAS free: 15 iOS builds/mo) · $19/mo Starter", time:"1–2 days + 10–25 min per build",
+  steps:[
+  ["1.1","Install the toolchain","Node — <b>23.x, 24.0–24.2, 25+ and Node 20 all FAIL</b> (the band is the intersection of RN 0.86's engines and this repo's <code>&gt;=22.13 &lt;25</code>). Then pnpm and <code>eas-cli &gt;= 12</code>. Verify: <code>eas login</code>, <code>eas whoami</code>, <code>eas --version</code>.",["trap"]],
+  ["1.2","Confirm the pnpm pin reads <code>pnpm@11.5.1</code>","<b>Do NOT change it.</b> Only revisit pinning if the first build actually shows <code>ERR_PNPM_NO_LOCKFILE</code>.",[]],
+  ["1.2b","Three smoke tests, on a real Android device","(1) Hermes <code>Intl.DateTimeFormat</code> + <code>formatToParts</code>; (2) Metro resolving <code>@gym/domain/rules</code> — <b>this one runs in <code>apps/mobile</code> just after 1.3</b>; (3) <code>globalThis.crypto?.subtle</code>. A web preview uses the browser's JS engine and proves nothing. <b>A red on 1 or 2 is a stop-and-replan, not a bug to fix.</b>",["stop"]],
+  ["1.3","Scaffold <code>apps/mobile</code>","From the repo root: <code>npx create-expo-app@latest apps/mobile --template default</code>. <b>Never <code>git init</code> inside it</b> — EAS then can't find the pnpm lockfile, falls back to yarn and 404s on <code>workspace:*</code>. Delete <code>apps/mobile/node_modules</code> + <code>package-lock.json</code>, run <code>pnpm install</code>, confirm <code>apps/mobile</code> is in <code>pnpm-lock.yaml</code>.",["trap"]],
+  ["1.3b","Make it pass this repo's gates","Catalog-pin <b>every</b> name on the guard's list the manifest declares (react/react-dom/typescript/<b>@supabase/supabase-js</b>/zod/vitest/…), add <code>\"apps/mobile/**\"</code> to <code>globalIgnores([...])</code>, <b>no <code>build</code> script</b>, add the <code>mobile-no-server-dal</code> depcruise rule, tighten <code>engines.node</code>. Then <code>pnpm lint</code>, <code>pnpm typecheck</code>, <code>pnpm test</code> — <b>three separate commands; PowerShell 5.1 has no <code>&amp;&amp;</code></b>.",["trap"]],
+  ["1.4","Fill in <code>app.json</code> by <b>merging</b>","Never paste over the generated file — you'd delete <code>expo-router</code> from plugins and <code>extra.eas.projectId</code>, and boot to a blank screen. Set bundle ID, <code>supportsTablet:false</code>, <code>usesNonExemptEncryption:false</code>, runtimeVersion, real asset paths. <b>One reverse-DNS prefix</b> for iOS bundle ID + Android package + Stage 3 Product IDs. Run the <b>alpha-channel check on the icon</b>. <code>\"name\"</code> is what every gym client sees on their Home Screen.",["trap"]],
+  ["1.5","Write <code>apps/mobile/eas.json</code>","<code>appVersionSource:\"remote\"</code> + <code>autoIncrement:true</code>, <b>before the first build</b> — otherwise your second submission is rejected for a duplicate build number with an opaque error. Verify: <code>npx eas-cli@latest config --platform ios --profile production</code>.",["trap"]],
+  ["1.6","Let EAS create your signing credentials","<code>eas init</code> (writes <code>extra.eas.projectId</code>) → commit it → <code>eas credentials</code> → iOS → production → let EAS manage. <b>Never pick anything containing Remove, Revoke or Delete.</b>",[]],
+  ["1.7","Create the App Store Connect API key","ASC → Users and Access → <b>Integrations</b> → App Store Connect API → <b>Team Keys</b> tab → <b>+</b> → Admin. <b>Save the <code>.p8</code> — one-time download, unrecoverable.</b> Fill all five <code>eas.json</code> fields including <code>appleId</code> and <code>appleTeamId</code>; sweep for leftover placeholders.",["once"]],
+  ["1.8","Do NOT register your iPhone yet","It gates only <code>development</code>/<code>preview</code> builds — TestFlight needs no registration. See 1.14a.",[]],
+  ["1.8a","Commit <code>apps/mobile</code>","<b>EAS only tarballs git-tracked files</b> — build with uncommitted source and you get an <code>.ipa</code> from the last commit, with none of your changes and no error anywhere. Pass the pre-commit hook; <b>never <code>--no-verify</code></b>.",["trap"]],
+  ["1.9","Run the first production build","<code>git status</code> clean → <code>eas build --platform ios --profile production</code>. Ceilings: <b>15 iOS builds/month, 45-minute timeout on Free</b> (a timeout still burns one), concurrency 1, low-priority queue.",[]],
+  ["1.10","Windows hygiene","<code>LongPathsEnabled=1</code> (elevated) + <code>git config --system core.longpaths true</code> + <b>reboot</b>. Never run a local native compile on this machine.",[]],
+  ["1.11","What you can do while waiting","All the code, Expo Go on Android, the 1.2b smoke tests, Android EAS builds. Nothing here needs the iPhone or the account.",[]],
+  ["1.12","STOP — <code>eas submit</code> needs an app record","<b>Go do 2B.1 – 2B.3 now, then come back to 1.13.</b>",["stop"]],
+  ["1.13","Submit the build","<code>eas submit --platform ios --profile production --latest</code>. <b>Uploading ≠ submitting for review.</b> This build is the pipeline proof that reaches your phone at 1.14 — not your store submission.",[]],
+  ["1.14","Install via internal TestFlight","TestFlight → Internal Testing → add yourself → install on the iPhone. If it shows <b>Missing Compliance</b> and won't distribute, jump to 2B.10 — metadata fix, not a rebuild.",[]],
+  ["1.14a","Register the iPhone — only for dev/preview builds","<code>eas device:create</code>, open the URL on the iPhone. <b>24–72 h on a new membership.</b> Register <b>before</b> the build — ad-hoc profiles embed only devices known at build time.",["wait"]],
+  ["1.14b","Developer Mode","TestFlight never needs it; EAS internal/dev builds do on iOS 16+. Prefer TestFlight. If the toggle isn't in Settings, <b>don't chase it</b>.",[]],
+  ["1.15","Wire OTA updates <b>before</b> the build you ship","<code>npx expo install expo-updates</code> <b>first</b>, then <code>eas update:configure</code>, then the daily loop. <b>An OTA update can never reach a binary built without <code>expo-updates</code></b> — not a typo fix, not a crash fix. And bumping <code>runtimeVersion</code> silently drops OTA reach for older binaries.",["trap"]]
+ ]},
+
+ {id:"s15", n:"Stage 1.5", h:"Build the actual app", sub:"44–60 solo-dev days — the real work",
+  ends:"Six working sectors on device", money:"$0 in tooling", time:"44–60 days (15–20 = foundation)",
+  steps:[
+  ["1.5a","Foundation before any sector screen exists","Metro/EAS scaffold, the <code>/api/movil/v1</code> data layer, auth + tenant resolution, the query cache replacing 35 <code>router.refresh()</code> sites, <code>@gym/ui-native</code>, theme runtime. <b>15–20 days.</b>",[]],
+  ["1.5b","Sectors, easiest first","<b>inicio</b> (2–3) → <b>clientes</b> (3–4) → <b>asistencia</b> (5–7) → <b>agenda</b> (6–8) → <b>vender</b> (6–8) → <b>cuenta last</b> (7–10, the long pole: 37 of the app's 56 server actions). Anchor: <code>docs/planning/2026-08-14-mobile-admin-app-rn-expo.md</code> §4.",[]],
+  ["1.5c","Gate into Stage 2A","<b>Do not start 2A until at least <code>inicio</code>, <code>clientes</code> and <code>cuenta</code> render on device.</b> You cannot strip payment CTAs from screens that don't exist, or screenshot a demo gym in an app that can't render one.",["stop"]]
+ ]},
+
+ {id:"s2a", n:"Stage 2A", h:"Compliance code — build it or be rejected", sub:"3–7 days · $0 · run against a finished app",
+  ends:"An app that survives App Review", money:"$0", time:"3–7 days",
+  steps:[
+  ["2A.1","In-app account deletion","Guideline 5.1.1(v) — <b>the one unconditional trigger; no B2B exception exists</b>. Deletion + re-auth + confirmation + a <b>retention-disclosure screen</b>. Use <code>signOut({scope:'local'})</code>, <b>not</b> the global default — the default logs the admin web app out at the front desk mid-shift. New RPC? Add it to <code>supabase/tests/rpc-coverage.json</code>, assert the <b>written rows</b>, wire into <code>SUITE</code>, run <code>test:denial</code> on scratch.",["stop","trap"]],
+  ["2A.2","Seed the permanent reviewer demo gym","Fixed-password account, in the <b>production</b> Supabase project (a scratch project = 2.1 rejection). <b>Member of exactly ONE gym</b> — ten write RPCs derive the gym from <code>staff_gym()</code> = lowest <code>gym_id</code>, so a picker is inert and writes land on the wrong gym. Exclude the demo tenant from every cleanup script. Demo <i>mode</i> is not available to you (2.1(a) gates it on a legal obligation you don't have).",["trap"]],
+  ["2A.3","Strip every payment CTA","3.1.1(a) covers <i>\"apps <b>and their metadata</b>\"</i> — a price in the App Store description counts. Run the recursive <code>Get-ChildItem | Select-String</code> sweep, then eyeball the listing. Renewal prompts go out by email / WhatsApp / desk signage.",["stop"]],
+  ["2A.4","Permission usage-description strings","Specific Spanish <code>*UsageDescription</code> for every permission. Check whether ATT applies.",[]],
+  ["2A.5","Push notifications, if you ship them","Must work with permission denied, no sensitive payload, opt-in for promo (4.5.4).",[]],
+  ["2A.6","Privacy manifest","<code>ios.privacyManifests</code> declarations — Expo does <b>not</b> fully automate this. Expect one ITMS-91053 round trip; you learn the real list from Apple's email.",[]],
+  ["2A.7","Sign in with Apple","Not triggered today. Know the trigger.",[]],
+  ["2A.8","The 4.2 / 4.3 decision","The one open call: credential-gated tenant selection vs 4.2.6's browsable-picker example. Ship without the hedge and accept residual risk, or add a one-screen pre-login gym picker. <b>Never cite 4.2.7</b> — it sits under \"Remote Desktop Clients\" and never engaged.",[]]
+ ]},
+
+ {id:"s2b", n:"Stage 2B", h:"The store listing, field by field", sub:"1 day of forms + 1–5 days of review · $0",
+  ends:"The app publicly downloadable in Mexico", money:"$0", time:"1 day + 1–5 days review",
+  steps:[
+  ["2B.1","Create the app record","Apps → <b>+</b> → New App. Platforms <b>iOS</b>, Name <code>iBookit</code> (must match <code>expo.name</code>), Primary Language <b>Spanish (Mexico)</b>, Bundle ID from the dropdown. <b>SKU is locked at Create, forever</b> — decide <code>ibookit-admin-ios</code> before you click. Then copy the numeric <b>Apple ID</b> from App Information → General Information into <code>eas.json</code>'s <code>ascAppId</code>.",["once"]],
+  ["2B.2","App Information","Subtitle, <b>Privacy Policy URL</b>, Category <b>Business</b>, Copyright, default EULA.",[]],
+  ["2B.3","Pricing and Availability","<b>Free</b>. Territories. Then <b>Business → Compliance → declare EU trader status with a P.O. Box</b> — do it early, verification takes days. Silence = removal from all 27 EU storefronts, not neutrality.",["trap"]],
+  ["2B.4","Upload the build","<b>Go back and run 1.13 (<code>eas submit</code>) now</b>, then here: Version page → Build → <b>+ Add Build</b> → select the processed build. No Apple SLA on processing — 10 min to several hours.",[]],
+  ["2B.5","Age Rating","Questionnaire → social-media <b>No</b> → lands at <b>4+</b>.",[]],
+  ["2B.6","App Privacy questionnaire","Its own <b>top-level sidebar item</b>, not inside App Information. Get Started → Yes / Data Linked to You / Not used to track / App Functionality.",[]],
+  ["2B.7","Version metadata","Description (4,000). <b>Keywords = 100 CHARACTERS, not bytes</b> — accents are free, <b>no space after commas</b>, never repeat a word already in the Name or Subtitle. Support URL, Marketing URL.",["trap"]],
+  ["2B.8","Screenshots you owe","<b>6.9\" only</b> — 1290×2796 (or 1260×2736 / 1320×2868). No iPad while <code>supportsTablet:false</code>. 1–10 images, <b>no alpha</b>, <b>zero dimension tolerance</b>. App Previews optional — skip.",[]],
+  ["2B.8a","Make them on Windows","Shoot on the iPhone (side + volume up) → USB → <code>winget install ImageMagick.ImageMagick</code> → force-resize + strip alpha + strip EXIF → verify with <code>magick identify</code>: <b><code>srgb</code> passes, <code>srgba</code> fails</b>.",[]],
+  ["2B.8b","What the screenshots must SHOW","The app <b>in use</b> — not the login screen (2.3.3). <b>Fictional</b> member data only (2.3.9) — which makes 2A.2 a prerequisite. 4+ appropriate (2.3.8), no other-platform imagery (2.3.10), no pricing.",["trap"]],
+  ["2B.9","App Review Information","Sign-In Required ON, demo credentials, contact info, and Spanish notes citing <b>Directriz 3.1.3(f) only</b>. <b>Do not volunteer 3.1.3(c)</b> — its closing sentence invites the reviewer to apply consumer IAP rules to your one-person-gym customers. Hold (c) in reserve for a Resolution Center reply.",["trap"]],
+  ["2B.10","Export compliance","If <b>Missing Compliance</b>: answer Yes → exempt. Metadata-only, no rebuild. It can bite as early as 1.14 by blocking internal TestFlight.",[]],
+  ["2B.11","Submit","Release option: <b>Manually release this version</b> → <b>Submit for Review</b>.",[]],
+  ["2B.12","Watch the review states","1–5 days typical. Budget one rejection cycle.",["wait"]]
+ ]},
+
+ {id:"s2c", n:"Stage 2C", h:"After submission", sub:"Release, then live",
+  ends:"Live in the Mexican App Store", money:"$0", time:"up to 24 h to appear in search",
+  steps:[
+  ["2C.1","Release it","<b>Pending Developer Release</b> → <b>Release This Version</b>. Up to 24 h to appear in search.",[]],
+  ["2C.2","Updating after launch","Know what OTA can and cannot carry. <b>RPC changes are additive-only for at least one full release-and-rollout cycle</b> — optional params with defaults, or a <code>_v2</code> name. A shipped binary permanently ends atomic deploys, and both <code>pnpm test</code> and <code>test:denial</code> stay green while you break it.",["trap"]]
+ ]},
+
+ {id:"s3", n:"Stage 3", h:"Paid subscription inside the app", sub:"OPTIONAL — the ruling is: don't. 6–16 dev days + 15% of revenue",
+  opt:true, ends:"Gyms subscribe with their Apple ID; you're paid 45 days after month end",
+  money:"15% of revenue (Small Business Program)", time:"6–16 dev days + weeks of paperwork",
+  steps:[
+  ["3A","The fork — run the CFDI test first","A Mexican Apple ID + your RFC + any third-party IAP subscription → does an EDICOM invoice email arrive? It decides everything. <b>Adding IAP spends Guideline 3.1.3(f) permanently.</b>",["stop"]],
+  ["3B.1","Sign the Paid Apps Agreement (Schedule 2)","Business → Agreements → Paid Apps. <b>Read the PDF in a real reader first</b> — its verbatim terms were never extractable. Apple: <i>\"you can't undo this action.\"</i> Account Holder only.",["stop","once"]],
+  ["3B.2","Tax information","<b>W-8BEN is one-shot and uneditable</b> — corrections mean contacting Apple. RFC / CURP / Cédula <b>are</b> editable any time.",["once"]],
+  ["3B.3","Banking","<b>One</b> account. Holder name in English characters, matching the bank exactly.",[]],
+  ["3B.4","Small Business Program","Enroll → 15% instead of 30%. Effective 15 days after the enrollment month ends.",["money"]],
+  ["3B.5","Create the Subscription Group","Reference name only, internal.",[]],
+  ["3B.6","Create the subscription","<b>Product ID is permanent</b> and can never be reused in that app even after deletion. Duration. Price with <b>Mexico as the base country</b>. Localization: Display Name 2–30, Description ≤45. <b>Family Sharing OFF</b> — you can't turn it off later.",["once"]],
+  ["3B.7","Review screenshot + Tax Category","<b>640×920 minimum</b> — its own spec, not the App Store one. Open the Tax Category picker; the list isn't published.",[]],
+  ["3B.8","Optional: a free trial","Introductory Offer. One per person per subscription group.",[]],
+  ["3B.9","Billing Grace Period","16 days, <b>Production and Sandbox</b>. Takes up to 24 h to apply.",[]],
+  ["3B.10","App Store Server Notification URLs","App Information → General Information. Set <b>BOTH</b> URLs, <b>Version 2</b>. Sandbox-only means production sends nothing.",["trap"]],
+  ["3B.11","Submit the first subscription with a new app version","They clear review together. No way around it.",[]],
+  ["3C.1","Install RevenueCat","<code>npx expo install react-native-purchases react-native-purchases-ui</code>. No config plugin.",[]],
+  ["3C.2","30-minute smoke test","<code>configure</code> + <code>getOfferings</code> on a dev build, against issue #1712 — before writing anything real.",[]],
+  ["3C.3","In-App Purchase key","Users and Access → Integrations → In-App Purchase → generate → <b>save the <code>.p8</code></b> → upload to RevenueCat. <b>Mandatory, not optional.</b>",["once"]],
+  ["3C.4","Configure the RevenueCat dashboard","Products → Entitlement <code>pro</code> → Offering <b>marked CURRENT</b> → Packages → <b>set transfer behavior deliberately</b>, or one gym's entitlement leaks to another.",["trap"]],
+  ["3C.5","Init, fetch, purchase, restore","<code>getOfferings</code>, <code>purchasePackage</code> — <b>always branch on <code>e.userCancelled</code></b>. An explicit <b>Restaurar compras</b> button, never <code>restorePurchases()</code> on every launch. <code>showManageSubscriptions</code>. Never call <code>finishTransaction</code>.",[]],
+  ["3C.5a","The entitlement gate","<code>getCustomerInfo()</code> at boot + <code>addCustomerInfoUpdateListener</code> while open + re-read on <code>AppState active</code>. Three UI states: <code>null</code> / <code>true</code> / <code>false</code> — <b><code>activa</code> starts at <code>null</code>, never <code>false</code></b>. <b>The server row is authoritative; <code>customerInfo</code> is a cache.</b> Gate <code>/api/movil/v1/*</code>, not just the screen.",["stop"]],
+  ["3C.6","Link a purchase to a gym tenant","<code>appUserID</code> = the gym's UUID <code>gym_id</code>. <b>Answer first: what happens when one Apple ID runs two gyms?</b> The second purchase resolves as \"already subscribed\", with no workaround. No code until that is answered.",["stop"]],
+  ["3C.7","The server: table, RLS, webhook","<b>(1)</b> migration <code>public.gym_apple_subscriptions</code> (FK to <code>public.gym</code>, singular), RLS on, staff-select via <code>is_staff_of</code>, <b>no write policy</b>; denial suite → <code>SUITE</code> → <code>test:denial</code> on <b>scratch</b>. <b>(2)</b> Edge Function: enable <b>HMAC signing</b> (secret shown once), verify over the <b>raw</b> body — <code>await req.text()</code> before any <code>JSON.parse</code> — reject skew &gt;5 min, constant-time compare, verify <b>before</b> parsing, <b>200 on ignored events</b>. <b>(3)</b> deploy <code>--no-verify-jwt</code>, then <code>$env:EDGE_DEPLOY_OK=\"1\"; git push</code>.",["trap"]],
+  ["3C.7a","Reconciliation, because webhooks get lost","<code>GET /v1/subscribers/{gym_id}</code> with the secret key, server-side only, plus a nightly cron. After 5 failed retries the event is gone forever and a paying gym is locked out — you'd find out by phone.",["trap"]],
+  ["3C.8","Optional: Apple's own notifications as a cross-check","Spike the Deno <code>npm:</code> import of <code>@apple/app-store-server-library</code> first — 20 minutes.",[]],
+  ["3C.9","Sandbox testing from Windows","Create testers (<code>+</code> subaddressing; the email must not already be an Apple Account; name/email/password uneditable). Set renewal speed. Sign in via <b>Settings → Developer → Sandbox Apple Account</b> — <b>never sign out of your real Apple ID</b>. <code>eas build --profile development</code> (needs 1.14a). <b>Point the sandbox webhook at the scratch project first.</b> Walk renew → retry (10 min) → grace (5 min) → expire; <b>12 renewals max</b>. Then one internal TestFlight pass (free purchases, daily renewals, 6 max/week). Store <code>environment</code> and require <code>PRODUCTION</code> in the production gate.",["trap"]],
+  ["3C.10","Paywall UI","Name + duration + <b>localized full renewal price as the most prominent element</b>, Privacy Policy + Terms links, restore button. <code>RevenueCatUI.presentPaywall()</code> gets you most of it — <b>set the policy/terms URLs in the dashboard, they're blank by default</b>. Revise the 2A.1 deletion flow to warn about Apple billing.",[]],
+  ["3C.11","Effort estimate + ongoing maintenance","6–16 dev days, and it never goes to zero.",[]],
+  ["3C.12","The dependency chain","So you don't try step 8 before step 1.",[]]
+ ]},
+
+ {id:"s3alt", n:"Stage 3-alt", h:"The recommended door — no Stage 3 at all", sub:"Web billing · 0% to Apple",
+  ends:"Gyms pay on the web, app stays free", money:"0% to Apple", time:"—",
+  steps:[
+  ["ALT.1","App stays free and login-only","No purchase surface of any kind inside the binary.",[]],
+  ["ALT.2","Gyms pay on the web","Outside the app, outside its metadata.",[]],
+  ["ALT.3","iBookit issues its own CFDI","Needs RFC + PFAE + e.firma + CSD — <b>a precondition, not a benefit in hand</b>.",["stop"]],
+  ["ALT.4","Zero payment CTAs in-app","Same sweep as 2A.3.",[]],
+  ["ALT.5","App Review notes cite 3.1.3(f)","And nothing else. <b>Do not build a mixed app.</b>",[]]
+ ]}
+];
+
+const KEY = "ibookit-ios-ship-v1";
+let done = JSON.parse(localStorage.getItem(KEY) || "{}");
+const TAGN = {stop:"hard gate", trap:"trap", wait:"waiting", money:"money", once:"one-shot"};
+
+document.getElementById("map").innerHTML = STAGES.map(s => `
+  <div class="mcard${s.opt?" opt":""}">
+    <div class="n">${s.n}</div>
+    <div class="e">${s.ends}</div>
+    <div class="m"><span>💰 ${s.money}</span><span>⏱ ${s.time}</span></div>
+  </div>`).join("");
+
+document.getElementById("stages").innerHTML = STAGES.map(s => `
+  <section class="stage" id="${s.id}">
+    <div class="shead" data-stage="${s.id}">
+      <span class="chev">▾</span>
+      <h2>${s.n} — ${s.h}<span class="sub">${s.sub}</span></h2>
+      <div class="sbar"><i></i></div>
+      <span class="scount"></span>
+    </div>
+    <div class="steps">
+      ${s.steps.map(([num,ttl,det,flags]) => `
+        <label class="st" data-id="${num}">
+          <input type="checkbox" data-id="${num}">
+          <span class="body">
+            <span class="ttl"><span class="num">${num}</span>${ttl}</span>
+            ${det ? `<span class="det">${det}</span>` : ""}
+            ${flags.length ? `<span class="tags">${flags.map(f=>`<span class="tag t-${f}">${TAGN[f]}</span>`).join("")}</span>` : ""}
+          </span>
+        </label>`).join("")}
+    </div>
+  </section>`).join("");
+
+function render(){
+  let tot=0, hit=0;
+  STAGES.forEach(s=>{
+    let st=0;
+    s.steps.forEach(([num])=>{
+      const on = !!done[num]; tot++; if(on){hit++; st++;}
+      const box = document.querySelector(`input[data-id="${CSS.escape(num)}"]`);
+      box.checked = on;
+      box.closest(".st").classList.toggle("done", on);
+    });
+    const el = document.getElementById(s.id);
+    el.querySelector(".scount").textContent = `${st}/${s.steps.length}`;
+    el.querySelector(".sbar > i").style.width = (st/s.steps.length*100)+"%";
+  });
+  document.getElementById("gbar").style.width = (tot?hit/tot*100:0)+"%";
+  document.getElementById("gpct").textContent = `${hit} / ${tot} · ${Math.round(tot?hit/tot*100:0)}%`;
+  localStorage.setItem(KEY, JSON.stringify(done));
+}
+
+document.addEventListener("change", e=>{
+  const id = e.target.dataset.id;
+  if(!id) return;
+  if(e.target.checked) done[id]=1; else delete done[id];
+  render();
+});
+document.addEventListener("click", e=>{
+  const h = e.target.closest(".shead");
+  if(h) document.getElementById(h.dataset.stage).classList.toggle("closed");
+});
+document.getElementById("tgl").onclick = e=>{
+  document.body.classList.toggle("hide-done");
+  e.target.classList.toggle("on");
+  e.target.textContent = document.body.classList.contains("hide-done") ? "Show done" : "Hide done";
+};
+document.getElementById("exp").onclick = e=>{
+  const anyOpen = [...document.querySelectorAll(".stage")].some(s=>!s.classList.contains("closed"));
+  document.querySelectorAll(".stage").forEach(s=>s.classList.toggle("closed", anyOpen));
+  e.target.textContent = anyOpen ? "Expand all" : "Collapse all";
+};
+document.getElementById("rst").onclick = ()=>{
+  if(confirm("Clear every tick?")){ done={}; render(); }
+};
+render();
+</script>
+</body>
+</html>
