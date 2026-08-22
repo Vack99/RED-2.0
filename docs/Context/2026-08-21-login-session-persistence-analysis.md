@@ -217,6 +217,7 @@ Ordered by leverage. Nothing here is applied yet.
 - Drawer "Clases" / "Reservar clase" → `/reservar` when signed in.
 - Proxy fail-soft: a `setAll` batch that is deletions-only (auth-js `_removeSession` after a failed refresh) is suppressed — a transient refresh failure can no longer wipe a device's cookies (`esBorradoTotal` + tests); `getClaims()` throw no longer 500s the request.
 - §B quick wins: `over_request_rate_limit`/429 → distinct honest copy; password trim parity across ALL set/verify sites + one-shot raw retry for pre-parity hashes (retry gated to genuine credential failures, its own throttle mapped honestly); `?error=confirmacion` now renders a banner on `/entrar`; `solicitarReset` failures logged (packages/data JSON log shape), outward copy unchanged.
+- SinMembresia sign-out escape hatch (`cerrar-sesion-link.tsx`): the /entrar redirect would otherwise trap a wrong-account member (live session, no membership in this gym) with no path back to the login form — found by the final adversarial review pass.
 - **C1 prefetch exclusion investigated and REJECTED** (recorded in `proxy.ts` doc-comment): Next 16 strips flight headers before the proxy runs; a matcher-level skip breaks marca stamping; a `purpose: prefetch` in-handler skip relocates rotation into the RSC render where rotated tokens are discarded (manufactures P2-2). Revisit only if `invalid_grant` appears in auth logs.
 
 ### Deferred (deliberate)

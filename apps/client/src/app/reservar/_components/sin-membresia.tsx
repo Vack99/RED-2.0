@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { CerrarSesionLink } from "./cerrar-sesion-link";
+
 /**
  * The graceful "signed-in but not a member yet" state (PRD #64/#66, Cluster C-1,
  * audit #10/#15): a claim that never converged — a swallowed sale-side failure or
@@ -7,6 +9,10 @@ import Link from "next/link";
  * home. `/reservar` re-runs the idempotent claim once before rendering this, so
  * reaching this screen means the caller genuinely has no `clientes` row to claim
  * yet (e.g. no matching invite/sale on this gym).
+ *
+ * One of those causes is a session on the WRONG ACCOUNT, and for that member every
+ * link here is a loop: /entrar and /registro bounce a live session back to /reservar.
+ * `CerrarSesionLink` is their only way to the login form — see its own note.
  */
 export function SinMembresia() {
   return (
@@ -28,6 +34,7 @@ export function SinMembresia() {
       >
         Volver al inicio
       </Link>
+      <CerrarSesionLink />
     </main>
   );
 }
