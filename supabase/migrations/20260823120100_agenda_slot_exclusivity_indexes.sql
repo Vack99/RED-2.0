@@ -3,6 +3,10 @@
 --
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
 -- ⚠ LIVE-APPLY PRECONDITION — THIS FILE IS DELIBERATELY DEFERRED ⚠
+-- [EXECUTED 2026-08-23: cleanup performed (2 ghost templates retired, 16 ghost sessions cancelled,
+--  zero member exposure) and BOTH indexes applied live the same day — see
+--  docs/audits/2026-08-23-agenda-duplication-verdict.md. The census below is the pre-cleanup state,
+--  kept as the record of what the index build had to wait for.]
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
 -- Both index builds FAIL against live TODAY. Counted read-only on live 2026-08-23:
 --
