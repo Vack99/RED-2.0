@@ -164,6 +164,21 @@ function rebaseCoachIds(seedAnterior: string[], draftCoachIds: string[], seedNue
 }
 
 /**
+ * The editor's `esSerie` prop (D15) — whether the sheet may offer anything wider than "clase"
+ * at all. Gated on `plantilla`, NOT on the raw `templateId` FK: packages/data agenda.ts nulls
+ * `plantilla` when the generating `schedule_template` is retired/inactive, while `templateId`
+ * stays the raw (possibly-dead) FK. Offering the series toggle off `templateId` alone let a
+ * retired-template card show "Todos los <día>" / "Todo el horario"; picking either sent the
+ * save down `actualizarHorarioRecurrenteAction`, which the RPC refuses with "Horario no
+ * encontrado o ya retirado" — staff read the refusal as "my edit did nothing" and re-created
+ * the class instead, which is the duplication vector this closes. A retired-template card now
+ * edits as Única, same as a true one-off.
+ */
+export function esSerie(card: CardVM | null): boolean {
+  return card?.plantilla != null;
+}
+
+/**
  * Seed the editor from an existing session. `repeatDays` stays empty — the weekday
  * row is the create flow's alone — and `alcance` re-seeds to "clase" on EVERY open
  * (#243): the wide scope is a per-open decision, never sticky, so a "dia"/"horario"

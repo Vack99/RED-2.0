@@ -218,19 +218,23 @@ begin
   -- s_id   → moved INTO the arrival window (v1/v2 + the delegation vectors + v8a)
   -- s_pre  → moved to >90 min ahead of now() (v3, pre-window)
   -- s_cls  → moved to before the window's close (v4, v6, v7, v8c)
-  -- s_cls2 → moved to the SAME instant as s_cls, so it shares its gym-local date by construction: v6/v7
-  --          need a class on that date the member does NOT hold a booking for (the walk-in branch).
+  -- s_cls2 → moved onto s_cls' OWN gym-local date (see the positioning block): v6/v7 need a class on
+  --          that date the member does NOT hold a booking for (the walk-in branch).
   -- s_can  → moved into the window AND cancelled (v8b)
+  -- The five seeds are an hour apart rather than stacked on one instant: since the 2026-08-23
+  -- slot-exclusivity ruling (20260823120100) a gym holds at most ONE uncancelled class per instant.
+  -- These seed instants are throwaway — every session is repositioned below — so the only property
+  -- that has to survive is "two days out", which all five keep.
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_id;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_pre;
+    values (v_gym, v_ct, v_starts + interval '1 hour', 60, 20) returning id into s_pre;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_cls;
+    values (v_gym, v_ct, v_starts + interval '2 hours', 60, 20) returning id into s_cls;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_cls2;
+    values (v_gym, v_ct, v_starts + interval '3 hours', 60, 20) returning id into s_cls2;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_can;
+    values (v_gym, v_ct, v_starts + interval '4 hours', 60, 20) returning id into s_can;
 
   -- These four bookings are seeded DIRECTLY rather than through reservar_clase, which refuses an expired
   -- booker outright ('Paquete vencido', 20260706170000:173-175) and, since #165, a started class as well.
@@ -311,7 +315,12 @@ reset role;
 --   s_id   = now() + 30 min → the window [start-90, start+75) CONTAINS now()   (v1, v2, delegation, v8a)
 --   s_pre  = now() + 3 h    → now() is 90 min BEFORE the window opens          (v3, the Ana arm)
 --   s_cls  = now() - 3 h    → the window closed 105 min ago                    (v4, v6, v7, v8c)
---   s_cls2 = now() - 3 h    → the SAME instant, so it shares s_cls' gym-local date whatever the hour
+--   s_cls2 = 00:30 on s_cls' OWN gym-local date → shares that date whatever the hour, and its window
+--            (close = start + 75 min = 01:45 local) is necessarily already closed: now() is at least
+--            three hours past that date's 00:00, because now() - 3 h is what fell on the date.
+--            NOT the same instant as s_cls any more — since the 2026-08-23 slot-exclusivity ruling
+--            (20260823120100) a gym holds at most ONE uncancelled class per instant, and the vector
+--            only ever needed the DATE, not the instant.
 --   s_can  = now() + 30 min, CANCELLED → in-window but cancelled                (v8b)
 -- Each session's own gym-local date is published as t.f_* and used as p_fecha from here on: a window
 -- edge three hours either side of now() can legitimately fall on the neighbouring day, and every gate
@@ -334,7 +343,9 @@ begin
   update public.class_session set starts_at = t_win where id = s_id;
   update public.class_session set starts_at = t_pre where id = s_pre;
   update public.class_session set starts_at = t_cls where id = s_cls;
-  update public.class_session set starts_at = t_cls where id = s_cls2;
+  update public.class_session
+     set starts_at = (((t_cls at time zone v_tz)::date + time '00:30') at time zone v_tz)
+   where id = s_cls2;
   -- The gym cancels the class the member is booked into, and it is still inside its arrival window —
   -- the ONE fixture where the attribution's `cancelled_at is null` filter and the closed-window pardon
   -- (which deliberately has NO cancelled filter) give different answers, so v8b can tell them apart.

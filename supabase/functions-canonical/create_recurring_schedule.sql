@@ -5,6 +5,7 @@ declare
   v_today  date;
   v_monday date;
   v_template uuid;
+  v_ocupa  text;   
   wd int;
   i  int;
 begin
@@ -18,6 +19,28 @@ begin
   end if;
 
   foreach wd in array p_weekdays loop
+    
+    
+    
+    
+    
+    select ct.name into v_ocupa
+      from public.schedule_template st
+      join public.class_type ct on ct.id = st.class_type_id
+     where st.gym_id = v_gym
+       and st.weekday = wd
+       and st.start_time = p_start_time
+       and st.is_active
+       and st.class_type_id is distinct from p_class_type_id
+     order by st.created_at, st.id
+     limit 1;
+    if v_ocupa is not null then
+      raise exception 'Ya existe un horario activo de % el % a las %',
+        v_ocupa,
+        (array['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'])[wd + 1],
+        to_char(p_start_time, 'HH24:MI');
+    end if;
+
     
     
     

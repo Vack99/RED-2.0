@@ -37,6 +37,7 @@ import {
   diaSemanaDe,
   draftSinCambios,
   editDraftFrom,
+  esSerie,
   movidasLinea,
   semillaAlcance,
   sugerenciaVenta,
@@ -196,6 +197,11 @@ export function AgendaScreen(props: AgendaScreenProps) {
     cardDia: null,
   });
   const [busy, setBusy] = React.useState(false);
+  // The desk's own fix for the same race (asistencia.tsx's `inFlight` ref): `busy` is STATE,
+  // so two fast taps on GUARDAR/CANCELAR can both read it `false` before React commits the
+  // first tap's `setBusy(true)` — two concurrent server actions, and on the create path, two
+  // rows. A ref closes that gap synchronously; `busy` stays, driving the sheet's disabled/dim UI.
+  const editorInFlight = React.useRef(false);
 
   const selectedDay = dias[selectedIndex] ?? dias[0];
   const selectedIso = stripDays[selectedIndex]?.iso ?? stripDays[0].iso;
@@ -352,47 +358,82 @@ export function AgendaScreen(props: AgendaScreenProps) {
   };
 
   const save = async () => {
-    if (busy) return;
-    // Nothing changed → nothing is written, and this is not a nicety: the narrow save runs
-    // edit_class_session, which CLEARS template_id, so a reflex GUARDAR on an untouched attached
-    // class buys an irreversible detach in exchange for no edit at all (#243).
-    if (editor.mode === "edit" && editor.card && draftSinCambios(editor.card, editor.draft)) {
-      closeEditor();
-      return;
-    }
-    const tipoId = tipos.find((t) => t.name === editor.draft.tipo)?.id;
-    if (!tipoId) {
-      forgeToast({ tone: "warning", title: "Falta el tipo", body: "Elige o crea un tipo de clase." });
-      return;
-    }
-    const { draft } = editor;
-    const nombreEspecial = draft.isSpecial ? draft.specialName : undefined;
-    setBusy(true);
+    // Ref check-and-set closes the gap `busy` (state) cannot: two taps inside one render tick
+    // both see `busy === false`. `busy` is still checked — belt for the ordinary, already-
+    // re-rendered case — but the ref is what actually blocks the fast double-tap.
+    if (editorInFlight.current || busy) return;
+    editorInFlight.current = true;
     try {
-      if (editor.mode === "edit" && editor.card) {
-        const card = editor.card;
-        // "dia" / "horario": one RPC rewrites every future class of the rule (one weekday, or
-        // every weekday of the group) in place. The bookings ride along on the FK — nothing is
-        // charged, nothing is refunded, nobody is un-booked. Coaches go only when the operator
-        // moved them, measured against THE RULE's coach set (the draft was seeded from it).
-        if (draft.alcance !== "clase" && card.templateId) {
-          const res = await actualizarHorarioRecurrenteAction({
-            templateId: card.templateId,
+      // Nothing changed → nothing is written, and this is not a nicety: the narrow save runs
+      // edit_class_session, which CLEARS template_id, so a reflex GUARDAR on an untouched attached
+      // class buys an irreversible detach in exchange for no edit at all (#243).
+      if (editor.mode === "edit" && editor.card && draftSinCambios(editor.card, editor.draft)) {
+        closeEditor();
+        return;
+      }
+      const tipoId = tipos.find((t) => t.name === editor.draft.tipo)?.id;
+      if (!tipoId) {
+        forgeToast({ tone: "warning", title: "Falta el tipo", body: "Elige o crea un tipo de clase." });
+        return;
+      }
+      const { draft } = editor;
+      const nombreEspecial = draft.isSpecial ? draft.specialName : undefined;
+      setBusy(true);
+      try {
+        if (editor.mode === "edit" && editor.card) {
+          const card = editor.card;
+          // "dia" / "horario": one RPC rewrites every future class of the rule (one weekday, or
+          // every weekday of the group) in place. The bookings ride along on the FK — nothing is
+          // charged, nothing is refunded, nobody is un-booked. Coaches go only when the operator
+          // moved them, measured against THE RULE's coach set (the draft was seeded from it).
+          if (draft.alcance !== "clase" && card.templateId) {
+            const res = await actualizarHorarioRecurrenteAction({
+              templateId: card.templateId,
+              classTypeId: tipoId,
+              hora: draft.hora,
+              duracionMin: draft.duracionMin,
+              cupo: draft.cupo,
+              ...(draft.alcance === "horario" && { todosLosDias: true }),
+              ...(coachIdsCambiaron(semillaAlcance(card, draft.alcance).coachIds, draft.coachIds) && {
+                coachIds: draft.coachIds,
+              }),
+            });
+            if (!res.ok) return fail(res.error, "No se pudo actualizar el horario");
+            afterWrite("Horario actualizado", movidasLinea(res.clasesMovidas, res.clasesSinMover));
+            return;
+          }
+          const res = await editarSesionAction({
+            sesionId: card.id,
             classTypeId: tipoId,
+            fecha: selectedIso,
             hora: draft.hora,
             duracionMin: draft.duracionMin,
             cupo: draft.cupo,
-            ...(draft.alcance === "horario" && { todosLosDias: true }),
-            ...(coachIdsCambiaron(semillaAlcance(card, draft.alcance).coachIds, draft.coachIds) && {
-              coachIds: draft.coachIds,
-            }),
+            coachIds: draft.coachIds,
+            esEspecial: draft.isSpecial,
+            nombreEspecial,
           });
-          if (!res.ok) return fail(res.error, "No se pudo actualizar el horario");
-          afterWrite("Horario actualizado", movidasLinea(res.clasesMovidas, res.clasesSinMover));
+          if (!res.ok) return fail(res.error);
+          // edit_class_session clears template_id, so a narrow save on a series member SEPARATES
+          // it. The caption warned before the fact; this is the receipt after it.
+          afterWrite("Clase actualizada", card.templateId ? "Visible en la app · ahora es Única" : "Visible en la app");
           return;
         }
-        const res = await editarSesionAction({
-          sesionId: card.id,
+        const weekdays = draft.repeatDays.map((on, i) => (on ? i : -1)).filter((i) => i >= 0);
+        if (weekdays.length) {
+          const res = await crearHorarioRecurrenteAction({
+            classTypeId: tipoId,
+            weekdays,
+            hora: draft.hora,
+            duracionMin: draft.duracionMin,
+            cupo: draft.cupo,
+            coachIds: draft.coachIds,
+          });
+          if (!res.ok) return fail(res.error);
+          afterWrite("Clase creada", weekdays.length > 1 ? `${weekdays.length} días` : "Visible en la app");
+          return;
+        }
+        const res = await crearSesionAction({
           classTypeId: tipoId,
           fecha: selectedIso,
           hora: draft.hora,
@@ -403,39 +444,17 @@ export function AgendaScreen(props: AgendaScreenProps) {
           nombreEspecial,
         });
         if (!res.ok) return fail(res.error);
-        // edit_class_session clears template_id, so a narrow save on a series member SEPARATES
-        // it. The caption warned before the fact; this is the receipt after it.
-        afterWrite("Clase actualizada", card.templateId ? "Visible en la app · ahora es Única" : "Visible en la app");
-        return;
+        afterWrite("Clase creada", "Visible en la app");
+      } finally {
+        setBusy(false);
       }
-      const weekdays = draft.repeatDays.map((on, i) => (on ? i : -1)).filter((i) => i >= 0);
-      if (weekdays.length) {
-        const res = await crearHorarioRecurrenteAction({
-          classTypeId: tipoId,
-          weekdays,
-          hora: draft.hora,
-          duracionMin: draft.duracionMin,
-          cupo: draft.cupo,
-          coachIds: draft.coachIds,
-        });
-        if (!res.ok) return fail(res.error);
-        afterWrite("Clase creada", weekdays.length > 1 ? `${weekdays.length} días` : "Visible en la app");
-        return;
-      }
-      const res = await crearSesionAction({
-        classTypeId: tipoId,
-        fecha: selectedIso,
-        hora: draft.hora,
-        duracionMin: draft.duracionMin,
-        cupo: draft.cupo,
-        coachIds: draft.coachIds,
-        esEspecial: draft.isSpecial,
-        nombreEspecial,
-      });
-      if (!res.ok) return fail(res.error);
-      afterWrite("Clase creada", "Visible en la app");
+    } catch {
+      // A thrown/rejected action (network drop, timeout) previously left the sheet open with no
+      // toast and a silently-reset `busy` — inviting a retry that duplicates on the create path.
+      // Same failure idiom as an `{ok:false}` result; the sheet stays open so the draft survives.
+      fail("Revisa tu conexión e inténtalo de nuevo.");
     } finally {
-      setBusy(false);
+      editorInFlight.current = false;
     }
   };
 
@@ -443,24 +462,33 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // one destructive button, not two. Wide: stop the rule(s) and cancel every future class,
   // each through the shipped cancel_class_session, so every held class comes back.
   const cancelClass = async () => {
-    if (busy || !editor.card) return;
+    if (editorInFlight.current || busy || !editor.card) return;
+    editorInFlight.current = true;
     const { card, draft } = editor;
-    setBusy(true);
     try {
-      if (draft.alcance !== "clase" && card.templateId) {
-        const res = await retirarHorarioRecurrenteAction({
-          templateId: card.templateId,
-          ...(draft.alcance === "horario" && { todosLosDias: true }),
-        });
-        if (!res.ok) return fail(res.error, "No se pudo terminar el horario");
-        afterWrite("Horario terminado", canceladasLinea(res.clasesCanceladas));
-        return;
+      setBusy(true);
+      try {
+        if (draft.alcance !== "clase" && card.templateId) {
+          const res = await retirarHorarioRecurrenteAction({
+            templateId: card.templateId,
+            ...(draft.alcance === "horario" && { todosLosDias: true }),
+          });
+          if (!res.ok) return fail(res.error, "No se pudo terminar el horario");
+          afterWrite("Horario terminado", canceladasLinea(res.clasesCanceladas));
+          return;
+        }
+        const res = await cancelarSesionAction({ sesionId: card.id });
+        if (!res.ok) return fail(res.error, "No se pudo cancelar la clase");
+        afterWrite("Clase cancelada", "Reservas canceladas y clases devueltas");
+      } finally {
+        setBusy(false);
       }
-      const res = await cancelarSesionAction({ sesionId: card.id });
-      if (!res.ok) return fail(res.error, "No se pudo cancelar la clase");
-      afterWrite("Clase cancelada", "Reservas canceladas y clases devueltas");
+    } catch {
+      // Mirrors save()'s catch: a thrown/rejected action must not leave the sheet silently
+      // reset with no explanation, inviting a retry.
+      fail("Revisa tu conexión e inténtalo de nuevo.", "No se pudo cancelar la clase");
     } finally {
-      setBusy(false);
+      editorInFlight.current = false;
     }
   };
 
@@ -659,7 +687,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
           horaOptions={horaOptions}
           duracionOptions={duracionOptions}
           cupoOptions={cupoOptions}
-          esSerie={editor.card?.templateId != null}
+          esSerie={esSerie(editor.card)}
           esPasada={editor.card ? new Date(editor.card.startsAtIso).getTime() <= ahora.getTime() : false}
           reservasActuales={editor.card?.booked ?? 0}
           cupoPlantilla={editor.card?.plantilla?.capacidad ?? 0}

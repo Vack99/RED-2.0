@@ -12,6 +12,7 @@ import {
   draftSinCambios,
   editDraftFrom,
   esBloqueoVendible,
+  esSerie,
   movidasLinea,
   semillaAlcance,
   sugerenciaVenta,
@@ -170,6 +171,35 @@ describe("editDraftFrom", () => {
 
   it("blanks a missing special name rather than carrying null into the input", () => {
     expect(editDraftFrom(toCardVM(dto(), "19:00")).specialName).toBe("");
+  });
+});
+
+/**
+ * The editor's `esSerie` gate (D15, duplication-incident audit). Gated on `plantilla`, not on
+ * the raw `templateId` FK — a retired template leaves `templateId` set but nulls `plantilla`
+ * (packages/data agenda.ts), and offering the series toggle off the FK alone put a dead
+ * "Todos los <día>" / "Todo el horario" verb in front of staff whose save then failed with
+ * "Horario no encontrado o ya retirado", read as a no-op edit and re-created as a duplicate.
+ */
+describe("esSerie", () => {
+  it("is true when the card carries its rule's live values", () => {
+    const card = toCardVM(dto({ templateId: "tpl-1", plantilla: REGLA }), "19:00");
+    expect(esSerie(card)).toBe(true);
+  });
+
+  it("is false for a true one-off — no template at all", () => {
+    const card = toCardVM(dto(), "19:00");
+    expect(esSerie(card)).toBe(false);
+  });
+
+  it("is false for a retired template — templateId survives as the raw FK, plantilla does not (D15)", () => {
+    const card = toCardVM(dto({ templateId: "tpl-1", plantilla: null }), "19:00");
+    expect(card.templateId).toBe("tpl-1"); // the FK is still there
+    expect(esSerie(card)).toBe(false); // but the sheet must not offer a series scope over it
+  });
+
+  it("is false while no card is under edit (create mode)", () => {
+    expect(esSerie(null)).toBe(false);
   });
 });
 

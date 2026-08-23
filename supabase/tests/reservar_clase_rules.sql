@@ -144,14 +144,19 @@ begin
 
   insert into public.class_type (gym_id, name) values (v_gym, 'RC Metcon') returning id into v_ct;
 
+  -- One instant per session, an hour apart. These four used to share `v_starts` — nothing in this
+  -- suite reads their hour, so the collision was incidental — but since the 2026-08-23 slot-exclusivity
+  -- ruling (20260823120100) a gym holds at most ONE uncancelled class per instant, so a shared instant
+  -- is now a unique_violation at seed time. Staggering keeps every vector's meaning identical: all
+  -- four are still ~2 days out, still future, still bookable-or-refused for their own reasons.
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_starts, 60, 20) returning id into s_open;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 4) returning id into s_full;
+    values (v_gym, v_ct, v_starts + interval '1 hour', 60, 4) returning id into s_full;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_started, 60, 20) returning id into s_started;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 4) returning id into s_walkfull;
+    values (v_gym, v_ct, v_starts + interval '2 hours', 60, 4) returning id into s_walkfull;
   -- #244 guard 1: two sessions dated relative to v_gym's OWN local calendar (never a client-side
   -- interval offset) so the vector is exact regardless of what time-of-day the suite runs.
   --   s_gap_ok  — dated v_today+1: the vence DAY ITSELF (house rule 'vence-day-valid') — must book.
@@ -225,8 +230,9 @@ begin
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('RC gym-B cliente', '0000000210', 5, v_today + 20, '8 clases', gym_b) returning id into c_b;
 
+  -- +3h, for the same slot-exclusivity reason as the four sessions above: its own instant, still future.
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_starts, 60, 20) returning id into s_deny;
+    values (v_gym, v_ct, v_starts + interval '3 hours', 60, 20) returning id into s_deny;
 
   perform set_config('t.op',      op::text,      true);
   perform set_config('t.staff_b', staff_b::text, true);

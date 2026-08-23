@@ -39,9 +39,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // cancel releases every reservada booking and refunds what it spent, so it reads as reservar_clase /
 // cancelar_reserva's third act; asistencias_unicidad proves the #89 visit-ledger invariants at
 // the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them;
-// class_horizon_autoroll follows scheduling_materialization because it is the same rule seen from the
+// agenda_slot_guards runs directly after scheduling_materialization because it is that file's subject
+// widened by the 2026-08-23 ruling — ONE class per gym per instant, whatever the class type — and it
+// leans on the same create/materialize spine (docs/audits/2026-08-23-agenda-class-duplication-audit.md);
+// class_horizon_autoroll follows those two because it is the same rule seen from the
 // other side — #136's weekly pg_cron pass over the WHOLE fleet, through the shared core that
-// ensure_week_materialized now delegates to; recurring_series_edit closes that trio with the same
+// ensure_week_materialized now delegates to; recurring_series_edit closes that quartet with the same
 // spine seen from the OPERATOR's side — #243's series move and "terminar el horario", the latter of
 // which settles money, which is why it runs after the materialization pair rather than beside them), and
 // then dos_gimnasios_tenant_pin — the two-membership actor (#219), which generalizes the single-gym
@@ -89,6 +92,7 @@ export const SUITE = [
   'plantillas_rules.sql',
   'scheduling_rls_denial.sql',
   'scheduling_materialization.sql',
+  'agenda_slot_guards.sql',
   'class_horizon_autoroll.sql',
   'recurring_series_edit.sql',
   'gym_content_denial.sql',

@@ -1,0 +1,85 @@
+-- Agenda slot exclusivity — the DATABASE BACKSTOP
+-- (docs/audits/2026-08-23-agenda-class-duplication-audit.md, defect family S1).
+--
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════
+-- ⚠ LIVE-APPLY PRECONDITION — THIS FILE IS DELIBERATELY DEFERRED ⚠
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════
+-- Both index builds FAIL against live TODAY. Counted read-only on live 2026-08-23:
+--
+--   schedule_template_slot_uq — 2 violating slots, both in gym `red`:
+--       Lunes 07:15     Upper Body + Cardio HIIT   (2 active rows)
+--       Miércoles 07:15 Abs        + Cardio HIIT   (2 active rows)
+--     Fleet-wide, those are the ONLY two. Every other gym holds at most one active rule per slot.
+--
+--   class_session_gym_starts_uq — 16 violating instants, 32 uncancelled rows:
+--       gym `red`         14 pairs (8 still in the FUTURE, from 2026-07-27 through 2026-09-23) — the
+--                         weekly output of the two template pairs above, one pair per colliding week.
+--       gym `forge-demo`   1 pair, 2026-07-16 01:00Z, already past — a materialized FULL BODY plus a
+--                         hand-created ÚNICA "Testing Classes" on top of it.
+--       gym `red-demo`     1 pair, 2026-07-09 00:00Z, already past — same fingerprint (Open + Fuerza).
+--     The two demo pairs are the audit's mechanism #1 (a one-off hand-created over a materialized
+--     slot) rather than the template collision, and both are historical, so they are a straight
+--     delete/cancel with no member exposure to weigh.
+--
+-- A partial unique index cannot be built over rows that already violate it.
+--
+-- THE ORDER OF OPERATIONS IS THEREFORE:
+--   1. apply the sibling 20260823120000_agenda_slot_guards.sql to live FIRST — it is written to be
+--      safe in the presence of the pairs, it stops NEW ones being minted, and its materializer
+--      occupancy-skip stops the existing pairs re-minting themselves every week;
+--   2. clean the live duplicates by hand (cancel or delete one row of each pair, retire one template
+--      of each colliding slot) — see §4/§5 of the audit for the diagnostics and the member-exposure
+--      check that decides whether a ghost must be CANCELLED before its start to release + refund its
+--      holders, rather than deleted. That check only binds for gym `red`'s 8 future pairs; the other
+--      8 red pairs and both demo pairs are already past, so nothing can be released for them anyway;
+--   3. only then apply THIS file.
+-- Applying it out of that order does no damage — the build simply errors and rolls back — but it
+-- also does not land, so nothing is protected. `if not exists` makes a retry after cleanup a no-op
+-- on anything that already built.
+--
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════
+-- WHAT THESE ENFORCE, AND THE RULING BEHIND IT
+-- ══════════════════════════════════════════════════════════════════════════════════════════════════
+-- ONE class per gym per instant. This REVERSES the multi-room reasoning recorded at
+-- 20260805110000:263-265 ("a gym can genuinely run Yoga and Box in different rooms at 18:00 Lunes"),
+-- by owner ruling 2026-08-23: the product serves single-room class studios, and the room dimension
+-- that sentence assumed was never built — `room_id` is nullable, unread by every scheduling rule, and
+-- keyed into no constraint, capacity check, or occupancy count.
+--
+-- RELAXATION PATH if a genuinely multi-room gym ever signs: add `room_id` to BOTH keys below (and to
+-- the matching guards in 20260823120000). That is a widening, so it ships as a plain expand-only
+-- migration — no data migration, no back-compat problem, nothing here forecloses it.
+--
+-- ── WHY BOTH INDEXES AND NOT JUST THE RPC GUARDS ─────────────────────────────────────────────────
+-- The guards in 20260823120000 are check-then-write: two concurrent calls can both read a free slot
+-- and both insert (the audit's D2 double-submit is exactly this shape, from one operator's two taps).
+-- Only a unique index is atomic. It is also the backstop for every writer that is not an RPC — seeds,
+-- fixtures, and any future migration — which is how the live pairs got there in the first place.
+--
+-- ── WHY PARTIAL, AND ON WHICH PREDICATE ──────────────────────────────────────────────────────────
+-- `where cancelled_at is null` / `where is_active`: a cancelled class and a retired schedule are not
+-- occupants. Re-creating over a cancelled class is a supported desk correction, and replacing a
+-- retired schedule with a fresh one at the same slot is the documented "replace a retired schedule"
+-- path (20260805110000:266-270) — neither may be blocked by its own tombstone.
+--
+-- ── schedule_template_active_uq IS KEPT, NOT DROPPED ─────────────────────────────────────────────
+-- The older (gym_id, class_type_id, weekday, start_time) index from 20260805110000:275 is logically
+-- subsumed by the wider one below, but this migration is expand-only and dropping it buys nothing:
+-- it costs one small partial index and it keeps the same-class refusal path independent of this file
+-- (so 20260823120000's shipped 'Ya existe un horario activo para esta clase…' sentence still has its
+-- own index behind it even before this one lands). Both raise unique_violation, and the RPC handler
+-- catches by SQLSTATE, not by index name — the message is identical whichever fires.
+
+-- ── class_session: one uncancelled class per gym per instant ─────────────────────────────────────
+-- Note this is a strictly WIDER guarantee than the shipped class_session_template_starts_uq
+-- (20260706120000:71), which is keyed on (template_id, starts_at) and therefore never saw a one-off
+-- at all: template_id IS NULL on a hand-created class, and Postgres treats NULLs as distinct. That
+-- hole is audit defect D1, and this closes it.
+create unique index if not exists class_session_gym_starts_uq
+  on public.class_session (gym_id, starts_at)
+  where cancelled_at is null;
+
+-- ── schedule_template: one active schedule per gym per weekday+time, whatever the class ──────────
+create unique index if not exists schedule_template_slot_uq
+  on public.schedule_template (gym_id, weekday, start_time)
+  where is_active;

@@ -98,9 +98,12 @@ begin
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_future, 60, 20) returning id into s_open;
   -- a second FUTURE session m_fin never books — the no-reservation rejection target (future, so the
-  -- raise can only come from the missing-reservation guard, not the before-start one)
+  -- raise can only come from the missing-reservation guard, not the before-start one). An hour after
+  -- s_open rather than at the same instant: since the 2026-08-23 slot-exclusivity ruling
+  -- (20260823120100) one gym holds at most ONE uncancelled class per instant. Nothing here reads the
+  -- hour — only "future" matters — so the vector is unchanged.
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_future, 60, 20) returning id into s_unbooked;
+    values (v_gym, v_ct, v_future + interval '1 hour', 60, 20) returning id into s_unbooked;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, v_past, 60, 20) returning id into s_started;
 
@@ -139,8 +142,9 @@ begin
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('CX gym-B cliente', '0000000206', 5, current_date + 20, '8 clases', gym_b) returning id into c_b;
 
+  -- +2h, same slot-exclusivity reason as s_unbooked above: its own instant, still future.
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
-    values (v_gym, v_ct, v_future, 60, 20) returning id into s_op;
+    values (v_gym, v_ct, v_future + interval '2 hours', 60, 20) returning id into s_op;
 
   -- t_start's booking predates the class starting; t_deny's is the denial bait. Both seeded privileged
   -- with consumio = true, the state reservar_clase leaves behind for a finite booking.

@@ -2,6 +2,7 @@ declare
   v_gym       uuid := public.staff_gym();
   v_starts    timestamptz;
   v_cancelled timestamptz;
+  v_ocupa     text;   
 begin
   if v_gym is null then raise exception 'No autorizado'; end if;
   if not exists (select 1 from public.class_type where id = p_class_type_id and gym_id = v_gym) then
@@ -30,6 +31,22 @@ begin
      and exists (select 1 from public.reservation
                   where class_session_id = p_session_id and status = 'reservada') then
     raise exception 'No se puede mover al futuro una clase que ya pasó con reservas';
+  end if;
+  
+  
+  if p_starts_at is distinct from v_starts then
+    select coalesce(nullif(cs.special_name, ''), ct.name) into v_ocupa
+      from public.class_session cs
+      join public.class_type ct on ct.id = cs.class_type_id
+     where cs.gym_id = v_gym
+       and cs.starts_at = p_starts_at
+       and cs.cancelled_at is null
+       and cs.id <> p_session_id
+     order by cs.created_at, cs.id
+     limit 1;
+    if v_ocupa is not null then
+      raise exception 'Ya existe una clase a esa hora: %', v_ocupa;
+    end if;
   end if;
 
   

@@ -1,5 +1,13 @@
 # Agenda / Class Duplication Audit — 2026-08-23
 
+> **CORRECTED same day — read `2026-08-23-agenda-duplication-verdict.md` first.** Live-DB forensics
+> falsified this audit's ranking: the actual generator is **two coexisting ACTIVE
+> `schedule_template` rows at the same weekday+start_time** (the §1 table's "legal today" case,
+> ranked last here), created 2026-08-04 before the #244 guard existed — and still legal after it,
+> because `schedule_template_active_uq` keys on `class_type_id`. The recommended fix #1 below
+> (NULL-template one-off index) would not have prevented a single live pair. The mechanisms below
+> remain real as *secondary* vectors; the verdict doc records what actually shipped.
+
 **Ticket:** RED staff (Narda) reports every edit of a class duplicates it; creation issues suspected around the recurrence algorithm.
 **Method:** 3 full passes (structure map → deep dives: edit-path forensics / creation+recurrence / concurrency+integrity+test-gaps → adversarial verification + completeness sweep). Analysis only; no code changed. All claims verified against code with file:line; contested claims re-verified by a fresh-context adversarial agent.
 **Live evidence:** screenshot — MIÉ 26 AGO (cron-owned week 1): two identical cards `07:15 · ABS · 45 min · Martin · 0/10`, top one badged **ÚNICA**, second with no badge.

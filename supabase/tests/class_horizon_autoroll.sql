@@ -230,18 +230,45 @@ declare
   d date;
   monday_a date;
   monday_b date;
+  -- Since the 2026-08-23 elapsed-instant skip (20260823120000 §3c) the materializer does not mint an
+  -- instant that has already passed, so "6 weeks per gym" is only true when the current week's own
+  -- instant is still ahead of now(). These are the CALENDAR's answer to "how many of the 6 are still
+  -- future, and which date is the first of them", derived from each gym's own local Monday + weekday +
+  -- start_time — the same arithmetic the materializer uses, but computed from the clock rather than
+  -- read back from its output, so a materializer that skipped an instant it should have written still
+  -- fails every assertion below. The LEDGER still claims all 6 weeks (the skip sits after the claim),
+  -- which is why every schedule_template_week count in this file stays at 6.
+  n_fut_a int;   -- gym A: Lunes 18:00 America/Mexico_City
+  n_fut_b int;   -- gym B: Miércoles 07:00 America/Cancun
+  d_esp_a date;  -- the first still-future gym-A session date
+  d_esp_b date;  -- the first still-future gym-B session date
 begin
   -- Deltas, not absolute counts: on a project where the real job has already fired, cron_run_log is
   -- not empty when this suite starts.
   select count(*) into log_before from public.cron_run_log where job = 'roll-class-horizon';
 
+  monday_a := (now() at time zone 'America/Mexico_City')::date;
+  monday_a := monday_a - ((extract(isodow from monday_a)::int - 1));
+  monday_b := (now() at time zone 'America/Cancun')::date;
+  monday_b := monday_b - ((extract(isodow from monday_b)::int - 1));
+  select count(*)::int, min((monday_a + (i * 7))::date) into n_fut_a, d_esp_a
+    from generate_series(0, 5) as i
+   where (((monday_a + (i * 7)) + time '18:00') at time zone 'America/Mexico_City') > now();
+  select count(*)::int, min((monday_b + (i * 7) + 2)::date) into n_fut_b, d_esp_b
+    from generate_series(0, 5) as i
+   where (((monday_b + (i * 7) + 2) + time '07:00') at time zone 'America/Cancun') > now();
+  -- Weeks 1..5 are always future, so the horizon can never be empty and week 5 is always its last row.
+  if n_fut_a < 5 or n_fut_b < 5 then
+    raise exception 'AUTOROLL FAIL: fixture arithmetic yielded %/% future instants (expected at least 5 each)', n_fut_a, n_fut_b;
+  end if;
+
   summary1 := public.cron_materialize_horizon();
 
-  -- (1) WRITTEN ROWS — 6 weeks per gym, from one call.
+  -- (1) WRITTEN ROWS — every still-future week of the 6, per gym, from one call.
   select count(*) into n from public.class_session where gym_id = gym_a and template_id = tmpl_a;
-  if n <> 6 then raise exception 'AUTOROLL FAIL: gym A got % sessions (expected 6). summary=%', n, summary1; end if;
+  if n <> n_fut_a then raise exception 'AUTOROLL FAIL: gym A got % sessions (expected %). summary=%', n, n_fut_a, summary1; end if;
   select count(*) into n from public.class_session where gym_id = gym_b and template_id = tmpl_b;
-  if n <> 6 then raise exception 'AUTOROLL FAIL: gym B got % sessions (expected 6). summary=%', n, summary1; end if;
+  if n <> n_fut_b then raise exception 'AUTOROLL FAIL: gym B got % sessions (expected %). summary=%', n, n_fut_b, summary1; end if;
 
   -- Every written session carries ITS OWN template's gym_id (the #78 axis: assert the stamp, not the
   -- return value). A cron that leaked gym A's id onto gym B's rows counts 6/6 above and fails here.
@@ -256,7 +283,7 @@ begin
     from public.class_session_coach csc
     join public.class_session cs on cs.id = csc.session_id
    where cs.template_id = tmpl_a and csc.gym_id = gym_a;
-  if n <> 6 then raise exception 'AUTOROLL FAIL: gym A got % coach joins (expected 6)', n; end if;
+  if n <> n_fut_a then raise exception 'AUTOROLL FAIL: gym A got % coach joins (expected %)', n, n_fut_a; end if;
 
   -- The immutable ledger claimed all 6 weeks (this is what makes the re-run in (2) a no-op).
   select count(*) into n from public.schedule_template_week where gym_id = gym_a and template_id = tmpl_a;
@@ -274,15 +301,17 @@ begin
     raise exception 'AUTOROLL FAIL: the logged summary is not the one the run returned (%)', summary1;
   end if;
 
-  -- Horizon shape: starts at the gym's OWN local Monday and spans exactly 5 more weeks (6 weeks, #6).
-  monday_a := (now() at time zone 'America/Mexico_City')::date;
-  monday_a := monday_a - ((extract(isodow from monday_a)::int - 1));
+  -- Horizon shape: it starts at the gym's OWN local Monday — or, once §3c has skipped the already-spent
+  -- weeks of the current one, at the first Monday whose 18:00 is still ahead — and it always runs
+  -- through week 5, so its last day is monday_a + 35 whatever the skip did to its first.
   select min((starts_at at time zone 'America/Mexico_City')::date),
          max((starts_at at time zone 'America/Mexico_City')::date) - min((starts_at at time zone 'America/Mexico_City')::date)
     into d, n
     from public.class_session where template_id = tmpl_a;
-  if d <> monday_a then raise exception 'AUTOROLL FAIL: gym A horizon starts % (expected its local Monday %)', d, monday_a; end if;
-  if n <> 35 then raise exception 'AUTOROLL FAIL: gym A horizon spans % days (expected 35 = 6 weeks)', n; end if;
+  if d <> d_esp_a then raise exception 'AUTOROLL FAIL: gym A horizon starts % (expected its first still-future local Monday %)', d, d_esp_a; end if;
+  if n <> (monday_a + 35) - d_esp_a then
+    raise exception 'AUTOROLL FAIL: gym A horizon spans % days (expected % — through week 5, from %)', n, (monday_a + 35) - d_esp_a, d_esp_a;
+  end if;
 
   -- Each gym's instants respect ITS OWN timezone: the wall clock in the gym's zone must be the
   -- template's start_time on the template's weekday. CDMX and Cancún are one fixed hour apart, so a
@@ -298,10 +327,8 @@ begin
        or extract(isodow from (starts_at at time zone 'America/Cancun'))::int <> 3);
   if n <> 0 then raise exception 'AUTOROLL FAIL: % gym-B session(s) are not Wednesday 07:00 local to America/Cancun', n; end if;
 
-  monday_b := (now() at time zone 'America/Cancun')::date;
-  monday_b := monday_b - ((extract(isodow from monday_b)::int - 1));
   select min((starts_at at time zone 'America/Cancun')::date) into d from public.class_session where template_id = tmpl_b;
-  if d <> monday_b + 2 then raise exception 'AUTOROLL FAIL: gym B horizon starts % (expected its own local week, %)', d, monday_b + 2; end if;
+  if d <> d_esp_b then raise exception 'AUTOROLL FAIL: gym B horizon starts % (expected its own local week, %)', d, d_esp_b; end if;
 
   -- (3) PER-GYM ISOLATION — gym C's garbage timezone cost gym C and nothing else. A and B above
   -- materialized in THIS SAME run, which is the whole point of the per-gym subtransaction.
@@ -338,7 +365,7 @@ begin
     raise exception 'AUTOROLL FAIL: the second run created rows — summary=%', summary2;
   end if;
   select count(*) into n from public.class_session where gym_id in (gym_a, gym_b);
-  if n <> 12 then raise exception 'AUTOROLL FAIL: totals drifted to % after the idempotent re-run (expected 12)', n; end if;
+  if n <> n_fut_a + n_fut_b then raise exception 'AUTOROLL FAIL: totals drifted to % after the idempotent re-run (expected %)', n, n_fut_a + n_fut_b; end if;
   select count(*) into n from public.schedule_template_week where gym_id in (gym_a, gym_b);
   if n <> 12 then raise exception 'AUTOROLL FAIL: ledger drifted to % claims after the idempotent re-run (expected 12)', n; end if;
   -- A run that changed nothing is still a run that HAPPENED — it logs too, and that is the point:
@@ -368,11 +395,19 @@ declare
   cutoff date;
   n int;
   added int;
+  n_fut_e int;   -- gym E: Viernes 12:00 America/Mexico_City, over the five weeks the pass heals
 begin
   monday := (now() at time zone 'America/Mexico_City')::date;
   monday := monday - ((extract(isodow from monday)::int - 1));
   cutoff := (now() at time zone 'UTC')::date;
   cutoff := cutoff - ((extract(isodow from cutoff)::int - 1)) - 14;
+
+  -- How many of gym E's five healed weeks are still in the future (20260823120000 §3c — the elapsed
+  -- skip). Week "+3" is excluded because the fixture claimed its ledger row directly, so the pass never
+  -- materializes it. Gym D's own expectation stays a hard 1: its only unclaimed week is "+5".
+  select count(*)::int into n_fut_e
+    from unnest(array[0, 1, 2, 4, 5]) as w
+   where (((monday + (w * 7) + 4) + time '12:00') at time zone 'America/Mexico_City') > now();
 
   -- STEADY STATE — gym D's ledger was pre-claimed through "+4"; the pass claims exactly ONE more week,
   -- "+5": ledger goes from 6 to 7 rows, a new class_session (+coach join) appears for "+5", and no
@@ -401,11 +436,11 @@ begin
      and week_start in (monday, monday + 7, monday + 14, monday + 28, monday + 35);
   if n <> 5 then raise exception 'FRONTIER FAIL(outage): gym E is missing one or more of "+0","+1","+2","+4","+5" (found % of 5)', n; end if;
   select count(*) into n from public.class_session where gym_id = gym_e and template_id = tmpl_e;
-  if n <> 5 then raise exception 'FRONTIER FAIL(outage): gym E has % new class_session row(s) (expected 5 — every missing week except the pre-claimed "+3")', n; end if;
+  if n <> n_fut_e then raise exception 'FRONTIER FAIL(outage): gym E has % new class_session row(s) (expected % — every still-future missing week except the pre-claimed "+3")', n, n_fut_e; end if;
   select count(*) into n from public.class_session cs
     join public.class_session_coach csc on csc.session_id = cs.id
    where cs.gym_id = gym_e and cs.template_id = tmpl_e;
-  if n <> 5 then raise exception 'FRONTIER FAIL(outage): gym E''s healed sessions have % coach join(s) (expected 5)', n; end if;
+  if n <> n_fut_e then raise exception 'FRONTIER FAIL(outage): gym E''s healed sessions have % coach join(s) (expected %)', n, n_fut_e; end if;
 
   -- PRUNE — the run's DELETE already fired (outside every per-gym subtransaction, once for the whole
   -- table): the row older than cutoff is gone, the boundary row (exactly AT cutoff, "<" not "<=") and
@@ -587,24 +622,36 @@ declare
   fs_after  int;
   v_sess uuid;
   monday_a date;
+  monday_b date;
+  n_fut_a int;   -- see the first block: the still-future half of each gym's 0..5 horizon (§3c)
+  n_fut_b int;
 begin
+  monday_a := (now() at time zone 'America/Mexico_City')::date;
+  monday_a := monday_a - ((extract(isodow from monday_a)::int - 1));
+  monday_b := (now() at time zone 'America/Cancun')::date;
+  monday_b := monday_b - ((extract(isodow from monday_b)::int - 1));
+  select count(*)::int into n_fut_a
+    from generate_series(0, 5) as i
+   where (((monday_a + (i * 7)) + time '18:00') at time zone 'America/Mexico_City') > now();
+  select count(*)::int into n_fut_b
+    from generate_series(0, 5) as i
+   where (((monday_b + (i * 7) + 2) + time '07:00') at time zone 'America/Cancun') > now();
+
   -- (4b) gym B gained nothing from the cross-tenant attempt — neither a session nor a ledger claim.
   select count(*) into n from public.class_session where gym_id = gym_b;
-  if n <> 6 then raise exception 'AUTOROLL FAIL: gym B has % sessions after the cross-tenant attempt (expected 6)', n; end if;
+  if n <> n_fut_b then raise exception 'AUTOROLL FAIL: gym B has % sessions after the cross-tenant attempt (expected %)', n, n_fut_b; end if;
   select count(*) into n from public.schedule_template_week where gym_id = gym_b;
   if n <> 6 then raise exception 'AUTOROLL FAIL: gym B has % ledger claims after the cross-tenant attempt (expected 6)', n; end if;
 
   -- (4c) the staff-created week-6 session is a real row, in gym A, at 18:00 Monday local — the
   -- wrapper still writes through the same core with the same timezone rule.
-  monday_a := (now() at time zone 'America/Mexico_City')::date;
-  monday_a := monday_a - ((extract(isodow from monday_a)::int - 1));
   select count(*) into n from public.class_session
    where gym_id = gym_a and template_id = tmpl_a
      and (starts_at at time zone 'America/Mexico_City')::date = monday_a + 42
      and (starts_at at time zone 'America/Mexico_City')::time = '18:00'::time;
   if n <> 1 then raise exception 'AUTOROLL FAIL: staff week-6 session missing or misplaced (% rows)', n; end if;
   select count(*) into n from public.class_session where gym_id = gym_a;
-  if n <> 7 then raise exception 'AUTOROLL FAIL: gym A has % sessions after the staff top-up (expected 7)', n; end if;
+  if n <> n_fut_a + 1 then raise exception 'AUTOROLL FAIL: gym A has % sessions after the staff top-up (expected %)', n, n_fut_a + 1; end if;
 
   -- (5) The health view: a gym with ZERO future sessions still has a row (that row is the alarm),
   -- and cancelling a future session drops the count by exactly one.

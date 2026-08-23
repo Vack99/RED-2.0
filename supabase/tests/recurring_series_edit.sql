@@ -1024,14 +1024,25 @@ do $$
 declare
   gym_r uuid := current_setting('t.se_gym_r', true)::uuid;
   t4    uuid := current_setting('t.se_t4', true)::uuid;
+  v_tz     text := current_setting('t.se_tz', true);
+  v_monday date := (date_trunc('week', now() at time zone current_setting('t.se_tz', true)))::date;
   v_new uuid; v_n int;
+  v_esp int;   -- how many of the re-created rule's 6 horizon instants are still in the future
 begin
+  -- Since the 2026-08-23 elapsed-instant skip (20260823120000 §3c) the materializer does not mint an
+  -- instant that has already passed, so "6 weeks" holds only while THIS week's Miércoles 18:00 is still
+  -- ahead of now(). Derived from the calendar, not from what the RPC wrote. The three CANCELLED classes
+  -- of the retired t4 at weeks +1/+2/+3 do NOT reduce this: the occupancy skip in the same migration
+  -- keys on `cancelled_at is null`, so a tombstoned class never holds a slot against its replacement.
+  select count(*)::int into v_esp
+    from generate_series(0, 5) as i
+   where (((v_monday + (i * 7) + 2) + time '18:00') at time zone v_tz) > now();
   select count(*) into v_n from public.schedule_template where gym_id = gym_r and is_active;
   if v_n is distinct from 1 then raise exception 'SERIES FAIL(9): gym R has % active template(s) after the re-create (expected 1)', v_n; end if;
   select id into v_new from public.schedule_template where gym_id = gym_r and is_active;
   if v_new is not distinct from t4 then raise exception 'SERIES FAIL(9): the retired template came back to life instead of a new one'; end if;
   select count(*) into v_n from public.class_session where template_id = v_new;
-  if v_n is distinct from 6 then raise exception 'SERIES FAIL(9): the re-created schedule materialized % week(s) (expected 6)', v_n; end if;
+  if v_n is distinct from v_esp then raise exception 'SERIES FAIL(9): the re-created schedule materialized % week(s) (expected %)', v_n, v_esp; end if;
   -- The retired template's own rows stayed cancelled — the re-create did not resurrect them.
   select count(*) into v_n from public.class_session where template_id = t4 and cancelled_at is null;
   if v_n is distinct from 1 then raise exception 'SERIES FAIL(9): % of the retired series'' classes are live (expected only the past one)', v_n; end if;

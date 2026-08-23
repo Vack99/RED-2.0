@@ -80,21 +80,38 @@ declare
   msg text;
   tmpl_count_before int;
   session_count_before int;
+  monday date;
+  esperadas int;               -- how many of the 4 horizon instants are still in the future
 begin
   select timezone into tz from public.gym where id = gym_a;
   today := (now() at time zone tz)::date;
+  monday := today - ((extract(isodow from today)::int - 1));
 
-  -- (1) Recurring create: 2 weekdays (Lun, Mié) × 2-week horizon = 4 sessions, each with 1 coach join,
+  -- (1) Recurring create: 2 weekdays (Lun, Mié) × 2-week horizon = 4 INSTANTS, each with 1 coach join,
   --     from 2 templates — all in one atomic RPC call.
+  --
+  -- HOW MANY OF THOSE 4 ACTUALLY MATERIALIZE depends on the day this suite runs. Since the 2026-08-23
+  -- elapsed-instant skip (20260823120000 §3c) `materialize_week_for_gym` does not mint an instant that
+  -- has already passed — a mid-week create no longer produces phantom classes on the weekdays this week
+  -- has already spent (audit D11). So the expected count is DERIVED from the same clock arithmetic
+  -- rather than hardcoded at 4: on a Monday morning all 4 land, on a Sunday only next week's 2 do. It is
+  -- computed from the CALENDAR, not from the materializer's own output, so a materializer that skipped
+  -- an instant it should have written still fails every assertion below.
   perform public.create_recurring_schedule(ct_a, array[0, 2], '18:00'::time, 45, 24, array[coach_a], 2);
+
+  select count(*)::int into esperadas
+    from generate_series(0, 1) as wk, unnest(array[0, 2]) as wd
+   where (((monday + (wk * 7) + wd) + time '18:00') at time zone tz) > now();
+  -- Next week's two instants are always future, so there is always something to assert on below.
+  if esperadas < 2 then raise exception 'MAT FAIL: fixture arithmetic yielded % future instants (expected at least 2)', esperadas; end if;
 
   select count(*) into n from public.schedule_template where gym_id = gym_a;
   if n <> 2 then raise exception 'MAT FAIL: expected 2 templates, got %', n; end if;
   select count(*) into n from public.class_session where gym_id = gym_a and template_id is not null;
-  if n <> 4 then raise exception 'MAT FAIL: expected 4 materialized sessions (2 weekdays x 2 weeks), got %', n; end if;
+  if n <> esperadas then raise exception 'MAT FAIL: expected % materialized sessions (the future half of 2 weekdays x 2 weeks), got %', esperadas, n; end if;
   select count(*) into n from public.class_session_coach csc
     join public.class_session cs on cs.id = csc.session_id where cs.gym_id = gym_a;
-  if n <> 4 then raise exception 'MAT FAIL: expected 4 coach joins (one per session), got %', n; end if;
+  if n <> esperadas then raise exception 'MAT FAIL: expected % coach joins (one per session), got %', esperadas, n; end if;
 
   -- (2) Idempotency: re-materialize this week and next → 0 new, total still 4.
   added := public.ensure_week_materialized(today);
@@ -102,7 +119,7 @@ begin
   added := public.ensure_week_materialized(today + 7);
   if added <> 0 then raise exception 'MAT FAIL: re-materializing next week created % new sessions (expected 0)', added; end if;
   select count(*) into n from public.class_session where gym_id = gym_a and template_id is not null;
-  if n <> 4 then raise exception 'MAT FAIL: total sessions drifted to % after idempotent re-runs (expected 4)', n; end if;
+  if n <> esperadas then raise exception 'MAT FAIL: total sessions drifted to % after idempotent re-runs (expected %)', n, esperadas; end if;
 
   -- (3) Deactivate the templates → a fresh, un-materialized week yields nothing new.
   update public.schedule_template set is_active = false where gym_id = gym_a;
@@ -110,8 +127,16 @@ begin
   if added <> 0 then raise exception 'MAT FAIL: deactivated templates materialized % new sessions (expected 0)', added; end if;
 
   -- (4) A template edit does NOT reach an existing session (independent rows once written).
-  select id, starts_at into a_session, starts_before
-    from public.class_session where gym_id = gym_a and template_id is not null order by starts_at limit 1;
+  -- Pinned to the LUNES template rather than to `order by starts_at limit 1` over the whole gym: once
+  -- elapsed instants stopped materializing (20260823120000 §3c) the globally-earliest session is the
+  -- Miércoles one on any day after Monday, and vector (6) below asserts a refusal sentence that names
+  -- *Lunes*. The weekday is the fixture's identity here, not the ordinal.
+  select cs.id, cs.starts_at into a_session, starts_before
+    from public.class_session cs
+    join public.schedule_template st on st.id = cs.template_id
+   where cs.gym_id = gym_a and st.weekday = 0
+   order by cs.starts_at limit 1;
+  if a_session is null then raise exception 'MAT FAIL: no Lunes session materialized to edit'; end if;
   select template_id into tmpl from public.class_session where id = a_session;
   update public.schedule_template set start_time = '20:00', is_active = true where id = tmpl;
   select starts_at into starts_after from public.class_session where id = a_session;
@@ -121,9 +146,11 @@ begin
 
   -- (5) A MOVED session is not resurrected (the ADR-0010 holiday move): edit the earliest session
   --     one day later (vacating its original (template_id, starts_at) instant), then re-materialize
-  --     its week — 0 new sessions, total unchanged. a_session is in THIS week (earliest starts_at),
-  --     and its template was re-activated in (4), so a starts_at-keyed guard WOULD regenerate the
-  --     vacated slot here; the immutable per-week guard must not.
+  --     its OWN week — 0 new sessions, total unchanged. Its template was re-activated in (4), so a
+  --     starts_at-keyed guard WOULD regenerate the vacated slot here; the immutable per-week guard
+  --     must not. The re-materialize below targets a_session's own gym-local week rather than `today`'s
+  --     — since §3c a_session is not necessarily in the current week any more, and re-materializing a
+  --     week the vacated slot was never in would prove nothing.
   -- Distinct duration/capacity (60/30, not the created 45/24) so the edit's SET list is actually
   -- proven below — reusing 45/24 would let a dropped `duration_min =`/`capacity =` pass green (#80 AC6).
   perform public.edit_class_session(a_session, ct_a, starts_before + interval '1 day', 60, 30, array[coach_a]);
@@ -145,13 +172,14 @@ begin
   select count(*) into n from public.class_session_coach where session_id = a_session;
   if n <> 1 then raise exception 'MAT FAIL: edit_class_session coach-join replace left % rows (expected 1)', n; end if;
 
-  added := public.ensure_week_materialized(today);
+  added := public.ensure_week_materialized((starts_before at time zone tz)::date);
   if added <> 0 then raise exception 'MAT FAIL: re-materializing after a session move resurrected % session(s) at the vacated slot', added; end if;
   -- Counted over the GYM, not over `template_id is not null`: since #243 slice 1 the moved session is
   -- a one-off, so a provenance filter here would report as drift the very thing the slice ships.
-  -- Nothing but create_recurring_schedule has inserted into this gym, so 4 is still the whole population.
+  -- Nothing but create_recurring_schedule has inserted into this gym, so `esperadas` is still the whole
+  -- population.
   select count(*) into n from public.class_session where gym_id = gym_a;
-  if n <> 4 then raise exception 'MAT FAIL: total sessions drifted to % after the move + re-materialize (expected 4)', n; end if;
+  if n <> esperadas then raise exception 'MAT FAIL: total sessions drifted to % after the move + re-materialize (expected %)', n, esperadas; end if;
 
   -- (6) #244 guard 4 — duplicate-template guard. After (4)/(5) above, gym_a's earliest template
   -- (weekday 0, from the original array[0, 2]) is ACTIVE at (ct_a, Lunes, 20:00) — re-creating that

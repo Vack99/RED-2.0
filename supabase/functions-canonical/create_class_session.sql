@@ -1,6 +1,7 @@
 declare
   v_gym uuid := public.staff_gym();
   v_session uuid;
+  v_ocupa text;   
 begin
   if v_gym is null then raise exception 'No autorizado'; end if;
   if not exists (select 1 from public.class_type where id = p_class_type_id and gym_id = v_gym) then
@@ -12,6 +13,20 @@ begin
   if exists (select 1 from unnest(p_coach_ids) as cid
              where not exists (select 1 from public.coach where id = cid and gym_id = v_gym)) then
     raise exception 'algún coach no pertenece al gimnasio del operador';
+  end if;
+
+  
+  
+  select coalesce(nullif(cs.special_name, ''), ct.name) into v_ocupa
+    from public.class_session cs
+    join public.class_type ct on ct.id = cs.class_type_id
+   where cs.gym_id = v_gym
+     and cs.starts_at = p_starts_at
+     and cs.cancelled_at is null
+   order by cs.created_at, cs.id
+   limit 1;
+  if v_ocupa is not null then
+    raise exception 'Ya existe una clase a esa hora: %', v_ocupa;
   end if;
 
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity, is_special, special_name, room_id)
