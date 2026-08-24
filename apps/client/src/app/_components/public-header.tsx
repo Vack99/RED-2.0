@@ -14,13 +14,13 @@ type Href = ComponentProps<typeof Link>["href"];
  *  sibling marketing pages: Nosotros (#52) and Contacto (#53) land alongside this landing off the same
  *  base, so they are typed `as Route` — Next's sanctioned marker for an intentional cross-slice route
  *  that resolves on assembly (the guard stays live for every co-present route). "Clases" and the
- *  drawer's "Reservar clase" CTA are the booking funnel, so both take `reservar`: always /reservar
- *  (owner ruling — login-first funnel). The guard on /reservar redirects an unauth visitor to
- *  /entrar, which is the one place "Crea tu cuenta" (→ /registro) is offered — registering is never
- *  the first stop. */
-const navPublica = (reservar: Href): { href: Href; label: string; tag?: string }[] => [
+ *  drawer's "Reservar clase" CTA are the booking funnel: always /reservar (owner ruling —
+ *  login-first funnel). The guard on /reservar redirects an unauth visitor to /entrar, which is
+ *  the one place "Crea tu cuenta" (→ /registro) is offered — registering is never the first
+ *  stop. */
+const NAV_PUBLICA: { href: Href; label: string; tag?: string }[] = [
   { href: "/", label: "Inicio" },
-  { href: reservar, label: "Clases", tag: "Hoy" },
+  { href: "/reservar", label: "Clases", tag: "Hoy" },
   { href: "/precios", label: "Precios" },
   { href: "/nosotros" as Route, label: "Nosotros" },
   { href: "/contacto" as Route, label: "Contacto" },
@@ -65,9 +65,6 @@ export function PublicHeader({
 
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
 
-  // After the hooks and after the early return: built once per render, not once per nav item.
-  const reservar: Href = "/reservar";
-  const nav = navPublica(reservar);
 
   return (
     // Fragment, not a wrapper: the drawer + backdrop are SIBLINGS of the header, never nested in it —
@@ -133,7 +130,7 @@ export function PublicHeader({
         </div>
 
         <nav className="flex-1 py-3">
-          {nav.map((item, i) => (
+          {NAV_PUBLICA.map((item, i) => (
             <Link
               key={item.label}
               href={item.href}
@@ -159,7 +156,7 @@ export function PublicHeader({
 
         <div className="border-t border-line px-6 py-6">
           <Link
-            href={reservar}
+            href="/reservar"
             onClick={close}
             className="flex justify-center bg-accent px-5 py-3.5 text-xs font-bold uppercase tracking-[0.16em] text-accent-fg hover:opacity-90"
           >

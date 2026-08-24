@@ -41,7 +41,12 @@ describe("esBorradoTotal", () => {
  *  refresh token is gone server-side (unrecoverable) let the wipe through.
  *  Every other failure — including non-retryable GoTrue 5xx — stays fail-soft. */
 describe("esSesionMuerta", () => {
-  it.each(["refresh_token_not_found", "refresh_token_already_used", "session_not_found"])(
+  it.each([
+    "refresh_token_not_found",
+    "refresh_token_already_used",
+    "session_not_found",
+    "session_expired",
+  ])(
     "is true for the unrecoverable code %s",
     (code) => {
       expect(esSesionMuerta({ code })).toBe(true);

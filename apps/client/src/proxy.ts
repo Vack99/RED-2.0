@@ -22,18 +22,20 @@ export function esBorradoTotal(cookiesToSet: readonly { name: string; value: str
 }
 
 /**
- * GoTrue error codes that mean the refresh token is GONE server-side — revoked by
- * a sign-out on another device, consumed past the reuse interval, or its session
- * row deleted. Only these justify riding auth-js's cookie teardown back to the
- * browser: the session can never recover, and keeping the dead cookie makes every
- * subsequent page load re-fire the whole failed-refresh burst. Everything else
- * (network blip, GoTrue 5xx — non-retryable `AuthApiError`s included) stays
- * fail-soft: suppress the wipe, serve with the cookies the request arrived with.
+ * GoTrue error codes that mean the refresh token is GONE server-side — revoked
+ * (ADR-0016's membership trigger, a manual `auth.sessions` delete, a Pro
+ * time-box/inactivity expiry) or consumed past the rotation reuse interval. Only
+ * these justify riding auth-js's cookie teardown back to the browser: the session
+ * can never recover, and keeping the dead cookie makes every subsequent page load
+ * re-fire the whole failed-refresh burst. Everything else (network blip, GoTrue
+ * 5xx — non-retryable `AuthApiError`s included) stays fail-soft: suppress the
+ * wipe, serve with the cookies the request arrived with.
  */
 const CODIGOS_SESION_MUERTA = new Set([
   "refresh_token_not_found",
   "refresh_token_already_used",
   "session_not_found",
+  "session_expired",
 ]);
 
 export function esSesionMuerta(error: { code?: string } | null | undefined): boolean {
@@ -159,9 +161,12 @@ export async function proxy(request: NextRequest) {
   // effect when the SDK rotates the token. A throw here is NOT fatal: keep
   // serving with the cookies the request arrived with.
   try {
-    const { error } = await supabase.auth.getClaims();
+    const { data, error } = await supabase.auth.getClaims();
     if (borradoPendiente.aplicar) {
-      if (esSesionMuerta(error)) {
+      // No error AND no claims alongside a parked teardown = auth-js discarded a
+      // structurally invalid stored session (`_isValidSession` false → removal
+      // with `error: null`). As unrecoverable as a dead-session code: shed it.
+      if (esSesionMuerta(error) || (!error && !data)) {
         borradoPendiente.aplicar();
       } else {
         console.warn("[proxy] refresh failure suppressed cookie wipe");

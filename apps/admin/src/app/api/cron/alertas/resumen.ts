@@ -10,29 +10,35 @@
  * one `logs` table narrowed by `source`, nested fields read via `log_attributes['<key>']`.
  * This is deliberately NOT the older BigQuery shape (`from auth_logs cross join
  * unnest(metadata)`): the Management API marks `analytics/endpoints/logs.all` deprecated and
- * its successor `analytics/endpoints/logs` documents ClickHouse. Both strings below were run
- * against LIVE (hjppxawglmukfvsgmcog) on 2026-08-21 and each returned `0` — the healthy
- * baseline this alert is calibrated on.
+ * its successor `analytics/endpoints/logs` documents ClickHouse. Both strings were first run
+ * against LIVE (hjppxawglmukfvsgmcog) on 2026-08-21; the auth arm's match and threshold were
+ * recalibrated 2026-08-24 — see (a) below.
  */
 
 /**
- * (a) Auth refresh-token failures in the window. GoTrue writes the OAuth error code into the
- * raw JSON log line, so a substring match over `event_message` catches it wherever in the
- * payload it lands (no schema assumption about which key holds it). Healthy prod is ZERO per
- * 24h — measured 2026-08-21 — which is why the threshold downstream is `> 0` and not a rate.
+ * (a) Auth refresh-token failures in the window. GoTrue writes the failure text into the raw
+ * JSON log line, so a substring match over `event_message` catches it wherever in the payload
+ * it lands (no schema assumption about which key holds it). GoTrue's real refresh-failure
+ * messages share the prefix `Invalid Refresh Token:` ("… Refresh Token Not Found", "… Already
+ * Used"), so one anchored arm covers the family; the 2026-08-21 `invalid_grant`-only match
+ * NEVER fired on live (measured 17 real failures against 0 matches, 2026-08-24) and stays only
+ * for a differently-shaped surface.
  *
- * `invalid_grant` alone never matches a real failure — GoTrue's actual refresh-token error
- * text is `Refresh Token Not Found` and `Already Used`, so the match covers both (2026-08-24
- * fix; `invalid_grant` stays as a third arm in case a differently-shaped error surfaces it).
+ * Recalibrated 2026-08-24: healthy is no longer ZERO. A single dead-session event logs one
+ * BURST — the proxy fans out ~10 parallel refreshes carrying the same dead token before the
+ * shed cookie lands — so the threshold (`UMBRAL_AUTH`) tolerates one isolated burst per window
+ * and pages only on what a burst cannot explain: a systemic session-death regression.
  */
 export const SQL_INVALID_GRANT = `select count(*) as total
 from logs
 where source = 'auth_logs'
   and (
     position(event_message, 'invalid_grant') > 0
-    or position(event_message, 'Refresh Token Not Found') > 0
-    or position(event_message, 'Already Used') > 0
+    or position(event_message, 'Invalid Refresh Token') > 0
   )`;
+
+/** One dead-session event ≈ one proxy fan-out burst (≤~10 lines). Above this = systemic. */
+export const UMBRAL_AUTH = 10;
 
 /**
  * (b) `send-email` hook invocations that did not answer 2xx. `function_edge_logs` is the
@@ -78,7 +84,8 @@ const escaparHtml = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
- * The whole threshold: alert when either count is above zero, or when a query failed.
+ * The whole threshold: alert when auth failures exceed one fan-out burst (`UMBRAL_AUTH`),
+ * when any send-email failure lands, or when a query failed.
  *
  * A failed query counts because a shield that silently stopped looking is the exact failure
  * this cron exists to prevent — an expired PAT would otherwise read as "all clear" forever.
@@ -87,7 +94,8 @@ const escaparHtml = (s: string): string =>
  */
 export function resumirAlerta(conteos: ConteosAlerta, ventana: Ventana): MensajeAlerta | null {
   const { invalidGrant, sendEmailFallos, errores } = conteos;
-  const alertar = (invalidGrant ?? 0) > 0 || (sendEmailFallos ?? 0) > 0 || errores.length > 0;
+  const alertar =
+    (invalidGrant ?? 0) > UMBRAL_AUTH || (sendEmailFallos ?? 0) > 0 || errores.length > 0;
   if (!alertar) return null;
 
   const lineas = [

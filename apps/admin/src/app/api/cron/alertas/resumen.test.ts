@@ -5,6 +5,7 @@ import {
   resumirAlerta,
   SQL_INVALID_GRANT,
   SQL_SEND_EMAIL_FALLOS,
+  UMBRAL_AUTH,
   type ConteosAlerta,
 } from "./resumen";
 
@@ -16,11 +17,15 @@ describe("resumirAlerta", () => {
     expect(resumirAlerta(LIMPIO, VENTANA)).toBeNull();
   });
 
-  it("alerts on a single invalid_grant — healthy prod is zero, so one is signal", () => {
-    const alerta = resumirAlerta({ ...LIMPIO, invalidGrant: 1 }, VENTANA);
+  it("tolerates one dead-session fan-out burst — a single member event is not a page", () => {
+    expect(resumirAlerta({ ...LIMPIO, invalidGrant: UMBRAL_AUTH }, VENTANA)).toBeNull();
+  });
+
+  it("alerts past one burst — what a fan-out cannot explain is systemic", () => {
+    const alerta = resumirAlerta({ ...LIMPIO, invalidGrant: UMBRAL_AUTH + 1 }, VENTANA);
     expect(alerta).not.toBeNull();
-    expect(alerta!.asunto).toContain("invalid_grant 1");
-    expect(alerta!.texto).toContain("invalid_grant (auth_logs): 1");
+    expect(alerta!.asunto).toContain(`invalid_grant ${UMBRAL_AUTH + 1}`);
+    expect(alerta!.texto).toContain(`invalid_grant (auth_logs): ${UMBRAL_AUTH + 1}`);
   });
 
   it("alerts on send-email failures alone", () => {
@@ -40,7 +45,7 @@ describe("resumirAlerta", () => {
   });
 
   it("names the window and the doc to open", () => {
-    const alerta = resumirAlerta({ ...LIMPIO, invalidGrant: 2 }, VENTANA);
+    const alerta = resumirAlerta({ ...LIMPIO, invalidGrant: UMBRAL_AUTH + 5 }, VENTANA);
     expect(alerta!.texto).toContain(`${VENTANA.desde} → ${VENTANA.hasta}`);
     expect(alerta!.texto).toContain(DOC_ANALISIS);
   });

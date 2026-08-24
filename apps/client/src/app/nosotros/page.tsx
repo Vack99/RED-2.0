@@ -88,7 +88,7 @@ export default async function NosotrosPage() {
         )}
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href="/registro"
+            href="/reservar"
             className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
           >
             Empezar ahora
@@ -222,7 +222,7 @@ export default async function NosotrosPage() {
           Tu primera clase no requiere permanencia. Crea tu cuenta y reserva desde el primer día.
         </p>
         <Link
-          href="/registro"
+          href="/reservar"
           className="mt-5 inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
         >
           Empezar ahora

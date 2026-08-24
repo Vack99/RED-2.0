@@ -532,6 +532,8 @@ body {
   color: var(--fg);
   font-family: var(--font-outfit), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
+  /* clip, not hidden: hidden would turn the viewport into a scroll container
+     (breaks position:sticky and iOS momentum scroll). Stops the off-canvas
+     drawer's phantom width enabling side-to-side pan on iOS. */
   overflow-x: clip;
 }

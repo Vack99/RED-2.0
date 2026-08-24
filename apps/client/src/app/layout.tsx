@@ -1,4 +1,4 @@
-import type { Metadata, Viewport } from "next";
+import type { Metadata } from "next";
 import { JetBrains_Mono, Outfit } from "next/font/google";
 
 import { brandCss } from "@gym/brand";
@@ -22,14 +22,10 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-// maximumScale: 1 stops iOS Safari's auto-zoom on input focus (the real fix is 16px form
-// controls; this is the belt-and-suspenders half). Pinch-zoom still works — iOS 10+ ignores
-// user-scalable/maximum-scale for gesture-based zoom — so this does not regress accessibility.
-export const viewport: Viewport = {
-  width: "device-width",
-  initialScale: 1,
-  maximumScale: 1,
-};
+// No viewport export: Next's default (width=device-width, initial-scale=1) is exactly what we
+// want. Never pin `maximumScale` here — Android browsers honor it and it kills pinch-zoom
+// (WCAG 1.4.4; same ruling as apps/admin's layout). iOS's auto-zoom-on-focus is prevented at
+// the root instead: every form control in this app is ≥16px.
 
 // The RED mock's type system (Outfit = UI, JetBrains Mono = data/badges/eyebrows),
 // self-hosted as WOFF2 at build time (CSP-safe — no Google Fonts request at

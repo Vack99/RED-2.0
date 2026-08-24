@@ -53,3 +53,29 @@ Two properties of these settings that change how they should be read: they are e
 - Removing an operator now ends their session. In *this* app the effect is immediate rather than bounded by `jwt_expiry`: the admin proxy calls `supabase.auth.getClaims()` on every request, and on the legacy HS256 signing secret `getClaims()` falls back to a `getUser()` round trip (`GoTrueClient.js`: *"If symmetric algorithm or WebCrypto API is unavailable, fallback to getUser()"*), which returns `session_not_found` once the row is gone → `decideRedirect` sends them to `/entrar`.
 - **That immediacy is contingent, and it is a trap for the pending JWT-signing-keys migration.** Moving to asymmetric signing keys makes `getClaims()` verify locally with no network call, restoring the documented behaviour: *"Access Tokens of revoked sessions remain valid until their expiry time."* Revocation would then take effect within `jwt_expiry` (≤ 1 hour) instead of on the next request. Acceptable, but decide it knowingly.
 - Revocation does not make role removal durable for **members**. `apps/client/src/app/reservar/page.tsx` calls `reclamarCliente` when membership is missing, so a removed member who signs in again re-mints their own `gym_membership(member)` row on the next page load. #217 closed the *cross-tenant* half of that path (auth mail without `redirect_to` no longer mints a link on RED's host); the self-heal at `/reservar` is untouched and needs its own decision. Operator/owner rows are never self-minted, so operator removal *is* durable.
+
+## Amendment 2026-08-24 — sign-out is per-device; the client proxy sheds dead cookies
+
+Trigger: a member (the owner, testing) was asked for their password after a week away. Live
+`auth.sessions` showed the old session row **deleted**, not expired — and the only prod
+mechanism that deletes rows outside §1's trigger was `signOut()`, whose auth-js default is
+`scope: 'global'`: one "cerrar sesión" tap on any device revoked every device.
+
+1. **All `signOut` call sites now pass `{ scope: "local" }`** (4 sites, client + admin).
+   Logout ends *that device's* session server-side; other devices keep theirs. §1's trigger
+   stays global by design — membership removal is exactly the case where every session must die.
+2. **The client proxy's fail-soft wipe suppression is narrowed**: auth-js's cookie teardown now
+   rides when the refresh failure is unrecoverable (`refresh_token_not_found`,
+   `refresh_token_already_used`, `session_not_found`, `session_expired`, or a structurally
+   invalid stored session), so a dead cookie no longer re-fires a doomed refresh burst on every
+   page load. Transient failures (network, GoTrue 5xx) stay suppressed — a blip still never
+   signs a device out.
+3. **Owner ruling on session length: members must stay logged in across multi-week absences**
+   ("the longest period possible"). Current free-tier reality already is the maximum: refresh
+   tokens never expire server-side, the cookie's `maxAge` is 400 days (the browser ceiling),
+   and the realistic bound is iOS Safari's ~30-day website-data eviction, which no config can
+   move. **This re-scopes §3's Pro posture**: Time-box 30d / Inactivity 14d are project-wide
+   Auth settings — one project serves admin *and* member sessions, so enabling them would log
+   members out after two idle weeks, contradicting this ruling. Do not apply §3's table without
+   a decision that weighs the member surface; the front-desk risk it targeted is better served
+   by §1 plus per-device logout.
