@@ -14,10 +14,10 @@ type Href = ComponentProps<typeof Link>["href"];
  *  sibling marketing pages: Nosotros (#52) and Contacto (#53) land alongside this landing off the same
  *  base, so they are typed `as Route` — Next's sanctioned marker for an intentional cross-slice route
  *  that resolves on assembly (the guard stays live for every co-present route). "Clases" and the
- *  drawer's "Reservar clase" CTA are the booking funnel, so both take `reservar`: /registro for a
- *  logged-out prospect (who must register before reserving), /reservar for a signed-in member —
- *  funneling a member with a live session back to the signup form is what made returning members
- *  re-enter credentials they never actually lost. */
+ *  drawer's "Reservar clase" CTA are the booking funnel, so both take `reservar`: always /reservar
+ *  (owner ruling — login-first funnel). The guard on /reservar redirects an unauth visitor to
+ *  /entrar, which is the one place "Crea tu cuenta" (→ /registro) is offered — registering is never
+ *  the first stop. */
 const navPublica = (reservar: Href): { href: Href; label: string; tag?: string }[] => [
   { href: "/", label: "Inicio" },
   { href: reservar, label: "Clases", tag: "Hoy" },
@@ -49,8 +49,8 @@ const RUTAS_SIN_HEADER = new Set(["/entrar", "/registro", "/restablecer"]);
  *
  * `signedIn` (server-resolved via `getClaims()` in the layout — never re-derived here) swaps the
  * top-right "Entrar" link for a members' affordance into `/reservar`, so a returning member isn't
- * offered the sign-in page they already passed (B5) — and it now steers the booking funnel
- * ("Clases" + the drawer CTA) the same way, instead of sending them to /registro.
+ * offered the sign-in page they already passed (B5). The booking funnel itself ("Clases" + the
+ * drawer CTA) is login-first regardless of `signedIn` — both always point at `/reservar`.
  */
 export function PublicHeader({
   logo,
@@ -66,7 +66,7 @@ export function PublicHeader({
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
 
   // After the hooks and after the early return: built once per render, not once per nav item.
-  const reservar: Href = signedIn ? "/reservar" : "/registro";
+  const reservar: Href = "/reservar";
   const nav = navPublica(reservar);
 
   return (

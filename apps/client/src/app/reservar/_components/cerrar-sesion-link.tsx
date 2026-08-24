@@ -25,7 +25,7 @@ export function CerrarSesionLink() {
   async function cerrarSesion() {
     setPending(true);
     setError(null);
-    const { error: signOutError } = await createClient().auth.signOut();
+    const { error: signOutError } = await createClient().auth.signOut({ scope: "local" });
     if (signOutError) {
       setError("No se pudo cerrar sesión. Inténtalo de nuevo.");
       setPending(false);

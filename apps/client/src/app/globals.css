@@ -532,4 +532,6 @@ body {
   color: var(--fg);
   font-family: var(--font-outfit), system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  overflow-x: clip;
 }

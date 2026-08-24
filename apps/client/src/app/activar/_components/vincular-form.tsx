@@ -45,7 +45,7 @@ export function VincularForm({
   async function noSoyYo() {
     setSigningOut(true);
     try {
-      await createClient().auth.signOut();
+      await createClient().auth.signOut({ scope: "local" });
       router.refresh();
     } catch {
       setSigningOut(false);

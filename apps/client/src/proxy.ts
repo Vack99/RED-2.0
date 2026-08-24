@@ -22,6 +22,25 @@ export function esBorradoTotal(cookiesToSet: readonly { name: string; value: str
 }
 
 /**
+ * GoTrue error codes that mean the refresh token is GONE server-side — revoked by
+ * a sign-out on another device, consumed past the reuse interval, or its session
+ * row deleted. Only these justify riding auth-js's cookie teardown back to the
+ * browser: the session can never recover, and keeping the dead cookie makes every
+ * subsequent page load re-fire the whole failed-refresh burst. Everything else
+ * (network blip, GoTrue 5xx — non-retryable `AuthApiError`s included) stays
+ * fail-soft: suppress the wipe, serve with the cookies the request arrived with.
+ */
+const CODIGOS_SESION_MUERTA = new Set([
+  "refresh_token_not_found",
+  "refresh_token_already_used",
+  "session_not_found",
+]);
+
+export function esSesionMuerta(error: { code?: string } | null | undefined): boolean {
+  return CODIGOS_SESION_MUERTA.has(error?.code ?? "");
+}
+
+/**
  * Next 16 request proxy (the `middleware.ts` successor — do NOT reintroduce that
  * name). The client app carries TWO seams:
  *
@@ -57,9 +76,13 @@ export function esBorradoTotal(cookiesToSet: readonly { name: string; value: str
  * `_removeSession()`, which fires `setAll` carrying nothing but deletions
  * (`value: ""` + `maxAge: 0` — `@supabase/ssr`'s `applyServerStorage`); riding those
  * back would drop a member's session over a network blip or a transient GoTrue 500,
- * so `esBorradoTotal` discards that write whole. A `getClaims()` THROW is caught for
- * the same reason: serve the request with the cookies it arrived with rather than
- * 500, and let the page-level gates decide what an unauthenticated render does.
+ * so `esBorradoTotal` parks that write and it is discarded by default. ONE
+ * exception: when `getClaims()` reports a `CODIGOS_SESION_MUERTA` code the token
+ * is gone server-side and no retry can revive it — then the parked teardown rides,
+ * so the device sheds the dead cookie instead of re-firing a doomed refresh on
+ * every load. A `getClaims()` THROW is caught for the fail-soft reason above:
+ * serve the request with the cookies it arrived with rather than 500, and let the
+ * page-level gates decide what an unauthenticated render does.
  *
  * Excluding prefetches from rotation was investigated and REJECTED. Next 16 strips
  * the flight headers (`next-router-prefetch` et al) before the proxy runs, so the
@@ -79,6 +102,11 @@ export async function proxy(request: NextRequest) {
     request: { headers: tenantHeaders(request.headers, tenant) },
   });
 
+  // A parked session teardown (deletions-only `setAll` batch). Applied after
+  // `getClaims()` resolves — and only if the refresh failure is unrecoverable.
+  // (Object wrapper: TS can't see the assignment inside the `setAll` closure.)
+  const borradoPendiente: { aplicar: (() => void) | null } = { aplicar: null };
+
   const supabase = createServerClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
@@ -88,12 +116,21 @@ export async function proxy(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet, headers) {
-          // Deletions-only = a teardown, not a rotation. Drop it whole: leave
-          // both the forwarded request and the response exactly as they are.
+          // Deletions-only = a teardown, not a rotation. Park it; whether it
+          // rides is decided after `getClaims()` reports WHY the refresh failed.
           if (esBorradoTotal(cookiesToSet)) {
-            console.warn("[proxy] refresh failure suppressed cookie wipe");
+            borradoPendiente.aplicar = () => {
+              for (const { name } of cookiesToSet) request.cookies.delete(name);
+              response = NextResponse.next({
+                request: { headers: tenantHeaders(request.headers, tenant) },
+              });
+              for (const { name, value, options } of cookiesToSet)
+                response.cookies.set(name, value, options);
+              for (const [key, value] of Object.entries(headers)) response.headers.set(key, value);
+            };
             return;
           }
+          borradoPendiente.aplicar = null; // a rotation in the same request supersedes a parked teardown
           for (const { name, value } of cookiesToSet) {
             request.cookies.set(name, value);
           }
@@ -118,11 +155,18 @@ export async function proxy(request: NextRequest) {
     },
   );
 
-  // The call itself (result unused) is what triggers the refresh — `setAll`
-  // above fires as a side effect when the SDK rotates the token. A throw here
-  // is NOT fatal: keep serving with the cookies the request arrived with.
+  // The call is what triggers the refresh — `setAll` above fires as a side
+  // effect when the SDK rotates the token. A throw here is NOT fatal: keep
+  // serving with the cookies the request arrived with.
   try {
-    await supabase.auth.getClaims();
+    const { error } = await supabase.auth.getClaims();
+    if (borradoPendiente.aplicar) {
+      if (esSesionMuerta(error)) {
+        borradoPendiente.aplicar();
+      } else {
+        console.warn("[proxy] refresh failure suppressed cookie wipe");
+      }
+    }
   } catch (error) {
     console.warn("[proxy] session refresh failed, serving with existing cookies", error);
   }

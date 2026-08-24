@@ -23,7 +23,7 @@ type TurnstileWindow = typeof window & {
 // rides inline, as the auth forms do).
 const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] transition-colors";
 const INPUT =
-  "w-full border-b bg-transparent py-3 text-[15px] text-fg outline-none transition-colors focus:border-accent";
+  "w-full border-b bg-transparent py-3 text-[16px] text-fg outline-none transition-colors focus:border-accent";
 
 /**
  * The contact-form island — a native `<form action>` over the server action (`useActionState`), plus the

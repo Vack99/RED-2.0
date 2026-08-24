@@ -30,7 +30,7 @@ const ENLACE_INVALIDO =
 // maps it, so it rides inline, as the admin login does).
 const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] transition-colors";
 const INPUT =
-  "w-full border-b bg-transparent py-3 text-[15px] text-fg outline-none transition-colors";
+  "w-full border-b bg-transparent py-3 text-[16px] text-fg outline-none transition-colors";
 
 /**
  * RED-designed member sign-in, brand-neutral (paint via the resolved hero's token
@@ -204,7 +204,7 @@ export function EntrarForm({ enlaceInvalido = false }: { readonly enlaceInvalido
             onChange={(e) => setPassword(e.target.value)}
             onBlur={() => setErrPassword(validarPasswordRequerida(password))}
             placeholder="••••••••"
-            className="min-w-0 flex-1 border-none bg-transparent py-3 text-[15px] text-fg outline-none"
+            className="min-w-0 flex-1 border-none bg-transparent py-3 text-[16px] text-fg outline-none"
           />
           <button
             type="button"

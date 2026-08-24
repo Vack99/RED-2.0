@@ -91,7 +91,7 @@ export function ActivarContrasenaForm({
             onChange={(e) => setPassword(e.target.value)}
             onBlur={() => setErrPassword(validarPasswordNueva(password))}
             placeholder="••••••••"
-            className="min-w-0 flex-1 border-none bg-transparent py-3 text-[15px] text-fg outline-none"
+            className="min-w-0 flex-1 border-none bg-transparent py-3 text-[16px] text-fg outline-none"
           />
           <button
             type="button"
@@ -126,7 +126,7 @@ export function ActivarContrasenaForm({
           onChange={(e) => setConfirmar(e.target.value)}
           onBlur={() => setErrConfirmar(password !== confirmar ? "Las contraseñas no coinciden." : null)}
           placeholder="••••••••"
-          className="w-full border-b bg-transparent py-3 text-[15px] text-fg outline-none transition-colors focus:border-accent"
+          className="w-full border-b bg-transparent py-3 text-[16px] text-fg outline-none transition-colors focus:border-accent"
           style={{ borderColor: errConfirmar ? "var(--red)" : "var(--line-soft)" }}
         />
         {errConfirmar && <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errConfirmar}</p>}

@@ -439,7 +439,7 @@ export function PerfilOverlay({
   async function cerrarSesion() {
     setLogoutPending(true);
     setLogoutError(null);
-    const { error: signOutError } = await createClient().auth.signOut();
+    const { error: signOutError } = await createClient().auth.signOut({ scope: "local" });
     if (signOutError) {
       setLogoutError("No se pudo cerrar sesión. Inténtalo de nuevo.");
       setLogoutPending(false);

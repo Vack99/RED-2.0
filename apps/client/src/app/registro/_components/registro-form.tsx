@@ -28,7 +28,7 @@ type TurnstileWindow = typeof window & {
 // Shared underline-field styling (the mock's `.field`), identical to the entrar screen: uppercase
 // micro-label, a bottom-ruled input that turns accent on focus and the semantic `--red` when invalid.
 const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] text-muted transition-colors group-focus-within:text-accent";
-const INPUT = "w-full border-b bg-transparent py-3 text-[15px] text-fg outline-none transition-colors focus:border-accent";
+const INPUT = "w-full border-b bg-transparent py-3 text-[16px] text-fg outline-none transition-colors focus:border-accent";
 const HELP = "mt-1.5 text-[10.5px] text-muted";
 
 /**
@@ -189,7 +189,7 @@ export function RegistroForm({
               onChange={(e) => setTelefono(e.target.value)}
               onBlur={() => setErrTelefono(validarTelefono(telefono))}
               placeholder="81 1234 5678"
-              className="min-w-0 flex-1 border-none bg-transparent py-3 text-[15px] text-fg outline-none"
+              className="min-w-0 flex-1 border-none bg-transparent py-3 text-[16px] text-fg outline-none"
             />
           </div>
           {errTelefono ? (
@@ -215,7 +215,7 @@ export function RegistroForm({
               onChange={(e) => setPassword(e.target.value)}
               onBlur={() => setErrPassword(validarPasswordNueva(password))}
               placeholder="••••••••"
-              className="min-w-0 flex-1 border-none bg-transparent py-3 text-[15px] text-fg outline-none"
+              className="min-w-0 flex-1 border-none bg-transparent py-3 text-[16px] text-fg outline-none"
             />
             <button
               type="button"

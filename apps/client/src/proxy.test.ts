@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { esBorradoTotal } from "./proxy";
+import { esBorradoTotal, esSesionMuerta } from "./proxy";
 
 /** The proxy's cookie-wipe guard. `setAll` batches come from `@supabase/ssr`'s
  *  `applyServerStorage`, which concatenates the chunk deletions it wants
@@ -34,5 +34,27 @@ describe("esBorradoTotal", () => {
 
   it("is false for an empty batch — no write to suppress, no warning to emit", () => {
     expect(esBorradoTotal([])).toBe(false);
+  });
+});
+
+/** Decides whether a parked teardown rides: only GoTrue codes that mean the
+ *  refresh token is gone server-side (unrecoverable) let the wipe through.
+ *  Every other failure — including non-retryable GoTrue 5xx — stays fail-soft. */
+describe("esSesionMuerta", () => {
+  it.each(["refresh_token_not_found", "refresh_token_already_used", "session_not_found"])(
+    "is true for the unrecoverable code %s",
+    (code) => {
+      expect(esSesionMuerta({ code })).toBe(true);
+    },
+  );
+
+  it("is false for a transient GoTrue failure — the wipe stays suppressed", () => {
+    expect(esSesionMuerta({ code: "unexpected_failure" })).toBe(false);
+  });
+
+  it("is false without an error or without a code", () => {
+    expect(esSesionMuerta(null)).toBe(false);
+    expect(esSesionMuerta(undefined)).toBe(false);
+    expect(esSesionMuerta({})).toBe(false);
   });
 });

@@ -68,7 +68,7 @@ export function RestablecerForm() {
             onChange={(e) => setPassword(e.target.value)}
             onBlur={() => setErrPassword(validarPasswordNueva(password))}
             placeholder="••••••••"
-            className="min-w-0 flex-1 border-none bg-transparent py-3 text-[15px] text-fg outline-none"
+            className="min-w-0 flex-1 border-none bg-transparent py-3 text-[16px] text-fg outline-none"
           />
           <button
             type="button"

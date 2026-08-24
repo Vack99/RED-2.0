@@ -20,11 +20,19 @@
  * raw JSON log line, so a substring match over `event_message` catches it wherever in the
  * payload it lands (no schema assumption about which key holds it). Healthy prod is ZERO per
  * 24h — measured 2026-08-21 — which is why the threshold downstream is `> 0` and not a rate.
+ *
+ * `invalid_grant` alone never matches a real failure — GoTrue's actual refresh-token error
+ * text is `Refresh Token Not Found` and `Already Used`, so the match covers both (2026-08-24
+ * fix; `invalid_grant` stays as a third arm in case a differently-shaped error surfaces it).
  */
 export const SQL_INVALID_GRANT = `select count(*) as total
 from logs
 where source = 'auth_logs'
-  and position(event_message, 'invalid_grant') > 0`;
+  and (
+    position(event_message, 'invalid_grant') > 0
+    or position(event_message, 'Refresh Token Not Found') > 0
+    or position(event_message, 'Already Used') > 0
+  )`;
 
 /**
  * (b) `send-email` hook invocations that did not answer 2xx. `function_edge_logs` is the

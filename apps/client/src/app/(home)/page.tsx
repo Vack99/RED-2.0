@@ -8,8 +8,6 @@ import {
   getMarketingGym,
   getPlanesPublicos,
 } from "@gym/data/server/marketing";
-import { createClient } from "@gym/data/server/supabase";
-
 import { PricingTeaser } from "../_components/pricing-teaser";
 
 export const metadata: Metadata = {
@@ -39,25 +37,13 @@ export default async function Home() {
   const Logo = brands[brandId].logo;
   const { tagline } = brands[brandId].copy;
 
-  // The booking funnel's destination, resolved once for every CTA on this page: a
-  // signed-in member books at /reservar, a prospect registers first. Presentation only
-  // (which affordance to show), never an authz decision — the same `getClaims()` posture
-  // (never `getSession()` — ADR-0001) the root layout uses for the public header and
-  // /legal uses for its "Volver" link.
-  //
-  // 465dcf4 made the header + drawer session-aware but stopped there, so the biggest
-  // button on the landing — and every today-schedule row — still funneled members who
-  // already had a live session into /registro → "¿Ya tienes cuenta? Entrar" → a password
-  // form. That walk is the whole re-login complaint; it is covered by e2e now.
-  //
-  // Claims ride the SAME Promise.all as the gym lookup, so the extra round trip costs no
-  // added latency (the deduping of per-render getClaims calls is deferred item C3).
-  const supabase = await createClient();
-  const [{ data: claims }, gym] = await Promise.all([
-    supabase.auth.getClaims(),
-    slug ? getMarketingGym(slug) : Promise.resolve(null),
-  ]);
-  const reservar = claims?.claims?.sub ? "/reservar" : "/registro";
+  // The booking funnel's destination, for every CTA on this page: always /reservar.
+  // Login-first funnel (owner ruling) — /reservar's guard redirects an unauth visitor to
+  // /entrar, and /entrar is the one place "Crea tu cuenta" (→ /registro) is offered. A
+  // signed-in member goes straight through; a prospect meets the login page first, not a
+  // registration form.
+  const gym = slug ? await getMarketingGym(slug) : null;
+  const reservar = "/reservar";
 
   const [planes, horario] = gym
     ? await Promise.all([

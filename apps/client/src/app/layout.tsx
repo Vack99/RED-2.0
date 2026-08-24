@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { JetBrains_Mono, Outfit } from "next/font/google";
 
 import { brandCss } from "@gym/brand";
@@ -21,6 +21,15 @@ export async function generateMetadata(): Promise<Metadata> {
     description: copy.description,
   };
 }
+
+// maximumScale: 1 stops iOS Safari's auto-zoom on input focus (the real fix is 16px form
+// controls; this is the belt-and-suspenders half). Pinch-zoom still works — iOS 10+ ignores
+// user-scalable/maximum-scale for gesture-based zoom — so this does not regress accessibility.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
 
 // The RED mock's type system (Outfit = UI, JetBrains Mono = data/badges/eyebrows),
 // self-hosted as WOFF2 at build time (CSP-safe — no Google Fonts request at

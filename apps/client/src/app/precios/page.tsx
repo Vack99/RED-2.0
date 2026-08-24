@@ -83,7 +83,7 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
         ))}
       </ul>
       <Link
-        href="/registro"
+        href="/reservar"
         className={`mt-6 inline-flex justify-center rounded-full px-5 py-3 text-sm font-semibold ${
           plan.popular
             ? "bg-accent text-accent-fg hover:opacity-90"
@@ -207,7 +207,7 @@ export default async function PreciosPage() {
         </p>
         <div className="mt-5 flex flex-col items-center gap-3">
           <Link
-            href="/registro"
+            href="/reservar"
             className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
           >
             Empezar ahora

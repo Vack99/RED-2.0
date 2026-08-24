@@ -19,7 +19,7 @@ type TurnstileWindow = typeof window & {
 };
 
 const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] text-muted transition-colors group-focus-within:text-accent";
-const INPUT = "w-full border-b bg-transparent py-3 text-[15px] text-fg outline-none transition-colors focus:border-accent";
+const INPUT = "w-full border-b bg-transparent py-3 text-[16px] text-fg outline-none transition-colors focus:border-accent";
 const HELP = "mt-1.5 text-[10.5px] text-muted";
 
 /**
