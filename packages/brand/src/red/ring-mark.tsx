@@ -24,21 +24,44 @@ import { BODY_GRADIENT, HERO, LETTERS, LETTERS_SHIFT, RING_BOT, RING_GRADIENT, R
 // mark, never both), so its gradient/keyframe ids are plain constants; the chrome
 // mark uses its own ids and cannot collide with them.
 
-/** Base neon glow, shared by the resting mark and the `redBreathe` low-key. */
-const BASE_GLOW =
-  "drop-shadow(0 0 3px #d92b1f) drop-shadow(0 0 8px #b5161c) drop-shadow(0 0 16px #7e0d10)";
+/**
+ * Glow + idle breathe ride on EACH animated element, never on an ancestor: iOS
+ * Safari promotes an animating child into its own tightly-sized compositing
+ * tile and hard-clips an ancestor's `drop-shadow` at that tile's edge — the
+ * ignition rendered as boxed segments until the `forwards` animations settled.
+ * An element's own filter pads its own tile, and the mark's geometry is
+ * disjoint (broken ring, separated letters), so per-element glow composites
+ * the same as the old root-level glow (blur is linear over disjoint alpha).
+ * Same phase everywhere → the breathe still reads as one organism.
+ *
+ * The chains take `u` (user units per CSS px, = viewBox side / rendered size):
+ * a filter length on an element INSIDE the viewBox is a user unit — like
+ * stroke-width — so reproducing N CSS px of bloom needs N × u. The old root
+ * filter lived in the HTML box and took CSS px directly.
+ */
+const baseGlow = (u: number) =>
+  `drop-shadow(0 0 ${3 * u}px #d92b1f) drop-shadow(0 0 ${8 * u}px #b5161c) drop-shadow(0 0 ${16 * u}px #7e0d10)`;
+const peakGlow = (u: number) =>
+  `drop-shadow(0 0 ${4 * u}px #e23a2a) drop-shadow(0 0 ${12 * u}px #c8161c) drop-shadow(0 0 ${22 * u}px #8e0d0f)`;
+
+const BREATHE = "redBreathe 4.2s ease-in-out 2.4s infinite";
+
+/** The HERO viewBox side, for the u above. */
+const HERO_BOX = Number(HERO.viewBox.split(" ")[2]);
 
 /** Each arc draws in from hidden (dashoffset 1410 → 0), staggered top then bottom. */
-const ringStyle = (delay: number): React.CSSProperties => ({
+const ringStyle = (delay: number, glow: string): React.CSSProperties => ({
   strokeDasharray: 1410,
   strokeDashoffset: 1410,
-  animation: `ringDraw .9s cubic-bezier(.45,.05,.35,1) ${delay}s forwards`,
+  filter: glow,
+  animation: `ringDraw .9s cubic-bezier(.45,.05,.35,1) ${delay}s forwards, ${BREATHE}`,
 });
 
 /** Each letter strobes on like a neon tube turning on, staggered R/E/D. */
-const flickStyle = (delay: number): React.CSSProperties => ({
+const flickStyle = (delay: number, glow: string): React.CSSProperties => ({
   opacity: 0,
-  animation: `redFlick .6s ${delay}s forwards`,
+  filter: glow,
+  animation: `redFlick .6s ${delay}s forwards, ${BREATHE}`,
 });
 
 /**
@@ -47,6 +70,7 @@ const flickStyle = (delay: number): React.CSSProperties => ({
  * every animation uses `forwards`, so the collapsed path lands fully-drawn and lit.
  */
 export function RedRingMark({ size = 200 }: { readonly size?: number }) {
+  const u = HERO_BOX / size;
   return (
     <svg
       width={size}
@@ -54,11 +78,10 @@ export function RedRingMark({ size = 200 }: { readonly size?: number }) {
       viewBox={HERO.viewBox}
       role="img"
       aria-label="RED"
-      style={{
-        display: "block",
-        filter: BASE_GLOW,
-        animation: "redBreathe 4.2s ease-in-out 2.4s infinite",
-      }}
+      // overflow visible: child filters render BEFORE the svg viewport clip
+      // (the old root filter applied after it), and the bloom must keep
+      // bleeding past the box — login-hero's stage relies on it.
+      style={{ display: "block", overflow: "visible" }}
     >
       <style>{`
         @keyframes ringDraw { from { stroke-dashoffset: 1410; } to { stroke-dashoffset: 0; } }
@@ -67,8 +90,8 @@ export function RedRingMark({ size = 200 }: { readonly size?: number }) {
           33%{opacity:1} 44%{opacity:.45} 55%{opacity:1} 70%{opacity:.7} 100%{opacity:1}
         }
         @keyframes redBreathe {
-          0%,100% { filter: ${BASE_GLOW}; }
-          50%     { filter: drop-shadow(0 0 4px #e23a2a) drop-shadow(0 0 12px #c8161c) drop-shadow(0 0 22px #8e0d0f); }
+          0%,100% { filter: ${baseGlow(u)}; }
+          50%     { filter: ${peakGlow(u)}; }
         }
       `}</style>
 
@@ -101,12 +124,12 @@ export function RedRingMark({ size = 200 }: { readonly size?: number }) {
 
       {/* stroke-linejoin:round is load-bearing for the R-bowl/leg corners. */}
       <g fill="none" strokeLinejoin="round">
-        <path d={RING_TOP} stroke="url(#ringGrad)" strokeWidth={HERO.ring} strokeLinecap="butt" style={ringStyle(0.15)} />
-        <path d={RING_BOT} stroke="url(#ringGrad)" strokeWidth={HERO.ring} strokeLinecap="butt" style={ringStyle(0.6)} />
+        <path d={RING_TOP} stroke="url(#ringGrad)" strokeWidth={HERO.ring} strokeLinecap="butt" style={ringStyle(0.15, baseGlow(u))} />
+        <path d={RING_BOT} stroke="url(#ringGrad)" strokeWidth={HERO.ring} strokeLinecap="butt" style={ringStyle(0.6, baseGlow(u))} />
 
         <g transform={LETTERS_SHIFT} strokeLinecap="butt">
           {LETTERS.map((letter) => (
-            <g key={letter.cls} style={flickStyle(letter.delay)}>
+            <g key={letter.cls} style={flickStyle(letter.delay, baseGlow(u))}>
               {letter.d.map((d, i) => (
                 <path key={i} d={d} stroke="url(#redBody)" strokeWidth={HERO.letters} />
               ))}
