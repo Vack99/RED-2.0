@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * The shared bottom-sheet confirm (the mock's pconf): a scrim + a slide-up card with a
  * title, body, optional error, and a keep/confirm button pair. Reused wherever a booking
@@ -37,7 +39,13 @@ export function ConfirmSheet({
 }) {
   return (
     <>
-      <button type="button" aria-label="Cerrar" onClick={onCancel} className="absolute inset-0 z-[5] bg-black/60" />
+      <button
+        type="button"
+        aria-label="Cerrar"
+        onClick={onCancel}
+        disabled={pending}
+        className="absolute inset-0 z-[5] bg-black/60"
+      />
       <div
         className={`absolute inset-x-0 bottom-0 z-[6] border-t border-line bg-canvas px-6 pb-8 pt-6${
           roundedTop ? " rounded-t-3xl" : ""
@@ -50,7 +58,8 @@ export function ConfirmSheet({
           <button
             type="button"
             onClick={onCancel}
-            className="flex-1 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted"
+            disabled={pending}
+            className="flex-1 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted disabled:opacity-70"
           >
             {cancelLabel}
           </button>

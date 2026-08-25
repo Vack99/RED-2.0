@@ -236,7 +236,7 @@ function SummarySheet({
   if (veredicto.motivo === "reservada") {
     cta = (
       <>
-        <p className="mb-2.5 text-center text-[11px] text-muted">Ya tienes tu lugar en esta clase.</p>
+        <p className="mb-2.5 text-center text-[11px] text-muted">Ya tienes tu lugar · cancela sin costo hasta el inicio</p>
         <button type="button" onClick={onClose} className="w-full rounded-xl border border-line py-4 text-xs font-bold uppercase tracking-wider text-muted">
           Entendido
         </button>
@@ -475,7 +475,7 @@ export function ReservarSemana({
   const [pending, startTransition] = useTransition();
   const [cancelConfirm, setCancelConfirm] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  const [cancelPending, startCancelTransition] = useTransition();
+  const [cancelPending, setCancelPending] = useState(false);
   const router = useRouter();
   const dia = semana.dias[sel];
 
@@ -515,8 +515,13 @@ export function ReservarSemana({
     if (!sheet) return;
     const { sesion } = sheet;
     setCancelError(null);
-    startCancelTransition(async () => {
-      const res = await cancelarReservaAction(sesion.id);
+    setCancelPending(true);
+    // Plain state, not useTransition: closeSheet()'s slide-down rides a real 300ms
+    // setTimeout, and router.refresh() can start its own transition — nesting that
+    // inside ours would hold the setShown(false) commit hostage to refresh timing,
+    // popping the sheet closed instead of animating it (fix from Opus review).
+    cancelarReservaAction(sesion.id).then((res) => {
+      setCancelPending(false);
       if (res.ok) {
         setCancelConfirm(false);
         closeSheet();
@@ -524,6 +529,11 @@ export function ReservarSemana({
       } else {
         setCancelError(res.error);
       }
+    }).catch(() => {
+      // A transition would auto-reset pending on a rejected action; plain state won't —
+      // without this, a network drop leaves every button (and the scrim) disabled forever.
+      setCancelPending(false);
+      setCancelError("No se pudo cancelar");
     });
   }
 
@@ -633,17 +643,21 @@ export function ReservarSemana({
           </div>
 
           {cancelConfirm && (
-            <ConfirmSheet
-              title="¿Cancelar esta reserva?"
-              body="Liberarás tu lugar. Puedes volver a reservar si hay cupo."
-              error={cancelError}
-              cancelLabel="Conservar lugar"
-              confirmLabel="Sí, cancelar"
-              danger
-              pending={cancelPending}
-              onCancel={() => { setCancelConfirm(false); setCancelError(null); }}
-              onConfirm={cancelarReserva}
-            />
+            <div className="absolute inset-0 mx-auto flex max-w-md justify-center">
+              <ConfirmSheet
+                title="¿Cancelar esta reserva?"
+                body="Liberarás tu lugar. Puedes volver a reservar si hay cupo."
+                error={cancelError}
+                cancelLabel="Conservar lugar"
+                confirmLabel="Sí, cancelar"
+                pendingLabel="Cancelando…"
+                danger
+                roundedTop
+                pending={cancelPending}
+                onCancel={() => { setCancelConfirm(false); setCancelError(null); }}
+                onConfirm={cancelarReserva}
+              />
+            </div>
           )}
         </div>
       )}

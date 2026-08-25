@@ -329,9 +329,8 @@ export function ClaseDetalle({
             </button>
           </>
         ) : veredicto.motivo === "reservada" ? (
-          // The one motivo whose line is surface-specific: this page offers the cancel the
-          // week's sheet does not. `terminada` already outranks it in the verdict, so a
-          // reserved PAST session reads as done here, not cancellable (the RPC agrees).
+          // `terminada` already outranks `reservada` in the verdict, so a reserved PAST
+          // session reads as done here, not cancellable (the RPC agrees).
           <>
             <p className="mb-2.5 text-center text-[11px] text-muted">
               Ya tienes tu lugar · cancela sin costo hasta el inicio
