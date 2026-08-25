@@ -12,6 +12,7 @@ import type {
 } from "@gym/data/server/agenda-miembro";
 import { derivarReservabilidad, type VeredictoReserva } from "@gym/domain/reserva";
 
+import { ConfirmSheet } from "../../_components/confirm-sheet";
 import { CtaVerPlanes } from "../../_components/cta-ver-planes";
 import { descargarIcs } from "../../../lib/ics";
 import {
@@ -21,7 +22,7 @@ import {
   presentarEstadoReserva,
   type TonoReserva,
 } from "../../../lib/reserva-vista";
-import { reservarClaseAction } from "../actions";
+import { cancelarReservaAction, reservarClaseAction } from "../actions";
 import { PerfilOverlay } from "./perfil-overlay";
 
 /**
@@ -201,6 +202,7 @@ function SummarySheet({
   error,
   onBook,
   onClose,
+  onCancelar,
 }: {
   sesion: SesionMiembroDTO;
   /** The ONE booking verdict (@gym/domain/reserva) — the same one the card behind
@@ -213,6 +215,7 @@ function SummarySheet({
   error: string | null;
   onBook: () => void;
   onClose: () => void;
+  onCancelar: () => void;
 }) {
   const badge = badgeDeReserva(veredicto, sesion.estado);
   const nombres = sesion.coaches === "Por asignar" ? [] : sesion.coaches.split(" · ");
@@ -236,6 +239,13 @@ function SummarySheet({
         <p className="mb-2.5 text-center text-[11px] text-muted">Ya tienes tu lugar en esta clase.</p>
         <button type="button" onClick={onClose} className="w-full rounded-xl border border-line py-4 text-xs font-bold uppercase tracking-wider text-muted">
           Entendido
+        </button>
+        <button
+          type="button"
+          onClick={onCancelar}
+          className="mt-2.5 w-full rounded-xl border border-warning/50 py-4 text-xs font-bold uppercase tracking-wider text-warning"
+        >
+          Cancelar reserva
         </button>
       </>
     );
@@ -463,6 +473,9 @@ export function ReservarSemana({
   const [perfilOpen, setPerfilOpen] = useState(perfilInicial);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const [cancelConfirm, setCancelConfirm] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const [cancelPending, startCancelTransition] = useTransition();
   const router = useRouter();
   const dia = semana.dias[sel];
 
@@ -480,6 +493,8 @@ export function ReservarSemana({
   function closeSheet() {
     setShown(false);
     setError(null);
+    setCancelConfirm(false);
+    setCancelError(null);
     setTimeout(() => setSheet(null), 300);
   }
   function book() {
@@ -493,6 +508,21 @@ export function ReservarSemana({
         router.refresh();
       } else {
         setError(res.error);
+      }
+    });
+  }
+  function cancelarReserva() {
+    if (!sheet) return;
+    const { sesion } = sheet;
+    setCancelError(null);
+    startCancelTransition(async () => {
+      const res = await cancelarReservaAction(sesion.id);
+      if (res.ok) {
+        setCancelConfirm(false);
+        closeSheet();
+        router.refresh();
+      } else {
+        setCancelError(res.error);
       }
     });
   }
@@ -597,9 +627,24 @@ export function ReservarSemana({
                 error={error}
                 onBook={book}
                 onClose={closeSheet}
+                onCancelar={() => { setCancelError(null); setCancelConfirm(true); }}
               />
             )}
           </div>
+
+          {cancelConfirm && (
+            <ConfirmSheet
+              title="¿Cancelar esta reserva?"
+              body="Liberarás tu lugar. Puedes volver a reservar si hay cupo."
+              error={cancelError}
+              cancelLabel="Conservar lugar"
+              confirmLabel="Sí, cancelar"
+              danger
+              pending={cancelPending}
+              onCancel={() => { setCancelConfirm(false); setCancelError(null); }}
+              onConfirm={cancelarReserva}
+            />
+          )}
         </div>
       )}
 

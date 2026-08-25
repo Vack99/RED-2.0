@@ -13,6 +13,7 @@ import type {
 } from "@gym/data/server/agenda-miembro";
 
 import { descargarIcs } from "../../../lib/ics";
+import { ConfirmSheet } from "../../_components/confirm-sheet";
 import { cancelarReservaAction } from "../actions";
 
 /**
@@ -179,61 +180,6 @@ function Row({
     <button type="button" onClick={onClick} className={cls}>
       {inner}
     </button>
-  );
-}
-
-/** The shared bottom-sheet confirm (the mock's pconf), reused by cancel-reserva and
- *  cerrar-sesión: a scrim + a slide-up card with a title, body, optional error, and a
- *  keep/confirm button pair. */
-function ConfirmSheet({
-  title,
-  body,
-  error,
-  cancelLabel,
-  confirmLabel,
-  danger,
-  pending,
-  onCancel,
-  onConfirm,
-}: {
-  title: string;
-  body: string;
-  error: string | null;
-  cancelLabel: string;
-  confirmLabel: string;
-  danger?: boolean;
-  pending: boolean;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  return (
-    <>
-      <button type="button" aria-label="Cerrar" onClick={onCancel} className="absolute inset-0 z-[5] bg-black/60" />
-      <div className="absolute inset-x-0 bottom-0 z-[6] border-t border-line bg-canvas px-6 pb-8 pt-6">
-        <h4 className="text-[17px] font-bold text-fg">{title}</h4>
-        <p className="mt-2 text-xs leading-relaxed text-muted">{body}</p>
-        {error && <p className="mt-2.5 text-[11px] font-semibold text-danger">{error}</p>}
-        <div className="mt-4 flex gap-2.5">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex-1 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted"
-          >
-            {cancelLabel}
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={pending}
-            className={`flex-1 rounded-xl py-3.5 text-[11px] font-bold uppercase tracking-wider disabled:opacity-70 ${
-              danger ? "bg-warning text-canvas" : "bg-accent text-accent-fg"
-            }`}
-          >
-            {pending ? "Un momento…" : confirmLabel}
-          </button>
-        </div>
-      </div>
-    </>
   );
 }
 

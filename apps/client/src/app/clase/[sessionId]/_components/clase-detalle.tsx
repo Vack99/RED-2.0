@@ -8,6 +8,7 @@ import type { ClaseDetalleDTO, CoachDetalleDTO } from "@gym/data/server/clase-mi
 import type { SaldoMiembroDTO } from "@gym/data/server/agenda-miembro";
 import { derivarReservabilidad } from "@gym/domain/reserva";
 
+import { ConfirmSheet } from "../../../_components/confirm-sheet";
 import { CtaVerPlanes } from "../../../_components/cta-ver-planes";
 import {
   badgeDeReserva,
@@ -375,36 +376,20 @@ export function ClaseDetalle({
       {/* Cancel confirm sheet */}
       {confirmCancel && (
         <div className="fixed inset-0 z-40 mx-auto flex max-w-md justify-center" role="dialog" aria-modal="true">
-          <button
-            type="button"
-            aria-label="Cerrar"
-            onClick={() => { setConfirmCancel(false); setError(null); }}
-            className="absolute inset-0 bg-black/60"
+          <ConfirmSheet
+            title="¿Cancelar tu lugar?"
+            body="Liberarás tu lugar para esta clase. Puedes volver a reservar si hay cupo."
+            error={error}
+            cancelLabel="Conservar lugar"
+            confirmLabel="Sí, cancelar"
+            pendingLabel="Cancelando…"
+            danger
+            dangerTone="ink"
+            roundedTop
+            pending={pending}
+            onCancel={() => { setConfirmCancel(false); setError(null); }}
+            onConfirm={cancel}
           />
-          <div className="absolute inset-x-0 bottom-0 mx-auto max-w-md rounded-t-3xl border-t border-line bg-canvas px-6 pb-8 pt-6">
-            <h4 className="text-[17px] font-bold text-fg">¿Cancelar tu lugar?</h4>
-            <p className="mt-2 text-xs leading-relaxed text-muted">
-              Liberarás tu lugar para esta clase. Puedes volver a reservar si hay cupo.
-            </p>
-            {error && <p className="mt-2.5 text-[11px] font-semibold text-danger">{error}</p>}
-            <div className="mt-4 flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => { setConfirmCancel(false); setError(null); }}
-                className="flex-1 rounded-xl border border-line py-3.5 text-[11px] font-bold uppercase tracking-wider text-muted"
-              >
-                Conservar lugar
-              </button>
-              <button
-                type="button"
-                onClick={cancel}
-                disabled={pending}
-                className="flex-1 rounded-xl bg-warning py-3.5 text-[11px] font-bold uppercase tracking-wider text-ink disabled:opacity-70"
-              >
-                {pending ? "Cancelando…" : "Sí, cancelar"}
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </main>
