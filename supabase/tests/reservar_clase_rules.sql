@@ -831,5 +831,105 @@ begin
   if v_n <> 0 then raise exception 'DENIAL FAIL: % reservation row(s) written for the gym-B cliente', v_n; end if;
 end $$;
 
+-- ════════════════════════════════════════════════════════════════════════════════
+-- THE GYM SWITCH (2026-08-26): gym.booking_enabled = false refuses BOTH identity paths.
+-- ════════════════════════════════════════════════════════════════════════════════
+-- A class-only gym (forge) takes no member bookings at all — every call that lands there took a
+-- HOLD against a balance nobody was watching. The switch closes the door at the gym, so it must
+-- refuse the member self path AND the operator path alike (#235's rule stands: no staff override),
+-- and it must write NOTHING: no reservation row, no decrement, on either arm.
+--
+-- Runs LAST and toggles the suite's own gym, so no vector above sees the flipped state. It is
+-- flipped BACK at the end and a booking is made through the same session — the counter-vector that
+-- proves the two refusals came from the switch and not from some other gate closing on s_deny.
+do $$
+begin
+  update public.gym set booking_enabled = false where id = current_setting('t.gym', true)::uuid;
+end $$;
+
+-- (i) the MEMBER self path
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_fin', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare s_deny uuid := current_setting('t.s_deny', true)::uuid; v_msg text;
+begin
+  v_msg := null;
+  begin perform public.reservar_clase(s_deny); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Reservas deshabilitadas%' then
+    raise exception 'RULE FAIL(switch member): a booking landed in a gym with booking_enabled=false — got % (expected Reservas deshabilitadas)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- (ii) the OPERATOR path — same gym, same refusal. An operator blocked is an operator who marks
+-- the roster instead; a staff override here would reopen exactly the door the switch closes.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  v_msg text;
+begin
+  v_msg := null;
+  begin perform public.reservar_clase(s_deny, t_deny); exception when others then v_msg := sqlerrm; end;
+  if v_msg is null or v_msg not like 'Reservas deshabilitadas%' then
+    raise exception 'RULE FAIL(switch operator): staff booked into a gym with booking_enabled=false — got % (expected Reservas deshabilitadas)', v_msg;
+  end if;
+end $$;
+reset role;
+
+-- The WRITTEN state of both refusals, read privileged (under RLS neither denied caller can see the
+-- rows they failed to write, so "0 rows" measured as them would be vacuously true) — then the
+-- switch back on, and the same booking succeeding through the same session.
+do $$
+declare
+  v_gym  uuid := current_setting('t.gym', true)::uuid;
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  c_fin  uuid := current_setting('t.c_fin', true)::uuid;
+  v_n int; v_clases int;
+begin
+  select count(*) into v_n from public.reservation where class_session_id = s_deny;
+  if v_n <> 0 then raise exception 'RULE FAIL(switch): % reservation row(s) landed while the switch was off', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_deny;
+  if v_clases <> 5 then raise exception 'RULE FAIL(switch): the refused target''s balance moved to % (expected untouched 5)', v_clases; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_fin;
+  if v_clases <> 3 then raise exception 'RULE FAIL(switch): the refused member''s balance moved to % (expected untouched 3)', v_clases; end if;
+
+  -- COUNTER-VECTOR: flip it back and the very same operator booking goes through, writing the
+  -- ordinary row — so the refusals above are the switch, not a second gate on this session.
+  update public.gym set booking_enabled = true where id = v_gym;
+end $$;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+begin
+  perform public.reservar_clase(s_deny, t_deny);
+end $$;
+reset role;
+
+do $$
+declare
+  s_deny uuid := current_setting('t.s_deny', true)::uuid;
+  t_deny uuid := current_setting('t.t_deny', true)::uuid;
+  v_status text; v_consumio boolean; v_walk boolean; v_clases int;
+begin
+  select status, consumio, is_walk_in into v_status, v_consumio, v_walk
+    from public.reservation where class_session_id = s_deny and member_id = t_deny;
+  if v_status is distinct from 'reservada' then raise exception 'RULE FAIL(switch back on): status % (expected reservada)', v_status; end if;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(switch back on): consumio % (expected true)', v_consumio; end if;
+  if v_walk is distinct from false then raise exception 'RULE FAIL(switch back on): a phone booking was flagged is_walk_in'; end if;
+  select clases_restantes into v_clases from public.clientes where id = t_deny;
+  if v_clases <> 4 then raise exception 'RULE FAIL(switch back on): balance % (expected the single consume to 4)', v_clases; end if;
+end $$;
+
 select 'reservar_clase rules: OK' as result;
 rollback;

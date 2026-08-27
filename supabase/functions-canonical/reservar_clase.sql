@@ -8,6 +8,7 @@ declare
   v_clases    int;
   v_vence     date;
   v_tz        text;
+  v_reservas  boolean;              
   v_hoy       date;
   v_sesion_fecha date;              
   v_active    int;
@@ -43,9 +44,6 @@ begin
   if p_cliente_id is null then
     
     
-    
-    
-    
     select c.id, c.clases_restantes, c.vence into v_member, v_clases, v_vence
       from public.clientes c where c.auth_user_id = v_uid and c.gym_id = v_gym;
     if not found then
@@ -56,13 +54,9 @@ begin
     
     
     
-    
-    
     if not public.is_staff_of(v_gym) then
       raise exception 'No autorizado';
     end if;
-    
-    
     
     select c.id, c.clases_restantes, c.vence into v_member, v_clases, v_vence
       from public.clientes c where c.id = p_cliente_id and c.gym_id = v_gym;
@@ -72,17 +66,22 @@ begin
   end if;
 
   
+  select timezone, booking_enabled into v_tz, v_reservas from public.gym where id = v_gym;
+
+  
+  
+  if not v_reservas then
+    raise exception 'Reservas deshabilitadas';
+  end if;
+
   
   
   
-  select timezone into v_tz from public.gym where id = v_gym;
   v_hoy := (now() at time zone v_tz)::date;
   if v_vence is not null and v_vence < v_hoy then
     raise exception 'Paquete vencido';
   end if;
 
-  
-  
   
   
   
@@ -99,7 +98,6 @@ begin
 
   
   
-  
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(p_session_id::text));
 
   
@@ -110,7 +108,6 @@ begin
     raise exception 'Ya reservaste esta clase';
   end if;
 
-  
   
   
   select coalesce((select activos from public.contar_reservas_activas_miembro(array[p_session_id])), 0)
@@ -135,11 +132,6 @@ begin
   
   
   
-  
-  
-  
-  
-  
   if v_clases is not null then
     update public.clientes set clases_restantes = clientes.clases_restantes - 1
      where id = v_member and clientes.clases_restantes > 0
@@ -150,8 +142,6 @@ begin
     v_consumio := true;   
   end if;
 
-  
-  
   
   
   update public.reservation set consumio = v_consumio where id = v_res_id;

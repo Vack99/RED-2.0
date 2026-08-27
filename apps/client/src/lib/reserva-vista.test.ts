@@ -16,7 +16,12 @@ import {
  * engine would not produce.
  */
 
-const CON_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: false };
+const CON_CLASES: SaldoSocio = {
+  ilimitado: false,
+  clasesRestantes: 5,
+  vencido: false,
+  reservasHabilitadas: true,
+};
 
 function vista(p: Partial<HechosReserva>, disponibles: number) {
   return presentarEstadoReserva(
@@ -104,8 +109,19 @@ describe("presentarEstadoReserva", () => {
   // refused both — a green "Reservar" it retracted one tap later. Same saldo, same RPC
   // refusal, same lock.
   it("sin_clases → the same dimmed lock as vencido, never a green 'Reservar'", () => {
-    const v = vista({ saldo: { ilimitado: false, clasesRestantes: 0, vencido: false } }, 12);
+    const v = vista({ saldo: { ...CON_CLASES, clasesRestantes: 0 } }, 12);
     expect(v.cta).toBe("Sin clases");
+    expect(v.reservable).toBe(false);
+    expect(v.atenuada).toBe(true);
+    expect(v.tono).toBe("finished");
+  });
+
+  // gym.booking_enabled = false (the class-only gym): the card still shows the class so a member
+  // can read the schedule, but never offers a spot `reservar_clase` would refuse outright.
+  it("deshabilitada → the same dimmed lock, labelled 'Sin reserva'", () => {
+    const v = vista({ saldo: { ...CON_CLASES, reservasHabilitadas: false } }, 12);
+    expect(v.cta).toBe("Sin reserva");
+    expect(v.unidad).toBe("sin reserva");
     expect(v.reservable).toBe(false);
     expect(v.atenuada).toBe(true);
     expect(v.tono).toBe("finished");
@@ -160,7 +176,7 @@ describe("badgeDeReserva", () => {
 
   it("a member-side lock never renames the class — a seat is still 'Disponible'", () => {
     expect(badge({ saldo: { ...CON_CLASES, vencido: true } }).texto).toBe("Disponible");
-    expect(badge({ saldo: { ilimitado: false, clasesRestantes: 0, vencido: false } }).texto).toBe(
+    expect(badge({ saldo: { ...CON_CLASES, clasesRestantes: 0 } }).texto).toBe(
       "Disponible",
     );
   });
@@ -208,5 +224,6 @@ describe("LINEA_BLOQUEO", () => {
     expect(LINEA_BLOQUEO.llena).toBe("Clase llena. No hay lugares disponibles.");
     expect(LINEA_BLOQUEO.vencido).toContain("Tu paquete venció");
     expect(LINEA_BLOQUEO.sin_clases).toContain("No te quedan clases");
+    expect(LINEA_BLOQUEO.deshabilitada).toContain("no toma reservas");
   });
 });

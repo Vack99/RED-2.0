@@ -35,6 +35,10 @@ beforeEach(() => setHostGym(null));
 
 const TZ = "America/Chihuahua"; // UTC-6, DST-free in 2026
 
+/** The signed-in member every fake read runs as — the `sub` claim the readers pin their own
+ *  `clientes` row to. A fixture spells "somebody else's row" by seeding a DIFFERENT auth_user_id. */
+const AUTH_UID = "auth-socio";
+
 // A week safely in the PAST relative to any test-run date → every session resolves
 // deterministically to "termino".
 const LUNES_PASADO = new Date(2020, 5, 15); // Mon 15 jun 2020
@@ -121,9 +125,23 @@ function makeFake(
   const membership =
     rows.gym_membership === undefined ? [{ gym_id: "gym-1" }] : rows.gym_membership;
 
-  const gyms =
+  // `booking_enabled` defaults ON (the column's own default) so every existing fixture keeps its
+  // bookable week; a fixture that seeds `gym` can flip it to prove the class-only gym's surfaces.
+  const gyms: Record<string, unknown>[] = (
     rows.gym ??
-    [{ id: "gym-1", slug: "gym-1", timezone: rows.gymTimezone ?? TZ, brand_name: rows.marca ?? "RED" }];
+    [{ id: "gym-1", slug: "gym-1", timezone: rows.gymTimezone ?? TZ, brand_name: rows.marca ?? "RED" }]
+  ).map((g) => ({ booking_enabled: true, ...g }));
+
+  // Every clientes fixture is the SIGNED-IN member's own row unless it says otherwise: the readers
+  // now pin their clientes read to `auth_user_id` (a staff-who-is-member otherwise read an arbitrary
+  // row through the staff policy), so the fake stamps the caller's uid and a stable id. A fixture
+  // that seeds `auth_user_id`/`id` explicitly overrides both — that is how "somebody else's row" is
+  // spelled.
+  const clientes = (rows.clientes ?? []).map((c, i) => ({
+    id: `cli-${i}`,
+    auth_user_id: AUTH_UID,
+    ...c,
+  }));
 
   // resolverMiembroGym now reads gym_membership with an embedded `gym(...)` FK join (one
   // request, perf) instead of a separate `gym` query — PostgREST returns that embed as a
@@ -135,16 +153,21 @@ function makeFake(
   // (one request, perf) instead of a separate class_session query — same embed-shape convention
   // as gym_membership → gym above, so the fake pre-joins here too.
   const sesionesById = new Map((rows.class_session ?? []).map((s) => [s.id as string, s]));
+  // …and, for the same reason, a reservation belongs to the signed-in member's own cliente row
+  // unless the fixture names another `member_id`: the próximas-reservas read is now pinned to it.
   const reservationWithSesion = (rows.reservation ?? []).map((r) => ({
+    member_id: clientes[0]?.id,
     ...r,
     class_session: sesionesById.get(r.class_session_id as string) ?? null,
   }));
 
   const client = {
+    auth: { getClaims: async () => ({ data: { claims: { sub: AUTH_UID } } }) },
     from: (table: string) => {
       const erroring = errorTables.includes(table);
       if (table === "gym_membership") return builder(membershipWithGym, erroring);
       if (table === "gym") return builder(gyms, erroring);
+      if (table === "clientes") return builder(clientes, erroring);
       if (table === "reservation") return builder(reservationWithSesion, erroring);
       return builder((rows as Record<string, Record<string, unknown>[]>)[table] ?? [], erroring);
     },
@@ -423,27 +446,27 @@ describe("getEsMiembro", () => {
 describe("getSaldoMiembro", () => {
   it("reads a finite balance from the member's own cliente row", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: 7 }] }));
-    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7, vencido: false });
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7, vencido: false, reservasHabilitadas: true });
   });
 
   it("reports ilimitado when clases_restantes is null", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: null }] }));
-    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null, vencido: false });
+    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null, vencido: false, reservasHabilitadas: true });
   });
 
   it("defaults safely to a zero finite balance when no cliente row exists", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [] }));
-    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0, vencido: false });
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 0, vencido: false, reservasHabilitadas: true });
   });
 
   it("flags vencido when vence is in the past — mirrors the reservar_clase gate (#118 E4)", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: 7, vence: "2020-01-01" }] }));
-    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7, vencido: true });
+    expect(saldo).toEqual({ ilimitado: false, clasesRestantes: 7, vencido: true, reservasHabilitadas: true });
   });
 
   it("flags vencido for an expired ILIMITADO too (the server blocks ∞ on a lapsed vigencia)", async () => {
     const saldo = await getSaldoMiembro(makeFake({ clientes: [{ gym_id: "gym-1", clases_restantes: null, vence: "2020-01-01" }] }));
-    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null, vencido: true });
+    expect(saldo).toEqual({ ilimitado: true, clasesRestantes: null, vencido: true, reservasHabilitadas: true });
   });
 
   it("PROPAGATES a transient clientes read error (the balance is load-bearing, never a silent 0)", async () => {
@@ -570,7 +593,9 @@ describe("getPerfilResumenMiembro — reservas (fetchProximasReservas embedded j
       { class_session_id: "cancelada", status: "reservada", gym_id: "gym-1" },
       { class_session_id: "pasada", status: "reservada", gym_id: "gym-1" },
     ],
-    clientes: [],
+    // The signed-in member's own cliente row: `member_id` is what the read is scoped to now, and
+    // the fake stamps every reservation above with this row's id.
+    clientes: [{ gym_id: "gym-1" }],
   });
 
   it("excludes a cancelled session and an already-started session, dedupes, and sorts soonest first", async () => {
@@ -592,6 +617,88 @@ describe("getPerfilResumenMiembro — reservas (fetchProximasReservas embedded j
     r.reservation!.push({ class_session_id: "otro-gym-sesion", status: "reservada", gym_id: "gym-2" });
     const perfil = await getPerfilResumenMiembro(makeFake(r));
     expect(perfil.reservas.map((x) => x.sessionId)).not.toContain("otro-gym-sesion");
+  });
+
+  // 2026-08-26 drift audit: the read filtered on gym_id + status and trusted RLS for the rest. The
+  // staff SELECT policy ORs in, so an operator who is also a member read the WHOLE gym's upcoming
+  // bookings as their own "Próximas reservas". Same gym, same status — only member_id separates them.
+  it("excludes ANOTHER member's booking in the SAME gym (scoped to the member's own cliente row)", async () => {
+    const r = rows();
+    r.class_session!.push({ id: "de-otro-socio", class_type_id: "ct1", starts_at: iso(LUNES_FUTURO, "07:00"), duration_min: 45, cancelled_at: null });
+    r.reservation!.push({ class_session_id: "de-otro-socio", status: "reservada", gym_id: "gym-1", member_id: "cli-otro" });
+    const perfil = await getPerfilResumenMiembro(makeFake(r));
+    expect(perfil.reservas.map((x) => x.sessionId)).not.toContain("de-otro-socio");
+    expect(perfil.reservas.map((x) => x.sessionId)).toEqual(["prox2", "prox1"]);
+  });
+});
+
+/**
+ * The signed-in caller's OWN clientes row (2026-08-26 drift audit). The shared read was
+ * `gym_id + limit(1)`, which is only "the member's own row" while the member policy is the ONLY
+ * one that matches — a staff-who-is-member has the staff policy ORed in and read an arbitrary
+ * cliente of the gym: their name, their balance, their favourite. The `auth_user_id` pin makes
+ * the row the caller's own by construction, and every consumer of the shared read inherits it.
+ */
+describe("fetchClienteRow — pinned to the signed-in member (staff-roulette)", () => {
+  // Two rows in ONE gym, the caller's second so a `limit(1)` would return the other one.
+  const dosSocios = (): Rows => ({
+    clientes: [
+      { gym_id: "gym-1", nombre: "Otro socio", clases_restantes: 99, auth_user_id: "auth-otro", id: "cli-otro" },
+      { gym_id: "gym-1", nombre: "Yo", clases_restantes: 3 },
+    ],
+    reservation: [],
+  });
+
+  it("reads the caller's own balance, never the first readable row in the gym", async () => {
+    expect(await getSaldoMiembro(makeFake(dosSocios()))).toEqual({
+      ilimitado: false,
+      clasesRestantes: 3,
+      vencido: false,
+      reservasHabilitadas: true,
+    });
+  });
+
+  it("reads the caller's own nombre, never the first readable row in the gym", async () => {
+    expect((await getPerfilResumenMiembro(makeFake(dosSocios()))).nombre).toBe("Yo");
+  });
+
+  it("reads nothing at all for a caller with no clientes row of their own in this gym", async () => {
+    const soloOtro = (): Rows => ({
+      clientes: [{ gym_id: "gym-1", nombre: "Otro socio", clases_restantes: 99, auth_user_id: "auth-otro" }],
+      reservation: [],
+    });
+    expect(await getSaldoMiembro(makeFake(soloOtro()))).toEqual({
+      ilimitado: false,
+      clasesRestantes: 0,
+      vencido: false,
+      reservasHabilitadas: true,
+    });
+    expect((await getPerfilResumenMiembro(makeFake(soloOtro()))).nombre).toBe("");
+  });
+});
+
+/**
+ * gym.booking_enabled → SaldoMiembroDTO.reservasHabilitadas (forge containment). A class-only gym
+ * takes no member bookings at all: `reservar_clase` refuses every call, so the saldo carries the
+ * gym's answer and `derivarReservabilidad` locks the CTA before the tap.
+ */
+describe("getSaldoMiembro — the gym's booking switch", () => {
+  const conSwitch = (booking: boolean): Rows => ({
+    gym: [{ id: "gym-1", slug: "gym-1", timezone: TZ, brand_name: "Forge", booking_enabled: booking }],
+    clientes: [{ gym_id: "gym-1", clases_restantes: 7 }],
+  });
+
+  it("carries booking_enabled=false through from the member's own gym", async () => {
+    expect((await getSaldoMiembro(makeFake(conSwitch(false)))).reservasHabilitadas).toBe(false);
+  });
+
+  it("carries booking_enabled=true through (the column default — every other gym)", async () => {
+    expect((await getSaldoMiembro(makeFake(conSwitch(true)))).reservasHabilitadas).toBe(true);
+  });
+
+  it("still reports the switch when the caller has no clientes row in that gym", async () => {
+    const sinCliente = { ...conSwitch(false), clientes: [] };
+    expect((await getSaldoMiembro(makeFake(sinCliente))).reservasHabilitadas).toBe(false);
   });
 });
 
@@ -710,21 +817,21 @@ describe("getSaldoMiembro — host-tenant reconciliation (#74)", () => {
 
   it("host match → the balance of the host gym's clientes row (red → 8)", async () => {
     setHostGym("red");
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 8, vencido: false });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 8, vencido: false, reservasHabilitadas: true });
   });
 
   it("host match → the other gym's row when that gym is the host (forge → 3)", async () => {
     setHostGym("forge");
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false, reservasHabilitadas: true });
   });
 
   it("no host tenant → deterministic fallback to the OLDEST membership's row (forge → 3)", async () => {
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false, reservasHabilitadas: true });
   });
 
   it("host names a gym the caller is NOT a member of → same oldest-membership fallback (forge → 3)", async () => {
     setHostGym("otro-gym");
-    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false });
+    expect(await getSaldoMiembro(makeFake(dosGimnasios()))).toEqual({ ilimitado: false, clasesRestantes: 3, vencido: false, reservasHabilitadas: true });
   });
 });
 

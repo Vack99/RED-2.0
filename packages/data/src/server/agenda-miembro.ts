@@ -107,6 +107,11 @@ export interface SaldoMiembroDTO {
    *  server gate, which raises "Paquete vencido" for finite AND ilimitado alike — so the CTA
    *  must pre-empt the doomed button instead of dead-ending in the RPC (#118 E4). */
   vencido: boolean;
+  /** The GYM takes member bookings at all (`gym.booking_enabled`). False for a class-only gym whose
+   *  attendance is roster-marked: `reservar_clase` refuses every call there ('Reservas
+   *  deshabilitadas'), so the CTA must pre-empt it — the same pre-emption `vencido` performs, and it
+   *  rides this DTO for the same reason (both booking surfaces already hold it). */
+  reservasHabilitadas: boolean;
 }
 
 interface SesionMiembroRaw {
@@ -226,6 +231,8 @@ async function fetchSesionesMiembro(
 }
 
 interface ClienteRow {
+  /** The row's own id — the `reservation.member_id` every booking of this member carries. */
+  id: string;
   nombre: string;
   clases_restantes: number | null;
   vence: string | null;
@@ -246,15 +253,30 @@ interface ClienteRow {
  *  load-bearing; a silent 0 would be wrong), while the perfil header and the favorita flag are
  *  best-effort (a swallowed error degrades to "no date" / "not a favorite", never a crash). The
  *  shared query keeps the single round trip; the caller decides throw-vs-swallow. `data` is `null`
- *  when the caller has no cliente row in this gym. */
+ *  when the caller has no cliente row in this gym.
+ *
+ *  IDENTITY IS AN EXPLICIT PREDICATE, not an inference from RLS (2026-08-26 drift audit). The read
+ *  used to be `gym_id + limit(1)` and trusted `clientes_member_select` to leave exactly one row
+ *  readable — which holds for a plain member and FAILS for a member who is also staff: the staff
+ *  policy ORs in, so every cliente in the gym is readable and `limit(1)` returned an ARBITRARY one.
+ *  A gym owner opening the member app read someone else's balance, name and favourite. The
+ *  `auth_user_id` pin makes the row the caller's OWN by construction, whatever policies allow. */
 const fetchClienteRow = cache(async function fetchClienteRow(
   supabase: SupabaseServer,
   gymId: string,
 ): Promise<{ data: ClienteRow | null; error: { message: string } | null }> {
+  // Authorize with `getClaims()`, never `getSession()` (ADR-0001) — the same call `requireOperator`
+  // makes. No claim is not an error here: it is the anon/expired caller, whose "no cliente row"
+  // answer every consumer below already handles (empty perfil, zero saldo, no favourite).
+  const { data: claims } = await supabase.auth.getClaims();
+  const uid = claims?.claims?.sub;
+  if (!uid) return { data: null, error: null };
+
   const { data, error } = await supabase
     .from("clientes")
-    .select("nombre, clases_restantes, vence, created_at, notificaciones_activadas, favorite_class_type_id")
+    .select("id, nombre, clases_restantes, vence, created_at, notificaciones_activadas, favorite_class_type_id")
     .eq("gym_id", gymId)
+    .eq("auth_user_id", uid)
     .limit(1)
     .maybeSingle();
   return { data: data ?? null, error };
@@ -347,18 +369,26 @@ export const getSaldoMiembro = cache(
   async (client?: SupabaseServer): Promise<SaldoMiembroDTO> => {
     const supabase = client ?? (await createClient());
     const miembro = await resolverMiembroGym(supabase);
-    if (!miembro) return { ilimitado: false, clasesRestantes: 0, vencido: false };
+    // No membership → no gym to ask, so the switch reads as its column default (bookings on): this
+    // caller sees the page's own "sin membresía" state, never a week of cards.
+    if (!miembro) return { ilimitado: false, clasesRestantes: 0, vencido: false, reservasHabilitadas: true };
+    const reservasHabilitadas = miembro.reservasHabilitadas;
     // The balance is load-bearing, so this read PROPAGATES a transient error (a swallowed 0
     // would silently understate the member's classes) — unlike the best-effort perfil/favorita
     // reads that share the same `fetchClienteRow` row.
     const { data: cli, error } = await fetchClienteRow(supabase, miembro.id);
     if (error) throw error;
-    if (!cli) return { ilimitado: false, clasesRestantes: 0, vencido: false };
+    if (!cli) return { ilimitado: false, clasesRestantes: 0, vencido: false, reservasHabilitadas };
     // Expiry mirrors the reservar_clase gate EXACTLY (`vence < hoy` → "Paquete vencido"): a lapsed
     // vigencia blocks booking for finite AND ilimitado, so the CTA pre-empts the doomed button (#118
     // E4). vence-day itself is a valid training day (dias === 0, ruling C9), so expiry is `dias < 0`.
     const vencido = cli.vence ? estaVencido(diasRestantes(parseDay(cli.vence), hoyEnZona(miembro.tz))) : false;
-    return { ilimitado: cli.clases_restantes === null, clasesRestantes: cli.clases_restantes, vencido };
+    return {
+      ilimitado: cli.clases_restantes === null,
+      clasesRestantes: cli.clases_restantes,
+      vencido,
+      reservasHabilitadas,
+    };
   },
 );
 
@@ -564,10 +594,19 @@ async function fetchProximasReservas(
   tz: string,
   gymId: string,
 ): Promise<ProximaReservaDTO[]> {
+  // Scoped to the member's OWN cliente row, not to the gym (2026-08-26 drift audit): `gym_id +
+  // status` alone leaned on `reservation_member_select` to narrow the rest, and the staff policy
+  // ORs in — a member who is also staff read the WHOLE gym's upcoming bookings as their own
+  // "Próximas reservas". `member_id` IS a cliente id, so no cliente row means no bookings; the
+  // read is memoized with the perfil's own (same request, same gym) — no extra round trip.
+  const { data: cliente } = await fetchClienteRow(supabase, gymId);
+  if (!cliente) return [];
+
   const { data: reservas, error } = await supabase
     .from("reservation")
     .select("class_session_id, class_session(id, class_type_id, starts_at, duration_min, cancelled_at)")
     .eq("gym_id", gymId)
+    .eq("member_id", cliente.id)
     .eq("status", "reservada");
   if (error) throw error;
 

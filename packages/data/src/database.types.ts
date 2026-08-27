@@ -703,6 +703,7 @@ export type Database = {
           about_pull_quote: string | null
           about_story: string | null
           about_tagline: string | null
+          booking_enabled: boolean
           brand_module_id: string
           brand_name: string
           created_at: string
@@ -717,6 +718,7 @@ export type Database = {
           about_pull_quote?: string | null
           about_story?: string | null
           about_tagline?: string | null
+          booking_enabled?: boolean
           brand_module_id: string
           brand_name: string
           created_at?: string
@@ -731,6 +733,7 @@ export type Database = {
           about_pull_quote?: string | null
           about_story?: string | null
           about_tagline?: string | null
+          booking_enabled?: boolean
           brand_module_id?: string
           brand_name?: string
           created_at?: string

@@ -258,6 +258,10 @@ function SummarySheet({
         </button>
       </>
     );
+  } else if (veredicto.motivo === "deshabilitada") {
+    // The gym takes no bookings (gym.booking_enabled = false): the sheet still shows the class,
+    // never a button the RPC would answer with 'Reservas deshabilitadas'.
+    cta = <p className="text-center text-[11px] text-muted">{LINEA_BLOQUEO.deshabilitada}</p>;
   } else if (veredicto.motivo === "vencido" || veredicto.motivo === "sin_clases") {
     // Lapsed vigencia (#118 E4) or a depleted finite plan (audit #9): no online payment
     // (paga en tu gym) — route to precios, never a button that only dead-ends in the RPC.

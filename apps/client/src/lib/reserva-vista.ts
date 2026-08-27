@@ -54,6 +54,10 @@ export function presentarEstadoReserva(
         reservada: true,
         atenuada: false,
       };
+    case "deshabilitada":
+      // The gym takes no bookings at all: the card still shows the class (a member reads the
+      // schedule to know when to turn up) but never offers a spot the server would refuse.
+      return { ...bloqueado, unidad: "sin reserva", cta: "Sin reserva" };
     case "vencido":
       // Lapsed membership (#118 E4): the whole week reads locked, not a green "Reservar"
       // the sheet only retracts one tap later.
@@ -112,6 +116,7 @@ export function badgeDeReserva(
  *  render inside `CtaVerPlanes` (paga en tu gym → /precios, never a dead-end button). */
 export const LINEA_BLOQUEO: Record<Exclude<MotivoReserva, "libre" | "reservada">, string> = {
   terminada: "Esta clase ya pasó.",
+  deshabilitada: "Tu gimnasio no toma reservas en la app. Preséntate a tu clase como siempre.",
   vencido: "Tu paquete venció. Renueva en tu gimnasio para reservar.",
   llena: "Clase llena. No hay lugares disponibles.",
   sin_clases: "No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.",

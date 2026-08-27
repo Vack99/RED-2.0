@@ -9,10 +9,11 @@ import { derivarReservabilidad, type HechosReserva, type SaldoSocio } from "./re
  * names a refusal the RPC would actually raise.
  */
 
-const ILIMITADO: SaldoSocio = { ilimitado: true, clasesRestantes: null, vencido: false };
-const CON_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: false };
-const SIN_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 0, vencido: false };
-const VENCIDO: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: true };
+const RESERVAS = { reservasHabilitadas: true } as const; // the gym takes bookings — every case but the switch's own
+const ILIMITADO: SaldoSocio = { ilimitado: true, clasesRestantes: null, vencido: false, ...RESERVAS };
+const CON_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: false, ...RESERVAS };
+const SIN_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 0, vencido: false, ...RESERVAS };
+const VENCIDO: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: true, ...RESERVAS };
 
 function hechos(p: Partial<HechosReserva> = {}): HechosReserva {
   return {
@@ -62,6 +63,30 @@ describe("derivarReservabilidad — el motivo vinculante", () => {
     );
   });
 
+  // gym.booking_enabled = false — the class-only gym. `reservar_clase` raises 'Reservas
+  // deshabilitadas' for every caller there, so a bookable-looking card would be a lie.
+  const SIN_RESERVAS: SaldoSocio = { ...CON_CLASES, reservasHabilitadas: false };
+
+  it("a gym that takes no bookings is 'deshabilitada' — even with classes left on a live plan", () => {
+    const v = derivarReservabilidad(hechos({ saldo: SIN_RESERVAS }));
+    expect(v.motivo).toBe("deshabilitada");
+    expect(v.reservable).toBe(false);
+  });
+
+  it("reservada outranks deshabilitada — a booking made before the switch flipped still cancels", () => {
+    expect(derivarReservabilidad(hechos({ miReserva: true, saldo: SIN_RESERVAS })).motivo).toBe(
+      "reservada",
+    );
+  });
+
+  it("deshabilitada outranks vencido / llena / sin_clases — the gym's answer, not the member's", () => {
+    expect(
+      derivarReservabilidad(
+        hechos({ estado: "lleno", saldo: { ...SIN_RESERVAS, clasesRestantes: 0, vencido: true } }),
+      ).motivo,
+    ).toBe("deshabilitada");
+  });
+
   it("a full class is 'llena'", () => {
     expect(derivarReservabilidad(hechos({ estado: "lleno" })).motivo).toBe("llena");
   });
@@ -78,8 +103,7 @@ describe("derivarReservabilidad — el motivo vinculante", () => {
 
   it("a negative balance is still 'sin_clases' (never a live CTA)", () => {
     expect(
-      derivarReservabilidad(hechos({ saldo: { ilimitado: false, clasesRestantes: -1, vencido: false } }))
-        .motivo,
+      derivarReservabilidad(hechos({ saldo: { ...CON_CLASES, clasesRestantes: -1 } })).motivo,
     ).toBe("sin_clases");
   });
 

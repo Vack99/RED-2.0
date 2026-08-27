@@ -31,6 +31,11 @@
 //    gates describe a booking the member is trying to MAKE, and this member
 //    already holds the spot. What they need is the cancel affordance, not a
 //    "renueva tu paquete" they cannot act on for a class they are already in.
+//  · DESHABILITADA sits between them, and that placement is the ruling: a gym
+//    that switched bookings off still lets a member CANCEL one they already
+//    hold (the RPC agrees — `cancelar_reserva` has no such gate), but it
+//    outranks every refusal below, because "this gym does not take
+//    reservations" is a truer sentence than "renew your package".
 //  · VENCIDO before LLENA before SIN CLASES. The RPC checks 'Paquete vencido'
 //    first (both arms of it), and refuses finite AND ilimitado alike (#118 E4).
 //    It then checks 'Sin clases disponibles' BEFORE 'Clase llena'; the preview
@@ -60,6 +65,8 @@ export type MotivoReserva =
   | "terminada"
   /** 'Ya reservaste esta clase' — here, the member's own held spot. */
   | "reservada"
+  /** 'Reservas deshabilitadas' — the GYM takes no bookings at all (`gym.booking_enabled`). */
+  | "deshabilitada"
   /** 'Paquete vencido' — finite AND ilimitado (#118 E4). */
   | "vencido"
   /** 'Clase llena'. */
@@ -96,6 +103,10 @@ export interface SaldoSocio {
   clasesRestantes: number | null;
   /** Vigencia lapsed as of the gym's today (`vence < hoy`). */
   vencido: boolean;
+  /** The GYM takes member bookings at all (`gym.booking_enabled`). A gym-level fact, carried on
+   *  this object because it is the one both booking surfaces already hold — see the precedence
+   *  note above for where it binds. */
+  reservasHabilitadas: boolean;
 }
 
 /** What a surface knows about ONE session, for ONE member. */
@@ -147,13 +158,15 @@ export function derivarReservabilidad(hechos: HechosReserva): VeredictoReserva {
       ? "terminada"
       : hechos.miReserva
         ? "reservada"
-        : hechos.saldo.vencido
-          ? "vencido"
-          : hechos.estado === "lleno"
-            ? "llena"
-            : sinClases(hechos.saldo)
-              ? "sin_clases"
-              : "libre";
+        : !hechos.saldo.reservasHabilitadas
+          ? "deshabilitada"
+          : hechos.saldo.vencido
+            ? "vencido"
+            : hechos.estado === "lleno"
+              ? "llena"
+              : sinClases(hechos.saldo)
+                ? "sin_clases"
+                : "libre";
 
   return motivo === "libre"
     ? { motivo, reservable: true, aviso: derivarAviso(hechos) }

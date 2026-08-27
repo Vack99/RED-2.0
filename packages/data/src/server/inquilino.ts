@@ -41,6 +41,10 @@ export interface GymDelMiembro {
   tz: string;
   /** `gym.brand_name` — the brand-neutral display name the perfil footer renders. */
   marca: string;
+  /** `gym.booking_enabled` — false for a class-only gym that takes no member bookings at all
+   *  (`reservar_clase` refuses it server-side; the member surfaces read this to stop offering a
+   *  CTA that only dead-ends in that refusal). */
+  reservasHabilitadas: boolean;
 }
 
 /**
@@ -73,7 +77,7 @@ export const resolverMiembroGym = cache(async function resolverMiembroGym(
   // single object per row (verified against the local stack), never an array.
   const { data: memberships } = await supabase
     .from("gym_membership")
-    .select("gym_id, created_at, gym(id, slug, timezone, brand_name)")
+    .select("gym_id, created_at, gym(id, slug, timezone, brand_name, booking_enabled)")
     .order("created_at", { ascending: true });
   if (!memberships || memberships.length === 0) return null;
 
@@ -83,5 +87,10 @@ export const resolverMiembroGym = cache(async function resolverMiembroGym(
   const gym = elegido.gym;
   if (!gym?.timezone) return null;
 
-  return { id: elegido.gym_id, tz: gym.timezone, marca: gym.brand_name };
+  return {
+    id: elegido.gym_id,
+    tz: gym.timezone,
+    marca: gym.brand_name,
+    reservasHabilitadas: gym.booking_enabled,
+  };
 });
