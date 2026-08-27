@@ -5,10 +5,17 @@
 -- personalizado branches. This suite asserts the ROWS the RPC writes (clientes.clases_restantes
 -- / vence and ventas.fecha resolved to the gym-tz day), never the return value (#78/#80).
 --
--- Vectors (§D7): (1) active-member backdate — vence lands exactly where a today-sale would
--- (v_inicio cancels), only fecha moves [B1]; (2) lapsed member backdated BEFORE the lapse —
--- carries [B2]; (3) lapsed member backdated AFTER the lapse — forfeits [B3]; (4) backdate ON
--- the old vence day — inclusive, leftovers carry [B6/C9]; (5) future date rejected [A2];
+-- RENEWAL IS A FULL RESET (owner ruling 2026-08-26, migration 20260826120200): a sale grants the
+-- pack's clases and `v_inicio + the pack's days`, carrying nothing. That does not weaken this suite —
+-- it SHARPENS it, because v_inicio used to cancel out of the vence math on an active base (the carried
+-- days exactly replaced the backdated ones) and now it does not. Every vector below is therefore a
+-- real statement about the sold date rather than one about stacking; the numbers that moved on
+-- 2026-08-26 are called out inline.
+--
+-- Vectors (§D7): (1) active-member backdate — the vigencia runs from the SOLD DAY, and fecha moves
+-- [B1]; (2) lapsed member backdated BEFORE the lapse — the still-live base buys nothing [B2];
+-- (3) lapsed member backdated AFTER the lapse — forfeits [B3]; (4) backdate ON the old vence day —
+-- the C9 off-by-one gate is gone, both sides answer the pack [B6/C9]; (5) future date rejected [A2];
 -- (6) over the flat-30 cap rejected [A3]; (7) before the client's alta ACCEPTED — the [A4] floor
 -- was dropped by the owner on 2026-08-14 (20260814130000); (8) dead-on-arrival (computed vence <
 -- today) rejected [E2], via a short custom package — also proving the bound threads the
@@ -19,7 +26,7 @@
 -- is a data-entry stamp rather than the day the member arrived, and the floor refused exactly the
 -- forgotten sale backdating exists for. The two surviving date bounds are the not-future guard [A2]
 -- and the flat-30 window [A3]. cli_recent (created 5d ago) is now V7's ACCEPTANCE fixture; the
--- backdate-target clients keep their 90d-old created_at because their stacking math, not a floor,
+-- backdate-target clients keep their 90d-old created_at because their vence math, not a floor,
 -- is what the vectors read.
 --
 -- Zero prod UUIDs (ADR-0013 §5): a synthetic gym + operator + catalog, all gen_random_uuid().
@@ -92,7 +99,10 @@ select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.op_user', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 
--- ══ V1 — active member backdated 5d: vence lands where a today-sale would (v_inicio cancels), fecha moves ══
+-- ══ V1 — active member backdated 5d: the vigencia runs from the SOLD DAY, and the fecha moves ═════════
+-- Pre-2026-08-26 the carried days made v_inicio cancel out, so a backdated sale expired on the same day
+-- a today-sale would (13 clases, today+30). Under FULL RESET nothing cancels: the pack runs its own 20
+-- days from the day it was sold, so backdating now genuinely costs the member those 5 days.
 do $$
 declare
   ci uuid := current_setting('t.cli_active', true)::uuid;
@@ -104,9 +114,9 @@ begin
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 5);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  -- base_dias = (today+10) - (today-5) = 15; +20 pack ⇒ vence = (today-5)+35 = today+30 (== a today-sale).
-  if c.clases_restantes is distinct from 13 then raise exception 'V1 FAIL: clases % (expected 5 + 8 = 13)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 30 then raise exception 'V1 FAIL: vence % (expected today+30 — v_inicio cancels)', c.vence; end if;
+  -- base 0/0 as of the sold day ⇒ vence = (today-5) + 20 = today+15; clases = the pack's 8.
+  if c.clases_restantes is distinct from 8 then raise exception 'V1 FAIL: clases % (expected the pack''s 8; at 13 the 5 leftovers carried)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 15 then raise exception 'V1 FAIL: vence % (expected (today-5)+20 = today+15; at today+30 the base''s 15 days carried)', c.vence; end if;
   select fecha into v from public.ventas where idempotency_key = k;
   v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
   if v_dia is distinct from today - 5 then raise exception 'V1 FAIL: ventas.fecha gym-tz day % (expected today-5, the backdated sold day)', v_dia; end if;
@@ -124,9 +134,10 @@ begin
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_30', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 10);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  -- base_dias = (today-3) - (today-10) = 7 (>= 0, carries); +30 ⇒ vence = (today-10)+37 = today+27.
-  if c.clases_restantes is distinct from 12 then raise exception 'V2 FAIL: clases % (expected 4 + 8 = 12, carried)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 27 then raise exception 'V2 FAIL: vence % (expected today+27)', c.vence; end if;
+  -- FULL RESET (2026-08-26): the base was still live as of the sold day (vence today-3 >= today-10), and
+  -- that no longer buys it anything — base 0/0 ⇒ vence = (today-10)+30 = today+20, clases = the pack's 8.
+  if c.clases_restantes is distinct from 8 then raise exception 'V2 FAIL: clases % (expected the pack''s 8; at 12 the 4 leftovers carried)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 20 then raise exception 'V2 FAIL: vence % (expected (today-10)+30 = today+20; at today+27 the base''s 7 days carried)', c.vence; end if;
   select fecha into v from public.ventas where idempotency_key = k;
   v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
   if v_dia is distinct from today - 10 then raise exception 'V2 FAIL: ventas.fecha gym-tz day % (expected today-10)', v_dia; end if;
@@ -164,9 +175,11 @@ begin
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 2);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  -- vence-day carry (inclusive): base_dias = 0 (>= 0), clases carry ⇒ 3 + 8 = 11. An EXCLUSIVE gate
-  -- (> instead of >=) would forfeit to 8 — this vector is the off-by-one guard. vence = (today-2)+20.
-  if c.clases_restantes is distinct from 11 then raise exception 'V4 FAIL: clases % (expected 3 + 8 = 11, vence-day inclusive)', c.clases_restantes; end if;
+  -- This used to be the vence-day off-by-one guard (>= vs >): a base whose vence fell exactly ON the
+  -- sold day carried its classes, 3 + 8 = 11. FULL RESET (2026-08-26) removes the gate the off-by-one
+  -- lived in, so both sides of it now answer 8 — the vector survives as the pin that the sold day is
+  -- still what the vigencia runs from. vence = (today-2)+20 is unchanged (base_dias was already 0).
+  if c.clases_restantes is distinct from 8 then raise exception 'V4 FAIL: clases % (expected the pack''s 8; at 11 the vence-day carry survived)', c.clases_restantes; end if;
   if c.vence is distinct from today + 18 then raise exception 'V4 FAIL: vence % (expected today+18)', c.vence; end if;
   select fecha into v from public.ventas where idempotency_key = k;
   v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
@@ -232,9 +245,11 @@ begin
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 10);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  -- base_dias = (today+10) - (today-10) = 20 (carries); +20 pack ⇒ vence = (today-10)+40 = today+30.
-  if c.clases_restantes is distinct from 13 then raise exception 'V7 FAIL: clases % (expected 5 + 8 = 13)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 30 then raise exception 'V7 FAIL: vence % (expected today+30)', c.vence; end if;
+  -- FULL RESET (2026-08-26): base 0/0 ⇒ vence = (today-10)+20 = today+10, clases = the pack's 8. The
+  -- new vence is 10 days EARLIER than the base's own today+10 — a full-price sale that shortens the
+  -- member's vigencia is exactly what backdating a reset means, and bound 4 still passes (today+10 ≥ today).
+  if c.clases_restantes is distinct from 8 then raise exception 'V7 FAIL: clases % (expected the pack''s 8; at 13 the 5 leftovers carried)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 10 then raise exception 'V7 FAIL: vence % (expected (today-10)+20 = today+10; at today+30 the base''s 20 days carried)', c.vence; end if;
   select fecha, monto into v from public.ventas where idempotency_key = k;
   if v.monto is distinct from 800 then raise exception 'V7 FAIL: monto % (expected 800 — the sale row must be written)', v.monto; end if;
   v_dia := (v.fecha at time zone 'America/Mexico_City')::date;

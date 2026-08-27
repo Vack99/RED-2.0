@@ -6,14 +6,16 @@
 -- vigencia_* / monto / personalizado / gym_id), never the return value (#78/#80).
 --
 -- The whole point of the migration is that the custom branch CONVERGES into the shared derivation: both
--- branches fill the same v_pk_* locals and one block runs C1 (flat-30) / C9 (vence-day carry) / C4
--- (purchase wins, days carry) / C6 (idempotent replay). A re-implemented (divergent) stacking path inside
--- the custom branch is the bug this suite catches — so V3 asserts against the SAME expectations the
--- stacking suite proves for registered plans. And no paquetes row is ever created (marketing isolation is
--- structural): V1 asserts the catalog stays untouched.
+-- branches fill the same v_pk_* locals and one block runs C1 (flat-30) / the renewal rule / C6
+-- (idempotent replay). A re-implemented (divergent) derivation inside the custom branch is the bug this
+-- suite catches — so V3/V9 assert against the SAME expectations the stacking suite proves for registered
+-- plans, which since the owner's 2026-08-26 FULL RESET ruling (migration 20260826120200) means the pack
+-- and only the pack: no carried classes, no carried days. That convergence is why this suite needed
+-- nothing but new numbers when the ruling landed. And no paquetes row is ever created (marketing
+-- isolation is structural): V1 asserts the catalog stays untouched.
 --
 -- Vectors (task-3 brief V1–V8): (1) custom new client — full written-row check + zero paquetes rows,
--- (2) custom ilimitado = null clases both places, (3) custom renewal stacking inherited [C4/C9],
+-- (2) custom ilimitado = null clases both places, (3) custom renewal — the FULL RESET inherited,
 -- (4) XOR both-sources / neither-source, (5) every D6 bound raises its message AND writes nothing,
 -- (6) idempotent custom replay = one venta / same folio / credited once [C6], (7) registered-plan
 -- regression = personalizado false, (8) non-staff member = 'No autorizado', nothing written.
@@ -53,7 +55,7 @@ begin
   insert into public.paquetes (gym_id, nombre, clases, vigencia_tipo, vigencia_dias, precio)
     values (gym_stk, '8 clases 20d', 8, 'dias', 20, 800) returning id into p_reg;
 
-  -- V3 base: an active finite plan (5 clases, vence hoy+10) that a custom renewal stacks onto.
+  -- V3 base: an active finite plan (5 clases, vence hoy+10) that a custom renewal RESETS (2026-08-26).
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre)
     values (gym_stk, 'Base V3 Stack', '6200000103', 5, v_today + 10, 'Base V3') returning id into cli_v3;
   -- V5 target: bounds raise before the client is even read, so any existing row does; assert it stays put.
@@ -129,8 +131,10 @@ begin
 end $$;
 
 -- ══ V3 — custom renewal onto an active base (5 clases, vence hoy+10) + 12 clases / 45 dias:
---          stacking INHERITED → clases 17, vence hoy+55 (C4 purchase adds, days carry). Catches a
---          re-implemented derivation inside the custom branch. ════════════════════════════════════════
+--          the FULL RESET is INHERITED → clases 12, vence hoy+45 (owner 2026-08-26; it expected 17 /
+--          hoy+55 while renewals stacked). The point of the vector is unchanged and is the reason it
+--          matters here: the custom branch has no derivation of its own to get wrong or to miss a
+--          ruling — it converges on the same v_pk_* variables the catalog branch fills. ═══════════════
 do $$
 declare
   ci uuid := current_setting('t.cli_v3', true)::uuid;
@@ -142,8 +146,8 @@ begin
     p_metodo := 'efectivo', p_idempotency_key := k, p_cliente_id := ci,
     p_custom_nombre := 'Promo Stack', p_custom_precio := 750, p_custom_clases := 12, p_custom_dias := 45);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  if c.clases_restantes is distinct from 17 then raise exception 'V3 FAIL: clases % (expected 5 + 12 = 17)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 55 then raise exception 'V3 FAIL: vence % (expected base 10 + 45 = hoy+55)', c.vence; end if;
+  if c.clases_restantes is distinct from 12 then raise exception 'V3 FAIL: clases % (expected the custom pack''s 12; at 17 the 5 leftovers carried)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 45 then raise exception 'V3 FAIL: vence % (expected the custom pack''s 45 from TODAY; at hoy+55 the base''s 10 days carried)', c.vence; end if;
   select personalizado into v from public.ventas where idempotency_key = k;
   if v.personalizado is distinct from true then raise exception 'V3 FAIL: venta.personalizado % (expected true)', v.personalizado; end if;
 end $$;
@@ -302,7 +306,7 @@ begin
   if v.monto is distinct from 800 then raise exception 'V7 FAIL: venta.monto % (expected the paquete precio 800)', v.monto; end if;
 end $$;
 
--- ══ V9 — CUSTOM package BACKDATED 5d onto an active base: as-of stacking inherited + fecha moved ═══════
+-- ══ V9 — CUSTOM package BACKDATED 5d onto an active base: the as-of RESET inherited + fecha moved ═════
 do $$
 declare
   ci uuid := current_setting('t.cli_v9', true)::uuid;
@@ -314,9 +318,9 @@ begin
     p_metodo := 'efectivo', p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 5,
     p_custom_nombre := 'Promo Backdate', p_custom_precio := 750, p_custom_clases := 12, p_custom_dias := 45);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  -- base_dias = (today+10) - (today-5) = 15; +45 ⇒ vence = (today-5)+60 = today+55; clases 5 + 12 = 17.
-  if c.clases_restantes is distinct from 17 then raise exception 'V9 FAIL: clases % (expected 5 + 12 = 17)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 55 then raise exception 'V9 FAIL: vence % (expected today+55)', c.vence; end if;
+  -- base 0/0 as of the sold day ⇒ vence = (today-5) + 45 = today+40; clases = the custom pack's 12.
+  if c.clases_restantes is distinct from 12 then raise exception 'V9 FAIL: clases % (expected the custom pack''s 12; at 17 the 5 leftovers carried)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 40 then raise exception 'V9 FAIL: vence % (expected (today-5)+45 = today+40; at today+55 the base''s 15 days carried)', c.vence; end if;
   select fecha, personalizado into v from public.ventas where idempotency_key = k;
   v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
   if v_dia is distinct from today - 5 then raise exception 'V9 FAIL: ventas.fecha gym-tz day % (expected today-5)', v_dia; end if;

@@ -15,7 +15,7 @@ declare
   v_cli record;
   v_compra_dias integer;
   v_base_clases integer;      
-  v_base_dias integer;
+  v_base_dias integer;        
   v_new_clases integer;       
   v_new_dias integer;
   v_new_vence date;
@@ -127,6 +127,8 @@ begin
 
   if p_cliente_id is not null then
     
+    
+    
     select c.clases_restantes, c.vence, c.created_at into v_cli
       from public.clientes c
       where c.id = p_cliente_id and c.gym_id = v_gym
@@ -137,13 +139,10 @@ begin
     
     
     
-    if v_cli.vence is not null and (v_cli.vence - v_inicio) >= 0 then
-      v_base_clases := v_cli.clases_restantes;      
-      v_base_dias := v_cli.vence - v_inicio;
-    else
-      v_base_clases := 0;
-      v_base_dias := 0;
-    end if;
+    
+    
+    v_base_clases := 0;
+    v_base_dias := 0;
   else
     
     
@@ -164,6 +163,7 @@ begin
     v_base_dias := 0;
   end if;
 
+  
   
   
   

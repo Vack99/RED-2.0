@@ -7,14 +7,23 @@
 -- vigencia_* snapshot — mi_membresia anchors the member plan card on exactly those venta columns),
 -- never just the return value (#78/#80).
 --
--- Vectors: (1) fresh finite, (2) fresh mes = +30 [C1], (3) early mes renewal = old vence +30 [C1],
--- (4) renewal ON the vence day carries [C9], (5) lapsed base forfeits, (6) active ilimitado + finite =
--- pack's count, days add [C4], (7) finite + ilimitado pack = ilimitado, days add [C4], (8) idempotent
--- replay = one venta, same folio [C6], (9) duplicate guard + p_forzar_nuevo override [D2], (10) email
--- backfill / keep [C7], (11) 'pendiente' rejected [C2], (12) cross-gym paquete = not found, (13) a
--- colliding backfill email fails with the human message and rolls back atomically [C7/D2],
--- (14) a backdated registered sale stacks as-of the sold day and moves the ledger date [§D1/§D2],
--- (15) an omitted p_tel writes tel = null, while a malformed p_tel is still rejected [#190].
+-- RENEWAL IS A FULL RESET (owner ruling 2026-08-26, migration 20260826120200). The old C4/C9 stacking
+-- — "purchase wins, days carry" — is GONE on both axes: a sale grants `clases_restantes = the pack's
+-- clases` (NULL for an ilimitado pack) and `vence = the sale's effective start + the pack's days`, for
+-- an existing cliente exactly as for a brand-new one. Every renewal vector below states that rule, and
+-- the numbers that used to bake in a carry are called out inline so a reader can see what moved.
+--
+-- Vectors: (1) fresh finite, (2) fresh mes = +30 [C1], (3) early mes renewal RESETS to the pack,
+-- (4) renewal ON the vence day RESETS (the C9 carry is gone), (5) lapsed base forfeits (unchanged —
+-- it always did), (6) active ilimitado + finite = pack's count AND pack's days, (7) finite + ilimitado
+-- pack = ilimitado on the pack's days, (8) idempotent replay = one venta, same folio [C6],
+-- (9) duplicate guard + p_forzar_nuevo override [D2], (10) email backfill / keep [C7],
+-- (11) 'pendiente' rejected [C2], (12) cross-gym paquete = not found, (13) a colliding backfill email
+-- fails with the human message and rolls back atomically [C7/D2], (14) a backdated registered sale
+-- resets as-of the sold day and moves the ledger date [§D1/§D2], (15) an omitted p_tel writes
+-- tel = null, while a malformed p_tel is still rejected [#190], (16) THE RESET, both axes, against a
+-- base bigger than the purchase — the new vence moves BACKWARD, (17) ilimitado → finite lands on
+-- exactly the pack.
 --
 -- Zero prod UUIDs (ADR-0013 §5): a synthetic gym + operator + catalog, all gen_random_uuid(). One
 -- BEGIN/ROLLBACK so a scratch project is REUSABLE and accumulates no state. Self-asserting: every check
@@ -34,7 +43,7 @@ declare
   v_today   date;
   p_fin8_20 uuid; p_mes uuid; p_fin8_30 uuid; p_ilim uuid; p_other uuid;
   cli_v3 uuid; cli_v4 uuid; cli_v5 uuid; cli_v6 uuid; cli_v7 uuid; cli_v10 uuid;
-  cli_v13 uuid; cli_v13b uuid; cli_v14 uuid;
+  cli_v13 uuid; cli_v13b uuid; cli_v14 uuid; cli_v16 uuid; cli_v17 uuid;
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_stk,   'registrar-stacking-suite-gym', 'Registrar Stacking Suite', 'America/Mexico_City', 'red'),
@@ -81,6 +90,14 @@ begin
   -- registered branch threads p_fecha_inicio (spec §D1/§D2).
   insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre, created_at)
     values (gym_stk, 'Base V14 Backdate', '6200000015', 5, v_today + 10, '8 clases 20d', now() - interval '60 days') returning id into cli_v14;
+  -- V16/V17 (the 2026-08-26 FULL RESET ruling): both bases are deliberately BIGGER than the pack they
+  -- buy, on both axes — 9 classes / 25 days and an active ilimitado / 40 days against an 8-class,
+  -- 20-day pack. Under carry each would have grown; under reset each lands on exactly the pack, and
+  -- the new vence is EARLIER than the old one. That is the sharpest statement of the ruling there is.
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre)
+    values (gym_stk, 'Base V16 Reset',   '6200000016', 9, v_today + 25, '8 clases 30d') returning id into cli_v16;
+  insert into public.clientes (gym_id, nombre, tel, clases_restantes, vence, paquete_nombre)
+    values (gym_stk, 'Base V17 IlimLargo', '6200000017', null, v_today + 40, 'Ilimitado 30d') returning id into cli_v17;
 
   perform set_config('t.gym_stk',   gym_stk::text,   true);
   perform set_config('t.op_user',   op_user::text,   true);
@@ -97,6 +114,8 @@ begin
   perform set_config('t.cli_v10', cli_v10::text, true);
   perform set_config('t.cli_v13', cli_v13::text, true);
   perform set_config('t.cli_v14', cli_v14::text, true);
+  perform set_config('t.cli_v16', cli_v16::text, true);
+  perform set_config('t.cli_v17', cli_v17::text, true);
 end $$;
 
 -- All sales run as gym_stk's operator (SECURITY INVOKER → the RPC + these assertions run under RLS).
@@ -156,7 +175,9 @@ begin
   if v.monto is distinct from 1000 then raise exception 'V2 FAIL: monto % (expected 1000)', v.monto; end if;
 end $$;
 
--- ══ V3 — early 'mes' renewal (vence in 10d): new vence = old vence + 30 = hoy + 40 (C1 flat extend) ════
+-- ══ V3 — early 'mes' renewal (vence in 10d, 6 left): RESET — 12 clases, vence = hoy + 30 ══════════════
+-- Pre-2026-08-26 this expected hoy+40 and 18 clases (old vence +30, leftovers +12). Both carries are
+-- gone: the 10 unexpired days and the 6 unspent classes are forfeited by the purchase itself.
 do $$
 declare
   ci uuid := current_setting('t.cli_v3', true)::uuid;
@@ -169,8 +190,8 @@ begin
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_mes', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  if c.vence is distinct from today + 40 then raise exception 'V3 FAIL: vence % (expected old hoy+10 +30 = hoy+40)', c.vence; end if;
-  if c.clases_restantes is distinct from 18 then raise exception 'V3 FAIL: clases % (expected 6 + 12 = 18)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 30 then raise exception 'V3 FAIL: vence % (expected hoy+30 — the pack''s 30 days from TODAY, no day carry; at hoy+40 the old vence stacked)', c.vence; end if;
+  if c.clases_restantes is distinct from 12 then raise exception 'V3 FAIL: clases % (expected the pack''s 12; at 18 the 6 leftovers carried)', c.clases_restantes; end if;
   select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
   if v is null then raise exception 'V3 FAIL: no ventas row carries the idempotency key'; end if;
   if v.monto is distinct from 1000 then raise exception 'V3 FAIL: venta.monto % (expected 1000)', v.monto; end if;
@@ -178,7 +199,9 @@ begin
   if v.gym_id is distinct from g then raise exception 'V3 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
--- ══ V4 — renewal ON the vence day, base {4, dias 0} + 8/30 pack → 12 clases, vence = hoy + 30 (C9) ═════
+-- ══ V4 — renewal ON the vence day, base {4, dias 0} + 8/30 pack → RESET: 8 clases, vence = hoy + 30 ════
+-- The vence-day carry (C9) is gone with the rest: it expected 12. The DAY axis is unchanged here by
+-- coincidence — a base with 0 days left carried 0 days — which is exactly why the class axis matters.
 do $$
 declare
   ci uuid := current_setting('t.cli_v4', true)::uuid;
@@ -191,7 +214,7 @@ begin
     p_metodo := 'transferencia', p_paquete_id := current_setting('t.p_fin8_30', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  if c.clases_restantes is distinct from 12 then raise exception 'V4 FAIL: clases % (expected 4 + 8 = 12, vence-day carry)', c.clases_restantes; end if;
+  if c.clases_restantes is distinct from 8 then raise exception 'V4 FAIL: clases % (expected the pack''s 8; at 12 the vence-day carry survived)', c.clases_restantes; end if;
   if c.vence is distinct from today + 30 then raise exception 'V4 FAIL: vence % (expected hoy+30)', c.vence; end if;
   select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
   if v is null then raise exception 'V4 FAIL: no ventas row carries the idempotency key'; end if;
@@ -222,7 +245,10 @@ begin
   if v.gym_id is distinct from g then raise exception 'V5 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
--- ══ V6 — active ilimitado + finite pack → clases = pack's count (8), days add (C4 purchase wins) ══════
+-- ══ V6 — active ilimitado + finite pack → clases = pack's count (8), vence = hoy + the pack's 20 ══════
+-- The CLASS answer is unchanged by the reset (an ilimitado base contributed no count either way, which
+-- is the ilimitado->finite case the ruling asks to keep working); the DAY answer is not — the base's
+-- 15 unexpired days used to carry to hoy+35.
 do $$
 declare
   ci uuid := current_setting('t.cli_v6', true)::uuid;
@@ -236,7 +262,7 @@ begin
     p_idempotency_key := k, p_cliente_id := ci);
   select clases_restantes, vence, paquete_nombre into c from public.clientes where id = ci;
   if c.clases_restantes is distinct from 8 then raise exception 'V6 FAIL: clases % (expected pack count 8, not ilimitado)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 35 then raise exception 'V6 FAIL: vence % (expected base 15 + 20 = hoy+35)', c.vence; end if;
+  if c.vence is distinct from today + 20 then raise exception 'V6 FAIL: vence % (expected the pack''s 20 from TODAY; at hoy+35 the base''s 15 days carried)', c.vence; end if;
   if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V6 FAIL: paquete_nombre % (expected the purchased pack''s name after the ilimitado→finite switch)', c.paquete_nombre; end if;
   select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
   if v is null then raise exception 'V6 FAIL: no ventas row carries the idempotency key'; end if;
@@ -245,7 +271,8 @@ begin
   if v.gym_id is distinct from g then raise exception 'V6 FAIL: venta.gym_id %', v.gym_id; end if;
 end $$;
 
--- ══ V7 — finite base + ilimitado pack → clases_restantes NULL, days add (C4) ══════════════════════════
+-- ══ V7 — finite base + ilimitado pack → clases_restantes NULL, vence = hoy + the pack's 30 ════════════
+-- An ilimitado pack still wins the class axis (NULL); the base's 3 unexpired days no longer ride along.
 do $$
 declare
   ci uuid := current_setting('t.cli_v7', true)::uuid;
@@ -259,7 +286,7 @@ begin
     p_idempotency_key := k, p_cliente_id := ci);
   select clases_restantes, vence, paquete_nombre into c from public.clientes where id = ci;
   if c.clases_restantes is not null then raise exception 'V7 FAIL: clases_restantes % (expected NULL ilimitado)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 33 then raise exception 'V7 FAIL: vence % (expected base 3 + 30 = hoy+33)', c.vence; end if;
+  if c.vence is distinct from today + 30 then raise exception 'V7 FAIL: vence % (expected the pack''s 30 from TODAY; at hoy+33 the base''s 3 days carried)', c.vence; end if;
   if c.paquete_nombre is distinct from 'Ilimitado 30d' then raise exception 'V7 FAIL: paquete_nombre %', c.paquete_nombre; end if;
   select monto, metodo, gym_id into v from public.ventas where idempotency_key = k;
   if v is null then raise exception 'V7 FAIL: no ventas row carries the idempotency key'; end if;
@@ -411,7 +438,10 @@ begin
   if c.clases_restantes is distinct from 5 then raise exception 'V13 FAIL: target saldo % mutated by the failed sale', c.clases_restantes; end if;
 end $$;
 
--- ══ V14 — registered plan BACKDATED 5d onto an active base: as-of stacking + fecha moved (§D1/§D2) ═════
+-- ══ V14 — registered plan BACKDATED 5d onto an active base: RESET as of the sold day + fecha moved ════
+-- v_inicio still governs (§D1/§D2) — it is now the ONLY thing that does. vence = (today-5) + the pack's
+-- 20 = today+15, which is EARLIER than the base's own today+10 was long, and the 5 leftover classes are
+-- gone. Pre-2026-08-26 this expected 13 clases and today+30.
 do $$
 declare
   ci uuid := current_setting('t.cli_v14', true)::uuid;
@@ -424,9 +454,9 @@ begin
     p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
     p_idempotency_key := k, p_cliente_id := ci, p_fecha_inicio := today - 5);
   select clases_restantes, vence into c from public.clientes where id = ci;
-  -- base_dias = (today+10) - (today-5) = 15; +20 ⇒ vence = (today-5)+35 = today+30; clases 5 + 8 = 13.
-  if c.clases_restantes is distinct from 13 then raise exception 'V14 FAIL: clases % (expected 13)', c.clases_restantes; end if;
-  if c.vence is distinct from today + 30 then raise exception 'V14 FAIL: vence % (expected today+30)', c.vence; end if;
+  -- base 0/0 as of the sold day ⇒ vence = (today-5) + 20 = today+15; clases = the pack's 8.
+  if c.clases_restantes is distinct from 8 then raise exception 'V14 FAIL: clases % (expected the pack''s 8; at 13 the 5 leftovers carried)', c.clases_restantes; end if;
+  if c.vence is distinct from today + 15 then raise exception 'V14 FAIL: vence % (expected (today-5)+20 = today+15; at today+30 the base''s 15 days carried)', c.vence; end if;
   -- The ledger date moved to the backdated sold day (midday gym-tz), while monto/gym stay stamped.
   select fecha, monto, gym_id into v from public.ventas where idempotency_key = k;
   v_dia := (v.fecha at time zone 'America/Mexico_City')::date;
@@ -468,6 +498,87 @@ begin
   if msg not like '%clientes_tel_10_digits_ck%' then raise exception 'V15 FAIL: wrong error for a malformed tel (%)', msg; end if;
   select count(*) into n from public.ventas where idempotency_key = k2;
   if n <> 0 then raise exception 'V15 FAIL: the rejected sale wrote % ventas rows (expected 0)', n; end if;
+end $$;
+
+-- ══ V16 — FULL RESET, BOTH AXES (owner 2026-08-26): a renewal grants the pack and ONLY the pack ═══════
+-- The base is strictly larger than the purchase on both axes (9 classes left, 25 days left, buying an
+-- 8-class 20-day pack). Under the old carry this wrote 17 classes and hoy+45. The written row must now
+-- be exactly the pack: 8 classes, and a vence that moves BACKWARD from hoy+25 to hoy+20. The ventas row
+-- is asserted alongside it, because "the sale still landed" is half the claim — a reset that quietly
+-- refused to write would satisfy the balance assertions and be a worse bug than the carry.
+do $$
+declare
+  ci uuid := current_setting('t.cli_v16', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
+  today date := (now() at time zone 'America/Mexico_City')::date;
+  k uuid := gen_random_uuid();
+  c record; v record;
+begin
+  select clases_restantes, vence into c from public.clientes where id = ci;
+  if c.clases_restantes is distinct from 9 or c.vence is distinct from today + 25 then
+    raise exception 'V16 SEED FAIL: base is %/% (expected 9 clases, hoy+25)', c.clases_restantes, c.vence;
+  end if;
+
+  perform public.registrar_venta(
+    p_metodo := 'efectivo', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+    p_idempotency_key := k, p_cliente_id := ci);
+
+  select clases_restantes, vence, paquete_nombre into c from public.clientes where id = ci;
+  if c.clases_restantes is distinct from 8 then
+    raise exception 'V16 FAIL: clases % — expected exactly the pack''s 8; at 17 the 9 leftovers carried', c.clases_restantes;
+  end if;
+  if c.vence is distinct from today + 20 then
+    raise exception 'V16 FAIL: vence % — expected hoy+20 (the pack''s days from today, EARLIER than the base''s hoy+25); at hoy+45 the 25 remaining days carried', c.vence;
+  end if;
+  if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V16 FAIL: paquete_nombre %', c.paquete_nombre; end if;
+  -- The sale itself is written normally — the reset changes the GRANT, not whether money is recorded.
+  select monto, metodo, gym_id, cliente_id, clases, vigencia_dias into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V16 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 800 then raise exception 'V16 FAIL: venta.monto % (expected 800)', v.monto; end if;
+  if v.metodo is distinct from 'efectivo' then raise exception 'V16 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V16 FAIL: venta.gym_id %', v.gym_id; end if;
+  if v.cliente_id is distinct from ci then raise exception 'V16 FAIL: venta.cliente_id %', v.cliente_id; end if;
+  if v.clases is distinct from 8 or v.vigencia_dias is distinct from 20 then
+    raise exception 'V16 FAIL: venta snapshot %/% (expected the paquete row''s 8/20)', v.clases, v.vigencia_dias;
+  end if;
+end $$;
+
+-- ══ V17 — ILIMITADO → FINITE under the reset: exactly the pack's count, exactly the pack's days ═══════
+-- The branch the ruling explicitly asks to keep working. It used to be answered by the dedicated
+-- `v_base_clases is null` arm; with the base pinned to 0 that arm is unreachable and the general
+-- `coalesce(0,0) + pack` answers it — to the SAME number, which is what this vector pins. The base's
+-- 40 remaining days are forfeited like any other.
+do $$
+declare
+  ci uuid := current_setting('t.cli_v17', true)::uuid;
+  g uuid := current_setting('t.gym_stk', true)::uuid;
+  today date := (now() at time zone 'America/Mexico_City')::date;
+  k uuid := gen_random_uuid();
+  c record; v record;
+begin
+  select clases_restantes, vence into c from public.clientes where id = ci;
+  if c.clases_restantes is not null or c.vence is distinct from today + 40 then
+    raise exception 'V17 SEED FAIL: base is %/% (expected ilimitado NULL, hoy+40)', c.clases_restantes, c.vence;
+  end if;
+
+  perform public.registrar_venta(
+    p_metodo := 'tarjeta', p_paquete_id := current_setting('t.p_fin8_20', true)::uuid,
+    p_idempotency_key := k, p_cliente_id := ci);
+
+  select clases_restantes, vence, paquete_nombre into c from public.clientes where id = ci;
+  if c.clases_restantes is distinct from 8 then
+    raise exception 'V17 FAIL: clases % — an ilimitado cliente buying a finite pack must land on exactly the pack''s 8 (NULL here would mean the switch to finite never happened)', c.clases_restantes;
+  end if;
+  if c.vence is distinct from today + 20 then
+    raise exception 'V17 FAIL: vence % (expected the pack''s 20 from today; at hoy+60 the ilimitado base''s 40 days carried)', c.vence;
+  end if;
+  if c.paquete_nombre is distinct from '8 clases 20d' then raise exception 'V17 FAIL: paquete_nombre % (expected the purchased pack''s name)', c.paquete_nombre; end if;
+  select monto, metodo, gym_id, cliente_id into v from public.ventas where idempotency_key = k;
+  if v is null then raise exception 'V17 FAIL: no ventas row carries the idempotency key'; end if;
+  if v.monto is distinct from 800 then raise exception 'V17 FAIL: venta.monto % (expected 800)', v.monto; end if;
+  if v.metodo is distinct from 'tarjeta' then raise exception 'V17 FAIL: venta.metodo %', v.metodo; end if;
+  if v.gym_id is distinct from g then raise exception 'V17 FAIL: venta.gym_id %', v.gym_id; end if;
+  if v.cliente_id is distinct from ci then raise exception 'V17 FAIL: venta.cliente_id %', v.cliente_id; end if;
 end $$;
 
 reset role;
