@@ -48,3 +48,25 @@ name-for-name and arity-for-arity.
 
 **Still owed:** `dos_gimnasios_staff_pin{,_agenda}.sql`, the written-row suites for the 11 widened
 RPCs, remain uncommitted on the mobile lane and ship with it.
+
+## Post-fix exposure audit + ilimitado sweep-hole corrections (same day, owner-consented)
+
+Audit of every sale that succeeded between the 08-26 reset sweep and the outage start: the sweep
+absorbed all pre-sweep stacking; the 10 swept members held their §7 values; one in-window renewal
+stacked. Full-platform replay (forge + red, every member) found exactly 3 drifted rows — all
+*ilimitado*: the sweep's `clases_restantes IS NOT NULL` scope filter had silently excluded every
+unlimited member. Reset is proven live post-fix: folio 1041 (forge-demo, 16:30:53Z) discarded a
+live 4-day carry and wrote `inicio + 30` exactly.
+
+Date-only corrections applied to prod (owner-consented via picker; `clases_restantes` untouched):
+
+| member | gym | applied vence | rollback |
+|---|---|---|---|
+| Fernanda Chávez Quezada `841724f6` | red | 2026-09-25 | 2026-09-28 |
+| Elsa María Rodríguez González `a9bee3e6` | red | 2026-09-16 | 2026-09-18 |
+| Sandra Báez Lopez `b64a15a4` | red | 2026-08-19 | 2026-08-24 |
+| Testing new sale system `e6995a10` | forge-demo | 2026-09-26 | 2026-10-03 |
+
+Each UPDATE was guarded on the expected old value and verified with a fresh SELECT. Remaining
+deviations platform-wide: only the parked Hanna Minjarez / Oscar Anchondo eventless-0 rows
+(owner ruling pending). Carolina Nieto had still not been re-renewed at audit time.
