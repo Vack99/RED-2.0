@@ -9,7 +9,6 @@ import type {
   AltaMes,
   AsistenciaResumen,
   Clases,
-  CompraPaquete,
   CorteMes,
   EstadoCliente,
   EstadoSesion,
@@ -26,23 +25,13 @@ import type {
   Vigencia,
 } from "./types";
 
-/**
- * Buying a package early STACKS onto the current one: paid days always carry
- * and add. Ruling C4 (2026-07-08) — the PURCHASED package's type takes effect
- * immediately ("purchase wins"): classes add only when both sides are finite;
- * buying finite over an active ilimitado yields the pack's own count (not ∞),
- * and buying ilimitado makes the stack unlimited.
- * Example: {clases:5, dias:3} + {clases:8, dias:20} => {clases:13, dias:23}.
- */
-export function stackPaquete(actual: Saldo, nuevo: CompraPaquete): Saldo {
-  const clases: Clases =
-    nuevo.clases === "ilimitado"
-      ? "ilimitado"
-      : actual.clases === "ilimitado"
-        ? nuevo.clases
-        : actual.clases + nuevo.clases;
-  return { clases, dias: actual.dias + nuevo.dias };
-}
+// `stackPaquete` STOOD HERE and is deleted (owner ruling 2026-08-26, ADR-0003 Amendment 2): renewal
+// is a full reset, so there is no stacking left to describe. `baseParaStack` — "what stacking builds
+// on" — went with it for the same reason. Neither had a production caller: `registrar_venta` has
+// owned this derivation in SQL since 20260710121000 (ruling C13), so the helpers were a tested,
+// importable second opinion that the database had already stopped asking for and that the ruling
+// then made wrong. The rule now lives in exactly one place, pinned by
+// supabase/tests/registrar_venta_stacking.sql.
 
 /**
  * A package's display name is its class grant. The DB RPC actualizar_paquete
@@ -180,21 +169,6 @@ export function consumirClase(clases: Clases): Clases {
 export function forfeit(clases: Clases, dias: number): Clases {
   if (clases === "ilimitado") return "ilimitado";
   return estaVencido(dias) ? 0 : clases;
-}
-
-/**
- * The base a NEW purchase stacks onto. A still-valid package contributes its
- * full saldo; an expired one is forfeited ENTIRELY so a renewal starts clean.
- * The vence day (dias === 0) is a valid training day (ruling C9), so it KEEPS
- * the saldo — forfeiture starts the day AFTER (dias < 0). Note this differs
- * from a lapsed read: a lapsed *ilimitado* does NOT carry forward as unlimited
- * here — buying a limited package after an unlimited month ended gives the
- * limited count, not perpetual ∞. The single home for "what stacking builds
- * on"; the write path MUST call this instead of re-deriving the expiry check
- * inline.
- */
-export function baseParaStack(saldo: Saldo): Saldo {
-  return estaVencido(saldo.dias) ? { clases: 0, dias: 0 } : saldo;
 }
 
 // ── Date helpers for the resumen (local-field comparisons only; the caller

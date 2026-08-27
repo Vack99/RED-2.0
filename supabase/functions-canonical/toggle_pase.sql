@@ -141,17 +141,42 @@ begin
   
   
   
-  select to_char(cs.starts_at at time zone v_tz, 'HH24:MI') into v_marcada
-    from public.reservation r
-    join public.class_session cs on cs.id = r.class_session_id
-   where r.member_id = p_cliente_id
-     and r.status = 'asistida'
-     and r.is_walk_in = false
-     and cs.cancelled_at is null
-     and (cs.starts_at at time zone v_tz)::date = p_fecha
-     and public.ventana_arribo(cs.starts_at, cs.duration_min) @> now()
-   order by abs(extract(epoch from (cs.starts_at - now()))) asc
-   limit 1;
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  if p_fecha = v_hoy then
+    select to_char(cs.starts_at at time zone v_tz, 'HH24:MI') into v_marcada
+      from public.reservation r
+      join public.class_session cs on cs.id = r.class_session_id
+     where r.member_id = p_cliente_id
+       and r.status = 'asistida'
+       and r.is_walk_in = false
+       and cs.cancelled_at is null
+       and (cs.starts_at at time zone v_tz)::date = p_fecha
+       and public.ventana_arribo(cs.starts_at, cs.duration_min) @> now()
+     order by abs(extract(epoch from (cs.starts_at - now()))) asc
+     limit 1;
+  else
+    select to_char(cs.starts_at at time zone v_tz, 'HH24:MI') into v_marcada
+      from public.reservation r
+      join public.class_session cs on cs.id = r.class_session_id
+     where r.member_id = p_cliente_id
+       and r.status = 'asistida'
+       and r.is_walk_in = false
+       and cs.cancelled_at is null
+       and (cs.starts_at at time zone v_tz)::date = p_fecha
+     order by cs.starts_at asc
+     limit 1;
+  end if;
   if v_marcada is not null then
     raise exception 'Ya marcada en la clase de %', v_marcada;
   end if;

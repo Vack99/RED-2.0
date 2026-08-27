@@ -536,16 +536,22 @@ describe("getPerfilResumenMiembro", () => {
     ).rejects.toMatchObject({ message: "transient" });
   });
 
-  it("is best-effort on a transient clientes read error — degrades to no-date / opted-in, never throws", async () => {
-    const perfil = await getPerfilResumenMiembro(
-      makeFake(
-        { clientes: [{ gym_id: "gym-1", created_at: iso(new Date(2024, 2, 10), "12:00"), notificaciones_activadas: false }], reservation: [] },
-        undefined,
-        ["clientes"],
+  // The header fields (desde / notificaciones) are still best-effort in themselves — their own
+  // destructure swallows the error. What changed on 2026-08-26 is that the DTO also carries the
+  // bookings list, and THAT leg propagates: a swallowed error there renders as "no tienes reservas
+  // próximas" to a member who has some, which sends them home instead of to a class they paid for.
+  // So the whole read is now fail-loud on a transient clientes error. The graceful degradations that
+  // remain are for ABSENCE, not failure — no membership and no cliente row, both pinned below.
+  it("PROPAGATES a transient clientes read error — the bookings leg must never render as 'no reservas'", async () => {
+    await expect(
+      getPerfilResumenMiembro(
+        makeFake(
+          { clientes: [{ gym_id: "gym-1", created_at: iso(new Date(2024, 2, 10), "12:00"), notificaciones_activadas: false }], reservation: [] },
+          undefined,
+          ["clientes"],
+        ),
       ),
-    );
-    expect(perfil.desde).toBeNull();
-    expect(perfil.notificaciones).toBe(true);
+    ).rejects.toMatchObject({ message: "transient" });
   });
 
   it("returns a safe empty default (never throws) when the caller has no membership yet (audit #10/#15)", async () => {

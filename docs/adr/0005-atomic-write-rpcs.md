@@ -24,7 +24,12 @@ called via `supabase.rpc(...)` from the DAL. The seam is deliberately **thin**:
 
 - **The stacking / forfeit / vigencia math stays in the tested TS domain** (`src/domain`):
   `crearVenta` still computes the stacked saldo (`baseParaStack` + `stackPaquete`) and new `vence`,
-  then hands the *results* to the RPC. The DB does the write, never *that* math. `toggle_pase`
+  then hands the *results* to the RPC. The DB does the write, never *that* math.
+  > **Superseded — this bullet no longer describes the code.** `20260710121000_registrar_venta_rederive.sql`
+  > (ruling C13) moved the whole derivation INTO `registrar_venta` so the client sends only identity +
+  > `p_paquete_id`; and on 2026-08-26 the rule itself became a full reset (ADR-0003 Amendment 2),
+  > deleting `stackPaquete` / `baseParaStack` outright. The thin-seam PRINCIPLE this ADR decides still
+  > holds — it is the boundary that moved, not the posture. `toggle_pase`
   carries the attendance transaction rules — the on/off decision, the guarded ±1 consume/decrement,
   the refund guard, and the hora stamp — because each is inseparable from the transaction itself,
   not freestanding business policy (detailed in *Where each attendance rule lives* below).

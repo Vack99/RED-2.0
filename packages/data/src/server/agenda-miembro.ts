@@ -250,10 +250,11 @@ interface ClienteRow {
  *
  *  Returns the RAW `{ data, error }` — NOT a pre-swallowed row — because each consumer's error
  *  contract differs and pre-dates this dedupe: the saldo read THROWS on error (a balance is
- *  load-bearing; a silent 0 would be wrong), while the perfil header and the favorita flag are
- *  best-effort (a swallowed error degrades to "no date" / "not a favorite", never a crash). The
- *  shared query keeps the single round trip; the caller decides throw-vs-swallow. `data` is `null`
- *  when the caller has no cliente row in this gym.
+ *  load-bearing; a silent 0 would be wrong) and `fetchProximasReservas` throws with it (a swallowed
+ *  error there reads as "no upcoming bookings" to a member who has some), while the perfil header
+ *  and the favorita flag are best-effort (a swallowed error degrades to "no date" / "not a
+ *  favorite", never a crash). The shared query keeps the single round trip; the caller decides
+ *  throw-vs-swallow. `data` is `null` when the caller has no cliente row in this gym.
  *
  *  IDENTITY IS AN EXPLICIT PREDICATE, not an inference from RLS (2026-08-26 drift audit). The read
  *  used to be `gym_id + limit(1)` and trusted `clientes_member_select` to leave exactly one row
@@ -599,7 +600,13 @@ async function fetchProximasReservas(
   // ORs in — a member who is also staff read the WHOLE gym's upcoming bookings as their own
   // "Próximas reservas". `member_id` IS a cliente id, so no cliente row means no bookings; the
   // read is memoized with the perfil's own (same request, same gym) — no extra round trip.
-  const { data: cliente } = await fetchClienteRow(supabase, gymId);
+  //
+  // It PROPAGATES a read error, the saldo's contract rather than the perfil header's — and the same
+  // one the reservation read three lines down has always had. A swallowed error here renders as "no
+  // tienes reservas próximas" to a member who does, which is the one answer that can send them home
+  // instead of to a class they already paid for; "no date" on the header degrades, this lies.
+  const { data: cliente, error: clienteError } = await fetchClienteRow(supabase, gymId);
+  if (clienteError) throw clienteError;
   if (!cliente) return [];
 
   const { data: reservas, error } = await supabase

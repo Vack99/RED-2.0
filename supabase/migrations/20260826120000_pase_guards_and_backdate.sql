@@ -42,6 +42,13 @@
 --       and they do not weaken with age. (b) guarantees p_fecha is never in the future here, so the
 --       two arms are exhaustive.
 --
+--       BOTH attribution lookups split, not just the first. The 'Ya marcada' no-op below is the same
+--       rule seen from the other side — it asks whether the member's booking that day is ALREADY
+--       captured — so it drops the window on a past date too. Leaving it window-keyed would have
+--       reopened this exact double charge one tap later: the reservada arm stops matching the moment
+--       the hold is captured, so a second past-date tap (or one after a coach marked the roster)
+--       would match neither arm and land on the walk-in path that charges.
+--
 -- Both are CREATE OR REPLACE at their EXISTING signatures — no DROP, so the ADR-0005 EXECUTE
 -- grants carry untouched.
 
@@ -344,23 +351,48 @@ begin
     return;
   end if;
 
-  -- ALREADY MARKED — the NO-OP, attribution's second half. The nearest in-window booking is already
-  -- asistida (a coach marked it on the roster, or this desk did a minute ago). Do NOT undo it, do
-  -- NOT charge a class-less row alongside it: raise, write nothing. Undo lives only in the context
-  -- that owns the mark. Left keyed on the WINDOW for both arms deliberately: on a past date the
-  -- delegation above already returned for the single-booking case, and this no-op's message names an
-  -- hora the operator is looking at right now, which only reads true for a live class.
-  select to_char(cs.starts_at at time zone v_tz, 'HH24:MI') into v_marcada
-    from public.reservation r
-    join public.class_session cs on cs.id = r.class_session_id
-   where r.member_id = p_cliente_id
-     and r.status = 'asistida'
-     and r.is_walk_in = false
-     and cs.cancelled_at is null
-     and (cs.starts_at at time zone v_tz)::date = p_fecha
-     and public.ventana_arribo(cs.starts_at, cs.duration_min) @> now()
-   order by abs(extract(epoch from (cs.starts_at - now()))) asc
-   limit 1;
+  -- ALREADY MARKED — the NO-OP, attribution's second half. The booking is already asistida (a coach
+  -- marked it on the roster, or this desk did a minute ago). Do NOT undo it, do NOT charge a
+  -- class-less row alongside it: raise, write nothing. Undo lives only in the context that owns the
+  -- mark.
+  --
+  -- (c) IT SPLITS ON p_fecha THE SAME WAY THE ATTRIBUTION ABOVE DOES, and it has to. Leaving the
+  -- window on the past arm reopened the very double charge (c) exists to close, one tap later: the
+  -- attribution arm only matches a booking that is still `reservada`, so once it has been captured —
+  -- a second desk tap, or a coach who marked the roster first — a past-date tap matched NEITHER arm
+  -- and fell through to the walk-in path, charging a second class on top of the hold it had already
+  -- captured. The two arms are the two halves of one rule and must agree about which bookings are
+  -- visible on a past date.
+  --
+  -- No `count(*) over () = 1` here, unlike the reservada arm: this arm WRITES NOTHING, so ambiguity
+  -- is not a risk it has to resolve — ANY asistida booking that day already accounts for the
+  -- member's arrival, and raising is the outcome that touches no rows. Ordered by starts_at rather
+  -- than by distance to now(), which means nothing on a day that is over; the message names an hora,
+  -- and the earliest is the stable pick.
+  if p_fecha = v_hoy then
+    select to_char(cs.starts_at at time zone v_tz, 'HH24:MI') into v_marcada
+      from public.reservation r
+      join public.class_session cs on cs.id = r.class_session_id
+     where r.member_id = p_cliente_id
+       and r.status = 'asistida'
+       and r.is_walk_in = false
+       and cs.cancelled_at is null
+       and (cs.starts_at at time zone v_tz)::date = p_fecha
+       and public.ventana_arribo(cs.starts_at, cs.duration_min) @> now()
+     order by abs(extract(epoch from (cs.starts_at - now()))) asc
+     limit 1;
+  else
+    select to_char(cs.starts_at at time zone v_tz, 'HH24:MI') into v_marcada
+      from public.reservation r
+      join public.class_session cs on cs.id = r.class_session_id
+     where r.member_id = p_cliente_id
+       and r.status = 'asistida'
+       and r.is_walk_in = false
+       and cs.cancelled_at is null
+       and (cs.starts_at at time zone v_tz)::date = p_fecha
+     order by cs.starts_at asc
+     limit 1;
+  end if;
   if v_marcada is not null then
     raise exception 'Ya marcada en la clase de %', v_marcada;
   end if;

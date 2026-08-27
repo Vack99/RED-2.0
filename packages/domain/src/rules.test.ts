@@ -1,22 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { antesDeVentanaArribo, baseParaStack, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, stackPaquete, urgenciaCliente, ventanaArribo } from "./rules";
+import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, urgenciaCliente, ventanaArribo } from "./rules";
 import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
-
-describe("stackPaquete — purchase wins, days carry (ruling C4)", () => {
-  it("finite + finite adds classes and days", () => {
-    expect(stackPaquete({ clases: 5, dias: 3 }, { clases: 8, dias: 20 })).toEqual({ clases: 13, dias: 23 });
-  });
-  it("ilimitado base + finite purchase: purchase wins — classes become the pack's count, days add", () => {
-    expect(stackPaquete({ clases: "ilimitado", dias: 10 }, { clases: 8, dias: 30 })).toEqual({ clases: 8, dias: 40 });
-  });
-  it("finite base + ilimitado purchase: becomes unlimited, days add", () => {
-    expect(stackPaquete({ clases: 5, dias: 3 }, { clases: "ilimitado", dias: 30 })).toEqual({ clases: "ilimitado", dias: 33 });
-  });
-  it("ilimitado + ilimitado stays unlimited, days add", () => {
-    expect(stackPaquete({ clases: "ilimitado", dias: 4 }, { clases: "ilimitado", dias: 30 })).toEqual({ clases: "ilimitado", dias: 34 });
-  });
-});
 
 describe("nombrePaquete", () => {
   it("derives 'Ilimitado' for a null grant", () => {
@@ -141,30 +126,6 @@ describe("forfeit", () => {
   });
   it("leaves ilimitado untouched", () => {
     expect(forfeit("ilimitado", -1)).toBe("ilimitado");
-  });
-});
-
-describe("baseParaStack", () => {
-  it("keeps a still-valid package's saldo", () => {
-    expect(baseParaStack({ clases: 5, dias: 3 })).toEqual({ clases: 5, dias: 3 });
-  });
-  it("forfeits an expired package entirely (dias < 0)", () => {
-    expect(baseParaStack({ clases: 5, dias: -1 })).toEqual({ clases: 0, dias: 0 });
-  });
-  it("keeps the saldo on the vence day itself (dias === 0 is a valid training day, ruling C9)", () => {
-    expect(baseParaStack({ clases: 4, dias: 0 })).toEqual({ clases: 4, dias: 0 });
-  });
-  it("drops a lapsed ilimitado — a renewal does NOT carry unlimited forward", () => {
-    expect(baseParaStack({ clases: "ilimitado", dias: -1 })).toEqual({ clases: 0, dias: 0 });
-  });
-  it("keeps a still-valid ilimitado", () => {
-    expect(baseParaStack({ clases: "ilimitado", dias: 5 })).toEqual({ clases: "ilimitado", dias: 5 });
-  });
-  it("stacking onto an expired package does not carry its classes (the renewal bug guard)", () => {
-    expect(stackPaquete(baseParaStack({ clases: 5, dias: -1 }), { clases: 8, dias: 20 })).toEqual({
-      clases: 8,
-      dias: 20,
-    });
   });
 });
 

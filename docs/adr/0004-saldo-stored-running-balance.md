@@ -16,6 +16,12 @@ Persist the active saldo as a **stored running balance** on `clientes`:
 - `clases_restantes int` (NULL = ilimitado),
 - `vence date` (the stacked expiry).
 
+> **Superseded in part — 2026-08-26 (ADR-0003 Amendment 2):** the stacking described in the next
+> paragraph is gone. A sale now RESETS both axes (`clases_restantes` = the pack's classes, `vence` =
+> the start + the pack's days) and `stackPaquete` no longer exists. The paragraph is left as written
+> because what this ADR decides — that the saldo is a STORED running balance mutated transactionally —
+> is unchanged; only the arithmetic that computes the new value moved.
+
 These are mutated **transactionally** by the write seam: `crearVenta` stacks via
 `stackPaquete` and sets `vence = today + stackedDays`; attendance will decrement
 via `consumirClase`. The full venta/asistencia ledger remains the audit source of

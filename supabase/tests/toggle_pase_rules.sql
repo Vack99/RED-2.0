@@ -1229,6 +1229,10 @@ reset role;
 --                                   now delegates, exactly like an in-window tap: the booking flips
 --                                   asistida, the row is SESSION-linked and free, and the balance
 --                                   does not move.
+--   * (c3) …and the NO-OP arm      — a past-date tap on a booking that is ALREADY asistida raises
+--          splits the same way        'Ya marcada' and writes nothing. Both attribution lookups drop
+--                                   the window on a past date or the double charge returns one tap
+--                                   later: the reservada arm stops matching once the hold is captured.
 --   * (c2) …only when it is        — the same member with TWO bookings that day gets NO attribution:
 --          UNAMBIGUOUS               a back-entry carries no evidence of which class was attended, so
 --                                   the body falls through unchanged and the door visit charges. Both
@@ -1240,8 +1244,8 @@ declare
   v_today  date := current_setting('t.today', true)::date;
   v_tz     text;
   v_ct     uuid;
-  c_clamp  uuid; c_undo uuid; c_last uuid; c_retro uuid; c_dos uuid;
-  s_retro  uuid; s_d1 uuid; s_d2 uuid;
+  c_clamp  uuid; c_undo uuid; c_last uuid; c_retro uuid; c_dos uuid; c_yamarc uuid;
+  s_retro  uuid; s_d1 uuid; s_d2 uuid; s_yamarc uuid;
 begin
   select timezone into v_tz from public.gym where id = v_gym;
   select id into v_ct from public.class_type where gym_id = v_gym limit 1;
@@ -1259,6 +1263,10 @@ begin
     values ('TP entrada retro con reserva', '5550000022', 4, v_today + 20, '8 clases', v_gym) returning id into c_retro;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('TP entrada retro dos reservas', '5550000023', 3, v_today + 20, '8 clases', v_gym) returning id into c_dos;
+  -- (c3) The SECOND tap on a past date. Same shape as c_retro, except its booking is ALREADY asistida
+  -- — a coach marked the roster, or this desk did a moment ago — and its balance is the post-capture 4.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP entrada retro ya marcada', '5550000024', 4, v_today + 20, '8 clases', v_gym) returning id into c_yamarc;
 
   -- The out-of-range row: a back-entry beyond the new floor, made before the clamp existed.
   insert into public.asistencias (gym_id, cliente_id, fecha, consumio, origen, perdonada)
@@ -1272,13 +1280,17 @@ begin
     values (v_gym, v_ct, ((v_today - 4) + time '08:00') at time zone v_tz, 60, 20) returning id into s_d1;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, ((v_today - 4) + time '10:00') at time zone v_tz, 60, 20) returning id into s_d2;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, ((v_today - 3) + time '19:30') at time zone v_tz, 60, 20) returning id into s_yamarc;
 
   -- Seeded directly for the same reason the window-arm bookings above are: reservar_clase refuses a
   -- class that has already started (#165), and these are days old by construction.
   insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in) values
     (v_gym, s_retro, c_retro, 'reservada', false),
     (v_gym, s_d1,    c_dos,   'reservada', false),
-    (v_gym, s_d2,    c_dos,   'reservada', false);
+    (v_gym, s_d2,    c_dos,   'reservada', false),
+    -- (c3) already captured: status asistida, checked_at stamped, exactly as pasar_lista_sesion leaves it.
+    (v_gym, s_yamarc, c_yamarc, 'asistida', false);
 
   perform set_config('t.c_clamp', c_clamp::text, true);
   perform set_config('t.c_undo',  c_undo::text,  true);
@@ -1286,6 +1298,8 @@ begin
   perform set_config('t.c_retro', c_retro::text, true);
   perform set_config('t.c_dos',   c_dos::text,   true);
   perform set_config('t.s_retro', s_retro::text, true);
+  perform set_config('t.c_yamarc', c_yamarc::text, true);
+  perform set_config('t.s_yamarc', s_yamarc::text, true);
 end $$;
 
 select set_config('request.jwt.claims',
@@ -1404,6 +1418,43 @@ begin
   -- Both bookings are left strictly alone: nothing was attributed, so nothing was captured.
   select count(*) into v_n from public.reservation where member_id = c_dos and status = 'reservada';
   if v_n <> 2 then raise exception 'RULE FAIL(c2): % booking(s) still reservada (expected both, untouched)', v_n; end if;
+end $$;
+
+-- ── (c3) THE SECOND PAST-DATE TAP — 'Ya marcada', and nothing written ────────────────────────────
+-- The no-op arm splits on p_fecha exactly as the attribution arm does, and this is why. The
+-- attribution arm matches only a booking that is still `reservada`, so the moment the hold is
+-- CAPTURED — a coach marked the roster, or this desk tapped a second ago — it stops matching. If the
+-- no-op arm below it had kept its `ventana_arribo(...) @> now()` predicate (unsatisfiable on a past
+-- date by construction), this tap would have matched NEITHER arm, fallen through to the walk-in path,
+-- and charged a second class on top of the hold it had already captured — the exact double charge
+-- (c) exists to close, arriving one tap later.
+--
+-- The whole assertion is written rows: the raise, then nothing moved.
+do $$
+declare
+  v_today  date := current_setting('t.today', true)::date;
+  c_yamarc uuid := current_setting('t.c_yamarc', true)::uuid;
+  s_yamarc uuid := current_setting('t.s_yamarc', true)::uuid;
+  v_raised boolean := false; v_msg text; v_n int; v_clases int; v_status text;
+begin
+  begin
+    perform public.toggle_pase(c_yamarc, v_today - 3);
+  exception when others then
+    v_raised := true;
+    v_msg := sqlerrm;
+    if sqlerrm not like 'Ya marcada%' then raise exception 'RULE FAIL(c3): wrong raise on an already-captured past booking: %', sqlerrm; end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(c3): a second past-date tap did NOT raise — it charged a walk-in on top of the captured hold'; end if;
+  -- The message names the class, because that is the whole no-op UX (the desk shows res.message).
+  if v_msg not like '%:%' then raise exception 'RULE FAIL(c3): the raise does not name the class hora (%)', v_msg; end if;
+
+  -- NOTHING was written: no class-less row, no balance move, and the capture is untouched.
+  select count(*) into v_n from public.asistencias where cliente_id = c_yamarc and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(c3): the refused tap wrote % attendance row(s) (expected 0)', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_yamarc;
+  if v_clases <> 4 then raise exception 'RULE FAIL(c3): DOUBLE CHARGE — balance % (expected the untouched 4)', v_clases; end if;
+  select status into v_status from public.reservation where member_id = c_yamarc and class_session_id = s_yamarc;
+  if v_status is distinct from 'asistida' then raise exception 'RULE FAIL(c3): the no-op moved the booking to % — the eraser is back', v_status; end if;
 end $$;
 
 reset role;

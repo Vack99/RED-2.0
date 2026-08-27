@@ -127,6 +127,7 @@ declare
   c_orph   uuid;                        -- the pardoning class mark is undone (vector 8)
   c_zero   uuid;                        -- #237: 0-balance walk-in, no pardon in play (vector 9)
   c_zeropard uuid;                      -- #237: 0-balance walk-in INSIDE a cooldown pardon (vector 10)
+  c_last   uuid;                        -- the LAST class: the guarded decrement's boundary (vector 13)
   c_late   uuid;                        -- #166: marked late — the stamp must be the session's (vector 11a)
   c_latevig uuid;                       -- #166: valid on the CLASS's day, lapsed since (vector 11b)
   c_ilimA  uuid;                        -- #245 §3: ilimitado, CLASS then DOOR (vector 12a)
@@ -182,6 +183,13 @@ begin
     values ('PL cero balance', '0000000008', 0, v_today + 20, '8 clases', v_gym) returning id into c_zero;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('PL cero perdon', '0000000009', 1, v_today + 20, '8 clases', v_gym) returning id into c_zeropard;
+  -- (v13, 2026-08-26) THE LAST CLASS. 20260826120000 made the guarded decrement read its own result
+  -- (`if not found then raise 'Sin clases disponibles'`), and 1 -> 0 is the boundary that guard must
+  -- NOT misfire on: the update matches exactly one row and the member is admitted, charged, and left
+  -- at 0. The refusal side of the same gate is vector 9 above, which already proves a 0-balance
+  -- walk-in raises and writes nothing.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('PL ultima clase', '0000000014', 1, v_today + 20, '8 clases', v_gym) returning id into c_last;
   -- #166 (vector 11). c_late's package is comfortably valid; c_latevig's `vence` is YESTERDAY — the
   -- session's own day — so it was valid when the class ran and has lapsed by the time it is marked.
   -- That pair is the whole point: one proves the STAMP is the session's instant, the other proves the
@@ -227,6 +235,7 @@ begin
   perform set_config('t.c_orph',   c_orph::text,    true);
   perform set_config('t.c_zero',     c_zero::text,     true);
   perform set_config('t.c_zeropard', c_zeropard::text, true);
+  perform set_config('t.c_last',     c_last::text,     true);
   perform set_config('t.c_late',     c_late::text,     true);
   perform set_config('t.c_latevig',  c_latevig::text,  true);
   perform set_config('t.c_ilimA',    c_ilimA::text,    true);
@@ -936,6 +945,53 @@ begin
   if v_n is distinct from 1 then raise exception 'RULE FAIL(v12a): % pardoned row(s) (expected exactly 1)', v_n; end if;
   select count(*) into v_n from public.asistencias where cliente_id = c_ilimB and deleted_at is null and perdonada;
   if v_n is distinct from 1 then raise exception 'RULE FAIL(v12b): % pardoned row(s) (expected exactly 1)', v_n; end if;
+end $$;
+
+-- ── (v13) THE GUARDED DECREMENT'S BOUNDARY — the last class (20260826120000) ──────────────────────
+-- The walk-in charge used to run `update … set clases_restantes = clases_restantes - 1 where … and
+-- clases_restantes > 0` and never look at the result: zero rows matched still wrote consumio = true,
+-- and a later untoggle refunded a class nobody had paid for. It now raises 'Sin clases disponibles'
+-- when the update matches nothing.
+--
+-- 1 -> 0 is the boundary that guard must not misfire on, and it is the whole risk the guard
+-- introduced: the update DOES match a row here (1 > 0), so the mark must be admitted, charged, and
+-- leave the member at exactly 0. Vector 9 above is the other side of the same gate — a member already
+-- AT 0 is refused before the decrement is ever attempted, writing no asistencia and no reservation —
+-- so the two together bracket the change: the last class is sold, the one after it is refused.
+do $$
+declare
+  v_gym    uuid := current_setting('t.gym', true)::uuid;
+  c_last   uuid := current_setting('t.c_last', true)::uuid;
+  s2_id    uuid := current_setting('t.s2_id', true)::uuid;
+  v_starts2 timestamptz := current_setting('t.starts2', true)::timestamptz;
+  v_tz     text;
+  v_fecha  date;
+  v_present boolean; v_saldo int; v_resultado text; v_clases int;
+  v_consumio boolean; v_origen text; v_perdonada boolean; v_n int;
+begin
+  select timezone into v_tz from public.gym where id = v_gym;
+  v_fecha := (v_starts2 at time zone v_tz)::date;
+
+  select clases_restantes into v_clases from public.clientes where id = c_last;
+  if v_clases is distinct from 1 then raise exception 'SEED FAIL(v13): base is % (expected exactly 1)', v_clases; end if;
+
+  -- A WALK-IN mark (no booking) — the only path that charges, and therefore the only one the guard sits on.
+  select present, clases_restantes, resultado into v_present, v_saldo, v_resultado
+    from public.pasar_lista_sesion(s2_id, c_last);
+  if v_present is not true then raise exception 'RULE FAIL(v13): the LAST class was refused — the not-found guard misfires at the boundary'; end if;
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(v13): resultado % (expected descontada — the decrement ran)', v_resultado; end if;
+  if v_saldo is distinct from 0 then raise exception 'RULE FAIL(v13): returned balance % (expected the fresh 0)', v_saldo; end if;
+
+  -- The WRITTEN rows: the attendance says it paid, and the balance says the same.
+  select consumio, origen, perdonada into v_consumio, v_origen, v_perdonada
+    from public.asistencias where cliente_id = c_last and class_session_id = s2_id and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v13): asistencia.consumio % (expected true — this visit really was charged)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(v13): asistencia.origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(v13): a CHARGED row was stamped perdonada %', v_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_last;
+  if v_clases is distinct from 0 then raise exception 'RULE FAIL(v13): stored balance % (expected 0 — charged exactly once)', v_clases; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_last and deleted_at is null;
+  if v_n is distinct from 1 then raise exception 'RULE FAIL(v13): % active attendance row(s) (expected exactly 1)', v_n; end if;
 end $$;
 
 reset role;
