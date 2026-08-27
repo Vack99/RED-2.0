@@ -38,7 +38,11 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // rather than with the scheduling ones because its subject is the HOLD, not the schedule: #233's gym
 // cancel releases every reservada booking and refunds what it spent, so it reads as reservar_clase /
 // cancelar_reserva's third act; asistencias_unicidad proves the #89 visit-ledger invariants at
-// the schema layer, so it runs just ahead of the two attendance RPC suites that rely on them;
+// the schema layer, so it runs just ahead of the three attendance RPC suites that rely on them — the
+// two TOGGLE suites, and then fijar_asistencia_rules (#293), which closes that run because it is the
+// same money rules stated as a DESIRED OUTCOME rather than a flip: the idempotent set-state check-in
+// the mobile lane writes through, proved by replaying every call two or three times and asserting the
+// ledger did not move twice;
 // agenda_slot_guards runs directly after scheduling_materialization because it is that file's subject
 // widened by the 2026-08-23 ruling — ONE class per gym per instant, whatever the class type — and it
 // leans on the same create/materialize spine (docs/audits/2026-08-23-agenda-class-duplication-audit.md);
@@ -106,6 +110,7 @@ export const SUITE = [
   'pasar_lista_sesion_rules.sql',
   'toggle_pase_rules.sql',
   'toggle_pase_gym2_timezone.sql',
+  'fijar_asistencia_rules.sql',
   'favorito_rules.sql',
   'roster_clase_rules.sql',
   'mi_membresia_rules.sql',

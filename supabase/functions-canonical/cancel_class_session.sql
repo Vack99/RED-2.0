@@ -1,12 +1,47 @@
 declare
+  v_gym    uuid;
   v_starts timestamptz;
   v_dur    int;
 begin
-  if public.staff_gym() is null then raise exception 'No autorizado'; end if;
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  if p_gym_id is null then
+    select cs.gym_id into v_gym from public.class_session cs where cs.id = p_session_id;
+    if not found then
+      
+      
+      
+      if public.staff_gym() is null then raise exception 'No autorizado'; end if;
+      raise exception 'Sesión no encontrada o ya cancelada';
+    end if;
+    
+    
+    
+    if not public.is_staff_of(v_gym) then raise exception 'No autorizado'; end if;
+  elsif public.is_staff_of(p_gym_id) then
+    v_gym := p_gym_id;
+  else
+    raise exception 'No autorizado';
+  end if;
+  if v_gym is null then raise exception 'No autorizado'; end if;
 
   
+  
+  
   select starts_at, duration_min into v_starts, v_dur
-    from public.class_session where id = p_session_id and cancelled_at is null;
+    from public.class_session where id = p_session_id and gym_id = v_gym and cancelled_at is null;
   if not found then raise exception 'Sesión no encontrada o ya cancelada'; end if;
 
   
@@ -26,7 +61,7 @@ begin
   end if;
 
   update public.class_session set cancelled_at = now()
-   where id = p_session_id and cancelled_at is null;   
+   where id = p_session_id and gym_id = v_gym and cancelled_at is null;   
   if not found then raise exception 'Sesión no encontrada o ya cancelada'; end if;
 
   

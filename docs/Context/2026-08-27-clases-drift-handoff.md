@@ -83,3 +83,9 @@ Crossfy, GymHero, Buq, Reeply. Sources = official help centers first, marketing 
 4. Hanna Minjarez `bf79cee1` + Oscar Anchondo `24e90312` (red) eventless stored-0 — parked.
 5. Tenant modes specced on #309; forge agenda takedown = its own session.
 6. RED ops: roll call unrun accepted (booked = charged); records stay empty until slice 2.
+
+## 2026-08-27 INCIDENT + FIX
+
+Slice 1's `registrar_venta` migration hit uncommitted prod drift and left TWO overloads →
+`300/PGRST203` on every sale, 06:16:58Z→~15:30Z; the FULL RESET above was NOT live until the fix.
+Fixed, prod drift recovered, overload guard added — `docs/audits/2026-08-27-registrar-venta-overload-outage.md`.

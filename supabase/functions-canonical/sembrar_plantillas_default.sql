@@ -3,7 +3,19 @@ declare
   v_gym uuid;
 begin
   if v_uid is null then raise exception 'No autenticado'; end if;
-  v_gym := public.staff_gym();
+  
+  
+  
+  
+  
+  if p_gym_id is null then
+    v_gym := public.staff_gym();
+  elsif public.is_staff_of(p_gym_id) then
+    v_gym := p_gym_id;
+  else
+    raise exception 'No autorizado';
+  end if;
+  if v_gym is null then raise exception 'No autorizado'; end if;
   if exists (select 1 from public.plantillas where gym_id = v_gym) then return; end if; 
   insert into public.plantillas (nombre, body, gym_id) values
     ('Recordatorio', $body$Hola {nombre} 👋

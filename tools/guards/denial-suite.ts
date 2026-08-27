@@ -57,7 +57,7 @@ export function suiteInvokes(suiteFile: string, fn: string): boolean {
   return new RegExp(`\\b${fn}\\s*\\(`, "i").test(body);
 }
 
-export type RpcFunction = { name: string; writes: boolean; body: string };
+export type RpcFunction = { name: string; writes: boolean; body: string; signatures: string[] };
 
 // A `create [or replace] function public.NAME (...) ... $tag$ BODY $tag$` definition. The body's
 // opening dollar-tag is captured and back-referenced, because the migrations use four different
@@ -75,6 +75,90 @@ const WRITES_UPDATE = /\bupdate\b\s+\S+(?:\s+(?:as\s+)?\S+)?\s+set\b/i;
 
 function bodyWrites(body: string): boolean {
   return WRITES.test(body) || WRITES_UPDATE.test(body);
+}
+
+// ── Signatures ────────────────────────────────────────────────────────────────────────────────
+// Postgres identifies a function by name + IN-argument TYPES, so `create or replace` at a STALE
+// argument list is a CREATE, not a replace. That is how prod ended up holding two
+// `registrar_venta`s on 2026-08-27: PostgREST could not choose between them and answered
+// 300/PGRST203 to every sale before a line of SQL ran. Replaying SIGNATURES rather than names is
+// what lets `rpc-overload.test.ts` see that shape from the migrations alone.
+
+const TYPE_ALIASES: Record<string, string> = {
+  int: "integer",
+  int2: "smallint",
+  int4: "integer",
+  int8: "bigint",
+  bool: "boolean",
+  varchar: "character varying",
+  timestamptz: "timestamp with time zone",
+  timetz: "time with time zone",
+  float8: "double precision",
+};
+
+/**
+ * The parenthesized list starting at or after `from`, nesting- and quote-aware — `numeric(10,2)`
+ * and `default 'x'` both live inside one, and regex cannot balance parentheses.
+ */
+function readArgList(src: string, from: number): string {
+  const open = src.indexOf("(", from);
+  if (open < 0) return "";
+  let depth = 0;
+  let quoted = false;
+  for (let i = open; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) quoted = ch !== "'";
+    else if (ch === "'") quoted = true;
+    else if (ch === "(") depth++;
+    else if (ch === ")" && --depth === 0) return src.slice(open + 1, i);
+  }
+  return "";
+}
+
+/** Split an argument list on TOP-LEVEL commas only (a type's own `(10,2)` is not a separator). */
+function splitArgs(list: string): string[] {
+  const args: string[] = [];
+  let depth = 0;
+  let quoted = false;
+  let current = "";
+  for (const ch of list) {
+    if (quoted) quoted = ch !== "'";
+    else if (ch === "'") quoted = true;
+    else if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    else if (ch === "," && depth === 0) {
+      args.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
+  }
+  if (current.trim()) args.push(current);
+  return args;
+}
+
+/**
+ * A function's call identity: `name(type, type, …)`.
+ *
+ * Parameter names (`p_*` throughout this repo) and DEFAULT clauses are not part of the identity,
+ * and OUT parameters are not part of the call signature — so `drop function f(uuid, int)` and
+ * `create function f(p_a uuid, p_b int default 0, out n int)` normalize to the same key, which is
+ * what makes a drop cancel the create it was written for.
+ */
+function signature(name: string, argList: string): string {
+  const types = splitArgs(argList)
+    .map((arg) => arg.replace(/\s+/g, " ").trim())
+    .filter((arg) => arg !== "" && !/^out\b/i.test(arg))
+    .map((arg) =>
+      arg
+        .replace(/^(?:in|inout|variadic)\s+/i, "")
+        .replace(/^p_[a-z0-9_]*\s+/i, "")
+        .replace(/\s+(?:default\s+|=\s*)[\s\S]*$/i, "")
+        .trim()
+        .toLowerCase(),
+    )
+    .map((type) => TYPE_ALIASES[type] ?? type);
+  return `${name}(${types.join(", ")})`;
 }
 
 /**
@@ -128,31 +212,62 @@ function propagateWrites(bodies: Map<string, string>, writes: Map<string, boolea
  * `body` is the same dollar-quoted text `writes` is derived from, exposed so
  * `tools/generate-rpc-canon.mjs` can materialize it into supabase/functions-canonical/ without a
  * second parse of the migrations.
+ *
+ * State is keyed by SIGNATURE, not by name, because that is what Postgres does: a drop cancels
+ * one overload, and a `create or replace` at an argument list nobody dropped ADDS one. `signatures`
+ * exposes the survivors per name so `rpc-overload.test.ts` can refuse a second one; everything else
+ * still sees one entry per name, the most recently created.
  */
 export function readRpcFunctions(): RpcFunction[] {
-  const present = new Map<string, string>(); // name -> final body
+  const present = new Map<string, { name: string; body: string; seq: number }>(); // "name(types)" -> definition
+  let seq = 0;
 
   for (const file of readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith(".sql")).sort()) {
     const src = stripSqlComments(readFileSync(join(MIGRATIONS_DIR, file), "utf8"));
-    const ops: Array<[number, "create" | "drop", string, string]> = [];
+    // [offset, op, name, signature | null (a bare drop takes every overload), body]
+    const ops: Array<[number, "create" | "drop", string, string | null, string]> = [];
     let m: RegExpExecArray | null;
 
     DEFINITION.lastIndex = 0;
-    while ((m = DEFINITION.exec(src)) !== null) ops.push([m.index, "create", m[1].toLowerCase(), m[3]]);
+    while ((m = DEFINITION.exec(src)) !== null) {
+      const name = m[1].toLowerCase();
+      ops.push([m.index, "create", name, signature(name, readArgList(src, m.index)), m[3]]);
+    }
     DROP.lastIndex = 0;
-    while ((m = DROP.exec(src)) !== null) ops.push([m.index, "drop", m[1].toLowerCase(), ""]);
+    while ((m = DROP.exec(src)) !== null) {
+      const name = m[1].toLowerCase();
+      const rest = src.slice(m.index + m[0].length);
+      ops.push([m.index, "drop", name, /^\s*\(/.test(rest) ? signature(name, readArgList(rest, 0)) : null, ""]);
+    }
 
     ops.sort((a, b) => a[0] - b[0]);
-    for (const [, op, name, body] of ops) {
-      if (op === "create") present.set(name, body);
-      else present.delete(name);
+    for (const [, op, name, sig, body] of ops) {
+      if (op === "create") {
+        present.set(sig as string, { name, body, seq: seq++ });
+      } else if (sig === null) {
+        for (const [key, fn] of present) if (fn.name === name) present.delete(key);
+      } else {
+        present.delete(sig);
+      }
     }
   }
 
-  const writes = new Map([...present].map(([name, body]) => [name, bodyWrites(body)] as const));
-  propagateWrites(present, writes);
+  const signatures = new Map<string, string[]>();
+  const bodies = new Map<string, string>();
+  for (const [sig, fn] of [...present].sort((a, b) => a[1].seq - b[1].seq)) {
+    signatures.set(fn.name, [...(signatures.get(fn.name) ?? []), sig]);
+    bodies.set(fn.name, fn.body); // last create wins, as Postgres' `or replace` does
+  }
 
-  return [...present.keys()]
-    .map((name) => ({ name, writes: writes.get(name) ?? false, body: present.get(name) ?? "" }))
+  const writes = new Map([...bodies].map(([name, body]) => [name, bodyWrites(body)] as const));
+  propagateWrites(bodies, writes);
+
+  return [...bodies.keys()]
+    .map((name) => ({
+      name,
+      writes: writes.get(name) ?? false,
+      body: bodies.get(name) ?? "",
+      signatures: signatures.get(name) ?? [],
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }

@@ -23,6 +23,7 @@
     "edit_class_session": { "suites": ["scheduling_materialization.sql", "agenda_slot_guards.sql"] },
     "editar_venta": { "suites": ["editar_venta_rules.sql", "editar_venta_paquete.sql"] },
     "eliminar_plantilla": { "suites": ["plantillas_rules.sql"] },
+    "fijar_asistencia": { "suites": ["fijar_asistencia_rules.sql"] },
     "eliminar_venta": { "suites": ["eliminar_venta_rules.sql"] },
     "ensure_week_materialized": { "suites": ["scheduling_materialization.sql", "class_horizon_autoroll.sql", "agenda_slot_guards.sql"] },
     "enviar_mensaje_contacto": { "suites": ["contact_intake.sql"] },

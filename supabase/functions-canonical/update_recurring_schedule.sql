@@ -1,5 +1,5 @@
 declare
-  v_gym     uuid := public.staff_gym();
+  v_gym     uuid;
   v_weekday int;
   v_group   uuid;
   v_tz      text;
@@ -13,6 +13,14 @@ declare
   v_choque  timestamptz; 
   m         record;
 begin
+  
+  if p_gym_id is null then
+    v_gym := public.staff_gym();
+  elsif public.is_staff_of(p_gym_id) then
+    v_gym := p_gym_id;
+  else
+    raise exception 'No autorizado';
+  end if;
   if v_gym is null then raise exception 'No autorizado'; end if;
   if not exists (select 1 from public.class_type where id = p_class_type_id and gym_id = v_gym) then
     raise exception 'class_type % no pertenece al gimnasio del operador', p_class_type_id;
