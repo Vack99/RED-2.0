@@ -1203,5 +1203,210 @@ end $$;
 
 reset role;
 
+-- ════════════════════════════════════════════════════════════════════════════════
+-- 2026-08-26 DRIFT AUDIT (20260826120000): the p_fecha clamp, the read guard on the decrement,
+-- and back-dated re-attribution. Their fixtures are seeded HERE, at the tail, so nothing above
+-- can see them — every vector already written keeps its exact row counts.
+-- ════════════════════════════════════════════════════════════════════════════════
+--   * (b1) the CLAMP, both edges  — a future p_fecha and one past the 30-day floor are REFUSED
+--                                   ('La fecha no puede…'), and write nothing: no asistencia, no
+--                                   balance move. today-30 itself is INSIDE the window and marks
+--                                   normally — the floor is inclusive, registrar_venta's own shape.
+--   * (b2) the clamp is BELOW the  — a class-less row already sitting on an out-of-range date (a
+--          untoggle                  back-entry made before this migration) must stay UNDO-able:
+--                                   the tap refunds it instead of raising. An undo settles nothing,
+--                                   so it has nothing to clamp.
+--   * (a) the guarded decrement's  — the last class: a finite member at exactly 1 marks, is charged
+--         read guard, at its edge    to 0, and the new `if not found` does NOT misfire. (The race it
+--                                   exists for — the balance moving between the read and the write,
+--                                   from a writer that does not take the `pase:` key — cannot be
+--                                   staged inside one transaction; what IS assertable is that the
+--                                   guard leaves the honest last-class path alone.)
+--   * (c1) BACK-DATED ATTRIBUTION  — the double-charge bug. A visit typed in the next morning for a
+--                                   member who HELD a booking that day used to fall through to the
+--                                   walk-in path (the arrival window cannot contain now() on a past
+--                                   date) and spend a SECOND class on top of the booking's hold. It
+--                                   now delegates, exactly like an in-window tap: the booking flips
+--                                   asistida, the row is SESSION-linked and free, and the balance
+--                                   does not move.
+--   * (c2) …only when it is        — the same member with TWO bookings that day gets NO attribution:
+--          UNAMBIGUOUS               a back-entry carries no evidence of which class was attended, so
+--                                   the body falls through unchanged and the door visit charges. Both
+--                                   bookings are left strictly alone.
+
+do $$
+declare
+  v_gym    uuid := current_setting('t.gym', true)::uuid;
+  v_today  date := current_setting('t.today', true)::date;
+  v_tz     text;
+  v_ct     uuid;
+  c_clamp  uuid; c_undo uuid; c_last uuid; c_retro uuid; c_dos uuid;
+  s_retro  uuid; s_d1 uuid; s_d2 uuid;
+begin
+  select timezone into v_tz from public.gym where id = v_gym;
+  select id into v_ct from public.class_type where gym_id = v_gym limit 1;
+
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP clamp', '5550000019', 5, v_today + 20, '8 clases', v_gym) returning id into c_clamp;
+  -- Already charged for the out-of-range row seeded below (5 -> 4): the undo must give it back.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP undo fuera de rango', '5550000020', 4, v_today + 20, '8 clases', v_gym) returning id into c_undo;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP ultima clase', '5550000021', 1, v_today + 20, '8 clases', v_gym) returning id into c_last;
+  -- Both back-entry members are seeded at the POST-BOOKING balance: c_retro paid one hold (5 -> 4),
+  -- c_dos paid two (5 -> 3). That is the whole point — the hold is already spent before the tap.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP entrada retro con reserva', '5550000022', 4, v_today + 20, '8 clases', v_gym) returning id into c_retro;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('TP entrada retro dos reservas', '5550000023', 3, v_today + 20, '8 clases', v_gym) returning id into c_dos;
+
+  -- The out-of-range row: a back-entry beyond the new floor, made before the clamp existed.
+  insert into public.asistencias (gym_id, cliente_id, fecha, consumio, origen, perdonada)
+    values (v_gym, c_undo, v_today - 31, true, 'libre', false);
+
+  -- Past-day sessions, seeded directly (no RPC creates a class in the past) at distinct instants —
+  -- the 2026-08-23 slot-exclusivity ruling allows one uncancelled class per gym per instant.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, ((v_today - 3) + time '08:00') at time zone v_tz, 60, 20) returning id into s_retro;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, ((v_today - 4) + time '08:00') at time zone v_tz, 60, 20) returning id into s_d1;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, ((v_today - 4) + time '10:00') at time zone v_tz, 60, 20) returning id into s_d2;
+
+  -- Seeded directly for the same reason the window-arm bookings above are: reservar_clase refuses a
+  -- class that has already started (#165), and these are days old by construction.
+  insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in) values
+    (v_gym, s_retro, c_retro, 'reservada', false),
+    (v_gym, s_d1,    c_dos,   'reservada', false),
+    (v_gym, s_d2,    c_dos,   'reservada', false);
+
+  perform set_config('t.c_clamp', c_clamp::text, true);
+  perform set_config('t.c_undo',  c_undo::text,  true);
+  perform set_config('t.c_last',  c_last::text,  true);
+  perform set_config('t.c_retro', c_retro::text, true);
+  perform set_config('t.c_dos',   c_dos::text,   true);
+  perform set_config('t.s_retro', s_retro::text, true);
+end $$;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+
+do $$
+declare
+  v_gym    uuid := current_setting('t.gym', true)::uuid;
+  v_today  date := current_setting('t.today', true)::date;
+  c_clamp  uuid := current_setting('t.c_clamp', true)::uuid;
+  c_undo   uuid := current_setting('t.c_undo', true)::uuid;
+  c_last   uuid := current_setting('t.c_last', true)::uuid;
+  c_retro  uuid := current_setting('t.c_retro', true)::uuid;
+  c_dos    uuid := current_setting('t.c_dos', true)::uuid;
+  s_retro  uuid := current_setting('t.s_retro', true)::uuid;
+  v_raised boolean; v_present boolean; v_clases int; v_n int; v_hora text; v_stored time;
+  v_consumio boolean; v_origen text; v_perdonada boolean; v_resultado text; v_status text;
+  v_checked timestamptz; v_walk boolean; v_sess uuid; v_fecha date; v_gym_id uuid;
+begin
+  -- ── (b1) the clamp, both edges ────────────────────────────────────────────────
+  v_raised := false;
+  begin
+    perform public.toggle_pase(c_clamp, v_today + 1);
+  exception when others then
+    v_raised := true;
+    if sqlerrm not like 'La fecha no puede ser futura%' then raise exception 'RULE FAIL(b1): wrong raise for a FUTURE p_fecha: %', sqlerrm; end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(b1): a visit was recorded on a day that has not happened'; end if;
+
+  v_raised := false;
+  begin
+    perform public.toggle_pase(c_clamp, v_today - 31);
+  exception when others then
+    v_raised := true;
+    if sqlerrm not like 'La fecha no puede tener más de 30 días%' then raise exception 'RULE FAIL(b1): wrong raise past the back-entry floor: %', sqlerrm; end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(b1): a visit was recorded 31 days back (the floor is not enforced)'; end if;
+
+  -- Neither refusal wrote anything.
+  select count(*) into v_n from public.asistencias where cliente_id = c_clamp and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(b1): the refused taps wrote % attendance row(s) (expected 0)', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_clamp;
+  if v_clases <> 5 then raise exception 'RULE FAIL(b1): the refused taps moved the balance to % (expected untouched 5)', v_clases; end if;
+
+  -- …and the floor is INCLUSIVE: today-30 marks normally, hora null (not gym-today).
+  select present, hora, resultado into v_present, v_hora, v_resultado from public.toggle_pase(c_clamp, v_today - 30);
+  if v_present is not true then raise exception 'RULE FAIL(b1): today-30 was refused (the floor must be inclusive)'; end if;
+  if v_hora is not null then raise exception 'RULE FAIL(b1): a back-entry returned hora % (expected null)', v_hora; end if;
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(b1): today-30 resultado % (expected descontada)', v_resultado; end if;
+  select consumio, origen, hora into v_consumio, v_origen, v_stored from public.asistencias
+   where cliente_id = c_clamp and fecha = v_today - 30 and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(b1): today-30 row consumio % (expected true)', v_consumio; end if;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(b1): today-30 row origen % (expected libre)', v_origen; end if;
+  if v_stored is not null then raise exception 'RULE FAIL(b1): today-30 row stored hora % (expected null)', v_stored; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_clamp;
+  if v_clases <> 4 then raise exception 'RULE FAIL(b1): today-30 expected consume to 4, got %', v_clases; end if;
+
+  -- ── (b2) the clamp sits BELOW the untoggle — an out-of-range row is still undoable ──
+  select present into v_present from public.toggle_pase(c_undo, v_today - 31);
+  if v_present is not false then raise exception 'RULE FAIL(b2): the clamp swallowed the UNDO of a row already on disk'; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c_undo and deleted_at is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(b2): the undo left % active row(s)', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_undo;
+  if v_clases <> 5 then raise exception 'RULE FAIL(b2): the undo refunded to % (expected 5)', v_clases; end if;
+
+  -- ── (a) the guarded decrement's read guard, at the last class ─────────────────
+  select present, clases_restantes, resultado into v_present, v_clases, v_resultado from public.toggle_pase(c_last, v_today);
+  if v_present is not true then raise exception 'RULE FAIL(a): the LAST class was refused — the new not-found guard misfires'; end if;
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(a): last-class resultado % (expected descontada)', v_resultado; end if;
+  if v_clases is distinct from 0 then raise exception 'RULE FAIL(a): last-class returned balance % (expected 0)', v_clases; end if;
+  select consumio into v_consumio from public.asistencias
+   where cliente_id = c_last and fecha = v_today and deleted_at is null;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(a): last-class row consumio % (expected true — it WAS paid)', v_consumio; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_last;
+  if v_clases <> 0 then raise exception 'RULE FAIL(a): last-class stored balance % (expected 0)', v_clases; end if;
+
+  -- ── (c1) BACK-DATED ATTRIBUTION: one booking that day → delegate, do not charge ──
+  select present, session_id, clases_restantes, resultado into v_present, v_sess, v_clases, v_resultado
+    from public.toggle_pase(c_retro, v_today - 3);
+  if v_present is not true then raise exception 'RULE FAIL(c1): the back-entry did not mark present'; end if;
+  if v_sess is distinct from s_retro then raise exception 'RULE FAIL(c1): returned session_id % (expected the back-dated booking''s session)', v_sess; end if;
+  if v_resultado is distinct from 'reserva' then raise exception 'RULE FAIL(c1): resultado % (expected reserva — the hold was captured, not a second charge)', v_resultado; end if;
+  -- THE DEFECT, in the balance: the booking already paid, so the back-entry must cost nothing.
+  select clases_restantes into v_clases from public.clientes where id = c_retro;
+  if v_clases <> 4 then raise exception 'RULE FAIL(c1): DOUBLE CHARGE — balance % (expected the untouched 4; at 3 the back-entry paid for a class the booking''s hold already covered)', v_clases; end if;
+  -- The reservation flipped, and the row is the CLASS's, not a class-less door row.
+  select status, checked_at, is_walk_in into v_status, v_checked, v_walk
+    from public.reservation where member_id = c_retro and class_session_id = s_retro;
+  if v_status <> 'asistida' then raise exception 'RULE FAIL(c1): reservation status % (expected asistida)', v_status; end if;
+  if v_checked is null then raise exception 'RULE FAIL(c1): reservation.checked_at not stamped'; end if;
+  if v_walk is not false then raise exception 'RULE FAIL(c1): a real booking was flagged is_walk_in'; end if;
+  select consumio, origen, perdonada, fecha, gym_id into v_consumio, v_origen, v_perdonada, v_fecha, v_gym_id
+    from public.asistencias where cliente_id = c_retro and class_session_id = s_retro and deleted_at is null;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(c1): asistencia.consumio % (expected false — paid at booking)', v_consumio; end if;
+  if v_origen is distinct from 'clase' then raise exception 'RULE FAIL(c1): asistencia.origen % (expected clase)', v_origen; end if;
+  if v_perdonada is distinct from false then raise exception 'RULE FAIL(c1): asistencia.perdonada % (expected false — an attributed mark is one visit)', v_perdonada; end if;
+  if v_fecha is distinct from v_today - 3 then raise exception 'RULE FAIL(c1): asistencia.fecha % (expected the session''s own day)', v_fecha; end if;
+  if v_gym_id is distinct from v_gym then raise exception 'RULE FAIL(c1): asistencia.gym_id % expected %', v_gym_id, v_gym; end if;
+  select count(*) into v_n from public.asistencias
+   where cliente_id = c_retro and deleted_at is null and class_session_id is null;
+  if v_n <> 0 then raise exception 'RULE FAIL(c1): a class-less door row was written too (%, expected 0)', v_n; end if;
+
+  -- ── (c2) TWO bookings that day → no attribution; the ordinary walk-in charge ───
+  select present, session_id, resultado into v_present, v_sess, v_resultado from public.toggle_pase(c_dos, v_today - 4);
+  if v_present is not true then raise exception 'RULE FAIL(c2): the ambiguous back-entry did not mark present'; end if;
+  if v_sess is not null then raise exception 'RULE FAIL(c2): the RPC GUESSED a session (%) with two bookings on the day', v_sess; end if;
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(c2): resultado % (expected descontada — a door visit with no attribution pays)', v_resultado; end if;
+  select consumio, origen, class_session_id into v_consumio, v_origen, v_sess
+    from public.asistencias where cliente_id = c_dos and fecha = v_today - 4 and deleted_at is null;
+  if v_origen is distinct from 'libre' then raise exception 'RULE FAIL(c2): row origen % (expected libre)', v_origen; end if;
+  if v_sess is not null then raise exception 'RULE FAIL(c2): the door row was linked to a session'; end if;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(c2): row consumio % (expected true)', v_consumio; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_dos;
+  if v_clases <> 2 then raise exception 'RULE FAIL(c2): balance % (expected 2 — one walk-in charge off 3)', v_clases; end if;
+  -- Both bookings are left strictly alone: nothing was attributed, so nothing was captured.
+  select count(*) into v_n from public.reservation where member_id = c_dos and status = 'reservada';
+  if v_n <> 2 then raise exception 'RULE FAIL(c2): % booking(s) still reservada (expected both, untouched)', v_n; end if;
+end $$;
+
+reset role;
+
 select 'toggle_pase rules: OK' as result;
 rollback;

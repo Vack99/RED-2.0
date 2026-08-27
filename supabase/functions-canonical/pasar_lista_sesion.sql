@@ -32,16 +32,8 @@ begin
   
   
   
-  
-  
-  
-  
-  
-  
-  
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('pase:' || p_cliente_id::text));
 
-  
   
   
   select c.clases_restantes, c.vence into v_clases, v_vence
@@ -67,10 +59,10 @@ begin
     update public.asistencias set deleted_at = now() where id = v_asis_id;
     
     
+    
     if v_asis_consumio and v_clases is not null then
       update public.clientes set clases_restantes = clientes.clases_restantes + 1 where id = p_cliente_id;
     end if;
-    
     
     if v_res_id is not null then
       if v_walk then
@@ -87,14 +79,9 @@ begin
 
   
   
-  
-  
-  
   v_hora := (v_starts at time zone v_tz)::time;
 
   if v_res_id is not null and v_status in ('reservada', 'asistida') then
-    
-    
     
     
     update public.reservation set status = 'asistida', checked_at = now() where id = v_res_id;
@@ -106,26 +93,9 @@ begin
     
     
     
-    
-    
-    
-    
     if v_vence is not null and v_vence < v_fecha then
       raise exception 'Paquete vencido';
     end if;
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
     
     
     
@@ -136,17 +106,10 @@ begin
     else
       
       
-      
-      
-      
-      
-      
       if v_clases is not null and v_clases <= 0 then
         raise exception 'Sin clases disponibles';
       end if;
       v_consumio := (v_clases is not null);
-      
-      
       v_resultado := case when v_consumio then 'descontada' else 'gratis' end;
     end if;
     if v_res_id is not null then
@@ -161,10 +124,17 @@ begin
     if v_consumio then
       update public.clientes set clases_restantes = clientes.clases_restantes - 1
        where id = p_cliente_id and clientes.clases_restantes > 0;   
+      
+      
+      
+      
+      
+      if not found then
+        raise exception 'Sin clases disponibles';
+      end if;
     end if;
   end if;
 
-  
   
   insert into public.asistencias (cliente_id, fecha, hora, consumio, gym_id, class_session_id, reservation_id, origen, perdonada)
   values (p_cliente_id, v_fecha, v_hora, v_consumio, v_gym, p_session_id, v_res_id, 'clase', v_perdonada);

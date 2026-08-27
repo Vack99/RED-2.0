@@ -3,6 +3,7 @@ declare
   v_clases int;
   v_gym uuid;
   v_tz text;
+  v_hoy date;                       
   v_vence date;                     
   v_active_id uuid;
   v_active_consumio boolean;
@@ -17,9 +18,6 @@ begin
   
   
   
-  
-  
-  
   if p_session_id is not null then
     return query select * from public.pasar_lista_sesion(p_session_id, p_cliente_id);
     return;
@@ -31,20 +29,8 @@ begin
 
   
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('pase:' || p_cliente_id::text));
 
-  
   select c.clases_restantes, c.gym_id, c.vence into v_clases, v_gym, v_vence
     from public.clientes c where c.id = p_cliente_id;   
   if not found then
@@ -53,9 +39,8 @@ begin
 
   
   select timezone into v_tz from public.gym where id = v_gym;
+  v_hoy := (now() at time zone v_tz)::date;
 
-  
-  
   
   
   select id, consumio into v_active_id, v_active_consumio
@@ -66,6 +51,7 @@ begin
    limit 1;
 
   if v_active_id is not null then
+    
     
     update public.asistencias set deleted_at = now() where id = v_active_id;
     if v_active_consumio and v_clases is not null then
@@ -83,6 +69,13 @@ begin
   
   
   
+  if p_fecha > v_hoy then
+    raise exception 'La fecha no puede ser futura';
+  end if;
+  if p_fecha < v_hoy - 30 then
+    raise exception 'La fecha no puede tener más de 30 días de antigüedad';
+  end if;
+
   
   
   
@@ -96,33 +89,53 @@ begin
   
   
   
-  
-  
-  
-  
-  
-  
-  
-  select cs.id into v_booked
-    from public.reservation r
-    join public.class_session cs on cs.id = r.class_session_id
-   where r.member_id = p_cliente_id
-     and r.status = 'reservada'
-     and r.is_walk_in = false
-     and cs.cancelled_at is null
-     and (cs.starts_at at time zone v_tz)::date = p_fecha
-     and public.ventana_arribo(cs.starts_at, cs.duration_min) @> now()
-   order by abs(extract(epoch from (cs.starts_at - now()))) asc
-   limit 1;
+  if p_fecha = v_hoy then
+    
+    
+    
+    
+    
+    select cs.id into v_booked
+      from public.reservation r
+      join public.class_session cs on cs.id = r.class_session_id
+     where r.member_id = p_cliente_id
+       and r.status = 'reservada'
+       and r.is_walk_in = false
+       and cs.cancelled_at is null
+       and (cs.starts_at at time zone v_tz)::date = p_fecha
+       and public.ventana_arribo(cs.starts_at, cs.duration_min) @> now()
+     order by abs(extract(epoch from (cs.starts_at - now()))) asc
+     limit 1;
+  else
+    
+    
+    
+    
+    
+    
+    
+    select b.id into v_booked
+      from (
+        select cs.id, count(*) over () as n
+          from public.reservation r
+          join public.class_session cs on cs.id = r.class_session_id
+         where r.member_id = p_cliente_id
+           and r.status = 'reservada'
+           and r.is_walk_in = false
+           and cs.cancelled_at is null
+           and (cs.starts_at at time zone v_tz)::date = p_fecha
+      ) b
+     where b.n = 1;
+  end if;
 
   if v_booked is not null then
-    
     
     
     return query select * from public.pasar_lista_sesion(v_booked, p_cliente_id);
     return;
   end if;
 
+  
   
   
   
@@ -146,29 +159,9 @@ begin
   
   
   
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
-  
   if v_vence is not null and v_vence < p_fecha then
     raise exception 'Paquete vencido';
   end if;
-  
-  
-  
-  
-  
-  
-  
-  
   
   
   if public.visita_reciente(p_cliente_id, p_fecha, true) then
@@ -178,21 +171,15 @@ begin
   else
     
     
-    
-    
-    
-    
-    
     if v_clases is not null and v_clases <= 0 then
       raise exception 'Sin clases disponibles';
     end if;
     v_consumio := (v_clases is not null);
-    
     v_resultado := case when v_consumio then 'descontada' else 'gratis' end;
   end if;
 
   v_hora := case
-    when p_fecha = (now() at time zone v_tz)::date
+    when p_fecha = v_hoy
       then (now() at time zone v_tz)::time
     else null
   end;
@@ -204,6 +191,11 @@ begin
   if v_consumio then
     update public.clientes set clases_restantes = clientes.clases_restantes - 1
      where id = p_cliente_id and clientes.clases_restantes > 0;   
+    
+    
+    if not found then
+      raise exception 'Sin clases disponibles';
+    end if;
   end if;
 
   select c.clases_restantes into v_saldo from public.clientes c where c.id = p_cliente_id;
