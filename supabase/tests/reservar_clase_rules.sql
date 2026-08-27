@@ -105,6 +105,13 @@ declare
 begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
+  -- A SUITE OWNS ITS FIXTURE STATE. This suite anchors on the real forge row, and 20260826120100 set
+  -- that gym's `booking_enabled` to false (the class-only containment switch) — which would refuse
+  -- every booking below at setup time and fail the whole file on a product decision that has nothing
+  -- to do with the rules under test. Re-enabled explicitly here, transaction-local: the suite is one
+  -- BEGIN/ROLLBACK, so the live flag is untouched the moment it finishes. The switch itself is proven
+  -- by the dedicated vector at the tail, which flips it off and back on around its own assertions.
+  update public.gym set booking_enabled = true where id = v_gym;
   v_today := (now() at time zone v_tz)::date;
 
   -- auth users for the five acting members

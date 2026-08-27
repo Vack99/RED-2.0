@@ -138,6 +138,12 @@ declare
 begin
   select id, timezone into v_gym, v_tz from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
+  -- A SUITE OWNS ITS FIXTURE STATE. 20260826120100 set forge's `booking_enabled` to false (the
+  -- class-only containment switch), and the BOOKED half of this suite has to create real bookings
+  -- through reservar_clase before a roster mark can capture them — so the setup would die on a
+  -- product decision unrelated to the attendance rules under test. Re-enabled explicitly,
+  -- transaction-local: one BEGIN/ROLLBACK, so the live flag is untouched.
+  update public.gym set booking_enabled = true where id = v_gym;
   v_today := (now() at time zone v_tz)::date;
   -- Where the two sessions END UP: today at 18:00 and 19:00 gym-local, so hora stamps and vector (7)'s
   -- R1 proof has two distinct class instances on one day. They are INSERTED two days out and moved

@@ -120,6 +120,11 @@
 -- Every p_fecha below is derived from the session's OWN gym-local date after the move, never assumed to be
 -- "today": a window edge three hours either side of now() legitimately lands on the neighbouring day.
 --
+-- …and since 2026-08-26 the fixture GYM'S ZONE is chosen at run time to keep that from happening at all —
+-- a fixed zone made the suite fail between roughly 23:30 and 03:00 gym-local, against the new p_fecha
+-- clamp and the new back-dated attribution arm. The seed block explains the pick; the short version is
+-- that the gym's local time is always ~12:00, so every fixture instant lands on one gym-local day.
+--
 -- Per-gym & Contract-B clean (was quarantined pre-B for seeding the dropped user_id columns): a synthetic
 -- gym, its operator (gym_membership), and all clientes are minted tx-local with gen_random_uuid(); zero
 -- prod UUIDs, zero user_id references. Self-asserting: every check RAISEs on a mismatch; a clean run returns
@@ -134,8 +139,8 @@ begin;
 do $$
 declare
   v_gym    uuid := gen_random_uuid();
-  v_tz     text := 'America/Mexico_City';
-  v_today  date := (now() at time zone 'America/Mexico_City')::date;
+  v_tz     text;          -- CHOSEN AT RUN TIME so the suite passes at any wall-clock hour (see below)
+  v_today  date;
   -- Every session is born TWO DAYS OUT so reservar_clase's #165 started-class gate cannot refuse the
   -- booking below; the privileged block after the booking moves each one onto its window position.
   v_starts timestamptz := now() + interval '2 days';
@@ -156,6 +161,37 @@ declare
   c_can    uuid;                        -- (v8b) booking on a CANCELLED in-window class
   v_ct     uuid; s_id uuid; s_pre uuid; s_cls uuid; s_cls2 uuid; s_can uuid;
 begin
+  -- ── THE FIXTURE TIMEZONE IS DERIVED, NOT HARDCODED (2026-08-26) ───────────────────────────────
+  -- This suite builds its window positions as offsets from now() — t_win = now()+30m, t_pre =
+  -- now()+3h, t_cls = now()-3h — and then uses each session's own GYM-LOCAL DATE as p_fecha. With a
+  -- fixed zone that is a time bomb on two of the new guards (20260826120000):
+  --
+  --   * after ~23:30 gym-local, t_win rolls into TOMORROW, and the p_fecha clamp refuses it with
+  --     'La fecha no puede ser futura' — killing v1/v2, the delegation and v8a;
+  --   * before ~03:00 gym-local, t_cls rolls into YESTERDAY, so the back-dated attribution arm
+  --     matches the closed-window booking and DELEGATES where v4 expects the forfeit + walk-in charge
+  --     — and v6/v7/v8c with it.
+  --
+  -- Both are artefacts of the fixture's clock, not of the rules. So the zone is picked at run time:
+  -- whichever FIXED-OFFSET `Etc/GMT*` zone puts this gym's local time closest to midday right now.
+  -- Those zones are DST-free by construction (no jump can land mid-suite) and span UTC-12..UTC+14, so
+  -- a whole-hour offset near 12:00 always exists — local time lands in 12:00–12:59 at every possible
+  -- UTC hour, which is ~11 hours clear of both edges above. Derived from pg_timezone_names rather
+  -- than a hardcoded candidate list, so there is no table of names to keep correct, and the `name`
+  -- tiebreak keeps the pick deterministic across the several zones that share an offset.
+  --
+  -- Nothing else in the suite cares WHICH zone it is: every date below is derived from this same
+  -- v_tz (or read back from the gym row), never from a zone literal. The one thing the choice buys is
+  -- that f_win / f_pre / f_cls all land on the same gym-local day, which is the ordinary case the
+  -- vectors were written for.
+  select name into v_tz
+    from pg_catalog.pg_timezone_names
+   where name like 'Etc/GMT%'
+   order by abs(extract(epoch from ((now() at time zone name)::time - time '12:00'))), name
+   limit 1;
+  if v_tz is null then raise exception 'SEED FAIL: no Etc/GMT* zone found in pg_timezone_names'; end if;
+  v_today := (now() at time zone v_tz)::date;
+
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id)
     values (v_gym, 'toggle-pase-rules-suite-gym', 'Toggle Pase Rules Suite', v_tz, 'base');
 

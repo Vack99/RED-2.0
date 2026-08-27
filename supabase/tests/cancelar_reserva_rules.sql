@@ -71,6 +71,13 @@ declare
 begin
   select id into v_gym from public.gym where slug = 'forge';
   if v_gym is null then raise exception 'SEED FAIL: expected the forge gym'; end if;
+  -- A SUITE OWNS ITS FIXTURE STATE. 20260826120100 set forge's `booking_enabled` to false (the
+  -- class-only containment switch), and every vector here needs a booking to exist before it can be
+  -- cancelled — so the setup would die at reservar_clase on a product decision unrelated to the
+  -- cancel rules under test. Re-enabled explicitly, transaction-local: one BEGIN/ROLLBACK, so the
+  -- live flag is untouched. (cancelar_reserva has no such gate of its own by design — a gym that
+  -- stops taking bookings must still let the ones it already holds be cancelled.)
+  update public.gym set booking_enabled = true where id = v_gym;
 
   -- auth users for the acting members
   insert into auth.users (instance_id, id, aud, role, email) values
