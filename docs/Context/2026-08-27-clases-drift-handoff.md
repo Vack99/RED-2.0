@@ -73,19 +73,43 @@ Momence, Arketa, Mariana Tek, TeamUp, WellnessLiving; **pack specialist** Punchp
 ClassPass; **access-control hardware vendors** Kisi, Brivo; **LatAm** Fitco, Trainingym, Klasius,
 Crossfy, GymHero, Buq, Reeply. Sources = official help centers first, marketing flagged.
 
-## Open ledger
+## 2026-08-27 INCIDENT + FIX (resolved same day — context for the state below)
 
-1. **editar_venta / editar_venta_paquete** — the LAST stacking implementation; needs owner ruling
-   (does an edit also reset?), then slice 2.
-2. **Slice 2** — derived balance (`saldo_detalle`), honest gauge denominator, per-venta usadas
+Slice 1's `registrar_venta` migration hit uncommitted prod drift (mobile lane's tenant-in-effect
+had widened it to 15 args) and left TWO overloads → `300/PGRST203` on every sale,
+06:16:58Z→~15:30Z; the FULL RESET was NOT live until the fix. Full postmortem + exposure audit:
+`docs/audits/2026-08-27-registrar-venta-overload-outage.md`. Resolved and verified:
+
+- Fix migration applied to prod; **reset PROVEN live** (folio 1041 discarded an active carry).
+- Prod drift healed (3 mobile-lane migrations recovered, md5-proven), **overload guard now in
+  `pnpm test`**, denial 53/53 local docker. Pushed: `origin/main = 8f78cc1`.
+- Sweep hole closed: the 08-26 sweep skipped *ilimitado* members; 3 prod corrections applied
+  owner-consented (Fernanda →09-25, Elsa →09-16, Sandra →08-19; rollbacks in the audit doc).
+- State markers: local `main = 09727c0` (docs commit, push owed); platform fully
+  reset-rule-consistent except the parked Hanna/Oscar rows (item 5).
+
+## Open ledger — NEXT SESSION starts here
+
+0. **Carolina Nieto retry — CONFIRM FIRST (5 min).** Forge owner (Nahum/David) had NOT re-run the
+   Renovar as of session close; he's pending on the update. Check edge logs for a
+   `rpc/registrar_venta` 200 (or her row `eb495cc8`): expect **12 clases, vence = inicio+30**.
+   Any new failure ≠ the 300 class (that's dead + guarded) — diagnose fresh.
+1. **Veronica −2 — HARD DEADLINE before her vence 03-sep** (refunded classes expire unused).
+   Blocked on forge's paper list of her 8 real days; procedure + suspect table in §Veronica above.
+2. **editar_venta / editar_venta_paquete — owner ruling owed** (does an edit also reset?). Now the
+   LAST stacking implementation anywhere; also still resets balance to full grant on a
+   date/package correction. Fix rides slice 2 once ruled.
+3. **Slice 2** — derived balance (`saldo_detalle`), honest gauge denominator, per-venta usadas
    attribution (closes the Berenice display seam), "No asistió — cargada" historial line.
-3. **Veronica −2** — above.
-4. Hanna Minjarez `bf79cee1` + Oscar Anchondo `24e90312` (red) eventless stored-0 — parked.
+4. Hanna Minjarez `bf79cee1` + Oscar Anchondo `24e90312` (red) eventless stored-0 — parked,
+   owner ruling owed (only remaining reset-rule deviation platform-wide).
 5. Tenant modes specced on #309; forge agenda takedown = its own session.
 6. RED ops: roll call unrun accepted (booked = charged); records stay empty until slice 2.
-
-## 2026-08-27 INCIDENT + FIX
-
-Slice 1's `registrar_venta` migration hit uncommitted prod drift and left TWO overloads →
-`300/PGRST203` on every sale, 06:16:58Z→~15:30Z; the FULL RESET above was NOT live until the fix.
-Fixed, prod drift recovered, overload guard added — `docs/audits/2026-08-27-registrar-venta-overload-outage.md`.
+7. **Mobile-lane merge hazard (from the incident):** branches `fix/staff-gym-tenant` /
+   `mobile-admin` hold the 3 recovered migrations under OLD filenames
+   (`20260819120000`, `20260820120000`, `20260824130000`) — delete branch copies before merging,
+   else duplicates. Also owed with that lane: `dos_gimnasios_staff_pin{,_agenda}.sql`
+   written-row suites for the 11 widened RPCs.
+8. Diagnosability (small, from the incident): `ventas.ts` + vender toast flatten every RPC error
+   to "Revisa los datos" — an infra 300 read as "your data is wrong". Worth a distinct message
+   when convenient, not urgent.
