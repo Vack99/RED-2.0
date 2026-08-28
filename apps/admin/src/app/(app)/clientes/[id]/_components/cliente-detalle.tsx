@@ -17,7 +17,7 @@ import {
   Tnum,
 } from "@gym/ui/forge/ui";
 import type { ClienteFichaDTO } from "@gym/data/server/clientes";
-import type { FichaPago } from "@gym/data/server/derive";
+import type { FichaAsistencia, FichaPago } from "@gym/data/server/derive";
 import { firstName, waLink } from "@gym/format";
 import { consumeInAppNav, markInAppNav } from "../../../../../lib/nav";
 import { idleSwipe, swipeStep, type SwipeState } from "../../../../../lib/swipe";
@@ -52,8 +52,11 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   const swipe = React.useRef<SwipeState>(idleSwipe());
 
   // historial excludes today entirely (both contexts), so today's rows are added back
-  // here: the libre visit the toggle owns + every class visit (#89).
-  const asistCount = ficha.historial.length + (present ? 1 : 0) + ficha.clasesHoy.length;
+  // here: the libre visit the toggle owns + every class visit (#89). The list also holds
+  // "No asistió — cargada" lines now (§D4) — charges with NO visit behind them, so they are
+  // filtered out of the "N ASIST." count: the header states attendance, not debits.
+  const asistCount =
+    ficha.historial.filter((h) => h.tipo === "visita").length + (present ? 1 : 0) + ficha.clasesHoy.length;
   const cuentaActiva = ficha.invitacion.estado === "cuenta_activa";
   // The row's OWN veredicto — the same urgencia the directorio, INICIO and the
   // respaldo read (#225 replaced this screen's copied `diasRest <= 5` engine with a
@@ -199,10 +202,14 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
   // LIBRE, which today's toggle-owned row is too — that copy lives at the ONE render site below.
   // A pre-#89 historial row has `origen: null` (provenance unknown, #178) and must NOT read as
   // ACCESO LIBRE — the toggle-owned "HOY" row IS always a real libre visit, so it hardcodes it.
-  const histRows: { dDisplay: string; hora: string | null; today: boolean; clase: string | null; origen: "libre" | "clase" | null }[] = [
-    ...(present ? [{ dDisplay: "HOY", hora: horaHoy, today: true, clase: null, origen: "libre" as const }] : []),
+  // Today's two locally-built rows are visits by construction, and a mark made today can only
+  // ever be attributed to the newest sale, so both carry `tipo: "visita"` + `paqueteAnterior: false`.
+  const histRows: FichaAsistencia[] = [
+    ...(present
+      ? [{ dDisplay: "HOY", hora: horaHoy, today: true, clase: null, origen: "libre" as const, tipo: "visita" as const, paqueteAnterior: false }]
+      : []),
     // A class visit — origen is factually 'clase' (clasesHoy is filtered on class_session_id !== null).
-    ...ficha.clasesHoy.map((v) => ({ dDisplay: "HOY", hora: v.hora, today: true, clase: v.clase, origen: "clase" as const })),
+    ...ficha.clasesHoy.map((v) => ({ dDisplay: "HOY", hora: v.hora, today: true, clase: v.clase, origen: "clase" as const, tipo: "visita" as const, paqueteAnterior: false })),
     ...ficha.historial,
   ];
 
@@ -347,8 +354,11 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         ) : (
           /* Paquete activo — both gauges deplete from the moment of the last
             purchase: clases by attendance, días by calendar time (ADR-0002).
-            A stacked balance has no single-package denominator, so the gauge is
-            "how much of your current run is left," not "X of one package." */
+            The clases gauge denominates on the anchor sale's real GRANT (§D2), so it
+            IS "X of one package" now: the old `restantes + usadas` denominator was
+            self-fulfilling — it absorbed every drift and always painted a plausible
+            bar. When the events and the stored counter disagree the note below says
+            so out loud instead of the bar quietly hiding it. */
           <Card style={{ margin: "8px 16px 0" }}>
           <Eyebrow>PAQUETE ACTIVO</Eyebrow>
           <H1 size={22} style={{ marginTop: 8 }}>{c.paquete}</H1>
@@ -362,9 +372,17 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
                   <div style={{ width: "100%", height: "100%", background: "var(--yellow)", transform: `scaleX(${ficha.clasesGauge.fill})`, transformOrigin: "left", transition: "transform 600ms cubic-bezier(.32,.72,0,1)" }} />
                 </div>
               )}
+              {/* §D2 honest caption: the CHARGES debited from this pack, and — only when there
+                  are any — the holds already charged for classes that haven't happened yet. The
+                  Apartadas arm is omitted at 0 so the common row stays the one-word caption. */}
               <div className="uppercase" style={{ marginTop: ficha.clasesGauge ? 6 : 8, fontSize: 9.5, letterSpacing: 0.8, color: "var(--muted)" }}>
                 {ficha.clasesGauge ? (
-                  <>Usadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.clasesGauge.usadas}</Tnum></>
+                  <>
+                    Usadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.clasesGauge.usadas}</Tnum>
+                    {ficha.clasesGauge.apartadas > 0 && (
+                      <> · Apartadas <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.clasesGauge.apartadas}</Tnum></>
+                    )}
+                  </>
                 ) : c.veredicto.clases === "ilimitado" ? (
                   "Ilimitado"
                 ) : (
@@ -385,6 +403,22 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
               </div>
             </div>
           </div>
+          {/* §D1 discrepancy note — EPOCH-SCOPED by the server (`mostrarDiscrepancia` is the only
+              gate this may read): every pre-RESET_EPOCH anchor carries a stacked-era balance by
+              construction, so flagging those would be crying wolf. Attention idiom, not an error:
+              the stored counter is still what charges, this only says the events don't explain it. */}
+          {ficha.saldo.mostrarDiscrepancia && (
+            <div className="flex items-start" style={{ gap: 9, marginTop: 16, padding: "10px 12px", background: "var(--warning-soft)", border: "1px solid var(--warning)" }}>
+              <Icon name="alert" size={14} color="var(--warning)" className="shrink-0" />
+              <div className="min-w-0" style={{ fontSize: 11.5, color: "var(--muted)", lineHeight: 1.45 }}>
+                <div className="uppercase font-extrabold" style={{ fontSize: 9.5, letterSpacing: 0.9, color: "var(--fg)", marginBottom: 3 }}>
+                  Saldo sin cuadrar
+                </div>
+                Por el historial deberían quedar <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.saldo.derived}</Tnum>
+                {" "}y el saldo guardado es <Tnum style={{ color: "var(--fg)", fontWeight: 700 }}>{ficha.saldo.restantes}</Tnum>.
+              </div>
+            </div>
+          )}
           <div className="flex justify-between" style={{ marginTop: 16, fontSize: 11.5, color: "var(--muted)" }}>
             <span>COMPRADO <Tnum style={{ color: "var(--fg)" }}>{ficha.compradoDisplay.toUpperCase()}</Tnum></span>
             <span>ALTA <Tnum style={{ color: "var(--fg)" }}>{ficha.altaDisplay.toUpperCase()}</Tnum></span>
@@ -472,22 +506,46 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         {histRows.length === 0 && (
           <div style={{ padding: "20px 22px", fontSize: 12, color: "var(--muted)" }}>Sin asistencias en los últimos 30 días.</div>
         )}
-        {histRows.map((row, i) => (
+        {/* Two row kinds now (§D4). A "visita" is a real check-in — the only kind this list ever
+            held. A "no_asistio" is a booking that CHARGED a class nobody showed up to, rendered at
+            the class's own date/time; it is display only (no_show stays DERIVED — nothing here
+            writes a status), so it gets the attention dot + a stated tag instead of a visit's
+            yellow dot. `(paquete anterior)` marks a charge that landed on a sale OLDER than the
+            current package — the line that answers "why does it say 1 usada right after renewing". */}
+        {histRows.map((row, i) => {
+          const noAsistio = row.tipo === "no_asistio";
+          return (
           <div
             key={i}
             className="grid items-center"
             style={{ gridTemplateColumns: "8px 80px 1fr auto", gap: 14, padding: "12px 22px", borderTop: i === 0 ? "1px solid var(--line)" : "none", borderBottom: "1px solid var(--line)", background: row.today ? "var(--green-soft)" : "transparent" }}
           >
-            <span style={{ width: 6, height: 6, borderRadius: 999, background: row.today ? "var(--green)" : "var(--yellow)" }} />
+            <span style={{ width: 6, height: 6, borderRadius: 999, background: noAsistio ? "var(--warning)" : row.today ? "var(--green)" : "var(--yellow)" }} />
+            {/* A no-show keeps a visit's full weight — it IS a real event on the timeline, and
+                the spec is explicit that this record is not softened. The warning colour is
+                carried by the dot + the tag alone, so a RED ficha full of them stays readable. */}
             <Tnum className="uppercase" style={{ fontWeight: row.today ? 800 : 600, fontSize: 13, color: row.today ? "var(--green)" : "var(--fg)", letterSpacing: 0.4 }}>{row.dDisplay}</Tnum>
             {/* A pre-#89 row (`origen` null) has UNKNOWN context — may well have been an
                 unrecorded class (#178) — so it reads "—", never a false ACCESO LIBRE. */}
-            <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>
-              {row.clase ?? (row.origen === "libre" ? "ACCESO LIBRE" : "—")}
-            </span>
+            <div className="min-w-0">
+              <span style={{ fontSize: 11.5, color: "var(--muted)", letterSpacing: 0.4 }}>
+                {row.clase ?? (row.origen === "libre" ? "ACCESO LIBRE" : "—")}
+              </span>
+              {noAsistio && (
+                <div className="uppercase font-bold" style={{ marginTop: 3, fontSize: 9, letterSpacing: 0.9, color: "var(--warning)" }}>
+                  No asistió — cargada
+                </div>
+              )}
+              {row.paqueteAnterior && (
+                <div style={{ marginTop: 3, fontSize: 10, letterSpacing: 0.3, color: "var(--muted-soft)" }}>
+                  (paquete anterior)
+                </div>
+              )}
+            </div>
             <Tnum style={{ fontSize: 12, color: row.today ? "var(--green)" : "var(--muted)" }}>{row.hora ?? "—"}</Tnum>
           </div>
-        ))}
+          );
+        })}
 
         {/* Pagos */}
         <SectionHeader trailing={`${ficha.ventasCount} ${ficha.ventasCount === 1 ? "VENTA" : "VENTAS"}`}>HISTORIAL DE PAGOS</SectionHeader>

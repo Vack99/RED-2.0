@@ -14,10 +14,12 @@ import {
   derivarInvitacion,
   derivarPaseCliente,
   esPrimeraCompra,
+  momentoEnZona,
   shapeFicha,
   type ClienteDerivado,
   type FichaAsistRow,
   type FichaDerivada,
+  type FichaReservaRow,
   type InvitacionDerivada,
   type PaseClienteDTO,
 } from "./derive";
@@ -122,25 +124,38 @@ function monthStartIso(hoy: Date): string {
   return toIsoDay(new Date(hoy.getFullYear(), hoy.getMonth(), 1));
 }
 
-/** The gym-local "HH:MM:SS" wall clock for a timestamptz — matches the Postgres
- *  `time` literal format asistencias.hora is stored in, so a venta's instant can be
- *  string-compared against it directly (C14, clases-gauge anchor). Seconds matter
- *  here (unlike @gym/format's `horaEnZona`, "HH:MM" for display): truncating to the
- *  minute would misclassify a check-in seconds apart from the venta on the same
- *  minute. */
-function horaSegEnZona(isoTimestamp: string, tz: string): string {
-  return new Intl.DateTimeFormat("en-GB", {
-    timeZone: tz,
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hourCycle: "h23",
-  }).format(new Date(isoTimestamp));
-}
-
 /** The ficha's rolling attendance window length, in days (ADR/spec 2026-06-01).
  *  One constant, easy to retune; the directory keeps its own this-month count. */
 const FICHA_VENTANA_DIAS = 30;
+
+/** The bookings leg of the saldo derivation (slice 2 §D1). `member_id` joins `clientes.id`;
+ *  the session embed is `!inner` because the read FILTERS on it — a booking whose session row
+ *  is gone can't be placed on the calendar anyway. `duration_min` is the noShow/apartada
+ *  boundary's other half (`class_session` has no `ends_at`); the name columns let a
+ *  "No asistió — cargada" line name its class through the same `etiquetaClase` ladder. */
+const RESERVA_COLUMNS =
+  "id, created_at, consumio, status, class_session_id, class_session!inner(starts_at, duration_min, is_special, special_name, class_type(name))";
+
+/** Bookings whose CLASS falls at/after `desdeDia` (gym-local day), with no upper bound so the
+ *  future holds the Apartadas count needs come along. Bounded on the session rather than on
+ *  `created_at`: a class booked days BEFORE the anchor sale but held after it still has to be
+ *  in hand, or its check-in would be counted a second time on the asistencia leg. */
+function leerReservas(
+  supabase: SupabaseServer,
+  clienteId: string,
+  gymId: string,
+  desdeDia: string,
+) {
+  return supabase
+    .from("reservation")
+    .select(RESERVA_COLUMNS)
+    .eq("member_id", clienteId)
+    // Scope selector, not a boundary (spec 2026-07-13 §1.1) — RLS stays the boundary.
+    .eq("gym_id", gymId)
+    // 00:00Z is at or before the gym-local start of that day for every MX zone (UTC−6/−7), so
+    // the window can only ever be a few hours WIDER than asked, never narrower.
+    .gte("class_session.starts_at", `${desdeDia}T00:00:00Z`);
+}
 
 /** A roster row plus its derived invite state (ADR-0015). Extends the pure
  *  ClienteDerivado the directory renders — every lifecycle fact (estado, urgencia,
@@ -384,7 +399,7 @@ export const getClienteFicha = cache(
     // purchase (predating the window) is reconciled by the exact count below (Part B).
     const ventanaIso = toIsoDay(addDays(hoy, -FICHA_VENTANA_DIAS));
 
-    const [asistRes, ventasRes, vecinos, perfilRes, plantillas, paquetes, cobro, paseSuelto] =
+    const [asistRes, ventasRes, reservasRes, vecinos, perfilRes, plantillas, paquetes, cobro, paseSuelto] =
       await Promise.all([
         supabase
           .from("asistencias")
@@ -397,8 +412,10 @@ export const getClienteFicha = cache(
           // PROVENANCE (#178): null on a pre-#89 row, which the historial must render "—",
           // never assert ACCESO LIBRE for. A many-to-one FK embed + one existing column on
           // the select that is already here: no extra round trip, no migration.
+          // `reservation_id` (slice 2 §D0) is the join that keeps a booking-charged check-in
+          // from being counted on BOTH legs — one column on a select already being made.
           .select(
-            "fecha, hora, consumio, perdonada, class_session_id, origen, class_session(starts_at, is_special, special_name, class_type(name))",
+            "fecha, hora, consumio, perdonada, class_session_id, origen, reservation_id, class_session(starts_at, is_special, special_name, class_type(name))",
           )
           .eq("cliente_id", id)
           .is("deleted_at", null)
@@ -413,6 +430,10 @@ export const getClienteFicha = cache(
           // §D3/C1). `fecha` still drives the DISPLAY (compradoDisplay / días-gauge anchor).
           .order("created_at", { ascending: false })
           .order("id", { ascending: false }),
+        // The bookings leg (§D1). Same 30-day floor as the asistencias window so the common
+        // case needs no second round trip; an anchor older than that re-reads from the anchor
+        // day below, exactly like the asistencia head-count does.
+        leerReservas(supabase, id, gym.id, ventanaIso),
         getVecinos(id, supabase),
         supabase.from("perfil").select("negocio").eq("gym_id", gym.id).maybeSingle(),
         listarPlantillas(supabase),
@@ -433,48 +454,43 @@ export const getClienteFicha = cache(
       gym.brandName,
     ).negocio;
 
-    // Classes consumed since the last purchase (Part B clases-gauge denominator): a VISIT
-    // count, the same unit asistencias_mes_por_cliente uses (20260729120000:764) — NOT
-    // `consumio` (#173): a booked class visit is written consumio=false because
-    // reservar_clase already charged the balance at booking time, so gating on consumio
-    // dropped every booked visit from this counter. `perdonada` (added alongside
-    // `consumio`) is excluded instead — it marks the second record of one cooldown-paired
-    // arrival, never a real second visit. Counted at/after the anchor sale's WRITE INSTANT
-    // (created_at, not fecha — C2/C14), not just its calendar day: a check-in earlier the
-    // same day as a renewal was already spent from the pre-renewal balance, so
-    // day-granularity double-counts it, and a backdated fecha would wrongly re-count gap
-    // visits that already decremented the balance live. ventaDia is the gym-local calendar
-    // day; ventaHora is the gym-local "HH:MM:SS" wall clock, directly string-comparable
-    // against asistencias.hora (a Postgres `time`). Null `hora` (back-entry rows,
-    // predating the column) are counted: no recorded time can prove they preceded it.
+    // The saldo's asistencia leg (slice 2 §D0, replacing the #173 VISIT count this branch used
+    // to produce). Counted at/after the anchor sale's WRITE INSTANT (created_at, not fecha —
+    // C2/C14), not just its calendar day: a check-in earlier the same day as a renewal was
+    // already spent from the pre-renewal balance, so day-granularity double-counts it, and a
+    // backdated fecha would wrongly re-count gap visits that already decremented the balance
+    // live. `momentoEnZona` gives the gym-local calendar day plus the "HH:MM:SS" wall clock,
+    // directly string-comparable against asistencias.hora (a Postgres `time`). Null `hora`
+    // (back-entry rows) are counted: no recorded time can prove they preceded the sale.
     const ventas = ventasRes.data ?? [];
-    const ventaInstante = ventas[0]
-      ? { dia: toIsoDay(fechaEnZona(ventas[0].created_at, tz)), hora: horaSegEnZona(ventas[0].created_at, tz) }
-      : null;
-    let attendedSincePurchase = 0;
-    if (ventaInstante) {
+    const ventaInstante = ventas[0] ? momentoEnZona(ventas[0].created_at, tz) : null;
+    let reservas = (reservasRes.data ?? []) as FichaReservaRow[];
+    // null = the fetched asistencias already reach the anchor, so derive.ts counts them itself
+    // with the full §D0 rule (including the reservation dedupe it can see row by row).
+    let cargadasFueraDeVentana: number | null = null;
+    if (ventaInstante && ventaInstante.dia < ventanaIso) {
+      // Old purchase predating the window: a tiny exact head-count keeps the counts correct
+      // without widening the historial fetch — grown for §D0 (§D4's fallback rule) with a
+      // bookings read from the anchor day, which serves BOTH the reservation leg and the
+      // dedupe below.
       const { dia: ventaDia, hora: ventaHora } = ventaInstante;
-      if (ventaDia >= ventanaIso) {
-        // Common case: the purchase is inside the 30-day window we already fetched,
-        // so count the rows in hand — no extra round trip.
-        attendedSincePurchase = (asistRes.data ?? []).filter(
-          (a) =>
-            !a.perdonada &&
-            (a.fecha > ventaDia ||
-              (a.fecha === ventaDia && (a.hora === null || a.hora >= ventaHora))),
-        ).length;
-      } else {
-        // Old purchase predating the window: a tiny exact head-count keeps the
-        // gauge denominator correct without widening the historial fetch.
-        const { count } = await supabase
+      const [cabeza, reservasAncla] = await Promise.all([
+        supabase
           .from("asistencias")
           .select("id", { count: "exact", head: true })
           .eq("cliente_id", id)
           .eq("perdonada", false)
           .is("deleted_at", null)
-          .or(`fecha.gt.${ventaDia},and(fecha.eq.${ventaDia},or(hora.gte.${ventaHora},hora.is.null))`);
-        attendedSincePurchase = count ?? 0;
-      }
+          .or(`fecha.gt.${ventaDia},and(fecha.eq.${ventaDia},or(hora.gte.${ventaHora},hora.is.null))`),
+        leerReservas(supabase, id, gym.id, ventaDia),
+      ]);
+      reservas = (reservasAncla.data ?? []) as FichaReservaRow[];
+      // §D0's asistencia leg drops marks whose booking already charged. The head-count can't
+      // express that join, so subtract them: a charged booking that was checked in is exactly
+      // one 'asistida' row here (both check-in RPCs stamp that status), and its mark is inside
+      // the counted range by construction — the class cannot start before it was booked.
+      const yaContadasEnReserva = reservas.filter((r) => r.consumio && r.status === "asistida").length;
+      cargadasFueraDeVentana = Math.max(0, (cabeza.count ?? 0) - yaContadasEnReserva);
     }
 
     const ficha = shapeFicha(
@@ -489,7 +505,9 @@ export const getClienteFicha = cache(
       tz,
       plantillas,
       negocio,
-      attendedSincePurchase,
+      // `ahora` is the read's real instant — the only thing that can tell an apartada (class
+      // still to come) from a "No asistió — cargada" (class already over).
+      { reservas, cargadasFueraDeVentana, ahora: new Date() },
       { precios: fmtPrecios(paquetes), datos_pago: fmtDatosPago(cobro) },
     );
 

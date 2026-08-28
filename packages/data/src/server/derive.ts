@@ -210,18 +210,106 @@ export function gaugeFill(remaining: number, denom: number): number {
   return Math.min(1, Math.max(0, remaining / denom));
 }
 
-/** Clases-bar denominator: the balance granted at the last purchase = what's left
- *  now plus every visit counted since that purchase (#173: not-soft-deleted, not
- *  `perdonada` — a booked class visit is written `consumio = false`, so gating on
- *  `consumio` would drop it from this denominator too). */
-export function clasesDenom(clasesRest: number, attendedSincePurchase: number): number {
-  return clasesRest + attendedSincePurchase;
-}
-
 /** Días-bar denominator: the full validity window granted at the last purchase =
  *  days from that purchase to `vence` (drains by calendar time). */
 export function diasDenom(vence: Date, lastPurchaseDate: Date): number {
   return diasRestantes(vence, lastPurchaseDate);
+}
+
+// ── D0 · the unified "cargable" counting rule (slice 2 spec §D0) ────
+// The ONE definition of "this event charged a class", shared by the ficha's saldo
+// derivation and (in SQL) by mi_membresia + editar_venta. Two legs that never
+// double-count the same charge:
+//   · asistencia leg — a mark that is not perdonada and does NOT link to a
+//     reservation that already charged at booking (`consumio = true`). That last
+//     clause defers booking-charged check-ins to the reservation leg. Note the leg
+//     counts `consumio = false` rows too (attended while ilimitado): as-if-original
+//     means "would have charged under the corrected terms".
+//   · reservation leg — a hold that charged (`consumio = true`) and was not
+//     cancelled. `cancel_class_session` refunds and stamps 'cancelada' while leaving
+//     `consumio` stale, so the status filter is what keeps a gym-cancelled class out.
+
+/** The go-live instant of the 2026-08-27 `registrar_venta` reset fix (the sales-outage
+ *  close-out). Every anchor sale written BEFORE it carries a stacked-era balance BY
+ *  CONSTRUCTION, so a derived-vs-stored gap on those is expected, not evidence — noting it
+ *  roster-wide would be crying wolf. The discrepancy note is therefore scoped to anchors
+ *  created at/after this instant (spec §D1). */
+export const RESET_EPOCH = "2026-08-27T15:30:00.000Z";
+
+/** A gym-local charge moment: the calendar day plus the wall clock, SECONDS included — a
+ *  check-in seconds after a renewal belongs to the new pack, and truncating to the minute
+ *  would misfile it. `hora === null` is the backdated desk mark (`fijar_asistencia` writes
+ *  `hora = null` for any day but today, an ongoing stream): date granularity, §D0. */
+export interface MomentoCargo {
+  dia: string; // 'YYYY-MM-DD'
+  hora: string | null; // 'HH:MM:SS'
+}
+
+/** A timestamptz → its gym-local `{ dia, hora }`. ONE home for the conversion: the ficha's
+ *  attribution, the DAL's old-anchor fallback filter and (mirrored) the SQL helper all read
+ *  the same moment, so a naive `::date`-style off-by-one after 18:00 local can't creep into
+ *  one of them alone (§D0). */
+export function momentoEnZona(isoTimestamp: string, tz: string): { dia: string; hora: string } {
+  return {
+    dia: toIsoDay(fechaEnZona(isoTimestamp, tz)),
+    hora: new Intl.DateTimeFormat("en-GB", {
+      timeZone: tz,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hourCycle: "h23",
+    }).format(new Date(isoTimestamp)),
+  };
+}
+
+/** A venta reduced to its attribution key — the gym-local moment it was WRITTEN
+ *  (`created_at`; a backdated `fecha` never moves it, §D0 "no backdate re-attribution"). */
+export interface AnclaVenta {
+  id: string;
+  dia: string;
+  hora: string;
+}
+
+/** Build the attribution keys from the DAL's ventas list. Order is preserved, so the caller's
+ *  `created_at desc` ordering IS the "latest venta first" the lookup below walks. */
+export function anclasVenta(ventasDesc: FichaVentaRow[], tz: string): AnclaVenta[] {
+  return ventasDesc.map((v) => ({ id: v.id, ...momentoEnZona(v.created_at, tz) }));
+}
+
+/** §D0 attribution: an event belongs to the LATEST venta whose write instant is ≤ its charge
+ *  moment. A null-hora event falls back to DATE granularity, and a same-day tie goes to the
+ *  NEWER venta (`ventasDesc` is newest-first, so the first match is that venta) — matching the
+ *  DAL's own null-hora fallback, which counts an untimed same-day mark in. `null` = the event
+ *  predates every sale. */
+export function ventaAtribuida(ventasDesc: AnclaVenta[], ev: MomentoCargo): string | null {
+  for (const v of ventasDesc) {
+    const anterior =
+      ev.hora === null ? v.dia <= ev.dia : v.dia < ev.dia || (v.dia === ev.dia && v.hora <= ev.hora);
+    if (anterior) return v.id;
+  }
+  return null;
+}
+
+/** §D0 asistencia leg. `deleted_at is null` is the fetch's job (the DAL never reads soft-deleted
+ *  rows); `reservasCobradas` is the id set of reservations that charged at booking. */
+export function esCargableAsistencia(
+  a: { perdonada: boolean; reservation_id: string | null },
+  reservasCobradas: ReadonlySet<string>,
+): boolean {
+  if (a.perdonada) return false;
+  return a.reservation_id === null || !reservasCobradas.has(a.reservation_id);
+}
+
+/** §D0 reservation leg: the hold charged and was not cancelled. */
+export function esCargableReserva(r: { consumio: boolean; status: string }): boolean {
+  return r.consumio && r.status !== "cancelada";
+}
+
+/** A class session's END instant, in epoch ms. `class_session` has NO `ends_at` column
+ *  (verified against the generated schema types) — the end is `starts_at + duration_min`.
+ *  This is the noShow/apartada boundary: in-progress is still an apartada (§D1). */
+export function finSesion(s: { starts_at: string; duration_min: number }): number {
+  return new Date(s.starts_at).getTime() + s.duration_min * 60_000;
 }
 
 export interface FichaAsistencia {
@@ -239,6 +327,17 @@ export interface FichaAsistencia {
    *  the leaf must render "—", never assert ACCESO LIBRE for a visit that may well have
    *  been an unrecorded class (#178: at forge, 189 of 206 pre-#89 class-less rows were). */
   origen: "libre" | "clase" | null;
+  /** The historial row's KIND (§D4). `"visita"` is an asistencia row — every row the list
+   *  used to hold. `"no_asistio"` is the new line: a booking that CHARGED a class and whose
+   *  session ended with no check-in ("No asistió — cargada"). It has no asistencia behind it,
+   *  so nothing on this screen can toggle or undo it, and `no_show` stays DERIVED — this row
+   *  is display only, never a status write (reservation-truthfulness ruling). */
+  tipo: "visita" | "no_asistio";
+  /** The charge behind this row was attributed to a venta OLDER than the current anchor, so
+   *  the leaf tags it `(paquete anterior)` (§D4) — this is what closes the "why does it say 1
+   *  used" seam for a mark made hours before a renewal was registered. `false` on a row that
+   *  charged nothing at all (perdonada / already counted on the other leg). */
+  paqueteAnterior: boolean;
 }
 export interface FichaPago {
   /** The `ventas.id` this row corrects/deletes (#269) — never rendered, only threaded to the
@@ -292,6 +391,10 @@ export interface FichaAsistRow {
    *  provenance unknown, #178). Threaded through to `FichaAsistencia.origen` so the ficha's
    *  historial never asserts ACCESO LIBRE for a class-less row it cannot actually attest. */
   origen: "libre" | "clase" | null;
+  /** The booking this mark checked in against (§D0) — the join that keeps a booking-charged
+   *  check-in from being counted twice (once here, once on the reservation leg) and that
+   *  proves a charged hold WAS attended. */
+  reservation_id: string | null;
   /** The class itself, embedded on the same read (#178) — null on an ACCESO LIBRE row.
    *  Deliberately NOT filtered on `cancelled_at`: cancelling a session afterwards does
    *  not un-attend it, and dropping the embed would blank a real visit's label. */
@@ -330,14 +433,276 @@ export interface FichaVentaRow {
   vigencia_dias: number | null;
 }
 
-/** A saldo depletion gauge: the fill ratio (0–1) the bar renders. The clases gauge
- *  also carries `usadas` (the "usadas X" caption); the días caption is `venceDisplay`. */
+/** A reservation row the saldo derivation reads (§D1's new fetch). `reservation.member_id`
+ *  joins `clientes.id`; the embedded session carries the two columns the noShow/apartada
+ *  boundary needs (`starts_at` + `duration_min` — there is no `ends_at`) plus the same name
+ *  ladder `etiquetaClase` walks, so a "No asistió — cargada" line names its class. */
+export interface FichaReservaRow {
+  id: string;
+  created_at: string;
+  consumio: boolean;
+  status: string;
+  class_session_id: string;
+  class_session: {
+    starts_at: string;
+    duration_min: number;
+    is_special: boolean;
+    special_name: string | null;
+    class_type: { name: string } | null;
+  } | null;
+}
+
+/** A saldo depletion gauge: the fill ratio (0–1) the bar renders, plus the caption's two
+ *  HONEST counts (§D2). The días caption is `venceDisplay`.
+ *
+ *  `total` is the anchor sale's GRANT (`ventas.clases`) — not the old `restantes + usadas`,
+ *  which was self-fulfilling: it absorbed every drift, so a stacked or hand-edited balance
+ *  always painted a plausible bar. `usadas` moved with it, from the #173 VISIT count to the
+ *  §D0 CHARGE count, so the caption states what was actually debited from this pack. */
 export interface ClasesGauge {
   fill: number;
   usadas: number;
+  /** Holds that already charged but whose class has not ended yet — the caption's
+   *  "· Apartadas N" arm, omitted by the leaf when 0. */
+  apartadas: number;
+  total: number;
 }
 export interface DiasGauge {
   fill: number;
+}
+
+/** The anchor sale a balance is explained against — the LAST-WRITTEN venta (`ventas[0]`,
+ *  created_at desc). `grant` is `ventas.clases`; null = an ilimitado pack, which has no
+ *  gauge and no derivable balance. */
+export interface SaldoAncla {
+  ventaId: string;
+  folio: number;
+  grant: number | null;
+  createdAt: string;
+  fecha: string;
+}
+
+/** The ficha's balance, EXPLAINED from events (§D1). The stored counter stays the operational
+ *  source — this is the derivation that says where it should be, so the two can be compared out
+ *  loud instead of the gauge quietly denominating on whatever the counter happens to hold. */
+export interface SaldoDetalle {
+  anchor: SaldoAncla | null;
+  /** §D0 charge events attributed to the anchor whose mark/session is already in the past. */
+  usadas: number;
+  /** The subset of `usadas` that came from the reservation leg with no check-in behind it and
+   *  a session that has ENDED — the "No asistió — cargada" lines. */
+  noShows: number;
+  /** Reservation-leg charges whose session has not ended yet (in-progress counts here). */
+  apartadas: number;
+  /** RAW stored `clientes.clases_restantes` — never the read-time forfeited number. The
+   *  invariant has to run on what the DB actually holds. null = ilimitado. */
+  restantes: number | null;
+  /** grant − usadas − apartadas. null when the anchor is ilimitado (nothing to derive). */
+  derived: number | null;
+  /** derived − restantes. Zero on a healthy member; nonzero means the stored counter and the
+   *  event history disagree. null when either side is null. */
+  discrepancia: number | null;
+  /** Whether the ficha may SHOW that gap (§D1): only a nonzero `discrepancia` on an anchor
+   *  written at/after `RESET_EPOCH`. Every pre-epoch anchor carries a stacked-era balance by
+   *  construction, so flagging those would be crying wolf. */
+  mostrarDiscrepancia: boolean;
+}
+
+/** Everything the saldo derivation needs beyond the rows the ficha already reads. Passed as one
+ *  object rather than three more positionals — and it REPLACES the old `attendedSincePurchase`
+ *  count, whose fetch machinery the DAL now repurposes for the §D0 charge count (§D2). */
+export interface EntradaSaldo {
+  /** Bookings covering the anchor window — see `FichaReservaRow`. */
+  reservas: FichaReservaRow[];
+  /** The DAL's EXACT asistencia-leg charge count when the fetched 30-day asistencia window does
+   *  not reach back to the anchor (the old-anchor head-count path). `null` = the rows in hand
+   *  already cover the anchor, so count them here. */
+  cargadasFueraDeVentana: number | null;
+  /** The read's instant — the noShow/apartada boundary. Passed in (never `Date.now()` in here)
+   *  for the same reason `ctx.hoy` is: this module stays pure. */
+  ahora: Date;
+}
+
+const SALDO_VACIO: EntradaSaldo = { reservas: [], cargadasFueraDeVentana: null, ahora: new Date(0) };
+
+/**
+ * Explain a balance from events (§D0 + §D1). PURE. `ventas` is ordered created_at DESC (the
+ * DAL's order), so `ventas[0]` is the anchor. Both legs are attributed with the SAME
+ * `ventaAtribuida` rule, so an event can only ever land on one venta.
+ *
+ * A no-show is claimed only when BOTH signals agree the member never showed: the reservation is
+ * not `'asistida'` (both check-in RPCs stamp that) AND no asistencia in hand links back to it.
+ * The status leg is what keeps the claim honest when the session predates the fetched asistencia
+ * window — an attended-but-out-of-window booking would otherwise read as a no-show.
+ */
+export function saldoDetalle(
+  clasesRestantes: number | null,
+  ventas: FichaVentaRow[],
+  asistencias: FichaAsistRow[],
+  tz: string,
+  entrada: EntradaSaldo,
+): SaldoDetalle {
+  const latest = ventas[0];
+  const anchor: SaldoAncla | null = latest
+    ? {
+        ventaId: latest.id,
+        folio: latest.folio,
+        grant: latest.clases,
+        createdAt: latest.created_at,
+        fecha: latest.fecha,
+      }
+    : null;
+  const base: SaldoDetalle = {
+    anchor,
+    usadas: 0,
+    noShows: 0,
+    apartadas: 0,
+    restantes: clasesRestantes,
+    derived: null,
+    discrepancia: null,
+    mostrarDiscrepancia: false,
+  };
+  if (!anchor) return base;
+
+  const anclas = anclasVenta(ventas, tz);
+  const cobradas = reservasCobradas(entrada.reservas);
+
+  const usadasAsistencia =
+    entrada.cargadasFueraDeVentana ??
+    asistencias.filter(
+      (a) =>
+        esCargableAsistencia(a, cobradas) &&
+        ventaAtribuida(anclas, { dia: a.fecha, hora: a.hora }) === anchor.ventaId,
+    ).length;
+
+  let usadasReserva = 0;
+  let apartadas = 0;
+  for (const r of entrada.reservas) {
+    if (!cargoDelAncla(r, anclas, anchor.ventaId, tz)) continue;
+    if (sesionTerminada(r, entrada.ahora)) usadasReserva += 1;
+    else apartadas += 1;
+  }
+  const noShows = reservasNoAsistidas(entrada.reservas, asistencias, anclas, anchor.ventaId, tz, entrada.ahora)
+    .length;
+
+  const usadas = usadasAsistencia + usadasReserva;
+  const derived = anchor.grant === null ? null : anchor.grant - usadas - apartadas;
+  const discrepancia = derived === null || clasesRestantes === null ? null : derived - clasesRestantes;
+  return {
+    anchor,
+    usadas,
+    noShows,
+    apartadas,
+    restantes: clasesRestantes,
+    derived,
+    discrepancia,
+    mostrarDiscrepancia:
+      discrepancia !== null &&
+      discrepancia !== 0 &&
+      new Date(anchor.createdAt).getTime() >= Date.parse(RESET_EPOCH),
+  };
+}
+
+/** The id set of bookings that charged at booking time — the asistencia leg's dedupe key. */
+function reservasCobradas(reservas: FichaReservaRow[]): Set<string> {
+  return new Set(reservas.filter((r) => r.consumio).map((r) => r.id));
+}
+
+/** A charged, non-cancelled booking whose charge landed on THIS anchor. */
+function cargoDelAncla(r: FichaReservaRow, anclas: AnclaVenta[], anchorId: string, tz: string): boolean {
+  return esCargableReserva(r) && ventaAtribuida(anclas, momentoEnZona(r.created_at, tz)) === anchorId;
+}
+
+/** Has the class already ended? A hold whose session row is missing cannot be proven still
+ *  pending, so it counts as spent rather than as an apartada that never resolves. */
+function sesionTerminada(r: FichaReservaRow, ahora: Date): boolean {
+  return r.class_session ? finSesion(r.class_session) <= ahora.getTime() : true;
+}
+
+/**
+ * The charged bookings attributed to `anchorId` whose class ENDED with nothing to show for it —
+ * the §D1 noShow set. ONE definition, read both by `saldoDetalle`'s count and by the
+ * "No asistió — cargada" historial lines, so the number and the rows can never disagree.
+ *
+ * A no-show is claimed only when BOTH signals agree: the reservation is not `'asistida'` (every
+ * check-in path — `pasar_lista_sesion`, `fijar_asistencia` — stamps that status) AND no
+ * asistencia in hand links back to it. The status leg is what keeps the claim honest for a
+ * session older than the fetched asistencia window, where the linked mark simply isn't in hand.
+ */
+export function reservasNoAsistidas(
+  reservas: FichaReservaRow[],
+  asistencias: FichaAsistRow[],
+  anclas: AnclaVenta[],
+  anchorId: string | null,
+  tz: string,
+  ahora: Date,
+): FichaReservaRow[] {
+  if (anchorId === null) return [];
+  const conAsistencia = new Set(
+    asistencias.map((a) => a.reservation_id).filter((r): r is string => r !== null),
+  );
+  return reservas.filter(
+    (r) =>
+      cargoDelAncla(r, anclas, anchorId, tz) &&
+      sesionTerminada(r, ahora) &&
+      r.status !== "asistida" &&
+      !conAsistencia.has(r.id),
+  );
+}
+
+/** A historial entry plus its sort key — the gym-local "YYYY-MM-DDTHH:MM:SS" the merge orders on.
+ *  An untimed mark keeps its day and sorts to the END of it (no time to place it any better). */
+interface FilaHistorial {
+  clave: string;
+  fila: FichaAsistencia;
+}
+
+/** The "No asistió — cargada" lines (§D4), rendered at the CLASS SESSION's date/time — the
+ *  charge's own moment is the booking, but the operator reads this list by when the class was.
+ *  Display only: `no_show` stays derived, never a status write. */
+function filasNoAsistio(
+  entrada: EntradaSaldo,
+  asistencias: FichaAsistRow[],
+  anclas: AnclaVenta[],
+  anchorId: string | null,
+  tz: string,
+): FilaHistorial[] {
+  return reservasNoAsistidas(entrada.reservas, asistencias, anclas, anchorId, tz, entrada.ahora)
+    .filter((r) => r.class_session !== null)
+    .map((r) => {
+      const s = r.class_session!;
+      const { dia, hora } = momentoEnZona(s.starts_at, tz);
+      const d = parseDay(dia);
+      return {
+        clave: `${dia}T${hora}`,
+        fila: {
+          dDisplay: `${DOW[d.getDay()].toLowerCase()} ${d.getDate()}`,
+          hora: hora.slice(0, 5),
+          today: false,
+          clase: etiquetaClase(s, tz),
+          origen: "clase" as const,
+          tipo: "no_asistio" as const,
+          // A noShow is anchor-attributed by construction (`reservasNoAsistidas` filters on it).
+          paqueteAnterior: false,
+        },
+      };
+    });
+}
+
+/** Merge the no-show lines into the visit list WITHOUT reordering the visits: the DAL orders
+ *  asistencias by `fecha` alone, so two marks on one day keep their fetched order (#178's
+ *  METCON-then-YOGA pairing depends on it). Each no-show is simply dropped in ahead of the first
+ *  visit older than it. */
+function fusionarHistorial(visitas: FilaHistorial[], noAsistio: FilaHistorial[]): FichaAsistencia[] {
+  const extra = [...noAsistio].sort((a, b) => (a.clave < b.clave ? 1 : a.clave > b.clave ? -1 : 0));
+  const out: FichaAsistencia[] = [];
+  let j = 0;
+  for (const v of visitas) {
+    while (j < extra.length && extra[j].clave > v.clave) out.push(extra[j++].fila);
+    out.push(v.fila);
+  }
+  while (j < extra.length) out.push(extra[j++].fila);
+  return out;
 }
 
 /** Everything the ficha derives at read, minus the I/O-sourced hoyIso + vecinos. */
@@ -355,6 +720,9 @@ export interface FichaDerivada {
   /** Clases depletion bar, anchored to the last purchase. null = hide the bar
    *  (no ventas, or ilimitado clases — both render just the número). */
   clasesGauge: ClasesGauge | null;
+  /** The balance EXPLAINED from events (§D1) — the gauge's counts come from here, and the
+   *  epoch-scoped `mostrarDiscrepancia` is the only gate the admin-only note may read. */
+  saldo: SaldoDetalle;
   /** Días depletion bar, anchored to the last purchase. null = hide (no ventas). */
   diasGauge: DiasGauge | null;
   compradoDisplay: string;
@@ -386,9 +754,9 @@ export interface FichaDerivada {
  * first (created_at desc — never fecha, which a backdate can push into the past;
  * spec §D3), so `ventas[0]` is the active package / saldo anchor. The `fecha`-based
  * displays below (compradoDisplay / the días-gauge anchor) are the effective/sold
- * day and stay on `fecha` deliberately. `attendedSincePurchase` is the exact count
- * of consumed classes since that purchase, computed by the DAL (which alone knows
- * whether the windowed rows already cover the anchor date).
+ * day and stay on `fecha` deliberately. `saldo` (§D1) carries the bookings, the read's instant
+ * and — for an anchor older than the fetched window — the DAL's exact charge count; it REPLACES
+ * the old `attendedSincePurchase` visit count, whose fetch machinery the DAL repurposed (§D2).
  */
 export function shapeFicha(
   c: FichaClienteRow,
@@ -406,27 +774,55 @@ export function shapeFicha(
   tz: string,
   plantillas: PlantillaDTO[],
   negocio: string,
-  attendedSincePurchase: number,
+  /** The saldo derivation's extra inputs (§D1). Defaulted so a fixture that renders no
+   *  bookings keeps the short positional call shape. */
+  saldoEntrada: EntradaSaldo = SALDO_VACIO,
   /** The two operator-wide tokens the cliente row can't supply — the package
    *  price list ({precios}) and how-to-pay ({datos_pago}). Optional + LAST so the
    *  pure unit tests keep their positional call shape; the DAL fills them in. */
   extras: { precios?: string; datos_pago?: string } = {},
 ): FichaDerivada {
   const hoyIso = ctx.hoy;
-  const historial: FichaAsistencia[] = asistencias
+  const saldo = saldoDetalle(c.clases_restantes, ventas, asistencias, tz, saldoEntrada);
+  // §D4 attribution tags. A visit row is tagged `(paquete anterior)` when the charge BEHIND it
+  // landed on a venta older than the anchor — which for a booking-charged check-in is the
+  // BOOKING's instant, not the mark's (the class was debited when it was held).
+  const anclas = anclasVenta(ventas, tz);
+  const cobradas = reservasCobradas(saldoEntrada.reservas);
+  const reservaPorId = new Map(saldoEntrada.reservas.map((r) => [r.id, r]));
+  const anchorId = saldo.anchor?.ventaId ?? null;
+  const esAnterior = (m: MomentoCargo | null): boolean =>
+    anchorId !== null && m !== null && ventaAtribuida(anclas, m) !== anchorId;
+
+  const visitas: FilaHistorial[] = asistencias
     // Today is rendered separately (the leaf re-prepends a HOY row); excluding it
     // here is load-bearing — without it the ficha would double-render today.
     .filter((a) => a.fecha !== hoyIso)
     .map((a) => {
       const d = parseDay(a.fecha);
+      const reserva = a.reservation_id ? reservaPorId.get(a.reservation_id) : undefined;
+      const momento: MomentoCargo | null = esCargableAsistencia(a, cobradas)
+        ? { dia: a.fecha, hora: a.hora }
+        : reserva && esCargableReserva(reserva)
+          ? momentoEnZona(reserva.created_at, tz)
+          : null;
       return {
-        dDisplay: `${DOW[d.getDay()].toLowerCase()} ${d.getDate()}`,
-        hora: a.hora ? a.hora.slice(0, 5) : null,
-        today: false,
-        clase: a.class_session_id === null ? null : etiquetaClase(a.class_session, tz),
-        origen: a.origen,
+        clave: `${a.fecha}T${a.hora ?? "00:00:00"}`,
+        fila: {
+          dDisplay: `${DOW[d.getDay()].toLowerCase()} ${d.getDate()}`,
+          hora: a.hora ? a.hora.slice(0, 5) : null,
+          today: false,
+          clase: a.class_session_id === null ? null : etiquetaClase(a.class_session, tz),
+          origen: a.origen,
+          tipo: "visita" as const,
+          paqueteAnterior: esAnterior(momento),
+        },
       };
     });
+  const historial = fusionarHistorial(
+    visitas,
+    filasNoAsistio(saldoEntrada, asistencias, anclas, anchorId, tz),
+  );
   // The ficha's toggle is the 2-arg (ACCESO LIBRE) one, so its checked state keys on the
   // LIBRE row ALONE (#89): a member who attended a class today is not "marked" by anything
   // this screen can undo, and rendering them checked would make the next tap insert a
@@ -480,11 +876,19 @@ export function shapeFicha(
   const lastPurchaseDate = latest ? fechaEnZona(latest.fecha, tz) : null;
   const venceDate = c.vence ? parseDay(c.vence) : null;
 
+  // §D2 honest gauge: the denominator is the anchor's GRANT, so the bar can no longer absorb
+  // drift by denominating on the balance it is drawing. An ilimitado anchor (grant null) has no
+  // gauge, exactly as today. The FILL still reads the read-time forfeited number — the same one
+  // the big número prints — so an expired pack shows 0 over an empty bar instead of resurrecting
+  // a balance the screen simultaneously calls 0; the RAW stored balance drives the invariant
+  // (`saldo.restantes` / `derived` / `discrepancia`) where honesty, not coherence, is the job.
   const clasesGauge: ClasesGauge | null =
-    lastPurchaseDate && clasesRest !== "ilimitado"
+    lastPurchaseDate && saldo.anchor?.grant != null && clasesRest !== "ilimitado"
       ? {
-          fill: gaugeFill(clasesRest, clasesDenom(clasesRest, attendedSincePurchase)),
-          usadas: attendedSincePurchase,
+          fill: gaugeFill(clasesRest, saldo.anchor.grant),
+          usadas: saldo.usadas,
+          apartadas: saldo.apartadas,
+          total: saldo.anchor.grant,
         }
       : null;
 
@@ -520,6 +924,7 @@ export function shapeFicha(
     totalClases,
     dayDenom,
     clasesGauge,
+    saldo,
     diasGauge,
     compradoDisplay,
     altaDisplay,
@@ -536,19 +941,21 @@ export function shapeFicha(
 
 // ── Membresía (member plan card) derivation ────────────────────────
 // The client app's plan card (slice #61) funnels the `mi_membresia()` RPC's RLS-privileged SCALARS
-// through the SAME pure sub-helpers the admin ficha's shapeFicha uses (forfeit / clasesDenom / gaugeFill),
-// so the member's "N de N clases" gauge equals the admin ficha's for the same client — ONE derivation
-// home. Contract-A is preserved by construction: no raw ventas/asistencias arrays reach this layer, only
-// the anchor monto/vigencia display fields + the attendedSincePurchase count the RPC already computed.
-// The gauge no longer inherits the consume-at-booking skew (#57/#60) that 20260706210000 deliberately
-// left unfixed: a class is charged (clasesRestantes decremented) at booking time, but was only counted
-// into attendedSincePurchase at ATTENDANCE if the visit happened to be written consumio = true — a
-// walk-in row. A booked visit is written consumio = false (already charged), so it never joined the
-// count at all, undercounting every booked class forever (#173). Both surfaces now count VISITS
-// (deleted_at is null and not perdonada), the unit asistencias_mes_por_cliente already counts — parity
-// with the admin ficha is still the criterion, and both were fixed together.
+// through the SAME pure sub-helpers the admin ficha's shapeFicha uses (forfeit / gaugeFill), so the
+// member's gauge equals the admin ficha's for the same client — ONE derivation home. Contract-A is
+// preserved by construction: no raw ventas/asistencias arrays reach this layer, only the anchor
+// monto/vigencia display fields + the counts the RPC already computed.
+// Slice 2 §D2/§D3 moved BOTH surfaces off the self-fulfilling `restantes + usadas` denominator and off
+// the #173 VISIT numerator: the bar now denominates on the anchor's GRANT and the caption counts §D0
+// CHARGES, which the RPC computes in SQL (`cargadas` / `grant_clases` / `apartadas`) so the member's
+// card and the ficha cannot drift. Parity with the admin ficha is still the criterion, and both moved
+// together — the AC5 parity test in derive.test.ts is what holds them there.
 
-/** The scalars `mi_membresia()` returns — the RLS-privileged anchor fields + the entitlement pass-throughs. */
+/** The scalars `mi_membresia()` returns — the RLS-privileged anchor fields + the entitlement pass-throughs.
+ *  The three §D3 additions (`cargadas` / `grantClases` / `apartadas`) are the SQL side of §D0, so the
+ *  member's card and the admin ficha count the same charges against the same denominator. The RPC still
+ *  returns `attended_since_purchase` with its old day-anchored VISIT semantics for the deployed client —
+ *  it is deliberately NOT read here any more (§D2: the caption's count is the CHARGE count). */
 export interface MembresiaFacts {
   paqueteNombre: string | null;
   clasesRestantes: number | null; // NULL = ilimitado
@@ -556,14 +963,20 @@ export interface MembresiaFacts {
   anchorMonto: number | null; // NULL = no anchor sale (no bar, no price)
   anchorVigenciaTipo: string | null; // 'mes' | 'dias'
   anchorVigenciaDias: number | null;
-  attendedSincePurchase: number;
+  /** §D0 charge count attributed to the anchor (`mi_membresia.cargadas`). */
+  cargadas: number;
+  /** The anchor sale's grant, `ventas.clases` (`mi_membresia.grant_clases`) — NULL = ilimitado pack. */
+  grantClases: number | null;
+  /** Charged holds whose class has not ended yet (`mi_membresia.apartadas`). */
+  apartadas: number;
 }
 
 /** The plan card's clases depletion gauge — the SAME shape/meaning as shapeFicha's ClasesGauge, plus the
- *  `total`/`restantes` the card's "N de N" caption renders. */
+ *  `restantes` the card's "N de N" caption renders. */
 export interface MembresiaGauge {
-  usadas: number; // classes consumed since the anchor purchase
-  total: number; // the balance granted at that purchase (usadas + restantes)
+  usadas: number; // §D0 charges against the anchor pack
+  apartadas: number; // charged holds whose class hasn't ended yet
+  total: number; // the anchor sale's GRANT (§D2) — never restantes + usadas
   restantes: number; // classes left now
   fill: number; // 0–1 bar fill (restantes / total, clamped)
 }
@@ -611,15 +1024,17 @@ export function derivarMembresia(m: MembresiaFacts, ctx: ContextoVeredicto): Mem
   const vencido = veredicto.estado === "vencido";
   const hasAnchor = m.anchorMonto !== null;
 
-  // Clases depletion gauge — the SAME guard + math as shapeFicha.clasesGauge: hidden (null) for ilimitado
-  // (no decrement ever) or when there is no anchor sale (nothing to divide by).
+  // Clases depletion gauge — the SAME guard + math as shapeFicha.clasesGauge (§D2): denominator is the
+  // anchor's GRANT, hidden (null) for ilimitado (no decrement ever), for an ilimitado anchor (no grant to
+  // divide by) or when there is no anchor sale at all.
   const gauge: MembresiaGauge | null =
-    hasAnchor && clasesRest !== "ilimitado"
+    hasAnchor && m.grantClases !== null && clasesRest !== "ilimitado"
       ? {
-          usadas: m.attendedSincePurchase,
-          total: clasesDenom(clasesRest, m.attendedSincePurchase),
+          usadas: m.cargadas,
+          apartadas: m.apartadas,
+          total: m.grantClases,
           restantes: clasesRest,
-          fill: gaugeFill(clasesRest, clasesDenom(clasesRest, m.attendedSincePurchase)),
+          fill: gaugeFill(clasesRest, m.grantClases),
         }
       : null;
 

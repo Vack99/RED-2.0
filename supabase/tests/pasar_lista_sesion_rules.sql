@@ -84,6 +84,19 @@
 --                                                   the vigencia gate is judged on the CLASS's day, so a
 --                                                   package that was valid then and has lapsed since still
 --                                                   admits the member for the class they actually attended.
+--   * walk-in ON A CANCELLED BOOKING (14, slice 2 §D6)  — a member books (the hold sets
+--                                                   reservation.consumio=true), cancels (cancelar_reserva
+--                                                   refunds by READING that flag and leaves it set), and is
+--                                                   then marked present at the door. The walk-in arm reuses
+--                                                   that terminal row and must CLEAR the flag, because the
+--                                                   charge for this visit is the asistencia it inserts.
+--                                                   Asserted on the WRITTEN row and on which LEG of the
+--                                                   derived count (spec D0) carries the charge: the
+--                                                   asistencia leg, dated the CLASS, not the reservation
+--                                                   leg, dated a booking the member cancelled. The same
+--                                                   block replays the migration's backfill over a
+--                                                   hand-restored stale row — it flips, and the HONEST
+--                                                   booked→captured pair beside it does not.
 --   * the return carries session_id + saldo (#162) — 2026-07-29: the RPC's shape grew from (present, hora) to
 --                                                   (present, hora, session_id, clases_restantes) so the front desk can
 --                                                   say WHERE a mark landed and repaint the member's balance instead of
@@ -132,7 +145,12 @@ declare
   c_latevig uuid;                       -- #166: valid on the CLASS's day, lapsed since (vector 11b)
   c_ilimA  uuid;                        -- #245 §3: ilimitado, CLASS then DOOR (vector 12a)
   c_ilimB  uuid;                        -- #245 §3: ilimitado, DOOR then CLASS (vector 12b)
+  m_recy   uuid := gen_random_uuid();   -- §D6: books, cancels, then is marked present as a WALK-IN
+  m_honest uuid := gen_random_uuid();   -- §D6 control: books and is CAPTURED — the honest pair
+  c_recy   uuid; c_honest uuid;
   s_id     uuid; s2_id uuid;
+  s3_id    uuid;                        -- §D6: its own instant, so the two §D6 members share one class
+  v_starts3 timestamptz;
   s_late   uuid;                        -- #166: YESTERDAY 07:00 gym-local, marked today
   v_late   timestamptz;
 begin
@@ -151,19 +169,25 @@ begin
   -- has already started (#165), and today 18:00 is in the past for every run after 18:00.
   v_starts := (v_today::timestamp + interval '18 hours') at time zone v_tz;
   v_starts2 := (v_today::timestamp + interval '19 hours') at time zone v_tz;
+  -- §D6's own class, today 20:00 gym-local — its own instant (one uncancelled class per instant per gym
+  -- since 20260823120100), and moved onto today by the same privileged block for the same #165 reason.
+  v_starts3 := (v_today::timestamp + interval '20 hours') at time zone v_tz;
 
-  -- auth users: one operator + the four acting members that book or are looked up as members
+  -- auth users: one operator + the members that book or are looked up as members
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', op,       'authenticated', 'authenticated', 'pl-op@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_bkfin,  'authenticated', 'authenticated', 'pl-bkfin@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_bkilim, 'authenticated', 'authenticated', 'pl-bkilim@test.local'),
     ('00000000-0000-0000-0000-000000000000', m_walk,   'authenticated', 'authenticated', 'pl-walk@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_fd,     'authenticated', 'authenticated', 'pl-fd@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_fd,     'authenticated', 'authenticated', 'pl-fd@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_recy,   'authenticated', 'authenticated', 'pl-recy@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_honest, 'authenticated', 'authenticated', 'pl-honest@test.local');
 
-  -- the operator is STAFF of forge; the four members are members
+  -- the operator is STAFF of forge; the rest are members
   insert into public.gym_membership (user_id, gym_id, role) values
     (op, v_gym, 'operator'),
-    (m_bkfin, v_gym, 'member'), (m_bkilim, v_gym, 'member'), (m_walk, v_gym, 'member'), (m_fd, v_gym, 'member');
+    (m_bkfin, v_gym, 'member'), (m_bkilim, v_gym, 'member'), (m_walk, v_gym, 'member'), (m_fd, v_gym, 'member'),
+    (m_recy, v_gym, 'member'), (m_honest, v_gym, 'member');
 
   -- one cliente per acting member (auth_user_id links them so reservar_clase resolves them)
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
@@ -211,12 +235,21 @@ begin
     values ('PL ilimitado clase-puerta', '0000000012', null, v_today + 20, 'Ilimitado', v_gym) returning id into c_ilimA;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('PL ilimitado puerta-clase', '0000000013', null, v_today + 20, 'Ilimitado', v_gym) returning id into c_ilimB;
+  -- §D6 (vector 14). Both book for themselves, so both need their auth user linked. c_recy cancels and
+  -- is then walked in; c_honest books and is captured, and exists so the backfill's precision is proved
+  -- against a REAL booked-then-captured pair rather than asserted about one.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('PL reciclada', '0000000015', 5, v_today + 20, '8 clases', v_gym, m_recy) returning id into c_recy;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('PL par honesto', '0000000016', 5, v_today + 20, '8 clases', v_gym, m_honest) returning id into c_honest;
 
   insert into public.class_type (gym_id, name) values (v_gym, 'PL Metcon') returning id into v_ct;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, now() + interval '2 days', 60, 20) returning id into s_id;
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (v_gym, v_ct, now() + interval '2 days' + interval '1 hour', 60, 20) returning id into s2_id;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (v_gym, v_ct, now() + interval '2 days' + interval '2 hours', 60, 20) returning id into s3_id;
   -- The late-marked session: YESTERDAY at 07:00 gym-local. Nobody books it (a started class refuses
   -- booking since #165 anyway), so unlike s_id/s2_id it is seeded straight onto its final instant.
   -- 07:00 is deliberately far from any plausible run time, so "the stamp is the session's hour" cannot
@@ -246,8 +279,14 @@ begin
   perform set_config('t.c_latevig',  c_latevig::text,  true);
   perform set_config('t.c_ilimA',    c_ilimA::text,    true);
   perform set_config('t.c_ilimB',    c_ilimB::text,    true);
+  perform set_config('t.m_recy',   m_recy::text,    true);
+  perform set_config('t.m_honest', m_honest::text,  true);
+  perform set_config('t.c_recy',   c_recy::text,    true);
+  perform set_config('t.c_honest', c_honest::text,  true);
   perform set_config('t.s_id',     s_id::text,      true);
   perform set_config('t.s2_id',    s2_id::text,     true);
+  perform set_config('t.s3_id',    s3_id::text,     true);
+  perform set_config('t.starts3',  v_starts3::text, true);
   perform set_config('t.s_late',   s_late::text,    true);
   perform set_config('t.f_late',   ((v_late at time zone v_tz)::date)::text, true);
 end $$;
@@ -277,9 +316,56 @@ begin
 end $$;
 reset role;
 
+-- ── §D6 arrange: the RECYCLED row — book, then CANCEL through the real RPC ──────────────────────
+-- cancelar_reserva is used deliberately instead of a privileged flip: the premise of vector 14 is that
+-- the refund path READS `consumio` and leaves it set, so the fixture has to be the actual function that
+-- does it. Both steps run while s3 is still two days out (#165/#58 both refuse a started class).
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_recy', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s3_id  uuid := current_setting('t.s3_id', true)::uuid;
+  c_recy uuid := current_setting('t.c_recy', true)::uuid;
+  v_clases int; v_consumio boolean; v_status text;
+begin
+  perform public.reservar_clase(s3_id);
+  select clases_restantes into v_clases from public.clientes where id = c_recy;
+  if v_clases <> 4 then raise exception 'SEED FAIL(recy book): expected 4 after the hold, got %', v_clases; end if;
+
+  perform public.cancelar_reserva(s3_id);
+  select clases_restantes into v_clases from public.clientes where id = c_recy;
+  if v_clases <> 5 then raise exception 'SEED FAIL(recy cancel): expected the hold refunded to 5, got %', v_clases; end if;
+  select status, consumio into v_status, v_consumio
+    from public.reservation where member_id = c_recy and class_session_id = s3_id;
+  if v_status is distinct from 'cancelada' then raise exception 'SEED FAIL(recy cancel): status % (expected cancelada)', v_status; end if;
+  -- THE PREMISE of vector 14, asserted rather than assumed: the refund read this flag and left it set,
+  -- so the row now claims a charge that was given back.
+  if v_consumio is distinct from true then
+    raise exception 'SEED FAIL(recy cancel): consumio % — cancelar_reserva now clears the flag, so vector 14 no longer tests anything', v_consumio;
+  end if;
+end $$;
+reset role;
+
+-- ── §D6 arrange: the HONEST pair — book and leave it held (captured by the operator in vector 14) ──
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_honest', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s3_id    uuid := current_setting('t.s3_id', true)::uuid;
+  c_honest uuid := current_setting('t.c_honest', true)::uuid;
+  v_clases int;
+begin
+  perform public.reservar_clase(s3_id);
+  select clases_restantes into v_clases from public.clientes where id = c_honest;
+  if v_clases <> 4 then raise exception 'SEED FAIL(honest book): expected 4 after the hold, got %', v_clases; end if;
+end $$;
+reset role;
+
 -- ════════════════════════════════════════════════════════════════════════════════
 -- MOVE THE SESSIONS ONTO TODAY (privileged — no RPC can change a class's start, and a member holds no
--- class_session write). Both bookings are already in, which is the mandatory order since #165: a class
+-- class_session write). Every booking above is already in, which is the mandatory order since #165: a class
 -- that has started cannot be booked, and today's 18:00 has already started on any afternoon run. The
 -- instants are exactly the ones this suite has always used, so every vector below reads as it always did.
 -- ════════════════════════════════════════════════════════════════════════════════
@@ -287,6 +373,8 @@ update public.class_session set starts_at = current_setting('t.starts', true)::t
  where id = current_setting('t.s_id', true)::uuid;
 update public.class_session set starts_at = current_setting('t.starts2', true)::timestamptz
  where id = current_setting('t.s2_id', true)::uuid;
+update public.class_session set starts_at = current_setting('t.starts3', true)::timestamptz
+ where id = current_setting('t.s3_id', true)::uuid;
 
 -- ════════════════════════════════════════════════════════════════════════════════
 -- Everything below runs AS THE OPERATOR (staff) — the Pasar lista caller.
@@ -1000,7 +1088,191 @@ begin
   if v_n is distinct from 1 then raise exception 'RULE FAIL(v13): % active attendance row(s) (expected exactly 1)', v_n; end if;
 end $$;
 
+-- ── (14) §D6: a WALK-IN on a CANCELLED booking's row is ONE charge, not two ───────────────────────
+-- The state this vector is about is ordinary at a gym that books: a member books (the hold sets
+-- reservation.consumio = true), changes their mind (cancelar_reserva refunds by READING that flag and
+-- leaves it set — asserted in the arrange block near the top of this file), and turns up anyway, so the
+-- operator marks them present. The walk-in arm reuses that one UNIQUE row, and until 20260828100000 it
+-- left the flag alone while inserting an asistencia that charges.
+--
+-- WHAT THAT COSTS, stated exactly, because it decides what is worth asserting: the D0 asistencia leg
+-- defers to any reservation that claims the charge, so the TOTAL stays 1 either way — a total-only
+-- assertion would pass against the unfixed body and prove nothing. What moves is the LEG, and with it
+-- the CHARGE MOMENT: the reservation leg dates the charge at `created_at`, a booking this member
+-- CANCELLED (and, after a renewal, one that belongs to a pack since replaced), while the asistencia leg
+-- dates it at the class's own fecha + hora, which is when the door actually charged. So both legs are
+-- counted SEPARATELY here, and the vector fails an implementation that leaves the flag set.
+--
+-- c_honest rides in the same class as the counter-vector: a real booking CAPTURED by the same RPC keeps
+-- consumio = true (the hold it took) with an asistencia of consumio = false, so its charge belongs on
+-- the reservation leg — the exact mirror, and the shape the backfill below must never touch.
+do $$
+declare
+  s3_id    uuid := current_setting('t.s3_id', true)::uuid;
+  c_recy   uuid := current_setting('t.c_recy', true)::uuid;
+  c_honest uuid := current_setting('t.c_honest', true)::uuid;
+  v_present boolean; v_resultado text; v_clases int; v_res_id uuid;
+  v_leg_a int; v_leg_r int;   -- the two legs of the D0 charge count, counted apart on purpose
+  v_status text; v_walk boolean; v_consumio boolean; v_cancelled timestamptz; v_checked timestamptz;
+  v_a_consumio boolean; v_a_res uuid; v_a_origen text; v_a_perdonada boolean;
+begin
+  -- ── (a) THE RECYCLED ROW ──────────────────────────────────────────────────────
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s3_id, c_recy);
+  if v_present is not true then raise exception 'RULE FAIL(v14 recy): the walk-in mark was refused'; end if;
+  -- 'descontada', not 'reserva': a CANCELLED booking is not a hold to capture, and the door charge is real.
+  if v_resultado is distinct from 'descontada' then raise exception 'RULE FAIL(v14 recy): resultado % (expected descontada)', v_resultado; end if;
+
+  select id, status, is_walk_in, consumio, cancelled_at, checked_at
+    into v_res_id, v_status, v_walk, v_consumio, v_cancelled, v_checked
+    from public.reservation where member_id = c_recy and class_session_id = s3_id;
+  if v_status is distinct from 'asistida' then raise exception 'RULE FAIL(v14 recy): reservation status % (expected asistida)', v_status; end if;
+  if v_walk is not true then raise exception 'RULE FAIL(v14 recy): is_walk_in % (expected true — this arrival was not a booking)', v_walk; end if;
+  if v_cancelled is not null then raise exception 'RULE FAIL(v14 recy): cancelled_at % not cleared on the reuse', v_cancelled; end if;
+  if v_checked is null then raise exception 'RULE FAIL(v14 recy): checked_at not stamped'; end if;
+  -- THE EDIT (20260828100000 §2): the cancelled booking's flag is cleared by the reuse.
+  if v_consumio is distinct from false then
+    raise exception 'RULE FAIL(v14 recy): reservation.consumio % — the CANCELLED booking''s flag survived the walk-in reuse, so this door charge is dated at the booking instant and attributed to whatever pack was live then', v_consumio;
+  end if;
+
+  -- …and the charge for this visit lives on the asistencia, which is also where the untoggle refund reads it.
+  select consumio, reservation_id, origen, perdonada into v_a_consumio, v_a_res, v_a_origen, v_a_perdonada
+    from public.asistencias where cliente_id = c_recy and class_session_id = s3_id and deleted_at is null;
+  if v_a_consumio is distinct from true then raise exception 'RULE FAIL(v14 recy): asistencia.consumio % (expected true — this visit is the one that paid)', v_a_consumio; end if;
+  if v_a_res is distinct from v_res_id then raise exception 'RULE FAIL(v14 recy): asistencia.reservation_id % (expected the reused row %)', v_a_res, v_res_id; end if;
+  if v_a_origen is distinct from 'clase' then raise exception 'RULE FAIL(v14 recy): asistencia.origen % (expected clase)', v_a_origen; end if;
+  if v_a_perdonada is distinct from false then raise exception 'RULE FAIL(v14 recy): a PAYING row was stamped perdonada %', v_a_perdonada; end if;
+  -- One class was spent in total: 5 (booked) -> 4 (held) -> 5 (cancelled, refunded) -> 4 (walked in).
+  select clases_restantes into v_clases from public.clientes where id = c_recy;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v14 recy): balance % (expected exactly one net charge, 4)', v_clases; end if;
+
+  -- THE DERIVED COUNT (spec D0), leg by leg, the way every surface will compute it. The charge belongs
+  -- to the ASISTENCIA leg — it happened at the door, at the class's own instant — and to nothing else.
+  select count(*) into v_leg_a from public.asistencias a
+    left join public.reservation r on r.id = a.reservation_id
+   where a.cliente_id = c_recy and a.deleted_at is null and not a.perdonada
+     and not coalesce(r.consumio, false);
+  select count(*) into v_leg_r from public.reservation r
+   where r.member_id = c_recy and r.consumio and r.status <> 'cancelada';
+  if v_leg_r <> 0 then
+    raise exception 'RULE FAIL(v14 recy): the RESERVATION leg claims % charge(s) — a cancelled booking''s flag is dating this door charge at the booking instant, so it lands on whatever pack was live then', v_leg_r;
+  end if;
+  if v_leg_a <> 1 then
+    raise exception 'RULE FAIL(v14 recy): the ASISTENCIA leg counts % charge(s) (expected the 1 the door took)', v_leg_a;
+  end if;
+
+  -- ── (b) THE COUNTER-VECTOR: a real booking captured by the same RPC keeps its hold ────────────
+  select present, resultado into v_present, v_resultado from public.pasar_lista_sesion(s3_id, c_honest);
+  if v_present is not true then raise exception 'RULE FAIL(v14 honest): the capture was refused'; end if;
+  if v_resultado is distinct from 'reserva' then raise exception 'RULE FAIL(v14 honest): resultado % (expected reserva — a hold was captured)', v_resultado; end if;
+  select status, is_walk_in, consumio into v_status, v_walk, v_consumio
+    from public.reservation where member_id = c_honest and class_session_id = s3_id;
+  if v_status is distinct from 'asistida' then raise exception 'RULE FAIL(v14 honest): reservation status % (expected asistida)', v_status; end if;
+  if v_walk is distinct from false then raise exception 'RULE FAIL(v14 honest): is_walk_in % (expected false — a booking is not a walk-in)', v_walk; end if;
+  -- The booked branch must NOT have been touched by the §D6 edit: this flag is a live hold, and the
+  -- capture is what settles it. A body that cleared it here would lose the charge entirely.
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(v14 honest): reservation.consumio % — the capture cleared a REAL hold, and the charge is now nowhere', v_consumio; end if;
+  select consumio into v_a_consumio from public.asistencias
+   where cliente_id = c_honest and class_session_id = s3_id and deleted_at is null;
+  if v_a_consumio is distinct from false then raise exception 'RULE FAIL(v14 honest): asistencia.consumio % (expected false — the booking already paid)', v_a_consumio; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_honest;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v14 honest): balance % (expected the single booking charge, 4)', v_clases; end if;
+
+  -- The mirror image of (a): this charge was taken at BOOKING, so it belongs to the reservation leg,
+  -- and the asistencia leg defers to it. Same total, opposite legs — which is the point.
+  select count(*) into v_leg_a from public.asistencias a
+    left join public.reservation r on r.id = a.reservation_id
+   where a.cliente_id = c_honest and a.deleted_at is null and not a.perdonada
+     and not coalesce(r.consumio, false);
+  select count(*) into v_leg_r from public.reservation r
+   where r.member_id = c_honest and r.consumio and r.status <> 'cancelada';
+  if v_leg_r <> 1 then raise exception 'RULE FAIL(v14 honest): the RESERVATION leg counts % charge(s) (expected the 1 the booking took)', v_leg_r; end if;
+  if v_leg_a <> 0 then raise exception 'RULE FAIL(v14 honest): the ASISTENCIA leg counts % charge(s) (expected 0 — the capture defers to the hold)', v_leg_a; end if;
+end $$;
+
 reset role;
+
+-- ── (14c) THE BACKFILL, pre- and post- ───────────────────────────────────────────────────────────
+-- The write-site fix above stops the state from being created; the backfill in section 4 of
+-- 20260828100000 heals the rows that already carry it. Both halves need proving, so this block
+-- hand-restores the stale flag (privileged — no RPC can write it back) and then runs the migration's
+-- statement VERBATIM: the same WHERE, unscoped, exactly as it runs on a real target. It is inside this
+-- file's single BEGIN/ROLLBACK like everything else, so whatever else it touches on the target is
+-- discarded with the rest of the fixtures.
+--
+-- If the statement is ever changed in the migration, change this copy with it — the point of the vector
+-- is the PRECISION of that WHERE, and a stale copy would be proving the precision of something else.
+do $$
+declare
+  s3_id    uuid := current_setting('t.s3_id', true)::uuid;
+  c_recy   uuid := current_setting('t.c_recy', true)::uuid;
+  c_honest uuid := current_setting('t.c_honest', true)::uuid;
+  v_leg_a int; v_leg_r int; v_consumio boolean; v_a_consumio boolean; v_clases int;
+begin
+  -- PRE: the row as history wrote it — asistida walk-in, charged asistencia, and the dead flag still set.
+  update public.reservation set consumio = true
+   where member_id = c_recy and class_session_id = s3_id;
+  select count(*) into v_leg_a from public.asistencias a
+    left join public.reservation r on r.id = a.reservation_id
+   where a.cliente_id = c_recy and a.deleted_at is null and not a.perdonada
+     and not coalesce(r.consumio, false);
+  select count(*) into v_leg_r from public.reservation r
+   where r.member_id = c_recy and r.consumio and r.status <> 'cancelada';
+  if v_leg_r <> 1 or v_leg_a <> 0 then
+    raise exception 'SETUP FAIL(v14c): the restored stale row derives legs (asistencia %, reserva %) — the state this backfill exists to heal is (0, 1)', v_leg_a, v_leg_r;
+  end if;
+
+  -- THE BACKFILL (verbatim, 20260828100000 §4).
+  update public.reservation r
+     set consumio = false
+   where r.consumio
+     and exists (
+       select 1
+         from public.asistencias a
+        where a.reservation_id = r.id
+          and a.cliente_id = r.member_id
+          and a.class_session_id = r.class_session_id
+          and a.deleted_at is null
+          and a.consumio
+     );
+
+  -- POST: the stale pair is healed…
+  select consumio into v_consumio from public.reservation where member_id = c_recy and class_session_id = s3_id;
+  if v_consumio is distinct from false then raise exception 'RULE FAIL(v14c): the stale flag survived the backfill (%)', v_consumio; end if;
+  select count(*) into v_leg_a from public.asistencias a
+    left join public.reservation r on r.id = a.reservation_id
+   where a.cliente_id = c_recy and a.deleted_at is null and not a.perdonada
+     and not coalesce(r.consumio, false);
+  select count(*) into v_leg_r from public.reservation r
+   where r.member_id = c_recy and r.consumio and r.status <> 'cancelada';
+  if v_leg_a <> 1 or v_leg_r <> 0 then
+    raise exception 'RULE FAIL(v14c): after the backfill the legs read (asistencia %, reserva %) — expected (1, 0), the door charge dated at the class', v_leg_a, v_leg_r;
+  end if;
+
+  -- …and the HONEST booked→captured pair beside it is untouched: its asistencia is consumio = false, so
+  -- it never matches the EXISTS. This is the assertion that stops the backfill from erasing real holds.
+  select consumio into v_consumio from public.reservation where member_id = c_honest and class_session_id = s3_id;
+  if v_consumio is distinct from true then
+    raise exception 'RULE FAIL(v14c): the backfill cleared a HONEST booking''s hold (consumio %) — a captured booking would then be counted as free', v_consumio;
+  end if;
+  select consumio into v_a_consumio from public.asistencias
+   where cliente_id = c_honest and class_session_id = s3_id and deleted_at is null;
+  if v_a_consumio is distinct from false then raise exception 'RULE FAIL(v14c): the backfill touched an asistencia (consumio %) — it writes ONE column on ONE table', v_a_consumio; end if;
+  select count(*) into v_leg_a from public.asistencias a
+    left join public.reservation r on r.id = a.reservation_id
+   where a.cliente_id = c_honest and a.deleted_at is null and not a.perdonada
+     and not coalesce(r.consumio, false);
+  select count(*) into v_leg_r from public.reservation r
+   where r.member_id = c_honest and r.consumio and r.status <> 'cancelada';
+  if v_leg_r <> 1 or v_leg_a <> 0 then
+    raise exception 'RULE FAIL(v14c): the honest pair reads (asistencia %, reserva %) after the backfill — expected an untouched (0, 1)', v_leg_a, v_leg_r;
+  end if;
+
+  -- NO MONEY MOVED: the backfill writes a flag, never a balance.
+  select clases_restantes into v_clases from public.clientes where id = c_recy;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v14c): the backfill moved the recycled member''s balance to % (expected 4)', v_clases; end if;
+  select clases_restantes into v_clases from public.clientes where id = c_honest;
+  if v_clases <> 4 then raise exception 'RULE FAIL(v14c): the backfill moved the booked member''s balance to % (expected 4)', v_clases; end if;
+end $$;
 
 select 'pasar_lista_sesion rules: OK' as result;
 rollback;

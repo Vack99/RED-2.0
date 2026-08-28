@@ -528,6 +528,37 @@ describe("getPerfilResumenMiembro", () => {
     expect(visto).toContain("mi_membresia");
   });
 
+  // Slice 2 §D2/§D3: the plan card's bar now denominates on the anchor's GRANT and its caption
+  // counts §D0 CHARGES. `attended_since_purchase` is seeded here with a decoy value the card must
+  // NOT read — it keeps its old VISIT semantics for the already-deployed client build, and a
+  // regression back onto it would surface as `usadas: 99`.
+  it("builds the plan card from the §D3 scalars — cargadas / grant_clases / apartadas, never attended_since_purchase", async () => {
+    const perfil = await getPerfilResumenMiembro(
+      makeFake({ clientes: [{ gym_id: "gym-1", created_at: null }], reservation: [] }, (name) =>
+        name === "mi_membresia"
+          ? {
+              data: [
+                {
+                  paquete_nombre: "8 clases",
+                  clases_restantes: 3,
+                  vence: "2099-01-01",
+                  anchor_monto: 800,
+                  anchor_vigencia_tipo: "dias",
+                  anchor_vigencia_dias: 30,
+                  attended_since_purchase: 99,
+                  cargadas: 4,
+                  grant_clases: 8,
+                  apartadas: 1,
+                },
+              ],
+              error: null,
+            }
+          : { data: [], error: null },
+      ),
+    );
+    expect(perfil.membresia?.gauge).toEqual({ usadas: 4, apartadas: 1, total: 8, restantes: 3, fill: 3 / 8 });
+  });
+
   it("FAILS LOUD on a paquetes read error — a swallowed catalog would misclassify every drop-in (the getPaseSueltoNombres posture, #225 F5)", async () => {
     await expect(
       getPerfilResumenMiembro(

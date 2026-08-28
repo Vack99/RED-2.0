@@ -7,7 +7,6 @@ declare
   v_custom         boolean;
   v_paq            record;
   v_venta          record;
-  v_cli            record;
   v_nombre         text;
   v_clases         integer;      
   v_vig_tipo       text;
@@ -16,13 +15,9 @@ declare
   v_cambio_grant   boolean;
   v_cambio_paquete boolean;
   v_cambio_fecha   boolean;
-  v_dias_old       integer;
   v_dias_new       integer;
-  v_anchor         date;         
   v_fecha_old_dia  date;         
-  v_base_clases    integer;      
-  v_base_vence     date;
-  v_base_dias      integer;
+  v_usadas         integer;      
   v_new_clases     integer;      
   v_new_vence      date;
 begin
@@ -72,8 +67,6 @@ begin
   
   
   
-  
-  
   select v.cliente_id, v.paquete_nombre, v.clases, v.vigencia_tipo, v.vigencia_dias,
          v.personalizado, v.fecha, v.created_at
     into v_venta
@@ -82,6 +75,7 @@ begin
     for update;
   if not found then raise exception 'Venta no encontrada'; end if;
 
+  
   
   
   select g.timezone into v_tz from public.gym g where g.id = v_gym;
@@ -176,6 +170,7 @@ begin
   
   
   
+  
   if (v_cambio_grant or v_cambio_fecha)
      and exists (select 1 from public.ventas v
                   where v.cliente_id = v_venta.cliente_id
@@ -213,16 +208,9 @@ begin
 
   
   
-  select c.clases_restantes, c.vence into v_cli
-    from public.clientes c where c.id = v_venta.cliente_id
-    for update;
-
   
   
-  v_dias_old    := case when v_venta.vigencia_tipo = 'mes' then 30
-                        else coalesce(v_venta.vigencia_dias, 0) end;
-  v_base_clases := case when v_cli.clases_restantes is null then null
-                        else v_cli.clases_restantes - coalesce(v_venta.clases, 0) end;
+  perform 1 from public.clientes c where c.id = v_venta.cliente_id for update;
 
   
   
@@ -231,40 +219,33 @@ begin
   
   
   
-  v_anchor     := case when v_cli.vence is null then null else v_cli.vence - v_dias_old end;
-  v_base_vence := case when v_anchor is null              then null
-                       when v_anchor > v_fecha_old_dia    then v_anchor
-                       else null end;
+  
+  
+  
+  
+  
+  
+  
+  select cc.usadas + cc.apartadas into v_usadas
+    from public.conteo_cargable(v_venta.cliente_id, v_venta.created_at) cc;
 
-  
-  v_dias_new := case when v_vig_tipo = 'mes' then 30 else coalesce(v_vig_dias, 0) end;
-
-  
-  
-  
-  
-  
-  if v_base_vence is not null and (v_base_vence - v_fecha_dia) >= 0 then
-    v_base_dias := v_base_vence - v_fecha_dia;
-  else
-    v_base_dias   := 0;
-    v_base_clases := 0;
-  end if;
-
-  
-  
   if v_clases is null then
     v_new_clases := null;                                   
-  elsif v_base_clases is null then
-    v_new_clases := v_clases;                               
   else
-    v_new_clases := greatest(0, v_base_clases + v_clases);
+    
+    
+    
+    v_new_clases := greatest(0, v_clases - v_usadas);
   end if;
-  v_new_vence := v_fecha_dia + v_base_dias + v_dias_new;
 
   
   
   
+  
+  
+  v_dias_new  := case when v_vig_tipo = 'mes' then 30 else coalesce(v_vig_dias, 0) end;
+  v_new_vence := v_fecha_dia + v_dias_new;
+
   
   
   

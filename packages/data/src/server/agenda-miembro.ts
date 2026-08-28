@@ -506,7 +506,13 @@ async function fetchMembresia(
       anchorMonto: row.anchor_monto,
       anchorVigenciaTipo: row.anchor_vigencia_tipo,
       anchorVigenciaDias: row.anchor_vigencia_dias,
-      attendedSincePurchase: row.attended_since_purchase,
+      // Slice 2 §D3: the card reads the THREE new scalars — the §D0 charge count, the anchor's
+      // grant (the honest denominator) and the still-pending holds. `attended_since_purchase`
+      // is deliberately NOT read any more: it keeps its old day-anchored VISIT semantics for
+      // the client build that is already deployed, and dies with a later cleanup.
+      cargadas: row.cargadas,
+      grantClases: row.grant_clases,
+      apartadas: row.apartadas,
     },
     { hoy: hoyIsoEnZona(tz), pasesSueltos: paseSueltoNombres(paquetesRes.data ?? []) },
   );

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  clasesDenom,
   derivarCliente,
   derivarInvitacion,
   derivarMembresia,
@@ -11,10 +10,16 @@ import {
   estadoInvitacion,
   etiquetaClase,
   gaugeFill,
+  momentoEnZona,
+  RESET_EPOCH,
+  saldoDetalle,
   shapeFicha,
+  ventaAtribuida,
   type ClienteFacts,
+  type EntradaSaldo,
   type FichaAsistRow,
   type FichaClienteRow,
+  type FichaReservaRow,
   type FichaVentaRow,
   type InvitacionFacts,
   type MembresiaFacts,
@@ -34,6 +39,18 @@ const CTX_PASE: ContextoVeredicto = { hoy: HOY_DIA, pasesSueltos: new Set(["1 cl
 // test constant (not a re-introduced module-level default), mirroring the same
 // gym-#1-fixture convention supabase/tests/toggle_pase_rules.sql already uses.
 const TZ_FORGE = "America/Chihuahua";
+
+/** The read's instant for every ficha fixture: 27 May 2026, 20:00Z = 14:00 Chihuahua. A class
+ *  earlier that day has ENDED (a "No asistió — cargada" candidate); a later one is still an
+ *  apartada. Fixed, so the noShow/apartada boundary never depends on when the suite runs. */
+const AHORA = new Date("2026-05-27T20:00:00Z");
+/** "This member has no bookings" — the common saldo input (§D1). */
+const SIN_SALDO: EntradaSaldo = { reservas: [], cargadasFueraDeVentana: null, ahora: AHORA };
+const conReservas = (reservas: FichaReservaRow[], cargadasFueraDeVentana: number | null = null): EntradaSaldo => ({
+  reservas,
+  cargadasFueraDeVentana,
+  ahora: AHORA,
+});
 
 function facts(over: Partial<ClienteFacts> = {}): ClienteFacts {
   return {
@@ -244,11 +261,11 @@ describe("shapeFicha", () => {
 
   it("excludes today from historial and reports presentHoy/horaHoy", () => {
     const asist: FichaAsistRow[] = [
-      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null }, // today
-      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
-      { fecha: "2026-05-20", hora: null, consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null }, // back-entry, no time
+      { fecha: "2026-05-27", hora: "07:30:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: "libre", class_session: null }, // today
+      { fecha: "2026-05-25", hora: "08:15:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: "libre", class_session: null },
+      { fecha: "2026-05-20", hora: null, consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: "libre", class_session: null }, // back-entry, no time
     ];
-    const f = shapeFicha(clienteRow, asist, [], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, asist, [], CTX, TZ_FORGE, [], "FORGE");
     expect(f.presentHoy).toBe(true);
     expect(f.horaHoy).toBe("07:30");
     expect(f.clasesHoy).toEqual([]);
@@ -264,13 +281,12 @@ describe("shapeFicha", () => {
     // "marked" would make the next tap insert a second, consuming libre row (H1).
     const f = shapeFicha(
       clienteRow,
-      [{ fecha: HOY_DIA, hora: "18:05:00", consumio: true, perdonada: false, class_session_id: "s9", origen: "clase", class_session: sesion() }],
+      [{ fecha: HOY_DIA, hora: "18:05:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: "s9", origen: "clase", class_session: sesion() }],
       [],
       CTX,
       TZ_FORGE,
       [],
       "FORGE",
-      0,
     );
     expect(f.presentHoy).toBe(false);
     expect(f.horaHoy).toBeNull();
@@ -287,15 +303,14 @@ describe("shapeFicha", () => {
     const f = shapeFicha(
       clienteRow,
       [
-        { fecha: HOY_DIA, hora: "07:30:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
-        { fecha: HOY_DIA, hora: null, consumio: false, perdonada: false, class_session_id: "s9", origen: "clase", class_session: sesion() },
+        { fecha: HOY_DIA, hora: "07:30:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: "libre", class_session: null },
+        { fecha: HOY_DIA, hora: null, consumio: false, perdonada: false, reservation_id: null, class_session_id: "s9", origen: "clase", class_session: sesion() },
       ],
       [],
       CTX,
       TZ_FORGE,
       [],
       "FORGE",
-      0,
     );
     expect(f.presentHoy).toBe(true);
     expect(f.horaHoy).toBe("07:30");
@@ -311,27 +326,36 @@ describe("shapeFicha", () => {
     const f = shapeFicha(
       clienteRow,
       [
-        { fecha: "2026-05-25", hora: "23:11:04", consumio: true, perdonada: false, class_session_id: "s1", origen: "clase", class_session: sesion() },
+        { fecha: "2026-05-25", hora: "23:11:04", consumio: true, perdonada: false, reservation_id: null, class_session_id: "s1", origen: "clase", class_session: sesion() },
         {
           fecha: "2026-05-25",
           hora: "23:11:21",
           consumio: true,
           perdonada: false,
+          reservation_id: null,
           class_session_id: "s2",
           origen: "clase",
           class_session: sesion({ starts_at: "2026-05-25T13:00:00Z", class_type: { name: "YOGA" } }),
         },
-        { fecha: "2026-05-24", hora: "08:15:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
+        { fecha: "2026-05-24", hora: "08:15:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: "libre", class_session: null },
       ],
       [],
       CTX,
       TZ_FORGE,
       [],
       "FORGE",
-      0,
     );
     expect(f.historial).toHaveLength(3);
-    expect(f.historial[0]).toEqual({ dDisplay: "lun 25", hora: "23:11", today: false, clase: "METCON 19:45", origen: "clase" });
+    expect(f.historial[0]).toEqual({
+      dDisplay: "lun 25",
+      hora: "23:11",
+      today: false,
+      clase: "METCON 19:45",
+      origen: "clase",
+      tipo: "visita",
+      // No ventas in this fixture → no anchor → nothing can be "the previous package".
+      paqueteAnterior: false,
+    });
     expect(f.historial[1].clase).toBe("YOGA 07:00");
     // ACCESO LIBRE carries no class — the leaf labels it (one home for that copy).
     expect(f.historial[2].clase).toBeNull();
@@ -345,18 +369,17 @@ describe("shapeFicha", () => {
       clienteRow,
       [
         // 1. A class visit — `clase` is set, so the leaf never even looks at `origen`.
-        { fecha: "2026-05-25", hora: "18:05:00", consumio: true, perdonada: false, class_session_id: "s1", origen: "clase", class_session: sesion() },
+        { fecha: "2026-05-25", hora: "18:05:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: "s1", origen: "clase", class_session: sesion() },
         // 2. A real ACCESO LIBRE visit (post-#89) — `clase` null, `origen` 'libre'.
-        { fecha: "2026-05-24", hora: "08:00:00", consumio: true, perdonada: false, class_session_id: null, origen: "libre", class_session: null },
+        { fecha: "2026-05-24", hora: "08:00:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: "libre", class_session: null },
         // 3. A pre-#89 row — `clase` null, `origen` null (provenance unknown, never ACCESO LIBRE).
-        { fecha: "2026-05-23", hora: "09:00:00", consumio: true, perdonada: false, class_session_id: null, origen: null, class_session: null },
+        { fecha: "2026-05-23", hora: "09:00:00", consumio: true, perdonada: false, reservation_id: null, class_session_id: null, origen: null, class_session: null },
       ],
       [],
       CTX,
       TZ_FORGE,
       [],
       "FORGE",
-      0,
     );
     expect(f.historial[0].clase).toBe("METCON 19:45");
     expect(f.historial[1]).toMatchObject({ clase: null, origen: "libre" });
@@ -399,7 +422,7 @@ describe("shapeFicha", () => {
         vigencia_dias: null,
       }),
     ];
-    const f = shapeFicha(clienteRow, [], ventas, CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], ventas, CTX, TZ_FORGE, [], "FORGE");
     expect(f.pagos[0]).toEqual({
       id: "v1",
       folio: 1001,
@@ -427,7 +450,7 @@ describe("shapeFicha", () => {
   });
 
   it("exposes the raw clasesRestantes/vence balance alongside the display strings (#269)", () => {
-    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE");
     expect(f.clasesRestantes).toBe(5);
     expect(f.vence).toBe("2026-06-16");
   });
@@ -435,35 +458,35 @@ describe("shapeFicha", () => {
   it("resolves a pago's fechaIso in the GYM's zone, not UTC — the picker seeds from it", () => {
     // 03:00Z on the 21st is still 21:00 on the 20th in Chihuahua (-6): seeding the picker
     // from the UTC day would open it on a date the sale was never made on.
-    const f = shapeFicha(clienteRow, [], [venta({ fecha: "2026-05-21T03:00:00Z" })], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [venta({ fecha: "2026-05-21T03:00:00Z" })], CTX, TZ_FORGE, [], "FORGE");
     expect(f.pagos[0].fechaIso).toBe("2026-05-20");
   });
 
   it("derives altaDisplay as the gym-tz day of created_at", () => {
-    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE");
     expect(f.altaDisplay).toBe("10 abr");
   });
 
   it("flags primeraCompra when the member has no ventas (#77)", () => {
-    expect(shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0).primeraCompra).toBe(true);
+    expect(shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE").primeraCompra).toBe(true);
     expect(
-      shapeFicha(clienteRow, [], [venta()], CTX, TZ_FORGE, [], "FORGE", 0).primeraCompra,
+      shapeFicha(clienteRow, [], [venta()], CTX, TZ_FORGE, [], "FORGE").primeraCompra,
     ).toBe(false);
   });
 
   it("dayDenom falls back to 30 for mes packages, no ventas, AND a 0 vigencia_dias (divide-by-zero guard)", () => {
-    expect(shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0).dayDenom).toBe(30);
+    expect(shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE").dayDenom).toBe(30);
     expect(
-      shapeFicha(clienteRow, [], [venta({ vigencia_tipo: "mes", vigencia_dias: null })], CTX, TZ_FORGE, [], "FORGE", 0).dayDenom,
+      shapeFicha(clienteRow, [], [venta({ vigencia_tipo: "mes", vigencia_dias: null })], CTX, TZ_FORGE, [], "FORGE").dayDenom,
     ).toBe(30);
     expect(
-      shapeFicha(clienteRow, [], [venta({ vigencia_dias: 0 })], CTX, TZ_FORGE, [], "FORGE", 0).dayDenom,
+      shapeFicha(clienteRow, [], [venta({ vigencia_dias: 0 })], CTX, TZ_FORGE, [], "FORGE").dayDenom,
     ).toBe(30); // the `|| 30` guard, not `?? 30`
   });
 
   it("renders mensajes from the templates for the derived saldo + negocio", () => {
     const body = "Hola {nombre}, te quedan {clases} de tu {paquete} (vence {vence}). — {negocio}";
-    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "Recordatorio", body }], "FORGE GYM", 0);
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "Recordatorio", body }], "FORGE GYM");
     expect(f.mensajes).toEqual([
       { id: "t1", nombre: "Recordatorio", texto: "Hola Andrea, te quedan 5 clases de tu 8 clases (vence 16 jun). — FORGE GYM" },
     ]);
@@ -482,7 +505,7 @@ describe("shapeFicha", () => {
       TZ_FORGE,
       [{ id: "t1", nombre: "Renovación", body }],
       "FORGE",
-      0,
+      SIN_SALDO,
       { precios: "• 8 clases — $800", datos_pago: "Transferencia: BBVA" },
     );
     expect(f.mensajes[0].texto).toBe(
@@ -496,7 +519,7 @@ describe("shapeFicha", () => {
 
   it("omits the extras arg entirely (existing positional callers) — {precios}/{datos_pago} stay literal", () => {
     const body = "{precios}|{datos_pago}";
-    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "X", body }], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "X", body }], "FORGE");
     expect(f.mensajes[0].texto).toBe("{precios}|{datos_pago}");
   });
 
@@ -510,7 +533,7 @@ describe("shapeFicha", () => {
     // #226: the body no longer hardcodes "vence en" — {dias} carries the whole verb phrase, so a
     // custom template embeds the token directly, same as the reseeded Renovación body.
     const body = "Tu paquete {dias} — ¿lo renovamos?";
-    const f = shapeFicha(noPaquete, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
+    const f = shapeFicha(noPaquete, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE");
     expect(f.cliente.veredicto.estado).toBe("sin_paquete");
     expect(f.mensajes[0].texto).not.toContain("0 días"); // the fake countdown this closes
     expect(f.mensajes[0].texto).not.toContain("vence en vencido"); // the #188 S12 defect
@@ -522,7 +545,7 @@ describe("shapeFicha", () => {
   it("an expired client's {dias} renders the direction-aware verb phrase, never 'vencido' (#226, closes #225 F1's residual)", () => {
     const vencido: FichaClienteRow = { ...clienteRow, vence: "2026-05-20" }; // hoy 2026-05-27 → dias -7
     const body = "Tu paquete {dias} — ¿lo renovamos?";
-    const f = shapeFicha(vencido, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE", 0);
+    const f = shapeFicha(vencido, [], [], CTX, TZ_FORGE, [{ id: "t1", nombre: "Renovación", body }], "FORGE");
     expect(f.cliente.veredicto.estado).toBe("vencido");
     expect(f.mensajes[0].texto).toBe("Tu paquete venció hace 7 días — ¿lo renovamos?");
     expect(f.mensajes[0].texto).not.toContain("vence en vencido"); // the #188 S12 defect
@@ -539,10 +562,10 @@ describe("shapeFicha", () => {
     // caller that dropped it painted this row SIN CLASES/"Crítico" while the roster
     // read it VIGENTE/"ok"): the ONLY way to say "this gym sells no drop-in" is an
     // explicitly empty Set, which for THIS row is a different, stated fact.
-    const sinCatalogo = shapeFicha(paseSueltoRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
+    const sinCatalogo = shapeFicha(paseSueltoRow, [], [], CTX, TZ_FORGE, [], "FORGE");
     expect(sinCatalogo.cliente.veredicto.estado).toBe("sin_clases");
 
-    const conCatalogo = shapeFicha(paseSueltoRow, [], [], CTX_PASE, TZ_FORGE, [], "FORGE", 0);
+    const conCatalogo = shapeFicha(paseSueltoRow, [], [], CTX_PASE, TZ_FORGE, [], "FORGE");
     expect(conCatalogo.cliente.veredicto.estado).toBe("vigente"); // matches the roster/dashboard/export
     // …and the urgencia the ficha's `urgente` accent reads, blind to the spent clases:
     // this pairing is the tri-surface drift the deepening closes.
@@ -569,12 +592,6 @@ describe("gauge helpers (pure)", () => {
 
   it("gaugeFill floors a negative remaining (overdrawn días) at 0", () => {
     expect(gaugeFill(-2, 20)).toBe(0);
-  });
-
-  it("clasesDenom = clasesRest + attendedSincePurchase (the granted balance)", () => {
-    expect(clasesDenom(23, 1)).toBe(24);
-    expect(clasesDenom(8, 0)).toBe(8); // just purchased, none used
-    expect(clasesDenom(0, 8)).toBe(8); // fully drained
   });
 
   it("diasDenom = days from the last purchase to vence", () => {
@@ -608,33 +625,64 @@ describe("shapeFicha gauges", () => {
     ...over,
   });
 
-  it("stacks the clases balance: clasesRest 23 + usadas 1 → fill 23/24, usadas 1", () => {
+  /** N asistencia marks after the venta instant (2026-05-17 12:00 Chihuahua), one per day back
+   *  from 2026-05-26 — all inside the pack, none on `hoy`. */
+  const marcas = (n: number): FichaAsistRow[] =>
+    Array.from({ length: n }, (_, i) => ({
+      fecha: `2026-05-${String(26 - i).padStart(2, "0")}`,
+      hora: "18:00:00",
+      consumio: true,
+      perdonada: false,
+      reservation_id: null,
+      class_session_id: null,
+      origen: "libre" as const,
+      class_session: null,
+    }));
+
+  // §D2: the denominator is the anchor's GRANT, never `restantes + usadas`. A stacked balance
+  // (23 left on an 8-pack) used to paint 23/24 — a plausible-looking bar over a number the pack
+  // could never have granted. It now pins to the grant and the clamp does the rest.
+  it("stacked balance (23 left on an 8-pack) pins to the GRANT and clamps at full", () => {
     const row = { ...clienteRow, clases_restantes: 23 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE", 1);
+    const f = shapeFicha(row, marcas(1), [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE");
     expect(f.clasesGauge).not.toBeNull();
+    expect(f.clasesGauge!.total).toBe(8);
     expect(f.clasesGauge!.usadas).toBe(1);
-    expect(f.clasesGauge!.fill).toBeCloseTo(23 / 24);
+    expect(f.clasesGauge!.fill).toBe(1); // 23/8 clamped, not 23/24
   });
 
   it("just-purchased reads ≈ full (nothing used yet)", () => {
     const row = { ...clienteRow, clases_restantes: 8 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(row, [], [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE");
     expect(f.clasesGauge!.fill).toBe(1);
     expect(f.clasesGauge!.usadas).toBe(0);
+    expect(f.clasesGauge!.apartadas).toBe(0);
   });
 
-  it("partially drained: clasesRest 3 + usadas 5 → fill 3/8", () => {
+  it("partially drained: clasesRest 3 of an 8-pack → fill 3/8, usadas is the §D0 charge count", () => {
     const row = { ...clienteRow, clases_restantes: 3 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE", 5);
+    const f = shapeFicha(row, marcas(5), [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE");
     expect(f.clasesGauge!.fill).toBeCloseTo(3 / 8);
     expect(f.clasesGauge!.usadas).toBe(5);
+    expect(f.clasesGauge!.total).toBe(8);
   });
 
   it("expired/forfeited (clasesRest 0) → empty clases bar, usadas reflects real count", () => {
     const row = { ...clienteRow, clases_restantes: 0 };
-    const f = shapeFicha(row, [], [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE", 8);
+    const f = shapeFicha(row, marcas(8), [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE");
     expect(f.clasesGauge!.fill).toBe(0);
     expect(f.clasesGauge!.usadas).toBe(8);
+  });
+
+  // The fill reads the SAME forfeited number the big número prints, so the bar can never say
+  // "you have 5" over a screen that says 0. The RAW balance still rides on `saldo.restantes`,
+  // which is what the invariant/discrepancia are computed from.
+  it("an expired pack empties the bar even with a RAW balance left — saldo.restantes keeps the raw number", () => {
+    const row = { ...clienteRow, clases_restantes: 5, vence: "2026-05-20" }; // hoy = 2026-05-27
+    const f = shapeFicha(row, [], [venta({ clases: 8 })], CTX, TZ_FORGE, [], "FORGE");
+    expect(f.cliente.clasesRestLabel).toBe("0");
+    expect(f.clasesGauge!.fill).toBe(0);
+    expect(f.saldo.restantes).toBe(5);
   });
 
   it("ilimitado clases → clasesGauge null (no decrement, bar meaningless); días still shows", () => {
@@ -651,21 +699,20 @@ describe("shapeFicha gauges", () => {
       TZ_FORGE,
       [],
       "FORGE",
-      0,
     );
     expect(f.clasesGauge).toBeNull();
     expect(f.diasGauge).not.toBeNull();
   });
 
   it("no ventas → both gauges null (no anchor)", () => {
-    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [], CTX, TZ_FORGE, [], "FORGE");
     expect(f.clasesGauge).toBeNull();
     expect(f.diasGauge).toBeNull();
   });
 
   it("días fill from vence vs the last purchase date", () => {
     // purchased 2026-05-17, vence 2026-06-16 → denom 30; today 2026-05-27 → diasRest 20 → 20/30.
-    const f = shapeFicha(clienteRow, [], [venta()], CTX, TZ_FORGE, [], "FORGE", 0);
+    const f = shapeFicha(clienteRow, [], [venta()], CTX, TZ_FORGE, [], "FORGE");
     expect(f.diasGauge!.fill).toBeCloseTo(20 / 30);
   });
 
@@ -679,9 +726,491 @@ describe("shapeFicha gauges", () => {
       TZ_FORGE,
       [],
       "FORGE",
-      0,
     );
     expect(f.diasGauge!.fill).toBe(0);
+  });
+});
+
+// ── §D0/§D1 · the cargable rule and the derived balance ────────────
+// The vector list the slice-2 spec makes mandatory, run here in TS against the SAME rule the
+// SQL helper implements. Each vector names the wrong implementation it kills.
+
+describe("saldoDetalle — §D0 counting + §D1 derivation", () => {
+  // Anchor sale: written 2026-05-17 12:00 Chihuahua (UTC−6).
+  const ANCLA_ISO = "2026-05-17T18:00:00Z";
+  const venta = (over: Partial<FichaVentaRow> = {}): FichaVentaRow => ({
+    id: "v1",
+    folio: 1001,
+    fecha: ANCLA_ISO,
+    created_at: ANCLA_ISO,
+    paquete_nombre: "8 clases",
+    monto: 800,
+    metodo: "efectivo",
+    clases: 8,
+    vigencia_tipo: "dias",
+    vigencia_dias: 30,
+    ...over,
+  });
+  const marca = (over: Partial<FichaAsistRow> = {}): FichaAsistRow => ({
+    fecha: "2026-05-20",
+    hora: "18:00:00",
+    consumio: true,
+    perdonada: false,
+    reservation_id: null,
+    class_session_id: null,
+    origen: "libre",
+    class_session: null,
+    ...over,
+  });
+  /** A booking held 2026-05-20 12:00 local for a class that ran 2026-05-25 07:00 local — over
+   *  long before `AHORA` (2026-05-27 14:00 local). */
+  const reserva = (over: Partial<FichaReservaRow> = {}): FichaReservaRow => ({
+    id: "r1",
+    created_at: "2026-05-20T18:00:00Z",
+    consumio: true,
+    status: "reservada",
+    class_session_id: "s1",
+    class_session: {
+      starts_at: "2026-05-25T13:00:00Z",
+      duration_min: 60,
+      is_special: false,
+      special_name: null,
+      class_type: { name: "METCON" },
+    },
+    ...over,
+  });
+  const SESION_FUTURA = {
+    starts_at: "2026-05-28T01:00:00Z", // 2026-05-27 19:00 local — five hours after AHORA
+    duration_min: 60,
+    is_special: false,
+    special_name: null,
+    class_type: { name: "METCON" },
+  };
+
+  it("grant − charges: 3 marks on an 8-pack derive 5, and a healthy member's discrepancia is 0", () => {
+    const s = saldoDetalle(5, [venta()], [marca(), marca({ fecha: "2026-05-21" }), marca({ fecha: "2026-05-22" })], TZ_FORGE, SIN_SALDO);
+    expect(s.anchor).toMatchObject({ ventaId: "v1", folio: 1001, grant: 8 });
+    expect(s.usadas).toBe(3);
+    expect(s.derived).toBe(5);
+    expect(s.discrepancia).toBe(0);
+    expect(s.mostrarDiscrepancia).toBe(false);
+  });
+
+  // AC4's invariant, stated as arithmetic: on a healthy member the three numbers the ficha
+  // prints have to add back up to the number the gym sold.
+  it("AC4: usadas + apartadas + restantes = grant", () => {
+    const s = saldoDetalle(
+      4,
+      [venta()],
+      [marca(), marca({ fecha: "2026-05-21" }), marca({ fecha: "2026-05-22" })],
+      TZ_FORGE,
+      conReservas([reserva({ id: "r-fut", created_at: "2026-05-26T18:00:00Z", class_session: SESION_FUTURA })]),
+    );
+    expect(s.usadas).toBe(3);
+    expect(s.apartadas).toBe(1);
+    expect(s.usadas + s.apartadas + (s.restantes ?? 0)).toBe(8);
+    expect(s.discrepancia).toBe(0);
+  });
+
+  it("clamps nothing: a hand-broken balance is REPORTED as a discrepancia, never absorbed", () => {
+    const s = saldoDetalle(7, [venta()], [marca(), marca({ fecha: "2026-05-21" })], TZ_FORGE, SIN_SALDO);
+    expect(s.derived).toBe(6);
+    expect(s.discrepancia).toBe(-1);
+  });
+
+  // The vector that kills a consumio=true-only implementation: attending while ilimitado charges
+  // nothing at the time, but as-if-original still counts the event.
+  it("counts a consumio=false mark (attended while ilimitado / already charged at booking)", () => {
+    const s = saldoDetalle(7, [venta()], [marca({ consumio: false })], TZ_FORGE, SIN_SALDO);
+    expect(s.usadas).toBe(1);
+  });
+
+  it("excludes a perdonada mark (the cooldown twin, never a second charge)", () => {
+    const s = saldoDetalle(8, [venta()], [marca({ perdonada: true })], TZ_FORGE, SIN_SALDO);
+    expect(s.usadas).toBe(0);
+  });
+
+  it("booked → checked-in is counted ONCE: the mark defers to the reservation leg", () => {
+    const s = saldoDetalle(
+      7,
+      [venta()],
+      [marca({ fecha: "2026-05-25", hora: "07:02:00", consumio: false, reservation_id: "r1", class_session_id: "s1" })],
+      TZ_FORGE,
+      conReservas([reserva({ status: "asistida" })]),
+    );
+    expect(s.usadas).toBe(1);
+    expect(s.noShows).toBe(0); // it WAS attended
+  });
+
+  // The walk-in-after-cancel stale-flag row: `pasar_lista_sesion` reuses the cancelled booking and
+  // (pre-D6) leaves `consumio` true. Both legs see it; the dedupe is what keeps it at one.
+  it("walk-in reusing a cancelled booking is counted ONCE (the stale consumio flag)", () => {
+    const s = saldoDetalle(
+      7,
+      [venta()],
+      [marca({ fecha: "2026-05-25", hora: "07:02:00", consumio: true, reservation_id: "r1", class_session_id: "s1" })],
+      TZ_FORGE,
+      conReservas([reserva({ status: "asistida", consumio: true })]),
+    );
+    expect(s.usadas).toBe(1);
+  });
+
+  it("a gym-cancelled session lands NOWHERE — the status filter, not consumio, is what excludes it", () => {
+    // cancel_class_session refunds the class and stamps 'cancelada' while leaving consumio true.
+    const s = saldoDetalle(8, [venta()], [], TZ_FORGE, conReservas([reserva({ status: "cancelada" })]));
+    expect(s.usadas).toBe(0);
+    expect(s.apartadas).toBe(0);
+    expect(s.noShows).toBe(0);
+  });
+
+  it("a member-cancelled booking lands nowhere either (refund already live)", () => {
+    const s = saldoDetalle(8, [venta()], [], TZ_FORGE, conReservas([reserva({ status: "cancelada", consumio: false })]));
+    expect(s.usadas).toBe(0);
+  });
+
+  it("noShow vs apartada is the session END, not its start: in-progress is still an apartada", () => {
+    const enCurso = {
+      ...SESION_FUTURA,
+      starts_at: "2026-05-27T19:45:00Z", // 13:45 local — started 15 min before AHORA, 60 min long
+    };
+    const s = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva({ class_session: enCurso })]));
+    expect(s.apartadas).toBe(1);
+    expect(s.usadas).toBe(0);
+    expect(s.noShows).toBe(0);
+  });
+
+  it("a charged booking whose class ENDED with no check-in is a noShow — counted in usadas", () => {
+    const s = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva()]));
+    expect(s.usadas).toBe(1);
+    expect(s.noShows).toBe(1);
+    expect(s.apartadas).toBe(0);
+  });
+
+  it("'asistida' alone clears the noShow claim — the mark may sit outside the fetched window", () => {
+    const s = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva({ status: "asistida" })]));
+    expect(s.usadas).toBe(1);
+    expect(s.noShows).toBe(0);
+  });
+
+  // Berenice (AC1). The mark is at 18:12 LOCAL on 21 May; the renewal is written 02:53Z on 22 May,
+  // which is 20:53 local on 21 May. A naive UTC `::date` reads the sale as the NEXT day and hands
+  // the mark to the new pack — this vector is the one that catches it.
+  it("a mark hours BEFORE a same-day renewal stays on the OLD pack (timezone-aware)", () => {
+    const nueva = venta({ id: "v2", folio: 1002, created_at: "2026-05-22T02:53:00Z", fecha: "2026-05-22T02:53:00Z" });
+    const s = saldoDetalle(
+      8,
+      [nueva, venta()], // created_at desc, as the DAL orders it
+      [marca({ fecha: "2026-05-21", hora: "18:12:00" })],
+      TZ_FORGE,
+      SIN_SALDO,
+    );
+    expect(s.anchor!.ventaId).toBe("v2");
+    expect(s.usadas).toBe(0); // it was spent from the pre-renewal balance
+    expect(s.discrepancia).toBe(0);
+  });
+
+  it("a rebook AFTER a renewal attributes to the NEW venta", () => {
+    const nueva = venta({ id: "v2", folio: 1002, created_at: "2026-05-22T02:53:00Z", fecha: "2026-05-22T02:53:00Z" });
+    const s = saldoDetalle(
+      7,
+      [nueva, venta()],
+      [],
+      TZ_FORGE,
+      conReservas([reserva({ created_at: "2026-05-23T18:00:00Z", status: "asistida" })]),
+    );
+    expect(s.usadas).toBe(1);
+  });
+
+  it("a hold booked BEFORE the renewal stays on the old pack (the accepted cosmetic seam)", () => {
+    const nueva = venta({ id: "v2", folio: 1002, created_at: "2026-05-22T02:53:00Z", fecha: "2026-05-22T02:53:00Z" });
+    const s = saldoDetalle(8, [nueva, venta()], [], TZ_FORGE, conReservas([reserva({ class_session: SESION_FUTURA })]));
+    expect(s.apartadas).toBe(0); // booked 20 May, before the 21 May renewal
+  });
+
+  it("an untimed (backdated) mark falls back to DATE granularity and ties to the NEWER venta", () => {
+    const nueva = venta({ id: "v2", folio: 1002, created_at: "2026-05-22T02:53:00Z", fecha: "2026-05-22T02:53:00Z" });
+    const s = saldoDetalle(7, [nueva, venta()], [marca({ fecha: "2026-05-21", hora: null })], TZ_FORGE, SIN_SALDO);
+    // 21 May local is the renewal's own day → the newer venta wins, matching the DAL's
+    // `hora.is.null` arm, which counts an untimed same-day mark in.
+    expect(s.usadas).toBe(1);
+  });
+
+  it("an ilimitado anchor derives nothing (no grant to subtract from)", () => {
+    const s = saldoDetalle(null, [venta({ clases: null })], [marca()], TZ_FORGE, SIN_SALDO);
+    expect(s.usadas).toBe(1);
+    expect(s.derived).toBeNull();
+    expect(s.discrepancia).toBeNull();
+    expect(s.mostrarDiscrepancia).toBe(false);
+  });
+
+  it("no ventas → no anchor, nothing derived", () => {
+    const s = saldoDetalle(5, [], [marca()], TZ_FORGE, SIN_SALDO);
+    expect(s.anchor).toBeNull();
+    expect(s.usadas).toBe(0);
+    expect(s.derived).toBeNull();
+  });
+
+  it("the DAL's out-of-window count REPLACES the asistencia leg, and the reservation leg still adds", () => {
+    // Old-anchor path: the fetched 30-day rows can't reach the anchor, so the head-count wins.
+    const s = saldoDetalle(2, [venta()], [], TZ_FORGE, conReservas([reserva()], 5));
+    expect(s.usadas).toBe(6);
+    expect(s.derived).toBe(2);
+  });
+
+  describe("the discrepancy note is epoch-scoped (§D1)", () => {
+    const post = (over: Partial<FichaVentaRow> = {}) =>
+      venta({ created_at: "2026-08-28T18:00:00Z", fecha: "2026-08-28T18:00:00Z", ...over });
+
+    it("a pre-epoch anchor NEVER flags, however wide the gap — the stacked era is expected", () => {
+      const s = saldoDetalle(23, [venta()], [], TZ_FORGE, SIN_SALDO);
+      expect(s.discrepancia).toBe(-15);
+      expect(s.mostrarDiscrepancia).toBe(false);
+    });
+
+    it("a post-epoch anchor with a nonzero gap DOES flag", () => {
+      const s = saldoDetalle(3, [post()], [], TZ_FORGE, SIN_SALDO);
+      expect(s.discrepancia).toBe(5);
+      expect(s.mostrarDiscrepancia).toBe(true);
+    });
+
+    it("a post-epoch anchor that reconciles does not flag", () => {
+      const s = saldoDetalle(8, [post()], [], TZ_FORGE, SIN_SALDO);
+      expect(s.discrepancia).toBe(0);
+      expect(s.mostrarDiscrepancia).toBe(false);
+    });
+
+    it("RESET_EPOCH is the 2026-08-27 outage-fix go-live, to the minute", () => {
+      expect(Date.parse(RESET_EPOCH)).toBe(Date.parse("2026-08-27T15:30:00Z"));
+    });
+  });
+});
+
+describe("shapeFicha historial — §D4 attribution tags + 'No asistió — cargada' rows", () => {
+  const clienteRow: FichaClienteRow = {
+    id: "c1",
+    nombre: "Berenice Ríos",
+    tel: "614 218 3401",
+    paquete_nombre: "8 clases",
+    clases_restantes: 6,
+    vence: "2026-06-16",
+    auth_user_id: null,
+    created_at: "2026-04-10T18:00:00Z",
+  };
+  const V_VIEJA: FichaVentaRow = {
+    id: "v1",
+    folio: 1001,
+    fecha: "2026-04-21T18:00:00Z",
+    created_at: "2026-04-21T18:00:00Z",
+    paquete_nombre: "8 clases",
+    monto: 800,
+    metodo: "efectivo",
+    clases: 8,
+    vigencia_tipo: "dias",
+    vigencia_dias: 30,
+  };
+  // The renewal, WRITTEN 02:53Z on 22 May = 20:53 local on 21 May (AC1's own timestamps).
+  const V_NUEVA: FichaVentaRow = { ...V_VIEJA, id: "v2", folio: 1002, fecha: "2026-05-22T02:53:00Z", created_at: "2026-05-22T02:53:00Z" };
+  const VENTAS = [V_NUEVA, V_VIEJA]; // created_at desc, the DAL's order
+  const marca = (over: Partial<FichaAsistRow> = {}): FichaAsistRow => ({
+    fecha: "2026-05-23",
+    hora: "10:00:00",
+    consumio: true,
+    perdonada: false,
+    reservation_id: null,
+    class_session_id: null,
+    origen: "libre",
+    class_session: null,
+    ...over,
+  });
+  const reserva = (over: Partial<FichaReservaRow> = {}): FichaReservaRow => ({
+    id: "r1",
+    created_at: "2026-05-23T18:00:00Z", // held after the renewal
+    consumio: true,
+    status: "reservada",
+    class_session_id: "s1",
+    class_session: {
+      starts_at: "2026-05-25T13:00:00Z", // lun 25, 07:00 local — over long before AHORA
+      duration_min: 60,
+      is_special: false,
+      special_name: null,
+      class_type: { name: "METCON" },
+    },
+    ...over,
+  });
+
+  // AC1: the Vie-21 18:12 mark predates the 20:53 renewal, so it was spent from the OLD pack —
+  // and the ficha now SAYS so instead of leaving the operator to reconcile "1 used" by hand.
+  it("tags a mark made hours before the renewal as `(paquete anterior)`, and leaves later ones untagged", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [marca(), marca({ fecha: "2026-05-21", hora: "18:12:00" })],
+      VENTAS,
+      CTX,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      SIN_SALDO,
+    );
+    expect(f.historial.map((h) => [h.dDisplay, h.paqueteAnterior])).toEqual([
+      ["sáb 23", false],
+      ["jue 21", true],
+    ]);
+    expect(f.clasesGauge!.usadas).toBe(1); // only the post-renewal mark charges this pack
+    expect(f.clasesGauge!.total).toBe(8);
+  });
+
+  it("a perdonada row charges nothing, so it is never tagged", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [marca({ fecha: "2026-05-21", hora: "18:12:00", perdonada: true })],
+      VENTAS,
+      CTX,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      SIN_SALDO,
+    );
+    expect(f.historial[0].paqueteAnterior).toBe(false);
+    expect(f.clasesGauge!.usadas).toBe(0);
+  });
+
+  // A booking-charged check-in is tagged by the BOOKING's instant, not the mark's: the class was
+  // debited when it was held, so a hold placed under the old pack reads as the old pack.
+  it("a booking-charged check-in is tagged by when it was BOOKED, not when it was marked", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [marca({ fecha: "2026-05-25", hora: "07:02:00", consumio: false, reservation_id: "r1", class_session_id: "s1" })],
+      VENTAS,
+      CTX,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      conReservas([reserva({ created_at: "2026-05-20T18:00:00Z", status: "asistida" })]),
+    );
+    expect(f.historial[0].paqueteAnterior).toBe(true); // held 20 May, before the 21 May renewal
+    expect(f.clasesGauge!.usadas).toBe(0);
+  });
+
+  it("renders a 'No asistió — cargada' row at the CLASS's date/time, in date order with the visits", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [marca({ fecha: "2026-05-26", hora: "09:00:00" })],
+      VENTAS,
+      CTX,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      conReservas([reserva()]),
+    );
+    expect(f.historial).toHaveLength(2);
+    expect(f.historial[0]).toMatchObject({ tipo: "visita", dDisplay: "mar 26" });
+    expect(f.historial[1]).toMatchObject({
+      tipo: "no_asistio",
+      dDisplay: "lun 25",
+      hora: "07:00",
+      clase: "METCON 07:00",
+      origen: "clase",
+      paqueteAnterior: false,
+    });
+    expect(f.saldo.noShows).toBe(1);
+    expect(f.clasesGauge!.usadas).toBe(2); // the visit + the charged no-show
+  });
+
+  it("a gym-cancelled session shows NOTHING and counts nowhere (AC3)", () => {
+    const f = shapeFicha(clienteRow, [], VENTAS, CTX, TZ_FORGE, [], "FORGE", conReservas([reserva({ status: "cancelada" })]));
+    expect(f.historial).toHaveLength(0);
+    expect(f.saldo.noShows).toBe(0);
+    expect(f.clasesGauge!.usadas).toBe(0);
+  });
+
+  it("an attended booking shows its VISIT row, never a 'No asistió' line (AC3)", () => {
+    const f = shapeFicha(
+      clienteRow,
+      [marca({ fecha: "2026-05-25", hora: "07:02:00", consumio: false, reservation_id: "r1", class_session_id: "s1" })],
+      VENTAS,
+      CTX,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      conReservas([reserva({ status: "asistida" })]),
+    );
+    expect(f.historial.map((h) => h.tipo)).toEqual(["visita"]);
+    expect(f.saldo.noShows).toBe(0);
+  });
+
+  it("a future hold is an APARTADA — no historial row, but it shows in the gauge caption (AC3)", () => {
+    const futura = reserva({
+      id: "r-fut",
+      created_at: "2026-05-26T18:00:00Z",
+      class_session: {
+        starts_at: "2026-05-28T01:00:00Z", // 2026-05-27 19:00 local, after AHORA
+        duration_min: 60,
+        is_special: false,
+        special_name: null,
+        class_type: { name: "METCON" },
+      },
+    });
+    const f = shapeFicha(clienteRow, [], VENTAS, CTX, TZ_FORGE, [], "FORGE", conReservas([futura]));
+    expect(f.historial).toHaveLength(0);
+    expect(f.clasesGauge!.apartadas).toBe(1);
+    expect(f.clasesGauge!.usadas).toBe(0);
+  });
+
+  // AC5, the parity that matters most: a same-day renewal is exactly where the two surfaces used
+  // to diverge, because one anchored on the sale's DAY and the other on its instant.
+  it("AC5: the admin ficha and the client plan card agree on a same-day-renewal member", () => {
+    const asistencias = [
+      marca({ fecha: "2026-05-24" }),
+      marca({ fecha: "2026-05-23" }),
+      marca({ fecha: "2026-05-21", hora: "18:12:00" }), // before the 20:53 renewal → old pack
+    ];
+    const ficha = shapeFicha(clienteRow, asistencias, VENTAS, CTX, TZ_FORGE, [], "FORGE", SIN_SALDO);
+    const mem = derivarMembresia(
+      {
+        paqueteNombre: "8 clases",
+        clasesRestantes: 6,
+        vence: "2026-06-16",
+        anchorMonto: 800,
+        anchorVigenciaTipo: "dias",
+        anchorVigenciaDias: 30,
+        // What the mi_membresia RPC computes in SQL from the SAME §D0 rule.
+        cargadas: ficha.saldo.usadas,
+        grantClases: ficha.saldo.anchor!.grant,
+        apartadas: ficha.saldo.apartadas,
+      },
+      CTX,
+    );
+    expect(ficha.clasesGauge!.usadas).toBe(2);
+    expect(mem.gauge!.usadas).toBe(ficha.clasesGauge!.usadas);
+    expect(mem.gauge!.total).toBe(ficha.clasesGauge!.total);
+    expect(mem.gauge!.apartadas).toBe(ficha.clasesGauge!.apartadas);
+    expect(mem.gauge!.fill).toBeCloseTo(ficha.clasesGauge!.fill);
+    expect(mem.clasesRestLabel).toBe(ficha.cliente.clasesRestLabel);
+  });
+});
+
+describe("ventaAtribuida + momentoEnZona (§D0 primitives)", () => {
+  const anclas = [
+    { id: "v2", dia: "2026-05-21", hora: "20:53:00" },
+    { id: "v1", dia: "2026-05-01", hora: "12:00:00" },
+  ];
+
+  it("picks the latest venta at or before the charge moment", () => {
+    expect(ventaAtribuida(anclas, { dia: "2026-05-22", hora: "07:00:00" })).toBe("v2");
+    expect(ventaAtribuida(anclas, { dia: "2026-05-21", hora: "20:53:00" })).toBe("v2"); // the boundary is inclusive
+    expect(ventaAtribuida(anclas, { dia: "2026-05-21", hora: "20:52:59" })).toBe("v1");
+    expect(ventaAtribuida(anclas, { dia: "2026-04-30", hora: "09:00:00" })).toBeNull();
+  });
+
+  it("an untimed event compares by DAY only, and its ties go to the newer venta", () => {
+    expect(ventaAtribuida(anclas, { dia: "2026-05-21", hora: null })).toBe("v2");
+    expect(ventaAtribuida(anclas, { dia: "2026-05-20", hora: null })).toBe("v1");
+  });
+
+  it("momentoEnZona resolves in the GYM's zone, seconds included", () => {
+    // 02:53Z on 22 May is 20:53 on 21 May in Chihuahua (UTC−6) — the off-by-one a naive
+    // ::date would introduce for anything written after 18:00 local.
+    expect(momentoEnZona("2026-05-22T02:53:07Z", TZ_FORGE)).toEqual({ dia: "2026-05-21", hora: "20:53:07" });
   });
 });
 
@@ -709,6 +1238,8 @@ describe("derivarMembresia", () => {
     vigencia_dias: 30,
     ...over,
   });
+  /** The mi_membresia scalars. The three §D3 additions carry the SQL side of §D0 — the same
+   *  numbers `saldoDetalle` derives from rows on the admin side. */
   const mFacts = (over: Partial<MembresiaFacts> = {}): MembresiaFacts => ({
     paqueteNombre: "8 clases",
     clasesRestantes: 5,
@@ -716,35 +1247,64 @@ describe("derivarMembresia", () => {
     anchorMonto: 800,
     anchorVigenciaTipo: "dias",
     anchorVigenciaDias: 30,
-    attendedSincePurchase: 0,
+    cargadas: 0,
+    grantClases: 8,
+    apartadas: 0,
     ...over,
   });
+  /** N marks after the 2026-05-17 12:00-Chihuahua venta, one per day back from 05-26. */
+  const marcas = (n: number): FichaAsistRow[] =>
+    Array.from({ length: n }, (_, i) => ({
+      fecha: `2026-05-${String(26 - i).padStart(2, "0")}`,
+      hora: "18:00:00",
+      consumio: true,
+      perdonada: false,
+      reservation_id: null,
+      class_session_id: null,
+      origen: "libre" as const,
+      class_session: null,
+    }));
 
-  // The load-bearing proof: fed the SAME scalars, derivarMembresia's gauge equals shapeFicha's
+  // The load-bearing proof: fed the SAME facts, derivarMembresia's gauge equals shapeFicha's
   // clasesGauge — the client plan card and the admin ficha are ONE derivation.
   it("gauge equals shapeFicha.clasesGauge for the same client (partially drained)", () => {
     const row = { ...clienteRow, clases_restantes: 3 };
-    const ficha = shapeFicha(row, [], [venta()], CTX, TZ_FORGE, [], "FORGE", 5);
-    const mem = derivarMembresia(mFacts({ clasesRestantes: 3, attendedSincePurchase: 5 }), CTX);
+    const ficha = shapeFicha(row, marcas(5), [venta()], CTX, TZ_FORGE, [], "FORGE");
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 3, cargadas: 5 }), CTX);
     expect(mem.gauge).not.toBeNull();
     expect(mem.gauge!.fill).toBeCloseTo(ficha.clasesGauge!.fill);
     expect(mem.gauge!.usadas).toBe(ficha.clasesGauge!.usadas);
+    expect(mem.gauge!.total).toBe(ficha.clasesGauge!.total);
     expect(mem.gauge!.fill).toBeCloseTo(3 / 8);
     expect(mem.gauge!.total).toBe(8);
     expect(mem.gauge!.restantes).toBe(3);
   });
 
-  it("stacked balance: clasesRest 23 + usadas 1 → fill 23/24, matching the ficha", () => {
+  it("stacked balance clamps to the GRANT on both surfaces (§D2), not to restantes + usadas", () => {
     const row = { ...clienteRow, clases_restantes: 23 };
-    const ficha = shapeFicha(row, [], [venta()], CTX, TZ_FORGE, [], "FORGE", 1);
-    const mem = derivarMembresia(mFacts({ clasesRestantes: 23, attendedSincePurchase: 1 }), CTX);
+    const ficha = shapeFicha(row, marcas(1), [venta()], CTX, TZ_FORGE, [], "FORGE");
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 23, cargadas: 1 }), CTX);
     expect(mem.gauge!.fill).toBeCloseTo(ficha.clasesGauge!.fill);
-    expect(mem.gauge!.fill).toBeCloseTo(23 / 24);
+    expect(mem.gauge!.total).toBe(ficha.clasesGauge!.total);
+    expect(mem.gauge!.fill).toBe(1);
+    expect(mem.gauge!.total).toBe(8);
+  });
+
+  it("carries apartadas through to the card's caption", () => {
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 2, cargadas: 5, apartadas: 1 }), CTX);
+    expect(mem.gauge!.usadas).toBe(5);
+    expect(mem.gauge!.apartadas).toBe(1);
+  });
+
+  it("ilimitado ANCHOR (grant null) hides the bar even with a finite balance (§D1)", () => {
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 4, grantClases: null }), CTX);
+    expect(mem.gauge).toBeNull();
+    expect(mem.clasesRestLabel).toBe("4");
   });
 
   it("expired/forfeited finite plan → clasesRest 0, empty bar (matches read-time forfeit)", () => {
     // vence in the past → forfeit to 0, exactly as derivarCliente/shapeFicha.
-    const mem = derivarMembresia(mFacts({ clasesRestantes: 5, vence: "2026-05-20", attendedSincePurchase: 8 }), CTX);
+    const mem = derivarMembresia(mFacts({ clasesRestantes: 5, vence: "2026-05-20", cargadas: 8 }), CTX);
     expect(mem.clasesRestLabel).toBe("0");
     expect(mem.vencido).toBe(true);
     expect(mem.gauge!.fill).toBe(0);

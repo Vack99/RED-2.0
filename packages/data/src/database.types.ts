@@ -1613,8 +1613,11 @@ export type Database = {
           anchor_monto: number
           anchor_vigencia_dias: number
           anchor_vigencia_tipo: string
+          apartadas: number
           attended_since_purchase: number
+          cargadas: number
           clases_restantes: number
+          grant_clases: number
           paquete_nombre: string
           vence: string
         }[]

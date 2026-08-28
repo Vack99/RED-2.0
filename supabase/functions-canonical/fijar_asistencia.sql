@@ -220,7 +220,11 @@ begin
     if p_session_id is not null then
       if v_res_id is not null then
         update public.reservation
-           set status = 'asistida', is_walk_in = true, checked_at = now(), cancelled_at = null
+           set status = 'asistida', is_walk_in = true, checked_at = now(), cancelled_at = null,
+               
+               
+               
+               consumio = false
          where id = v_res_id;
       else
         insert into public.reservation (gym_id, class_session_id, member_id, status, is_walk_in, checked_at)

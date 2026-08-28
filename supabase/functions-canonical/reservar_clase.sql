@@ -121,7 +121,10 @@ begin
   
   if v_res_id is not null then
     update public.reservation
-       set status = 'reservada', is_walk_in = false, cancelled_at = null, checked_at = null
+       set status = 'reservada', is_walk_in = false, cancelled_at = null, checked_at = null,
+           
+           
+           created_at = now()
      where id = v_res_id;
   else
     insert into public.reservation (gym_id, class_session_id, member_id, status)

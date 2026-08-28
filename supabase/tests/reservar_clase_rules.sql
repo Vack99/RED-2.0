@@ -19,6 +19,14 @@
 --                                  is not decremented a second time.
 --   * re-book reuses the row     — booking a session the member previously CANCELLED reactivates the one
 --                                  UNIQUE row (no duplicate) and consumes one.
+--   * re-book RE-STAMPS THE MOMENT (slice 2 §D6) — that reused row is logically a NEW booking, so it also
+--                                  stamps `created_at = now()`. The derived ledger attributes a charge to
+--                                  the latest venta whose created_at precedes the charge MOMENT, and for a
+--                                  booking that moment IS this column: a member who cancels, renews, and
+--                                  re-books would otherwise spend the new pack and have it counted against
+--                                  the old one. The fixture BACKDATES the cancelled row ten days — the
+--                                  suite runs in one frozen instant, so without that a re-stamp and a
+--                                  stale value are indistinguishable — and both identity paths assert it.
 --   * started-class block (#165) — a session whose starts_at is already past is rejected with the SAME
 --                                  message cancelar_reserva says for a class in this state, one minute
 --                                  past its start ('La clase ya comenzó' — since 20260806130000 the two
@@ -328,8 +336,15 @@ reset role;
 -- a reused row that kept is_walk_in = true would take pasar_lista_sesion's untoggle walk-in arm
 -- (cancel + REFUND) instead of the booked arm (reservada, no refund) — money drift the old count-only
 -- assertion could not see.
+--
+-- created_at is BACKDATED TEN DAYS for slice 2 §D6: the whole suite is one transaction, so now() and
+-- every created_at default are the same frozen instant, and a re-stamp would be invisible against a
+-- value written moments ago. Ten days out, the first booking's moment is unmistakably older than the
+-- re-booking's — and a body that forgot to re-stamp reads as a charge that belongs to whatever pack was
+-- live ten days ago.
 update public.reservation r
-   set status = 'cancelada', cancelled_at = now(), is_walk_in = true, checked_at = now()
+   set status = 'cancelada', cancelled_at = now(), is_walk_in = true, checked_at = now(),
+       created_at = now() - interval '10 days'
   from public.clientes c
  where r.member_id = c.id and c.nombre = 'RC finite'
    and r.class_session_id = current_setting('t.s_open', true)::uuid;
@@ -342,21 +357,30 @@ do $$
 declare
   s_open uuid := current_setting('t.s_open', true)::uuid;
   c_fin  uuid := current_setting('t.c_fin', true)::uuid;
-  v_ret  int; v_res uuid; v_n int; v_clases int; r record;
+  v_ret  int; v_res uuid; v_n int; v_clases int; r record; v_before timestamptz;
 begin
+  -- The moment the row carries BEFORE the re-book: the backdated first booking (see the fixture above).
+  select created_at into v_before from public.reservation where member_id = c_fin and class_session_id = s_open;
+  if v_before is null or v_before >= now() - interval '1 day' then
+    raise exception 'SETUP FAIL(rebook): the cancelled row reads created_at % — a re-stamp cannot be observed unless the fixture backdated it (NULL means the member cannot even see their own cancelled row)', v_before;
+  end if;
+
   select reservation_id, clases_restantes into v_res, v_ret from public.reservar_clase(s_open);
   if v_ret <> 3 then raise exception 'RULE FAIL(rebook): expected clases 3 after re-book, got %', v_ret; end if;
   select count(*) into v_n from public.reservation where member_id = c_fin and class_session_id = s_open;
   if v_n <> 1 then raise exception 'RULE FAIL(rebook): expected 1 row total (reused), got %', v_n; end if;
 
-  -- The reuse arm writes FOUR columns (status, is_walk_in, cancelled_at, checked_at). Read the row back
-  -- and assert each — a count-with-filter proves which row, never what it holds (#80 AC4).
-  select status, is_walk_in, cancelled_at, checked_at into r
+  -- The reuse arm writes FIVE columns (status, is_walk_in, cancelled_at, checked_at, created_at). Read
+  -- the row back and assert each — a count-with-filter proves which row, never what it holds (#80 AC4).
+  select status, is_walk_in, cancelled_at, checked_at, created_at into r
     from public.reservation where member_id = c_fin and class_session_id = s_open;
   if r.status       is distinct from 'reservada' then raise exception 'RULE FAIL(rebook): reused row status = %', r.status; end if;
   if r.is_walk_in   is distinct from false       then raise exception 'RULE FAIL(rebook): stale is_walk_in survived the reuse (%) — untoggle would refund a booked class', r.is_walk_in; end if;
   if r.cancelled_at is not null                  then raise exception 'RULE FAIL(rebook): cancelled_at not cleared (%)', r.cancelled_at; end if;
   if r.checked_at   is not null                  then raise exception 'RULE FAIL(rebook): checked_at not cleared (%)', r.checked_at; end if;
+  -- Slice 2 §D6: the CHARGE MOMENT. now() is the transaction's instant, so `>= now()` accepts now() and
+  -- clock_timestamp() alike and refuses the ten-day-old value the row carried in.
+  if r.created_at   < now()                      then raise exception 'RULE FAIL(rebook): created_at % survived the re-book (it was %) — this charge would be attributed to whatever pack was live at the FIRST booking', r.created_at, v_before; end if;
 
   -- The consume is a WRITE to clientes; the RPC's return value is not proof it persisted.
   select clases_restantes into v_clases from public.clientes where id = c_fin;
@@ -711,10 +735,12 @@ end $$;
 reset role;
 
 -- Flip that booking to cancelada AS THE PRIVILEGED (migration) role, leaving is_walk_in + checked_at
--- DIRTY exactly as the member-path fixture above does — the reuse arm's four-column reset must be proved
--- on this path too, or an operator re-book could hand pasar_lista_sesion a walk-in row that REFUNDS.
+-- DIRTY exactly as the member-path fixture above does — the reuse arm's five-column reset must be proved
+-- on this path too, or an operator re-book could hand pasar_lista_sesion a walk-in row that REFUNDS, and
+-- (§D6) could attribute the new charge to the pack that was live ten days ago.
 update public.reservation
-   set status = 'cancelada', cancelled_at = now(), is_walk_in = true, checked_at = now()
+   set status = 'cancelada', cancelled_at = now(), is_walk_in = true, checked_at = now(),
+       created_at = now() - interval '10 days'
  where member_id = current_setting('t.t_reuse', true)::uuid
    and class_session_id = current_setting('t.s_open', true)::uuid;
 
@@ -732,13 +758,15 @@ begin
   select count(*) into v_n from public.reservation where member_id = t_reuse and class_session_id = s_open;
   if v_n <> 1 then raise exception 'RULE FAIL(op rebook): expected 1 row total (reused), got %', v_n; end if;
 
-  select status, is_walk_in, cancelled_at, checked_at, consumio into r
+  select status, is_walk_in, cancelled_at, checked_at, consumio, created_at into r
     from public.reservation where member_id = t_reuse and class_session_id = s_open;
   if r.status       is distinct from 'reservada' then raise exception 'RULE FAIL(op rebook): reused row status = %', r.status; end if;
   if r.is_walk_in   is distinct from false       then raise exception 'RULE FAIL(op rebook): stale is_walk_in survived the reuse (%)', r.is_walk_in; end if;
   if r.cancelled_at is not null                  then raise exception 'RULE FAIL(op rebook): cancelled_at not cleared (%)', r.cancelled_at; end if;
   if r.checked_at   is not null                  then raise exception 'RULE FAIL(op rebook): checked_at not cleared (%)', r.checked_at; end if;
   if r.consumio     is distinct from true        then raise exception 'RULE FAIL(op rebook): consumio % (expected true)', r.consumio; end if;
+  -- §D6: an operator re-book is a booking made NOW, whoever typed it.
+  if r.created_at   < now()                      then raise exception 'RULE FAIL(op rebook): created_at % survived the re-book — the charge would be attributed to the pack live at the FIRST booking', r.created_at; end if;
 
   select clases_restantes into v_clases from public.clientes where id = t_reuse;
   if v_clases <> 3 then raise exception 'RULE FAIL(op rebook): stored clases % after re-book, expected 3', v_clases; end if;

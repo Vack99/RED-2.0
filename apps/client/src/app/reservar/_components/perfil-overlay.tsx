@@ -185,7 +185,12 @@ function Row({
 
 /** The "Tu plan" card (mock: mb-card): plan name, the anchor-sale price, the "N de N clases" depletion
  *  gauge (∞ + a full bar for ilimitado; hidden when there is no anchor sale), and the renovación date.
- *  Read-only — every number is server-derived; the only action opens the change-plan mode. */
+ *  Read-only — every number is server-derived; the only action opens the change-plan mode.
+ *
+ *  Slice 2 §D2: `total` is the paquete's real GRANT and `usadas` the charges debited against it — not
+ *  the old `restantes + usadas`, which absorbed any drift and always painted a plausible bar. Classes
+ *  already charged for a class that hasn't happened yet are their own arm (`apartadas`), because they
+ *  are the reason grant − usadas can exceed "restantes" and the member has no other way to see it. */
 function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void }) {
   // Expired plans read empty — a lapsed ilimitado must not show a full glowing bar (#118 E3).
   const barWidth = m.vencido ? "0%" : m.ilimitado ? "100%" : `${Math.round((m.gauge?.fill ?? 0) * 100)}%`;
@@ -226,7 +231,10 @@ function PlanCard({ m, onChange }: { m: MembresiaDerivada; onChange: () => void 
               <span className="text-[10px] uppercase tracking-wide text-muted">activo</span>
             ) : (
               m.gauge && (
-                <span className="text-[10px] uppercase tracking-wide text-muted">{m.gauge.restantes} restantes</span>
+                <span className="text-[10px] uppercase tracking-wide text-muted">
+                  {m.gauge.apartadas > 0 && <>{m.gauge.apartadas} apartadas · </>}
+                  {m.gauge.restantes} restantes
+                </span>
               )
             )}
           </div>

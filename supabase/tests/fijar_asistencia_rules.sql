@@ -57,6 +57,15 @@
 --    13) PAST-DAY BACKFILL keeps the session's own instant (#166): marking yesterday's 07:00 roster
 --        today stamps fecha=yesterday and hora=07:00, NOT now() — and a p_fecha of TODAY passed
 --        alongside the session is IGNORED, exactly as documented. The replay returns the same 07:00.
+--    16) WALK-IN ON A CANCELLED BOOKING (slice 2 §D6, 20260828100000): a member books (the hold sets
+--        reservation.consumio=true), cancels through cancelar_reserva (which refunds by READING that
+--        flag and leaves it set), and is then checked in at the door. This seam's walk-in arm reuses
+--        that terminal row and must CLEAR the flag — the charge for this visit is the asistencia it
+--        inserts. Asserted on the written row, on which LEG of the derived charge count (spec D0)
+--        carries it — the asistencia leg, dated the CLASS, never the reservation leg, dated a booking
+--        the member cancelled — and REPLAYED, because a flag that flips back on the second call would
+--        be the idempotency bug in a new column. Vector 8's capture is the counter-vector: a REAL
+--        booking keeps consumio = true, which is the hold the capture settles.
 --   TENANT SCOPING
 --    10) cross-tenant denial, four ways: gym_b's operator cannot check in gym_a's cliente (libre) nor
 --        against gym_a's session; gym_a's operator cannot reach gym_b's cliente through gym_a's own
@@ -93,10 +102,12 @@ declare
   v_tz  text := 'America/Chihuahua';
   op_a  uuid := gen_random_uuid();
   op_b  uuid := gen_random_uuid();
-  m_book uuid := gen_random_uuid();   -- the one member who books for themselves
+  m_book uuid := gen_random_uuid();   -- books for themselves and is captured (vector 8)
+  m_recy uuid := gen_random_uuid();   -- books, CANCELS, and is walked in (vector 16)
   v_today date;
   v_ct_a uuid; v_ct_b uuid;
   s_walk uuid; s_book uuid; s_ayer uuid; s_b uuid;
+  s_recy uuid;                        -- vector 16's own class: its own instant, moved onto today
   v_ayer timestamptz;
   c_libre  uuid;  -- vectors 1-4
   c_virgin uuid;  -- vector 12
@@ -109,6 +120,7 @@ declare
   c_venc   uuid;  -- vector 14b
   c_victim uuid;  -- vector 10 (gym_a's cliente, attacked by gym_b's operator)
   c_b      uuid;  -- vectors 10c + 11 (gym_b's own cliente)
+  c_recy   uuid;  -- vector 16
 begin
   insert into public.gym (id, slug, brand_name, timezone, brand_module_id) values
     (gym_a, 'fa-gym-a', 'FA Gym A', v_tz, 'base'),
@@ -119,12 +131,14 @@ begin
   insert into auth.users (instance_id, id, aud, role, email) values
     ('00000000-0000-0000-0000-000000000000', op_a,   'authenticated', 'authenticated', 'fa-op-a@test.local'),
     ('00000000-0000-0000-0000-000000000000', op_b,   'authenticated', 'authenticated', 'fa-op-b@test.local'),
-    ('00000000-0000-0000-0000-000000000000', m_book, 'authenticated', 'authenticated', 'fa-book@test.local');
+    ('00000000-0000-0000-0000-000000000000', m_book, 'authenticated', 'authenticated', 'fa-book@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_recy, 'authenticated', 'authenticated', 'fa-recy@test.local');
 
   insert into public.gym_membership (user_id, gym_id, role) values
     (op_a, gym_a, 'operator'),
     (op_b, gym_b, 'operator'),
-    (m_book, gym_a, 'member');
+    (m_book, gym_a, 'member'),
+    (m_recy, gym_a, 'member');
 
   -- Every finite member starts at 5 with a comfortably valid package, so any balance that is not 5 in
   -- an assertion below is something this suite did on purpose.
@@ -152,6 +166,10 @@ begin
     values ('FA victima', '0000000010', 5, v_today + 20, '8 clases', gym_a) returning id into c_victim;
   insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
     values ('FA gym B', '0000000011', 5, v_today + 20, '8 clases', gym_b) returning id into c_b;
+  -- Vector 16 books for themselves, so the auth user is linked (reservar_clase's member path resolves
+  -- the cliente through it; the walk-in check-in that follows is the OPERATOR's call, as always).
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('FA reciclada', '0000000012', 5, v_today + 20, '8 clases', gym_a, m_recy) returning id into c_recy;
 
   insert into public.class_type (gym_id, name) values (gym_a, 'FA Metcon') returning id into v_ct_a;
   insert into public.class_type (gym_id, name) values (gym_b, 'FA Yoga')   returning id into v_ct_b;
@@ -171,15 +189,21 @@ begin
   -- s_b: gym_b's own session, for the cross-tenant vectors.
   insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
     values (gym_b, v_ct_b, now() + interval '2 days', 60, 20) returning id into s_b;
+  -- s_recy: vector 16's class. Booked AND cancelled while still two days out (both RPCs refuse a class
+  -- that has started), then moved onto today 20:00 — its own instant, one class per instant per gym.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_a, v_ct_a, now() + interval '2 days' + interval '1 hour', 60, 20) returning id into s_recy;
 
   perform set_config('t.gym_a', gym_a::text, true);
   perform set_config('t.gym_b', gym_b::text, true);
   perform set_config('t.op_a', op_a::text, true);
   perform set_config('t.op_b', op_b::text, true);
   perform set_config('t.m_book', m_book::text, true);
+  perform set_config('t.m_recy', m_recy::text, true);
   perform set_config('t.today', v_today::text, true);
   perform set_config('t.ayer', (v_today - 1)::text, true);
   perform set_config('t.starts_book', ((v_today::timestamp + interval '19 hours') at time zone v_tz)::text, true);
+  perform set_config('t.starts_recy', ((v_today::timestamp + interval '20 hours') at time zone v_tz)::text, true);
   perform set_config('t.s_walk', s_walk::text, true);
   perform set_config('t.s_book', s_book::text, true);
   perform set_config('t.s_ayer', s_ayer::text, true);
@@ -195,6 +219,8 @@ begin
   perform set_config('t.c_venc', c_venc::text, true);
   perform set_config('t.c_victim', c_victim::text, true);
   perform set_config('t.c_b', c_b::text, true);
+  perform set_config('t.c_recy', c_recy::text, true);
+  perform set_config('t.s_recy', s_recy::text, true);
 end $$;
 
 -- ── The booked member books ahead, as themselves — reservar_clase takes the hold (5→4) ────────────
@@ -212,10 +238,39 @@ begin
 end $$;
 reset role;
 
--- Move the booked session onto today 19:00 (privileged — no RPC moves a class, and the booking had to
--- land first; see the header). Every vector below reads it as a today-dated class.
+-- ── Vector 16's arrange: book, then CANCEL through the real RPC (still as the member) ─────────────
+-- cancelar_reserva rather than a privileged flip on purpose: the premise of the vector is that the
+-- refund path READS `consumio` and leaves it set, so the fixture has to be the function that does it.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_recy', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  s      uuid := current_setting('t.s_recy', true)::uuid;
+  c      uuid := current_setting('t.c_recy', true)::uuid;
+  v_clases int; v_status text; v_consumio boolean;
+begin
+  perform public.reservar_clase(s);
+  select clases_restantes into v_clases from public.clientes where id = c;
+  if v_clases is distinct from 4 then raise exception 'SEED FAIL(v16 book): expected 4 after the hold, got %', v_clases; end if;
+
+  perform public.cancelar_reserva(s);
+  select clases_restantes into v_clases from public.clientes where id = c;
+  if v_clases is distinct from 5 then raise exception 'SEED FAIL(v16 cancel): expected the hold refunded to 5, got %', v_clases; end if;
+  select status, consumio into v_status, v_consumio from public.reservation where member_id = c and class_session_id = s;
+  if v_status is distinct from 'cancelada' then raise exception 'SEED FAIL(v16 cancel): status % (expected cancelada)', v_status; end if;
+  if v_consumio is distinct from true then
+    raise exception 'SEED FAIL(v16 cancel): consumio % — cancelar_reserva now clears the flag, so vector 16 no longer tests anything', v_consumio;
+  end if;
+end $$;
+reset role;
+
+-- Move the booked sessions onto today, 19:00 and 20:00 (privileged — no RPC moves a class, and the
+-- bookings had to land first; see the header). Every vector below reads them as today-dated classes.
 update public.class_session set starts_at = current_setting('t.starts_book', true)::timestamptz
  where id = current_setting('t.s_book', true)::uuid;
+update public.class_session set starts_at = current_setting('t.starts_recy', true)::timestamptz
+ where id = current_setting('t.s_recy', true)::uuid;
 
 -- ══════════════════════════════════════════════════════════════════════════════════════════════════
 -- Everything below runs AS GYM_A'S OPERATOR — the check-in caller.
@@ -595,6 +650,11 @@ begin
   select status, is_walk_in, checked_at into v_status, v_walk, v_checked from public.reservation where id = v_res_id;
   if v_status is distinct from 'asistida' then raise exception 'VECTOR 8 FAIL: reservation status % (expected asistida)', v_status; end if;
   if v_walk is distinct from false then raise exception 'VECTOR 8 FAIL: is_walk_in % (expected false — this is a real booking, and the replay arm reads that flag to tell reserva from gratis)', v_walk; end if;
+  -- §D6 counter-vector (20260828100000): the CAPTURE leaves the hold flag alone. Vector 16's walk-in
+  -- reuse clears it because a terminal row's flag is dead; this one is live, and it IS this visit's
+  -- charge — the asistencia beside it is consumio = false precisely because the booking paid.
+  select consumio into v_consumio from public.reservation where id = v_res_id;
+  if v_consumio is distinct from true then raise exception 'VECTOR 8 FAIL: reservation.consumio % — the capture cleared a LIVE hold, so this visit is now charged nowhere', v_consumio; end if;
   select clases_restantes into v_clases from public.clientes where id = c;
   if v_clases is distinct from 4 then raise exception 'VECTOR 8 FAIL: DOUBLE CONSUME — balance % (expected 4)', v_clases; end if;
 
@@ -659,6 +719,92 @@ begin
   end if;
   select clases_restantes into v_clases from public.clientes where id = c;
   if v_clases is distinct from 4 then raise exception 'VECTOR 13 FAIL: balance % after the replay (expected 4)', v_clases; end if;
+end $$;
+
+-- ── (16) WALK-IN ON A CANCELLED BOOKING: the reuse clears the dead flag, and replays clean ──────
+-- The arrange block near the top left this member with a CANCELLED row that still says consumio = true
+-- (cancelar_reserva refunds by reading that flag and never clears it — asserted there, not assumed).
+-- The door check-in reuses that one UNIQUE row as a walk-in, so the flag has to go: the charge for this
+-- visit is the asistencia inserted alongside it, which is also where the un-check-in refund reads it.
+--
+-- WHY THE LEGS ARE COUNTED APART, and not just totalled: D0's asistencia leg defers to any reservation
+-- that claims the charge, so the TOTAL is 1 with or without the fix and a total-only assertion would
+-- pass against the unfixed body. What moves is WHICH leg carries the charge, and with it the charge
+-- MOMENT — the reservation leg dates it at `created_at`, a booking this member cancelled (and, after a
+-- renewal, one belonging to a pack since replaced), while the asistencia leg dates it at the class's own
+-- fecha + hora, which is when the door actually charged.
+--
+-- And then it is REPLAYED, because this is the idempotent seam: a flag that flips back on the second
+-- call would be #293's bug in a new column.
+do $$
+declare
+  c uuid := current_setting('t.c_recy', true)::uuid;
+  s uuid := current_setting('t.s_recy', true)::uuid;
+  r1 record; r2 record;
+  v_res_id uuid; v_status text; v_walk boolean; v_consumio boolean;
+  v_cancelled timestamptz; v_checked timestamptz; v_checked2 timestamptz;
+  v_a_consumio boolean; v_a_res uuid; v_a_origen text; v_a_perdonada boolean;
+  v_n int; v_clases int; v_leg_a int; v_leg_r int;
+begin
+  select * into r1 from public.fijar_asistencia(c, true, s, null, false);
+  if r1.present is not true then raise exception 'VECTOR 16 FAIL: the walk-in check-in was refused'; end if;
+  -- 'descontada', not 'reserva': a CANCELLED booking is not a hold to capture, and this charge is real.
+  if r1.resultado is distinct from 'descontada' then raise exception 'VECTOR 16 FAIL: resultado % (expected descontada)', r1.resultado; end if;
+  if r1.hora is distinct from '20:00' then raise exception 'VECTOR 16 FAIL: returned hora % (expected the session''s own 20:00)', r1.hora; end if;
+  if r1.clases_restantes is distinct from 4 then raise exception 'VECTOR 16 FAIL: returned balance % (expected 4 — one net charge across book, cancel and walk in)', r1.clases_restantes; end if;
+
+  -- THE REUSED ROW, column by column. consumio is the §D6 edit; the other four are the reuse arm's
+  -- existing contract and are asserted here because this is the first vector that reaches it from a
+  -- CANCELLED row rather than from no row at all.
+  select id, status, is_walk_in, consumio, cancelled_at, checked_at
+    into v_res_id, v_status, v_walk, v_consumio, v_cancelled, v_checked
+    from public.reservation where member_id = c and class_session_id = s;
+  select count(*) into v_n from public.reservation where member_id = c and class_session_id = s;
+  if v_n is distinct from 1 then raise exception 'VECTOR 16 FAIL: % reservation row(s) (expected the ONE reused row)', v_n; end if;
+  if v_status is distinct from 'asistida' then raise exception 'VECTOR 16 FAIL: reservation status % (expected asistida)', v_status; end if;
+  if v_walk is distinct from true then raise exception 'VECTOR 16 FAIL: is_walk_in % (expected true — the booking was cancelled, this arrival is a walk-in)', v_walk; end if;
+  if v_cancelled is not null then raise exception 'VECTOR 16 FAIL: cancelled_at % not cleared by the reuse', v_cancelled; end if;
+  if v_checked is null then raise exception 'VECTOR 16 FAIL: checked_at not stamped'; end if;
+  if v_consumio is distinct from false then
+    raise exception 'VECTOR 16 FAIL: reservation.consumio % — the CANCELLED booking''s flag survived the walk-in reuse, so this door charge is dated at the booking instant and attributed to whatever pack was live then', v_consumio;
+  end if;
+
+  -- …and the charge itself is on the attendance row, linked to the row it settles.
+  select count(*) into v_n from public.asistencias where cliente_id = c and deleted_at is null;
+  if v_n is distinct from 1 then raise exception 'VECTOR 16 FAIL: % active asistencias row(s) (expected 1)', v_n; end if;
+  select consumio, reservation_id, origen, perdonada into v_a_consumio, v_a_res, v_a_origen, v_a_perdonada
+    from public.asistencias where cliente_id = c and deleted_at is null;
+  if v_a_consumio is distinct from true then raise exception 'VECTOR 16 FAIL: asistencia.consumio % (expected true — this visit is the one that paid)', v_a_consumio; end if;
+  if v_a_res is distinct from v_res_id then raise exception 'VECTOR 16 FAIL: asistencia.reservation_id % (expected the reused row %)', v_a_res, v_res_id; end if;
+  if v_a_origen is distinct from 'clase' then raise exception 'VECTOR 16 FAIL: asistencia.origen % (expected clase)', v_a_origen; end if;
+  if v_a_perdonada is distinct from false then raise exception 'VECTOR 16 FAIL: a PAYING row was stamped perdonada %', v_a_perdonada; end if;
+  select clases_restantes into v_clases from public.clientes where id = c;
+  if v_clases is distinct from 4 then raise exception 'VECTOR 16 FAIL: stored balance % (expected 4)', v_clases; end if;
+
+  -- THE DERIVED COUNT (spec D0), leg by leg.
+  select count(*) into v_leg_a from public.asistencias a
+    left join public.reservation r on r.id = a.reservation_id
+   where a.cliente_id = c and a.deleted_at is null and not a.perdonada
+     and not coalesce(r.consumio, false);
+  select count(*) into v_leg_r from public.reservation r
+   where r.member_id = c and r.consumio and r.status <> 'cancelada';
+  if v_leg_r <> 0 then raise exception 'VECTOR 16 FAIL: the RESERVATION leg claims % charge(s) (expected 0 — that booking was cancelled and refunded)', v_leg_r; end if;
+  if v_leg_a <> 1 then raise exception 'VECTOR 16 FAIL: the ASISTENCIA leg counts % charge(s) (expected the 1 the door took)', v_leg_a; end if;
+
+  -- THE REPLAY: the no-op arm writes nothing, including the flag and checked_at.
+  select * into r2 from public.fijar_asistencia(c, true, s, null, false);
+  perform public.fijar_asistencia(c, true, s, null, false);
+  if (r2.present, r2.hora, r2.session_id, r2.clases_restantes, r2.resultado)
+     is distinct from (r1.present, r1.hora, r1.session_id, r1.clases_restantes, r1.resultado) then
+    raise exception 'VECTOR 16 FAIL: the replayed walk-in returned a different answer';
+  end if;
+  select consumio, checked_at into v_consumio, v_checked2 from public.reservation where id = v_res_id;
+  if v_consumio is distinct from false then raise exception 'VECTOR 16 FAIL: a replay re-set the dead flag (consumio %)', v_consumio; end if;
+  if v_checked2 is distinct from v_checked then raise exception 'VECTOR 16 FAIL: checked_at was re-stamped by a replay (% -> %)', v_checked, v_checked2; end if;
+  select count(*) into v_n from public.asistencias where cliente_id = c;
+  if v_n is distinct from 1 then raise exception 'VECTOR 16 FAIL: % asistencias row(s) after two replays (expected 1)', v_n; end if;
+  select clases_restantes into v_clases from public.clientes where id = c;
+  if v_clases is distinct from 4 then raise exception 'VECTOR 16 FAIL: balance % after two replays (expected 4)', v_clases; end if;
 end $$;
 
 -- ── (15) THE EXPLICIT-ARGUMENT CONTRACT: an undecided argument is refused, never defaulted ──────

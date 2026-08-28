@@ -1027,6 +1027,11 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
   };
 
   const FICHA_VENTA = {
+    // `id`/`folio` are on the select and are the saldo ANCHOR's identity (slice 2 §D1) — every
+    // event is attributed by comparing against this id, so a fixture without one silently
+    // attributes nothing.
+    id: "v-ficha",
+    folio: 1001,
     cliente_id: "cli-ficha",
     // fecha = the effective/sold day; created_at = the real write instant the clases
     // gauge now anchors on (spec §D3/C2). Equal here (a non-backdated sale).
@@ -1043,8 +1048,10 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
   function makeFichaFake(
     asistencias: Record<string, unknown>[],
     venta: Record<string, unknown> = FICHA_VENTA,
-  ): { client: SupabaseServer; orCalls: string[] } {
+    reservas: Record<string, unknown>[] = [],
+  ): { client: SupabaseServer; orCalls: string[]; gteCalls: [string, unknown][] } {
     const orCalls: string[] = [];
+    const gteCalls: [string, unknown][] = [];
     const rows: Record<string, Record<string, unknown>[]> = {
       clientes: [FICHA_CLIENTE],
       // #97: brand_name is the injected negocio fallback, now pre-joined onto the membership.
@@ -1053,6 +1060,8 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
       ],
       asistencias,
       ventas: [venta],
+      // Slice 2 §D1's bookings leg — the ficha's newest read.
+      reservation: reservas,
       perfil: [],
       plantillas: [],
       paquetes: [],
@@ -1076,7 +1085,14 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
           return b;
         },
         gte: (col: string, val: unknown) => {
-          filtered = filtered.filter((r) => (r[col] as string) >= (val as string));
+          gteCalls.push([col, val]);
+          // The bookings read filters on the EMBEDDED session (`class_session.starts_at`),
+          // which PostgREST resolves through the `!inner` join — model that path here too.
+          const leer = (r: Record<string, unknown>): unknown =>
+            col.includes(".")
+              ? (r[col.split(".")[0]] as Record<string, unknown> | null)?.[col.split(".")[1]]
+              : r[col];
+          filtered = filtered.filter((r) => (leer(r) as string) >= (val as string));
           return b;
         },
         // Records the filter string only (no row filtering): the head-count test
@@ -1106,7 +1122,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
       auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
       from: (table: string) => builder(table),
     };
-    return { client: client as unknown as SupabaseServer, orCalls };
+    return { client: client as unknown as SupabaseServer, orCalls, gteCalls };
   }
 
   it("excludes a same-day check-in that happened BEFORE the venta's gym-local time", async () => {
@@ -1187,6 +1203,106 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
       `fecha.gt.${OLD_DIA},and(fecha.eq.${OLD_DIA},or(hora.gte.12:00:00,hora.is.null))`,
     ]);
     expect(ficha?.clasesGauge?.usadas).toBe(2);
+  });
+
+  // ── Slice 2 §D1/§D4: the bookings leg ────────────────────────────
+  // A charge no longer has to be a MARK. `reservar_clase` debits the balance at booking time, so
+  // the ficha reads bookings too — otherwise a held class is a class the screen cannot account
+  // for, and the honest denominator would look broken on every member who books ahead.
+
+  const AYER = addDays(HOY_GYM, -1);
+  const MANANA = addDays(HOY_GYM, 1);
+  const sesion = (dia: Date) => ({
+    starts_at: instanteEnZona(dia, "12:00", TZ).toISOString(),
+    duration_min: 60,
+    is_special: false,
+    special_name: null,
+    class_type: { name: "METCON" },
+  });
+  const booking = (over: Record<string, unknown> = {}) => ({
+    id: "r-1",
+    member_id: "cli-ficha",
+    gym_id: "g-1",
+    // Held right after the anchor sale (12:00 gym-local), so it charges THIS pack.
+    created_at: instanteEnZona(HOY_GYM, "13:00", TZ).toISOString(),
+    consumio: true,
+    status: "reservada",
+    class_session_id: "s-1",
+    class_session: sesion(MANANA),
+    ...over,
+  });
+
+  it("windows the bookings read on the SESSION, scoped to the member — same 30-day floor as the marks", async () => {
+    const { client, gteCalls } = makeFichaFake([], FICHA_VENTA, [booking()]);
+    await getClienteFicha("cli-ficha", client);
+    const ventanaIso = toIsoDay(addDays(HOY_GYM, -30));
+    expect(gteCalls).toContainEqual(["class_session.starts_at", `${ventanaIso}T00:00:00Z`]);
+  });
+
+  it("a hold for a class still to come is an APARTADA — it drains the derived balance, not `usadas`", async () => {
+    const { client } = makeFichaFake([], FICHA_VENTA, [booking()]);
+    const ficha = await getClienteFicha("cli-ficha", client);
+    expect(ficha?.clasesGauge?.apartadas).toBe(1);
+    expect(ficha?.clasesGauge?.usadas).toBe(0);
+    expect(ficha?.saldo.derived).toBe(7); // 8 granted − 0 used − 1 held
+  });
+
+  it("a charged hold whose class ENDED with no check-in becomes a 'No asistió — cargada' row", async () => {
+    const { client } = makeFichaFake([], FICHA_VENTA, [booking({ class_session: sesion(AYER) })]);
+    const ficha = await getClienteFicha("cli-ficha", client);
+    expect(ficha?.saldo.noShows).toBe(1);
+    expect(ficha?.historial.filter((h) => h.tipo === "no_asistio")).toHaveLength(1);
+    expect(ficha?.clasesGauge?.usadas).toBe(1);
+  });
+
+  it("a booking-charged check-in is counted ONCE — the mark defers to the bookings leg (§D0)", async () => {
+    const { client } = makeFichaFake(
+      [
+        {
+          cliente_id: "cli-ficha",
+          fecha: toIsoDay(AYER),
+          hora: "12:02:00",
+          consumio: false,
+          perdonada: false,
+          deleted_at: null,
+          reservation_id: "r-1",
+          class_session_id: "s-1",
+        },
+      ],
+      FICHA_VENTA,
+      [booking({ class_session: sesion(AYER), status: "asistida" })],
+    );
+    const ficha = await getClienteFicha("cli-ficha", client);
+    expect(ficha?.clasesGauge?.usadas).toBe(1);
+    expect(ficha?.saldo.noShows).toBe(0);
+  });
+
+  // §D4's fallback rule: an old anchor makes the exact head-count the source for the asistencia
+  // leg, and that count cannot express the "already charged at booking" join — so the DAL has to
+  // subtract those rows, or every booked-and-attended class is counted twice.
+  it("old anchor: the head-count is re-read from the ANCHOR day and nets out already-counted bookings", async () => {
+    const { client, gteCalls } = makeFichaFake(
+      [
+        // Both predate the 30-day window, so only the head-count can see them; the first is the
+        // check-in of the booking below.
+        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "12:02:00", consumio: false, perdonada: false, deleted_at: null, reservation_id: "r-1" },
+        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, perdonada: false, deleted_at: null, reservation_id: null },
+      ],
+      { ...FICHA_VENTA, fecha: OLD_INSTANTE, created_at: OLD_INSTANTE },
+      [
+        booking({
+          created_at: instanteEnZona(OLD_DIA_DATE, "13:00", TZ).toISOString(),
+          status: "asistida",
+          class_session: sesion(OLD_DIA_DATE),
+        }),
+      ],
+    );
+    const ficha = await getClienteFicha("cli-ficha", client);
+    // The bookings read is re-issued from the anchor day, not the 30-day floor.
+    expect(gteCalls).toContainEqual(["class_session.starts_at", `${OLD_DIA}T00:00:00Z`]);
+    // head-count 2 − 1 already-charged booking = 1 on the asistencia leg, + 1 on the bookings leg.
+    expect(ficha?.clasesGauge?.usadas).toBe(2);
+    expect(ficha?.saldo.noShows).toBe(0);
   });
 
   // Paquete-swap spec §4: `ClienteFichaDTO.paquetes` is the SAME catalog read already fetched

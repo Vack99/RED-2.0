@@ -5,6 +5,9 @@ declare
   v_anchor_fecha timestamptz;
   v_anchor_creado timestamptz;
   v_conteo_dia   date;
+  v_usadas       int;
+  v_apartadas    int;
+  v_no_shows     int;
 begin
   if v_uid is null then
     raise exception 'No autenticado';
@@ -29,8 +32,11 @@ begin
   
   
   
-  select v.fecha, v.created_at, v.monto, v.vigencia_tipo, v.vigencia_dias
-    into v_anchor_fecha, v_anchor_creado, anchor_monto, anchor_vigencia_tipo, anchor_vigencia_dias
+  
+  
+  select v.fecha, v.created_at, v.monto, v.vigencia_tipo, v.vigencia_dias, v.clases
+    into v_anchor_fecha, v_anchor_creado, anchor_monto, anchor_vigencia_tipo, anchor_vigencia_dias,
+         grant_clases
     from public.ventas v
     where v.cliente_id = v_cli
     order by v.created_at desc, v.id desc
@@ -38,6 +44,10 @@ begin
 
   anchor_dia := (v_anchor_fecha at time zone v_tz)::date;  
 
+  
+  
+  
+  
   
   
   
@@ -54,6 +64,25 @@ begin
         and a.fecha >= v_conteo_dia;
   else
     attended_since_purchase := 0;
+  end if;
+
+  
+  
+  
+  
+  
+  
+  
+  
+  if v_anchor_creado is not null then
+    select cc.usadas, cc.apartadas, cc.no_shows
+      into v_usadas, v_apartadas, v_no_shows
+      from public.conteo_cargable(v_cli, v_anchor_creado) cc;
+    cargadas  := coalesce(v_usadas, 0);
+    apartadas := coalesce(v_apartadas, 0);
+  else
+    cargadas  := 0;
+    apartadas := 0;
   end if;
 
   return next;
