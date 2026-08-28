@@ -1,7 +1,22 @@
 # HANDOFF — RED custom-domain cutover (`www.redfunctionaltraining.com`)
 
-**Session:** 2026-08-27 · **Type:** research only, **nothing applied, nothing committed, nothing pushed**
-**Next session's job:** execute the cutover. Everything you need is below and in the two files it points at.
+**Session:** 2026-08-27 · **Type:** research + the two console actions. **No migration applied, nothing pushed.**
+**Next session's job:** apply the `gym_domain` row (runbook Step 3) and walk the auth checks. Everything else is done.
+
+> ## STATE AT HANDOFF
+>
+> | Step | Status |
+> |---|---|
+> | 1. Supabase Auth redirect allow-list | ✅ **DONE + PROBE-VERIFIED** (with a negative control) |
+> | 2. Cloudflare Turnstile hostname | ✅ **DONE** — browser check still owed (cannot be curl'd) |
+> | 3. `gym_domain` row | ⛔ **NOT APPLIED** — migration written & reviewed on disk, owner deferred |
+> | 4. Auth walk on the new host | ⛔ not started (blocked on 3) |
+> | 5. Local commit | ✅ `26799a9` (docs + unapplied migration), **not pushed** |
+> | 6. Announce to members | ⛔ not started — owner deferred pending web-filter categorization |
+>
+> **Net effect of this session on production:** the silent password-reset outage on the new domain
+> is **closed**. The domain still serves the tenant-less base brand, and `/registro` + `/activar`
+> still refuse with `Sitio no reconocido` — which is the honest, safe state to stop in.
 
 ---
 
@@ -195,10 +210,28 @@ a row typed directly into the Supabase dashboard, since every `tools/guards/*` r
 and is blind to prod drift. That blindness is exactly how the 2026-08-27 `registrar_venta` outage
 happened.
 
+### Done at the end of this session (after the research was written up)
+- **Supabase allow-list applied and probe-verified**, with a negative control proving the probe
+  discriminates. The silent reset outage is closed. The apex is deliberately not listed (the 308
+  means no code path can ever mint a `redirect_to` on it).
+- **Turnstile hostname applied** — `www.redfunctionaltraining.com`, widget now 6 of 10. The browser
+  check is still owed; it cannot be curl'd, since hostname validation happens in the browser at
+  challenge time, not at `siteverify`.
+- Verified Turnstile matching is **suffix-based** (Cloudflare docs), which is what makes the `www.`
+  entry correct rather than inconsistent with the five bare entries beside it. See runbook Step 2.
+
 ### Not done this session (deliberately)
-- Nothing applied to live. Nothing committed. Nothing pushed.
-- The two console actions — owner asked to be walked through them at the end of this session.
+- **The `gym_domain` row.** Migration written, reviewed, committed, **unapplied**. This is the whole
+  remaining cutover.
+- The auth walk, the member announcement, and the push.
 - FortiGuard / 7-vendor categorization submissions — still blocked on owner-owed inputs.
+
+### New finding from the console work — a platform ceiling, not a cutover item
+One Turnstile widget serves the entire platform and its sitekey is **build-inlined**, so it cannot
+vary per tenant without a rebuild. The widget caps at **10 hostnames** and is now at **6**. Every
+future BYO domain consumes one slot; **4 more and it is full**, at which point the fix is per-tenant
+sitekeys — an architecture change that collides with build-time inlining, not a config change.
+Same gym-count scaling axis as the domain-count analysis. Worth a ticket before the 3rd BYO domain.
 
 ---
 

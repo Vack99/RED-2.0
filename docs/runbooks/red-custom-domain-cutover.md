@@ -74,8 +74,8 @@ hours ago (RDAP: `2026-08-28T01:38:57Z`) — which is why the allow-list entry m
 | ID | Blocker | Executor |
 |---|---|---|
 | **B1** | Serving host is `www.redfunctionaltraining.com` (confirmed above) | — |
-| **B2** | Supabase Auth **Redirect URLs** gains `https://www.redfunctionaltraining.com/**` | **owner** (console) |
-| **B3** | Cloudflare **Turnstile** widget `0x4AAAAAADw0zgE_N--iabPb` gains `www.redfunctionaltraining.com` | **owner** (console) |
+| **B2** | ✅ **DONE 2026-08-27** — Supabase Auth **Redirect URLs** gained `https://www.redfunctionaltraining.com/**`. Verified by probe (§3 Step 1), incl. a negative control. | owner (console) |
+| **B3** | ✅ **DONE 2026-08-27** — Cloudflare **Turnstile** widget `0x4AAAAAADw0zgE_N--iabPb` gained `www.redfunctionaltraining.com` (now 6 of 10 hostnames). Browser check still owed (§3 Step 2). | owner (console) |
 | **B4** | `gym_domain` gains one `app='client'` row → gym `red` | migration (this repo) |
 | **B5** | Verification walked in a **fresh incognito profile**, no `gym` cookie, no `?gym=` | human |
 
@@ -118,6 +118,21 @@ Expected **before** (today): `https://red.ibookit.lat/#error=…`
 
 **Rollback:** delete the entry. Instant, no deploy.
 
+> ✅ **APPLIED AND VERIFIED 2026-08-27.** Live probe results, with controls:
+> ```
+> NEW  www.redfunctionaltraining.com → 303 …/auth/confirm?next=/restablecer#error=…   path echoed  ✅
+> APEX redfunctionaltraining.com     → 303 https://red.ibookit.lat/#error=…           clamped (correct — see below)
+> CTRL red.ibookit.lat               → 303 …/auth/confirm?next=/restablecer#error=…   path echoed  ✅
+> NEG  not-a-real-host-xyz.com       → 303 https://red.ibookit.lat/#error=…           clamped      ✅
+> ```
+> The negative control is what makes this proof rather than coincidence — it shows the probe
+> discriminates. **The silent password-reset outage documented in §0 is closed.**
+>
+> **The apex is deliberately NOT allow-listed.** Vercel 308s it at the edge, so
+> `headers().get("host")` is always `www.…` and no code path can mint a `redirect_to` on the apex
+> origin. Adding it would be dead config. If Vercel's primary is ever flipped to the apex, that
+> flip must carry this entry, the Turnstile hostname, and the `gym_domain` row together.
+
 This step is a pure widening with zero user-visible effect, it closes an active silent outage, and
 it is **safe in isolation** — with `next=/restablecer` present, `finalizarAuth` takes neither claim
 branch (`auth/confirm/route.ts:56` gates the claim on `else if (!next)`), so no tenant resolution
@@ -134,6 +149,34 @@ Cloudflare → Turnstile → widget `0x4AAAAAADw0zgE_N--iabPb` → Settings → 
 
 **Verify:** open `https://www.redfunctionaltraining.com/contacto` with devtools — no `110200` in
 console, widget renders, submit enabled. **Rollback:** remove the hostname. Instant.
+
+> ✅ **APPLIED 2026-08-27.** Widget hostnames are now, verbatim: `forge-demo.ibookit.lat`,
+> `forge.ibookit.lat`, `localhost`, `red-demo.ibookit.lat`, `red.ibookit.lat`,
+> `www.redfunctionaltraining.com` — **6 of 10**. The browser check above is still owed; it cannot
+> be curl'd, because hostname validation happens in the browser at challenge time, not at
+> `siteverify`. The same production sitekey is served on both hosts (confirmed by curl), and it is
+> **not** Cloudflare's always-pass test pair.
+>
+> **Why `www.` here while every other entry is bare** — this looks inconsistent and is not. Turnstile
+> matches by suffix: *"adding a root domain covers all subdomains beneath it, while adding a specific
+> subdomain restricts the widget to only that subdomain and its children"*
+> (`developers.cloudflare.com/turnstile/concepts/hostname-management/`). Every entry in this list is
+> the **exact serving host** — none of the `ibookit.lat` entries has a `www` variant, because
+> `red.ibookit.lat` *is* the host the widget renders on. The proof that this is the intended
+> discipline: `ibookit.lat` was **not** added, though one such entry would have covered all four
+> tenants at once. `www.redfunctionaltraining.com` is the narrowest grant covering the actual
+> serving host, so it follows the same rule. **Do not add the bare apex** — it can never render a
+> widget (the 308 fires first), and under suffix matching it would silently widen the grant to every
+> future subdomain.
+>
+> ### ⚠️ Platform ceiling discovered here: 10 hostnames per widget
+> There is **one** Turnstile widget for the whole platform, and its sitekey is build-inlined
+> (`NEXT_PUBLIC_TURNSTILE_SITE_KEY` via `apps/client/turbo.json`), so it cannot vary per tenant
+> without a rebuild. Four gyms plus `localhost` already consume 5 slots; **every future BYO domain
+> consumes one more, and the widget is full after 4 more.** At that point the fix is per-tenant
+> sitekeys, which collides head-on with build-time inlining — i.e. it is an architecture change, not
+> a config change. This is a gym-count scaling limit, the same axis as the domain-count analysis.
+> Worth a ticket before the 3rd BYO domain, not the 9th.
 
 **Why before step 3:** the four Turnstile-guarded forms fail **silently** — `turnstile.ts:22` is
 `if (!token) return false` and none of the four `<Script>` tags has an `onError` handler, so the
