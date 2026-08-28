@@ -366,17 +366,20 @@ export interface FichaPago {
 export interface FichaClienteRow extends ClienteFacts {
   created_at: string;
 }
-/** Asistencia rows the ficha renders (absolute date + check-in time). The window
- *  is the rolling last 30 days, widened back to the last purchase when older, so
- *  the same rows feed both the historial and `attendedSincePurchase` (#173: every
- *  visit — `deleted_at is null and not perdonada` — not just `consumio` ones). */
+/** Asistencia rows the ficha renders (absolute date + check-in time). The window is the rolling last
+ *  30 days, FIXED — it is no longer widened back to the anchor sale, because an anchor older than the
+ *  window now gets its count from the database instead (`conteo_cargable`, see `EntradaSaldo`). Within
+ *  the window these same rows feed both the historial and the saldo's §D0 CHARGE count — the
+ *  asistencia leg: `deleted_at is null and not perdonada`, minus the rows whose booking already
+ *  carried the charge (`reservation_id` below). Not `consumio` ones only: a class attended while the
+ *  member was ilimitado is still a charge against a finite pack. */
 export interface FichaAsistRow {
   fecha: string;
   hora: string | null;
   consumio: boolean;
   /** Marks the second record of one cooldown-paired arrival (#173) — never a real second
-   *  visit. Excluded from `attendedSincePurchase` (`deleted_at is null and not perdonada`,
-   *  see the class doc above); carried on the type because that filter runs on these rows. */
+   *  visit, and never a second charge. Excluded from the §D0 charge count (`deleted_at is null and
+   *  not perdonada`, see the class doc above); carried on the type because that filter runs here. */
   perdonada: boolean;
   /** The visit's CONTEXT (#89): a class, or null for ACCESO LIBRE. */
   class_session_id: string | null;

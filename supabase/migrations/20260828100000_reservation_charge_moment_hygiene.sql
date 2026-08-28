@@ -62,9 +62,15 @@
 --
 -- Why only the reuse arm: the INSERT arm already stamps `created_at` from the column default, which
 -- is the booking instant. The reuse arm is the only path that carries forward a moment from a
--- decision the member has since undone. Nothing else in the codebase reads `reservation.created_at`
--- today (grepped: only the D1 derivation about to), and the table has no triggers, so re-stamping it
--- has exactly one consumer: attribution.
+-- decision the member has since undone. The table has no triggers, so re-stamping has exactly TWO
+-- consumers, and the second one is a real (accepted) behaviour change:
+--   * attribution — the §D0 derivation this slice adds, which is the point.
+--   * ROSTER ORDER — `supabase/functions-canonical/roster_clase.sql` ends `order by r.created_at`, so
+--     the initials strip it returns for a class now shows a member who cancelled and re-booked at the
+--     END instead of in their original place. ACCEPTED, and the more honest reading of that list: it
+--     is ordered by when the seat was taken, and a re-book IS a new booking. The position carries no
+--     priority — that function returns initials only, there is no waitlist, and capacity is counted
+--     elsewhere (`contar_reservas_activas_miembro`) — so the whole cost is display order.
 --
 -- Historic rebooks stay wrong and knowingly so — the second booking's instant was never recorded
 -- anywhere, and inventing one would be worse than a stale one.
@@ -697,10 +703,25 @@ $function$;
 -- un-mark refunds from the asistencia and returns the row to 'reservada' still flagged, and
 -- `cancelar_reserva` would then refund a second time off the same flag.
 --
--- Blast radius on live at authoring time: 327 rows, ALL of them the `red-demo` sandbox twin's
--- generated history (status 'asistida', is_walk_in false, origen null — the seed writes both flags),
--- zero in forge or red. Set-based over whatever the target holds, never a hardcoded id list, so it is
--- correct on a scratch project, on the local docker stack and on live alike.
+-- SCOPE: PLATFORM-WIDE, ACROSS EVERY TENANT, BY DESIGN. There is no `gym_id` predicate and there must
+-- not be one — the stale pair is a shape, not a tenant's problem, and a per-gym backfill would leave
+-- the next gym's ledger reading a charge twice. Set-based over whatever the target holds, never a
+-- hardcoded id list, so it is correct on a scratch project, on the local docker stack and on live alike.
+--
+-- MEASURED ON LIVE 2026-08-27, before this shipped: 327 rows match, ALL of them the `red-demo` sandbox
+-- twin's generated history (status 'asistida', is_walk_in false, origen null — the seed writes both
+-- flags), ZERO in forge and zero in red. So the write this migration performs against production
+-- touches no real gym's data.
+--
+-- THE ONE SHAPE THAT WOULD COST SOMETHING, and why it is accepted: a row genuinely double-charged
+-- before 20260710132000 (`pasar_lista_front_desk_no_reconsume`) — a booking that debited a class AND
+-- an attendance row that debited a second one for the same visit — is indistinguishable from the
+-- stale pair by these predicates. Clearing its flag drops the reservation's claim to its (real)
+-- charge, and `cancelar_reserva` refunds by READING that flag, so that charge would become
+-- unrefundable through the cancel door. The count of such rows in prod is ZERO — the 327 are all the
+-- demo twin's, none of them predates that migration — so the case is theoretical here and accepted
+-- rather than special-cased; a predicate carved for a population of zero is a predicate nobody can
+-- test.
 update public.reservation r
    set consumio = false
  where r.consumio

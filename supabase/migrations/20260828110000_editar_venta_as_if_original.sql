@@ -144,6 +144,30 @@ as $function$
          (select count(*) from reservas where terminada and sin_marca)::integer;
 $function$;
 
+-- ── EXECUTE: the grant to `authenticated` is LOAD-BEARING, and that is a departure from ADR-0013 §1 ──
+-- §1's helpers are SECURITY DEFINER membership predicates whose EXECUTE exists only so the POLICIES
+-- that wrap them can run — "a definer function must never be client-callable beyond its intended
+-- caller". This one is a helper by shape and not by that rule: it is a direct RPC of the admin app.
+-- `packages/data/src/server/clientes.ts` calls `supabase.rpc("conteo_cargable", …)` on the OLD-ANCHOR
+-- ficha path — when the sale predates the 30-day window the ficha fetches, the rows in hand cannot
+-- answer §D0 at all, and the whole point of this function is that the ficha must not answer it
+-- differently from the edit door. Revoking the grant would silently push that path back onto a
+-- hand-rolled TS re-derive, which is the drift this migration exists to close.
+--
+-- WHY THAT IS SAFE HERE, and why it is not a hole the §1 rule was guarding: this function is SECURITY
+-- INVOKER, so a client call runs under the CALLER's RLS. Staff read their own gym's clientes /
+-- asistencias / reservation rows and get the true count for their own tenant; a member calling it with
+-- another gym's cliente id reads no rows through any of the three policies and gets (0, 0, 0) — zeros,
+-- never another tenant's numbers, and never an existence oracle either (a cliente id that does not
+-- exist answers identically).
+--
+-- FROM ITS DEFINER CALLERS the reading differs and must: `editar_venta` and `mi_membresia` are
+-- SECURITY DEFINER, so this body runs with RLS BYPASSED inside them. Both readings agree for the gym
+-- doing the calling — the invoker path sees exactly the rows RLS would have handed that gym's staff,
+-- and the definer path sees the same rows because both callers have already pinned the tenant before
+-- they get here (editar_venta through `v_gym` on the venta it locked, mi_membresia through the
+-- auth.uid() self-pin on `clientes`). The definer callers need the bypass because the member on whose
+-- behalf `mi_membresia` runs holds no read on `ventas`/`asistencias` at all (Contract-A).
 revoke execute on function public.conteo_cargable(uuid, timestamptz) from public, anon;
 grant  execute on function public.conteo_cargable(uuid, timestamptz) to authenticated;
 
@@ -378,8 +402,10 @@ begin
   -- Lock the saldo row before the write, the same discipline registrar_venta keeps. The value below
   -- no longer READS the stored counter, but a concurrent toggle_pase/reservar_clase decrement landing
   -- between the count and the update would otherwise be silently overwritten. The venta's FK
-  -- guarantees the row exists, so there is no extra refusal string here.
-  perform 1 from public.clientes c where c.id = v_venta.cliente_id for update;
+  -- guarantees the row exists, so there is no extra refusal string here. `c.gym_id = v_gym` carries the
+  -- same tenant pin every other statement in this body does — the lock must name the SAME row the
+  -- UPDATE below writes, or a cross-tenant cliente_id would be locked here and refused there.
+  perform 1 from public.clientes c where c.id = v_venta.cliente_id and c.gym_id = v_gym for update;
 
   -- ── AS-IF-ORIGINAL (owner ruling 2026-08-27; spec §D5). ─────────────────────────────────────────
   -- What the CORRECTED sale would have left, had it been registered with these terms from the start.

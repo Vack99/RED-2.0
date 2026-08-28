@@ -210,7 +210,9 @@ begin
   
   
   
-  perform 1 from public.clientes c where c.id = v_venta.cliente_id for update;
+  
+  
+  perform 1 from public.clientes c where c.id = v_venta.cliente_id and c.gym_id = v_gym for update;
 
   
   
