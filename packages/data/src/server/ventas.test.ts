@@ -198,7 +198,7 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(args).not.toHaveProperty("p_forzar_nuevo"); // not overriding the dup guard
 
     expect(Object.keys(args).sort()).toEqual(
-      ["p_idempotency_key", "p_metodo", "p_nombre", "p_paquete_id", "p_tel"].sort(),
+      ["p_gym_id", "p_idempotency_key", "p_metodo", "p_nombre", "p_paquete_id", "p_tel"].sort(),
     );
     expect(args.p_idempotency_key).toBe(KEY); // the caller's key, passed through
   });
@@ -568,7 +568,7 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     await editarVenta({ ventaId: VENTA_ID, monto: 900, metodo: "tarjeta" }, fake.client);
     expect(lastRpc(fake)).toEqual({
       name: "editar_venta",
-      args: { p_venta_id: VENTA_ID, p_monto: 900, p_metodo: "tarjeta" },
+      args: { p_venta_id: VENTA_ID, p_gym_id: "test-gym", p_monto: 900, p_metodo: "tarjeta" },
     });
   });
 
@@ -580,7 +580,7 @@ describe("editarVenta — write orchestration (injected fake)", () => {
     );
     expect(lastRpc(fake)).toEqual({
       name: "editar_venta",
-      args: { p_venta_id: VENTA_ID, p_monto: 900, p_metodo: "tarjeta", p_fecha: "2026-08-01" },
+      args: { p_venta_id: VENTA_ID, p_gym_id: "test-gym", p_monto: 900, p_metodo: "tarjeta", p_fecha: "2026-08-01" },
     });
   });
 
@@ -752,7 +752,7 @@ describe("eliminarVenta — write orchestration (injected fake)", () => {
   it("sends the exact eliminar_venta payload", async () => {
     const fake = makeFake({}, { rpcData: null });
     await eliminarVenta({ ventaId: VENTA_ID }, fake.client);
-    expect(lastRpc(fake)).toEqual({ name: "eliminar_venta", args: { p_venta_id: VENTA_ID } });
+    expect(lastRpc(fake)).toEqual({ name: "eliminar_venta", args: { p_venta_id: VENTA_ID, p_gym_id: "test-gym" } });
   });
 
   it.each(["La venta ya no se puede eliminar", "No se puede eliminar: ya se usaron clases de esta venta"])(

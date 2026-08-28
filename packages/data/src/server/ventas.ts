@@ -267,6 +267,11 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
     .rpc("registrar_venta", {
       p_metodo: input.metodo,
       p_idempotency_key: input.idempotencyKey,
+      // Bind the write to the HOST-RESOLVED tenant (the operator's picked gym), never the RPC's
+      // staff_gym() null-arm — that returns the operator's lowest-uuid staffed gym and misroutes a
+      // multi-gym operator's sale (red-demo "Paquete no encontrado", 08-28). Matches every other
+      // DAL writer (clientes.ts / registro.ts / asistencia.ts already pass p_gym_id: gym.id).
+      p_gym_id: gym.id,
       ...(input.paquete.tipo === "registrado"
         ? { p_paquete_id: forPaquete(input.paquete.paqueteId) }
         : {
@@ -480,8 +485,12 @@ export async function editarVenta(raw: unknown, client?: SupabaseServer): Promis
   const input = editarVentaSchema.parse(raw);
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
+  const gym = await getOperatorGym(supabase);
   const { error } = await supabase.rpc("editar_venta", {
     p_venta_id: input.ventaId,
+    // Host-resolved tenant, not staff_gym()'s null-arm — a multi-gym operator editing a sale on
+    // the non-lowest-uuid gym would otherwise hit 'Venta no encontrada' (same class as crearVenta).
+    p_gym_id: gym.id,
     p_monto: input.monto,
     p_metodo: input.metodo,
     // Spread only when present, so an unchanged-date correction sends the exact 3-arg
@@ -512,6 +521,7 @@ export async function eliminarVenta(raw: unknown, client?: SupabaseServer): Prom
   const input = eliminarVentaSchema.parse(raw);
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
-  const { error } = await supabase.rpc("eliminar_venta", { p_venta_id: input.ventaId });
+  const gym = await getOperatorGym(supabase);
+  const { error } = await supabase.rpc("eliminar_venta", { p_venta_id: input.ventaId, p_gym_id: gym.id });
   if (error) raiseVentaError(error.message);
 }
