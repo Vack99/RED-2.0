@@ -79,7 +79,6 @@ declare
   v_conteo_dia   date;
   v_usadas       int;
   v_apartadas    int;
-  v_no_shows     int;
 begin
   if v_uid is null then
     raise exception 'No autenticado';
@@ -147,8 +146,10 @@ begin
   -- them in would make the gauge read a member as having used a class they can still attend or
   -- cancel.
   if v_anchor_creado is not null then
-    select cc.usadas, cc.apartadas, cc.no_shows
-      into v_usadas, v_apartadas, v_no_shows
+    -- `no_shows` is deliberately not selected: it is a DISPLAY subset of `usadas` (already inside
+    -- it), and this card renders no such line.
+    select cc.usadas, cc.apartadas
+      into v_usadas, v_apartadas
       from public.conteo_cargable(v_cli, v_anchor_creado) cc;
     cargadas  := coalesce(v_usadas, 0);
     apartadas := coalesce(v_apartadas, 0);

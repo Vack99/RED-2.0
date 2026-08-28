@@ -59,8 +59,14 @@ saldoDetalle = {
 - **noShow vs apartada boundary**: session ENDED (ends_at if the schema has it, else
   starts_at + duración; implementer verifies the class_session columns). In-progress = apartada.
 - **Raw vs forfeited**: the ficha's big number stays the read-time forfeited `veredicto.clases`
-  (unchanged, `lifecycle.ts:187` — expired packs still read 0 on screen). The invariant and
-  gauge math run on RAW stored. Do not resurrect expired balances in the display.
+  (unchanged, `lifecycle.ts:187` — expired packs still read 0 on screen). The invariant
+  (derived/discrepancia) runs on RAW stored; the bar fill follows the displayed (forfeited) number
+  so bar and big number never disagree. Do not resurrect expired balances in the display.
+- **`reservasNoAsistidas` additionally requires `status !== 'asistida'`** (ratified): a booking whose
+  check-in sits outside the fetched asistencia window would otherwise read as a no-show. It is
+  `!== 'asistida'` rather than `=== 'reservada'` so a legacy `'no_show'` row still counts. The TIME
+  half of the claim is the domain's `esNoAsistio`/`ventanaArribo` boundary — `starts_at + duración +
+  15 min`, grace included, one boundary for display and write (CONTEXT.md "ventana de arribo").
 - **Discrepancy note is epoch-scoped**: show only when `anchor.created_at ≥ RESET_EPOCH`
   (`2026-08-27T15:30Z`, the outage-fix go-live — constant in derive.ts with comment). Every
   pre-epoch anchor carries a stacked-era balance by construction; noting it roster-wide is

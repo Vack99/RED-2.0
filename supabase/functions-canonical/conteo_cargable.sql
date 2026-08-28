@@ -3,6 +3,10 @@ with zona as (
     
     
     
+    
+    
+    
+    
     select (select g.timezone
               from public.clientes c
               join public.gym g on g.id = c.gym_id
@@ -19,12 +23,15 @@ with zona as (
                         where r.id = a.reservation_id and r.consumio)
        and case
              when a.hora is not null
-               then ((a.fecha + a.hora) at time zone (select tz from zona)) >= p_desde
+               then date_trunc('second', (a.fecha + a.hora) at time zone (select tz from zona))
+                      >= date_trunc('second', p_desde)
              else a.fecha >= (p_desde at time zone (select tz from zona))::date
            end
   ),
   reservas as (
-    select (s.starts_at + (s.duration_min * interval '1 minute')) <= now() as terminada,
+    
+    
+    select upper(public.ventana_arribo(s.starts_at, s.duration_min)) <= now() as terminada,
            not exists (select 1 from public.asistencias a
                         where a.reservation_id = r.id and a.deleted_at is null) as sin_marca
       from public.reservation r
@@ -32,7 +39,7 @@ with zona as (
      where r.member_id = p_cliente_id
        and r.consumio
        and r.status <> 'cancelada'
-       and r.created_at >= p_desde
+       and date_trunc('second', r.created_at) >= date_trunc('second', p_desde)
   )
   select ((select count(*) from marcas) + (select count(*) from reservas where terminada))::integer,
          (select count(*) from reservas where not terminada)::integer,

@@ -1506,6 +1506,14 @@ export type Database = {
           session_id: string
         }[]
       }
+      conteo_cargable: {
+        Args: { p_cliente_id: string; p_desde: string }
+        Returns: {
+          apartadas: number
+          no_shows: number
+          usadas: number
+        }[]
+      }
       crear_plantilla: {
         Args: { p_body: string; p_nombre: string }
         Returns: string

@@ -8,7 +8,7 @@
 // way (the ficha and the export each got the pase-suelto blind wrong that way).
 
 import { derivarVeredicto, type ContextoVeredicto, type HechosCliente, type VeredictoCliente } from "@gym/domain/lifecycle";
-import { diasRestantes } from "@gym/domain/rules";
+import { diasRestantes, ventanaArribo } from "@gym/domain/rules";
 import type { PlantillaContext } from "@gym/domain/types";
 import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, MONTHS_FULL, parseDay, pesos, toIsoDay } from "@gym/format";
 
@@ -305,13 +305,6 @@ export function esCargableReserva(r: { consumio: boolean; status: string }): boo
   return r.consumio && r.status !== "cancelada";
 }
 
-/** A class session's END instant, in epoch ms. `class_session` has NO `ends_at` column
- *  (verified against the generated schema types) — the end is `starts_at + duration_min`.
- *  This is the noShow/apartada boundary: in-progress is still an apartada (§D1). */
-export function finSesion(s: { starts_at: string; duration_min: number }): number {
-  return new Date(s.starts_at).getTime() + s.duration_min * 60_000;
-}
-
 export interface FichaAsistencia {
   dDisplay: string;
   hora: string | null;
@@ -514,16 +507,31 @@ export interface SaldoDetalle {
 export interface EntradaSaldo {
   /** Bookings covering the anchor window — see `FichaReservaRow`. */
   reservas: FichaReservaRow[];
-  /** The DAL's EXACT asistencia-leg charge count when the fetched 30-day asistencia window does
-   *  not reach back to the anchor (the old-anchor head-count path). `null` = the rows in hand
-   *  already cover the anchor, so count them here. */
-  cargadasFueraDeVentana: number | null;
+  /** The DATABASE's own §D0 count (`public.conteo_cargable`, the SAME function `editar_venta` and
+   *  `mi_membresia` run) when the fetched 30-day rows do not reach back to the anchor — the
+   *  old-anchor path. It covers BOTH legs, so it replaces the whole row-derived count rather than
+   *  just its asistencia half. `null` = the rows in hand already cover the anchor, so count them
+   *  here. */
+  conteoFueraDeVentana: { usadas: number; apartadas: number } | null;
+  /** The gym-local day the FETCHED rows start at ('YYYY-MM-DD') — the historial's own 30-day floor.
+   *  It bounds what the "No asistió — cargada" lines may RENDER (§D4: "window unchanged"), never
+   *  what is counted: on the old-anchor path the count above spans the full range while the list
+   *  stays the 30 days the visits beside it cover. `null` = unbounded (fixtures). */
+  desdeDia: string | null;
   /** The read's instant — the noShow/apartada boundary. Passed in (never `Date.now()` in here)
    *  for the same reason `ctx.hoy` is: this module stays pure. */
   ahora: Date;
 }
 
-const SALDO_VACIO: EntradaSaldo = { reservas: [], cargadasFueraDeVentana: null, ahora: new Date(0) };
+/** "No bookings, no out-of-window count" — the default saldo input. A FUNCTION, not a module
+ *  const: `ahora` has to be the CALL's instant. (It was `new Date(0)` once, which made every
+ *  session read as long ended if production ever reached the default.) */
+const saldoVacio = (): EntradaSaldo => ({
+  reservas: [],
+  conteoFueraDeVentana: null,
+  desdeDia: null,
+  ahora: new Date(),
+});
 
 /**
  * Explain a balance from events (§D0 + §D1). PURE. `ventas` is ordered created_at DESC (the
@@ -567,25 +575,27 @@ export function saldoDetalle(
   const anclas = anclasVenta(ventas, tz);
   const cobradas = reservasCobradas(entrada.reservas);
 
-  const usadasAsistencia =
-    entrada.cargadasFueraDeVentana ??
-    asistencias.filter(
+  // The DB's own count wins whole when the fetched rows cannot reach the anchor: it already spans
+  // both legs, so mixing it with a row-derived reservation count would double every ended hold.
+  let usadas = entrada.conteoFueraDeVentana?.usadas ?? 0;
+  let apartadas = entrada.conteoFueraDeVentana?.apartadas ?? 0;
+  if (!entrada.conteoFueraDeVentana) {
+    usadas = asistencias.filter(
       (a) =>
         esCargableAsistencia(a, cobradas) &&
         ventaAtribuida(anclas, { dia: a.fecha, hora: a.hora }) === anchor.ventaId,
     ).length;
-
-  let usadasReserva = 0;
-  let apartadas = 0;
-  for (const r of entrada.reservas) {
-    if (!cargoDelAncla(r, anclas, anchor.ventaId, tz)) continue;
-    if (sesionTerminada(r, entrada.ahora)) usadasReserva += 1;
-    else apartadas += 1;
+    for (const r of entrada.reservas) {
+      if (!cargoDelAncla(r, anclas, anchor.ventaId, tz)) continue;
+      if (sesionTerminada(r, entrada.ahora)) usadas += 1;
+      else apartadas += 1;
+    }
   }
+  // Display-only, and always row-derived: `noShows` names the lines the historial renders, so it
+  // reads the bookings in hand even when the counts above came from the database.
   const noShows = reservasNoAsistidas(entrada.reservas, asistencias, anclas, anchor.ventaId, tz, entrada.ahora)
     .length;
 
-  const usadas = usadasAsistencia + usadasReserva;
   const derived = anchor.grant === null ? null : anchor.grant - usadas - apartadas;
   const discrepancia = derived === null || clasesRestantes === null ? null : derived - clasesRestantes;
   return {
@@ -613,10 +623,17 @@ function cargoDelAncla(r: FichaReservaRow, anclas: AnclaVenta[], anchorId: strin
   return esCargableReserva(r) && ventaAtribuida(anclas, momentoEnZona(r.created_at, tz)) === anchorId;
 }
 
-/** Has the class already ended? A hold whose session row is missing cannot be proven still
- *  pending, so it counts as spent rather than as an apartada that never resolves. */
+/** Has the booking's **ventana de arribo** closed? THE boundary — `starts_at + duración + 15 min`
+ *  — and it is the domain's own, never a local copy: CONTEXT.md pins the window to
+ *  `ventanaArribo`/`esNoAsistio` (`@gym/domain/rules`) precisely so "display and write share one
+ *  boundary". A member can still be marked during the grace, so a class inside it is NOT yet a
+ *  no-show here either: it stays an APARTADA until the same instant the desk stops accepting the
+ *  arrival. A hold whose session row is missing cannot be proven still pending, so it counts as
+ *  spent rather than as an apartada that never resolves. */
 function sesionTerminada(r: FichaReservaRow, ahora: Date): boolean {
-  return r.class_session ? finSesion(r.class_session) <= ahora.getTime() : true;
+  if (!r.class_session) return true;
+  const { hasta } = ventanaArribo(new Date(r.class_session.starts_at), r.class_session.duration_min);
+  return hasta.getTime() <= ahora.getTime();
 }
 
 /**
@@ -628,6 +645,9 @@ function sesionTerminada(r: FichaReservaRow, ahora: Date): boolean {
  * check-in path — `pasar_lista_sesion`, `fijar_asistencia` — stamps that status) AND no
  * asistencia in hand links back to it. The status leg is what keeps the claim honest for a
  * session older than the fetched asistencia window, where the linked mark simply isn't in hand.
+ * (`!== 'asistida'` rather than `=== 'reservada'` on purpose: a legacy `'no_show'` row is still a
+ * charge nobody showed up for. The TIME half of the claim is `esNoAsistio`'s own — see
+ * `sesionTerminada`.)
  */
 export function reservasNoAsistidas(
   reservas: FichaReservaRow[],
@@ -659,7 +679,12 @@ interface FilaHistorial {
 
 /** The "No asistió — cargada" lines (§D4), rendered at the CLASS SESSION's date/time — the
  *  charge's own moment is the booking, but the operator reads this list by when the class was.
- *  Display only: `no_show` stays derived, never a status write. */
+ *  Display only: `no_show` stays derived, never a status write.
+ *
+ *  Bounded by `entrada.desdeDia`, the SAME 30-day floor the visits beside them are fetched with
+ *  (§D4 "window unchanged"): the historial is a 30-day list, and an old-anchor member — whose count
+ *  comes from the database over the full range — must not suddenly grow a year of no-show lines
+ *  under a month of visits. */
 function filasNoAsistio(
   entrada: EntradaSaldo,
   asistencias: FichaAsistRow[],
@@ -669,9 +694,11 @@ function filasNoAsistio(
 ): FilaHistorial[] {
   return reservasNoAsistidas(entrada.reservas, asistencias, anclas, anchorId, tz, entrada.ahora)
     .filter((r) => r.class_session !== null)
-    .map((r) => {
+    .map((r) => ({ r, m: momentoEnZona(r.class_session!.starts_at, tz) }))
+    .filter(({ m }) => entrada.desdeDia === null || m.dia >= entrada.desdeDia)
+    .map(({ r, m }) => {
       const s = r.class_session!;
-      const { dia, hora } = momentoEnZona(s.starts_at, tz);
+      const { dia, hora } = m;
       const d = parseDay(dia);
       return {
         clave: `${dia}T${hora}`,
@@ -754,9 +781,9 @@ export interface FichaDerivada {
  * first (created_at desc — never fecha, which a backdate can push into the past;
  * spec §D3), so `ventas[0]` is the active package / saldo anchor. The `fecha`-based
  * displays below (compradoDisplay / the días-gauge anchor) are the effective/sold
- * day and stay on `fecha` deliberately. `saldo` (§D1) carries the bookings, the read's instant
- * and — for an anchor older than the fetched window — the DAL's exact charge count; it REPLACES
- * the old `attendedSincePurchase` visit count, whose fetch machinery the DAL repurposed (§D2).
+ * day and stay on `fecha` deliberately. `saldo` (§D1) carries the bookings, the read's instant,
+ * the fetch window's own floor and — for an anchor older than that window — the DATABASE's §D0
+ * count; it REPLACES the old `attendedSincePurchase` visit count (§D2).
  */
 export function shapeFicha(
   c: FichaClienteRow,
@@ -776,7 +803,7 @@ export function shapeFicha(
   negocio: string,
   /** The saldo derivation's extra inputs (§D1). Defaulted so a fixture that renders no
    *  bookings keeps the short positional call shape. */
-  saldoEntrada: EntradaSaldo = SALDO_VACIO,
+  saldoEntrada: EntradaSaldo = saldoVacio(),
   /** The two operator-wide tokens the cliente row can't supply — the package
    *  price list ({precios}) and how-to-pay ({datos_pago}). Optional + LAST so the
    *  pure unit tests keep their positional call shape; the DAL fills them in. */

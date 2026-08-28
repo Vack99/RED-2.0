@@ -45,10 +45,20 @@ const TZ_FORGE = "America/Chihuahua";
  *  apartada. Fixed, so the noShow/apartada boundary never depends on when the suite runs. */
 const AHORA = new Date("2026-05-27T20:00:00Z");
 /** "This member has no bookings" — the common saldo input (§D1). */
-const SIN_SALDO: EntradaSaldo = { reservas: [], cargadasFueraDeVentana: null, ahora: AHORA };
-const conReservas = (reservas: FichaReservaRow[], cargadasFueraDeVentana: number | null = null): EntradaSaldo => ({
+const SIN_SALDO: EntradaSaldo = {
+  reservas: [],
+  conteoFueraDeVentana: null,
+  desdeDia: null,
+  ahora: AHORA,
+};
+const conReservas = (
+  reservas: FichaReservaRow[],
+  conteoFueraDeVentana: EntradaSaldo["conteoFueraDeVentana"] = null,
+  desdeDia: string | null = null,
+): EntradaSaldo => ({
   reservas,
-  cargadasFueraDeVentana,
+  conteoFueraDeVentana,
+  desdeDia,
   ahora: AHORA,
 });
 
@@ -879,6 +889,29 @@ describe("saldoDetalle — §D0 counting + §D1 derivation", () => {
     expect(s.noShows).toBe(0);
   });
 
+  // The boundary is the VENTANA DE ARRIBO's close (`starts_at + duración + 15 min`), the domain's
+  // own `esNoAsistio`/`ventanaArribo` — not a local `starts_at + duración`. CONTEXT.md: display and
+  // write share one boundary, so a member the desk can still mark is not yet a no-show here.
+  it("a class that ended 10 minutes ago is still an APARTADA — the 15-min arrival grace is open", () => {
+    const enGracia = { ...SESION_FUTURA, starts_at: "2026-05-27T18:50:00Z" }; // +60 min ⇒ ended 19:50Z
+    const s = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva({ class_session: enGracia })]));
+    expect(s.apartadas).toBe(1);
+    expect(s.usadas).toBe(0);
+    expect(s.noShows).toBe(0);
+  });
+
+  it("the grace's LAST minute is still an apartada; the instant it closes, the charge is a no-show", () => {
+    const casi = { ...SESION_FUTURA, starts_at: "2026-05-27T18:46:00Z" }; // window closes 20:01Z
+    const justo = { ...SESION_FUTURA, starts_at: "2026-05-27T18:45:00Z" }; // window closes 20:00Z = AHORA
+    const abierta = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva({ class_session: casi })]));
+    expect(abierta.apartadas).toBe(1);
+    expect(abierta.noShows).toBe(0);
+    const cerrada = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva({ class_session: justo })]));
+    expect(cerrada.apartadas).toBe(0);
+    expect(cerrada.usadas).toBe(1);
+    expect(cerrada.noShows).toBe(1); // half-open window: closed AT `hasta`
+  });
+
   it("a charged booking whose class ENDED with no check-in is a noShow — counted in usadas", () => {
     const s = saldoDetalle(7, [venta()], [], TZ_FORGE, conReservas([reserva()]));
     expect(s.usadas).toBe(1);
@@ -950,11 +983,30 @@ describe("saldoDetalle — §D0 counting + §D1 derivation", () => {
     expect(s.derived).toBeNull();
   });
 
-  it("the DAL's out-of-window count REPLACES the asistencia leg, and the reservation leg still adds", () => {
-    // Old-anchor path: the fetched 30-day rows can't reach the anchor, so the head-count wins.
-    const s = saldoDetalle(2, [venta()], [], TZ_FORGE, conReservas([reserva()], 5));
+  it("the DB's out-of-window count REPLACES both legs — the rows in hand are never added to it", () => {
+    // Old-anchor path: the fetched 30-day rows can't reach the anchor, so `conteo_cargable` wins
+    // WHOLE. The booking in hand is already inside that count (it is the same rule over a wider
+    // range), so counting it again here would double every ended hold.
+    const s = saldoDetalle(2, [venta()], [], TZ_FORGE, conReservas([reserva()], { usadas: 6, apartadas: 0 }));
     expect(s.usadas).toBe(6);
+    expect(s.apartadas).toBe(0);
     expect(s.derived).toBe(2);
+    // The no-show LINES still come from the rows in hand — display, not arithmetic.
+    expect(s.noShows).toBe(1);
+  });
+
+  it("the DB count carries the apartadas too — a live hold on an old-anchor member still drains", () => {
+    const s = saldoDetalle(
+      1,
+      [venta()],
+      [],
+      TZ_FORGE,
+      conReservas([reserva({ id: "r-fut", class_session: SESION_FUTURA })], { usadas: 5, apartadas: 2 }),
+    );
+    expect(s.usadas).toBe(5);
+    expect(s.apartadas).toBe(2);
+    expect(s.derived).toBe(1);
+    expect(s.discrepancia).toBe(0);
   });
 
   describe("the discrepancy note is epoch-scoped (§D1)", () => {
@@ -1114,6 +1166,31 @@ describe("shapeFicha historial — §D4 attribution tags + 'No asistió — carg
     });
     expect(f.saldo.noShows).toBe(1);
     expect(f.clasesGauge!.usadas).toBe(2); // the visit + the charged no-show
+  });
+
+  // §D4 "window unchanged": the no-show LINES are bounded by the historial's own 30-day floor even
+  // when the COUNT comes from the database over the full range (the old-anchor path). Without the
+  // bound an anchor a year old grows a year of these lines under a month of visits.
+  it("bounds the 'No asistió — cargada' lines to the historial's floor, while the count spans the full range", () => {
+    const vieja: FichaVentaRow = { ...V_VIEJA, fecha: "2026-03-01T18:00:00Z", created_at: "2026-03-01T18:00:00Z" };
+    const antigua = reserva({
+      id: "r-vieja",
+      created_at: "2026-04-01T18:00:00Z",
+      class_session_id: "s-vieja",
+      class_session: { ...reserva().class_session!, starts_at: "2026-04-20T13:00:00Z" },
+    });
+    const f = shapeFicha(
+      clienteRow,
+      [],
+      [vieja],
+      CTX,
+      TZ_FORGE,
+      [],
+      "FORGE",
+      conReservas([reserva(), antigua], { usadas: 9, apartadas: 0 }, "2026-04-27"),
+    );
+    expect(f.historial.map((h) => [h.tipo, h.dDisplay])).toEqual([["no_asistio", "lun 25"]]);
+    expect(f.clasesGauge!.usadas).toBe(9);
   });
 
   it("a gym-cancelled session shows NOTHING and counts nowhere (AC3)", () => {

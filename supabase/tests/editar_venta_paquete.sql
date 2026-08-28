@@ -134,6 +134,17 @@
 --        undone toggle). Only the first is charged, so a 12-clase correction lands on 11. Counting all
 --        three would write 9 — the member billed twice for one arrival and once for a visit that was
 --        taken back.
+--   S19 — A REBOOK AFTER A RENEWAL ATTRIBUTES TO THE NEW SALE, walked through the real RPCs: the
+--        member books a class under sale A (charged at booking), cancels it (refunded), renews —
+--        `registrar_venta`, which RESETS the pack — and then books the SAME class again.
+--        `reservar_clase` REUSES the unique (member, session) row on that path, so without
+--        20260828100000's `created_at = now()` re-stamp the hold still carries the instant it was
+--        FIRST booked and §D0 attributes it to sale A: correcting sale B onto a 12-clase package
+--        would write 12 and hand back a class the member is holding a seat with. With the re-stamp
+--        it is sale B's charge and the answer is 11. The FIRST booking's `created_at` is backdated
+--        by hand between the steps because `now()` is frozen for the whole transaction — without
+--        that every row here carries the identical instant and the vector cannot tell the two
+--        attributions apart.
 --
 -- Fixtures are 100% transaction-local (fresh gen_random_uuid gym/auth.users/gym_membership/clientes/
 -- paquetes/ventas/class_session/reservation/asistencias rows, zero prod UUIDs — a live-gym lookup
@@ -181,9 +192,11 @@ declare
   c16 uuid; v16 uuid;               -- S16: the reservation leg
   c17 uuid; v17 uuid;               -- S17: the Berenice same-evening pair
   c18 uuid; v18 uuid;               -- S18: perdonada + soft-deleted
+  c19 uuid; v19 uuid;               -- S19: sale A, the one the rebook must NOT be attributed to
   ct        uuid;                   -- one class_type, shared by every session below
   s_pasada  uuid; s_futura uuid; s_cancel uuid;   -- S16's three sessions
   s_tarde   uuid;                   -- S17's 21:30 class
+  s_rebook  uuid;                   -- S19's future class, booked → cancelled → rebooked
   r_pas     uuid; r_fut   uuid; r_can   uuid;     -- S16's three bookings
   -- The GYM's today. Every vence expectation in this file is a gym-tz day, so the fixtures speak the
   -- same calendar as the assertions do.
@@ -420,6 +433,17 @@ begin
     (gym_a, c18, v_hoy_gym - 2, time '10:00', false, 'libre', true,  null),
     (gym_a, c18, v_hoy_gym - 3, time '10:00', true,  'libre', false, now());
 
+  -- ── S19: sale A (8 clases / 20 días, 5 days ago) plus the class the member books, cancels and
+  -- rebooks around the renewal. The vigencia comfortably covers the session's day, so only the
+  -- attribution rule can decide the answer.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('EVP Rebook', '0000000040', 8, v_hoy_gym + 20, '8 CLASES', gym_a) returning id into c19;
+  insert into public.ventas (gym_id, cliente_id, folio, paquete_nombre, clases, vigencia_tipo, vigencia_dias, monto, metodo, fecha, created_at)
+    values (gym_a, c19, 7221, '8 CLASES', 8, 'dias', 20, 750, 'efectivo', now() - interval '5 days', now() - interval '5 days')
+    returning id into v19;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (gym_a, ct, now() + interval '4 days', 60, 20) returning id into s_rebook;
+
   perform set_config('t.gym_a',    gym_a::text,    true);
   perform set_config('t.gym_b',    gym_b::text,    true);
   perform set_config('t.op_a',     op_a::text,     true);
@@ -448,6 +472,8 @@ begin
   perform set_config('t.c16', c16::text, true); perform set_config('t.v16', v16::text, true);
   perform set_config('t.c17', c17::text, true); perform set_config('t.v17', v17::text, true);
   perform set_config('t.c18', c18::text, true); perform set_config('t.v18', v18::text, true);
+  perform set_config('t.c19', c19::text, true); perform set_config('t.v19', v19::text, true);
+  perform set_config('t.s_rebook', s_rebook::text, true);
   perform set_config('t.c_fresca',  c_fresca::text,  true);
   perform set_config('t.v_fresca',  v_fresca::text,  true);
   perform set_config('t.c_apilada', c_apilada::text, true);
@@ -1406,6 +1432,93 @@ begin
   end if;
   if cli.vence is distinct from v_hoy + 20 then
     raise exception 'S18 FAIL: vence = % (expected % — the sold day (hoy−10) plus the flat 30)', cli.vence, v_hoy + 20;
+  end if;
+end $$;
+
+-- ══ S19 — A REBOOK AFTER A RENEWAL BELONGS TO THE NEW SALE ══════════════════════════════════════════
+-- Walked through the real RPCs, in the order a member actually produces this state: book under sale
+-- A → cancel → renew → rebook the same class. `reservar_clase` REUSES the unique (member, session)
+-- row when it reactivates a cancelled booking, so the row's `created_at` — the charge moment §D0
+-- attributes on — would still say "booked under sale A" if 20260828100000 had not re-stamped it.
+--
+-- Step 1: the hold under sale A. Its created_at is then backdated by hand: `now()` is FROZEN for the
+-- whole transaction, so without this every row in this vector carries the identical instant and
+-- "before the renewal" cannot be expressed at all.
+set local role authenticated;
+do $$
+begin
+  perform public.reservar_clase(current_setting('t.s_rebook', true)::uuid,
+                                current_setting('t.c19', true)::uuid);
+end $$;
+reset role;
+do $$
+begin
+  update public.reservation
+     set created_at = now() - interval '2 days'
+   where member_id = current_setting('t.c19', true)::uuid
+     and class_session_id = current_setting('t.s_rebook', true)::uuid;
+end $$;
+
+-- Step 2: cancel (refunds the class), renew (registrar_venta RESETS the pack, ADR-0003 amendment 2),
+-- rebook the SAME class through the row-reuse path.
+set local role authenticated;
+do $$
+declare k uuid := gen_random_uuid();
+begin
+  perform public.cancelar_reserva(current_setting('t.s_rebook', true)::uuid,
+                                  current_setting('t.c19', true)::uuid);
+  perform public.registrar_venta(
+    p_metodo := 'efectivo', p_idempotency_key := k,
+    p_paquete_id := current_setting('t.pk_8', true)::uuid,
+    p_cliente_id := current_setting('t.c19', true)::uuid);
+  perform public.reservar_clase(current_setting('t.s_rebook', true)::uuid,
+                                current_setting('t.c19', true)::uuid);
+  perform set_config('t.k19', k::text, true);
+end $$;
+reset role;
+do $$
+declare v_b uuid;
+begin
+  select id into v_b from public.ventas where idempotency_key = current_setting('t.k19', true)::uuid;
+  if v_b is null then raise exception 'S19 FAIL: the renewal wrote no venta'; end if;
+  perform set_config('t.v19b', v_b::text, true);
+end $$;
+
+-- Step 3: correct sale B onto the 12-clase 'mes' package. The live hold is sale B's charge, so the
+-- as-if-original answer is 12 − 1 = 11.
+set local role authenticated;
+do $$
+begin
+  perform public.editar_venta(current_setting('t.v19b', true)::uuid, 1200, 'efectivo',
+                              p_paquete_id := current_setting('t.pk_mes', true)::uuid);
+end $$;
+reset role;
+do $$
+declare
+  cli   record;
+  res   record;
+  vb    record;
+  v_hoy date := (now() at time zone current_setting('t.tz', true))::date;
+begin
+  select * into vb  from public.ventas      where id = current_setting('t.v19b', true)::uuid;
+  select * into res from public.reservation
+   where member_id = current_setting('t.c19', true)::uuid
+     and class_session_id = current_setting('t.s_rebook', true)::uuid;
+
+  -- One row, reused — the (member, session) uniqueness is what makes the re-stamp necessary.
+  if res.status is distinct from 'reservada' or res.consumio is distinct from true then
+    raise exception 'S19 FAIL: the rebooked hold reads status=% / consumio=% (expected reservada/true)', res.status, res.consumio;
+  end if;
+  if res.created_at < vb.created_at then
+    raise exception 'S19 FAIL: the rebook kept its ORIGINAL created_at (% < the renewal''s %) — reservar_clase''s reactivate path must re-stamp it, or every rebook stays charged to the previous sale', res.created_at, vb.created_at;
+  end if;
+
+  select * into cli from public.clientes where id = current_setting('t.c19', true)::uuid;
+  if cli.clases_restantes is distinct from 11 then
+    raise exception 'S19 FAIL: clases_restantes = % (expected 11 — the corrected 12-clase grant minus the ONE live hold, which was booked after the renewal. 12 means the hold was attributed to the PREVIOUS sale, i.e. its created_at was not re-stamped on the rebook)', cli.clases_restantes;
+  end if;
+  if cli.vence is distinct from v_hoy + 30 then
+    raise exception 'S19 FAIL: vence = % (expected % — the renewal''s own day plus the flat 30 a mes package contributes)', cli.vence, v_hoy + 30;
   end if;
 end $$;
 

@@ -71,10 +71,17 @@
 --
 -- GYM-LOCAL, NEVER SESSION-LOCAL. Every day and every wall-clock comparison is resolved in the
 -- gym's own timezone. A naive `::date` would hide a UTC−6 off-by-one for every event after 18:00
--- local — the hours that matter most in a gym.
+-- local — the hours that matter most in a gym. Both sides of every instant comparison are
+-- `date_trunc`'d to the SECOND: `asistencias.hora` is a wall clock the TS side reads as "HH:MM:SS"
+-- with fractions dropped, so an untruncated `p_desde` carrying microseconds would put a mark made
+-- in the sale's own second on the wrong side of the boundary here but not there.
 --
--- THE ENDED BOUNDARY. `class_session` carries no `ends_at`: a session has ENDED when
--- `starts_at + duration_min` is behind `now()`. Before that the booking is a HOLD (`apartadas`);
+-- THE ENDED BOUNDARY IS THE VENTANA DE ARRIBO'S CLOSE, not the class's last minute:
+-- `upper(public.ventana_arribo(starts_at, duration_min))` = `starts_at + duración + 15 min`. That
+-- 15-minute grace is the SAME boundary the desk marks by and the same one the ficha displays —
+-- CONTEXT.md ("ventana de arribo") pins the rule to `esNoAsistio` in packages/domain/src/rules.ts
+-- and says display and write share one boundary, so a member who can still be checked in must not
+-- already be counted a no-show here. Before the close the booking is a HOLD (`apartadas`); at or
 -- after it, it is spent — and spent-with-no-mark is a `no_shows`. Both are already debited from the
 -- stored counter, which is why editar_venta subtracts usadas + apartadas and not usadas alone.
 -- `no_shows` is DERIVED here and nowhere written: the reservation-truthfulness ruling forbids a
@@ -92,8 +99,12 @@ as $function$
   with zona as (
     -- `clientes` is gym-scoped (a multi-gym member holds one row per gym), so the cliente id alone
     -- pins the tenant and the calendar — no gym parameter to get wrong, and no multi-gym roulette.
-    -- Written as a scalar sub-select so it stays a one-shot InitPlan (ADR-0001/ADR-0013 §2) instead
-    -- of a join that would silently drop every row when the cliente is missing.
+    -- Written as an UNCORRELATED scalar sub-select (ADR-0001): it reads no column of the rows it is
+    -- compared against, so the planner runs it once as an InitPlan rather than per row. Not the
+    -- retracted ADR-0013 §2 claim — that one said wrapping a CORRELATED predicate in `(select …)`
+    -- bought per-statement evaluation, and ADR-0013 itself now records that it does not. The other
+    -- half of the reason is shape, not speed: a join here would silently drop every row when the
+    -- cliente is missing.
     select (select g.timezone
               from public.clientes c
               join public.gym g on g.id = c.gym_id
@@ -110,12 +121,15 @@ as $function$
                         where r.id = a.reservation_id and r.consumio)
        and case
              when a.hora is not null
-               then ((a.fecha + a.hora) at time zone (select tz from zona)) >= p_desde
+               then date_trunc('second', (a.fecha + a.hora) at time zone (select tz from zona))
+                      >= date_trunc('second', p_desde)
              else a.fecha >= (p_desde at time zone (select tz from zona))::date
            end
   ),
   reservas as (
-    select (s.starts_at + (s.duration_min * interval '1 minute')) <= now() as terminada,
+    -- `upper(ventana_arribo(...))` — the 15-minute arrival grace included, so this agrees with the
+    -- desk's own markable window and with `esNoAsistio` (rules.ts) to the second.
+    select upper(public.ventana_arribo(s.starts_at, s.duration_min)) <= now() as terminada,
            not exists (select 1 from public.asistencias a
                         where a.reservation_id = r.id and a.deleted_at is null) as sin_marca
       from public.reservation r
@@ -123,7 +137,7 @@ as $function$
      where r.member_id = p_cliente_id
        and r.consumio
        and r.status <> 'cancelada'
-       and r.created_at >= p_desde
+       and date_trunc('second', r.created_at) >= date_trunc('second', p_desde)
   )
   select ((select count(*) from marcas) + (select count(*) from reservas where terminada))::integer,
          (select count(*) from reservas where not terminada)::integer,

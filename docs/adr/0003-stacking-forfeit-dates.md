@@ -1,6 +1,6 @@
 # ADR-0003 — Stacking, forfeit & the date model
 
-**Status:** Accepted — 2026-05-29 · **Amended:** 2026-07-10 (rulings C1 flat-30 `mes`, C4 purchase-wins, C9 vence-day-valid) · **Amended:** 2026-08-26 (**renewal is a full reset** — Q5 stacking, C4's day-carry and C9's leftover-carry are SUPERSEDED; see the second Amendment below)
+**Status:** Accepted — 2026-05-29 · **Amended:** 2026-07-10 (rulings C1 flat-30 `mes`, C4 purchase-wins, C9 vence-day-valid) · **Amended:** 2026-08-26 (**renewal is a full reset** — Q5 stacking, C4's day-carry and C9's leftover-carry are SUPERSEDED; see the second Amendment below) · **Amended:** 2026-08-27 (**the correction door resets too** — `editar_venta` re-derives AS-IF-ORIGINAL; see Amendment 3)
 
 ## Context
 The brief answers several domain questions (Q1, Q2, Q3, Q5, Q6) that define how
@@ -84,5 +84,36 @@ refusal is correct under this ruling — the sale really would be recorded alrea
 desk's answer is a nearer start date.
 
 **Not covered by this amendment:** `editar_venta` / `editar_venta_paquete` still re-derive an EDIT of
-an existing sale with the old stacking arithmetic. Whether a *correction door* should also reset is a
-separate ruling the owner has not made.
+an existing sale with the old stacking arithmetic. Whether a *correction door* should also reset was
+a separate ruling — **since made**: see Amendment 3 below.
+
+## Amendment 3 — 2026-08-27 (the correction door: `editar_venta` is AS-IF-ORIGINAL)
+
+**The owner ruled the open question above.** A correction re-derives the sale as if it had carried
+the corrected terms from the start — it neither stacks nor forgives:
+
+```
+clases_restantes = NULL                                  (corrected pack ilimitado)
+                 = greatest(0, new grant − cargadas)     (otherwise)
+vence            = corrected fecha + (30 if 'mes' else vigencia_dias)
+```
+
+`cargadas` is the §D0 charge count attributed to THIS sale — anchored on its own `created_at` (a
+corrected `fecha` never re-attributes an event), counted on two legs (active unpardoned asistencias
+whose booking did not itself carry the charge, plus consuming non-cancelled reservations), and
+**holds are included**: a booking already debited the pack at booking time (#233), so a correction
+that ignored it would hand back a class the member is still holding a seat with. There is no carry
+of days or of leftover classes — the same "nothing carries" the 2026-08-26 amendment ruled for
+`registrar_venta`, now on the edit door too.
+
+**Consequences the ruling names and calls correct:** a fecha-only edit re-derives, and therefore
+silently HEALS a drifted balance; classes attended while the pack read ilimitado DO count when
+correcting ilimitado→finite (as-if-original asks what the corrected terms *would* have charged);
+consumption beyond the corrected grant clamps at 0 and is never a debt.
+
+**Where it lives:** `supabase/migrations/20260828110000_editar_venta_as_if_original.sql` — the
+re-derive plus `public.conteo_cargable`, the shared read-only §D0 helper `mi_membresia` and the
+ficha's own derivation also read, so the edit door, the operator's screen and the member's card
+cannot answer three different numbers. Pinned by written-row vectors in
+`supabase/tests/editar_venta_paquete.sql`. `eliminar_venta` is untouched (its inverse clawback and
+its already-used refusal stand).

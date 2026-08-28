@@ -1002,16 +1002,14 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
   // Fixtures are anchored to the REAL clock via the same helpers getClienteFicha
   // itself uses (hoyEnZona/instanteEnZona): the code computes its 30-day window
   // from `hoyEnZona(tz)` at run time, so a fixed calendar date would silently
-  // migrate from the in-window branch to the head-count branch ~30 days after
-  // being written. HOY_GYM = today's gym-local day; the venta is pinned at 12:00
+  // migrate from the in-window branch to the RPC branch ~30 days after being
+  // written. HOY_GYM = today's gym-local day; the venta is pinned at 12:00
   // gym-local so a before (09:00) / after (15:00) hora pair always exists.
   const HOY_GYM = hoyEnZona(TZ);
   const VENTA_DIA = toIsoDay(HOY_GYM);
   const VENTA_INSTANTE = instanteEnZona(HOY_GYM, "12:00", TZ).toISOString();
-  // Deterministically OUTSIDE the 30-day window (head-count branch), same 12:00 anchor.
-  const OLD_DIA_DATE = addDays(HOY_GYM, -60);
-  const OLD_DIA = toIsoDay(OLD_DIA_DATE);
-  const OLD_INSTANTE = instanteEnZona(OLD_DIA_DATE, "12:00", TZ).toISOString();
+  // Deterministically OUTSIDE the 30-day window (the conteo_cargable branch), same 12:00 anchor.
+  const OLD_INSTANTE = instanteEnZona(addDays(HOY_GYM, -60), "12:00", TZ).toISOString();
 
   const FICHA_CLIENTE = {
     id: "cli-ficha",
@@ -1049,9 +1047,16 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     asistencias: Record<string, unknown>[],
     venta: Record<string, unknown> = FICHA_VENTA,
     reservas: Record<string, unknown>[] = [],
-  ): { client: SupabaseServer; orCalls: string[]; gteCalls: [string, unknown][] } {
-    const orCalls: string[] = [];
+    /** What `public.conteo_cargable` answers — the old-anchor path's §D0 count (§D4's fallback
+     *  rule). Only that branch calls it; on the in-window path the DAL must not call it at all. */
+    conteo: Record<string, unknown>[] = [],
+  ): {
+    client: SupabaseServer;
+    gteCalls: [string, unknown][];
+    rpcCalls: { name: string; args: unknown }[];
+  } {
     const gteCalls: [string, unknown][] = [];
+    const rpcCalls: { name: string; args: unknown }[] = [];
     const rows: Record<string, Record<string, unknown>[]> = {
       clientes: [FICHA_CLIENTE],
       // #97: brand_name is the injected negocio fallback, now pre-joined onto the membership.
@@ -1095,13 +1100,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
           filtered = filtered.filter((r) => (leer(r) as string) >= (val as string));
           return b;
         },
-        // Records the filter string only (no row filtering): the head-count test
-        // asserts the exact nested PostgREST filter the DAL builds, and the count
-        // it feeds back is the rows surviving the eq/is filters.
-        or: (filter: string) => {
-          orCalls.push(filter);
-          return b;
-        },
+        or: () => b,
         order: () => b,
         range: (from: number, to: number) => {
           filtered = filtered.slice(from, to + 1);
@@ -1121,8 +1120,12 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     const client = {
       auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
       from: (table: string) => builder(table),
+      rpc: (name: string, args: unknown) => {
+        rpcCalls.push({ name, args });
+        return Promise.resolve({ data: conteo, error: null });
+      },
     };
-    return { client: client as unknown as SupabaseServer, orCalls, gteCalls };
+    return { client: client as unknown as SupabaseServer, gteCalls, rpcCalls };
   }
 
   it("excludes a same-day check-in that happened BEFORE the venta's gym-local time", async () => {
@@ -1184,25 +1187,32 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     expect(ficha?.clasesGauge?.usadas).toBe(1);
   });
 
-  it("old purchase predating the 30-day window: the head-count query carries the same instant anchor", async () => {
-    const { client, orCalls } = makeFichaFake(
-      [
-        // Both rows predate the window, so the in-hand fetch (gte ventanaIso) drops
-        // them; only the head-count query can see them — its count must feed usadas.
-        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "15:00:00", consumio: true, perdonada: false, deleted_at: null },
-        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, perdonada: false, deleted_at: null },
-      ],
+  // §D4's fallback rule. An anchor older than the fetched 30-day window makes the rows in hand
+  // unable to answer "how much has this pack been charged", so the DAL asks the DATABASE — the same
+  // `conteo_cargable` editar_venta re-derives from and mi_membresia reports, anchored on the sale's
+  // WRITE INSTANT. The hand-rolled head-count this replaces could not express the "already charged
+  // at booking" join and netted 'asistida' bookings out of a range that never contained them,
+  // under-counting `usadas` and firing a false "Saldo sin cuadrar".
+  it("old purchase predating the 30-day window: the count comes from conteo_cargable at the venta INSTANT", async () => {
+    const { client, rpcCalls } = makeFichaFake(
+      [],
       { ...FICHA_VENTA, fecha: OLD_INSTANTE, created_at: OLD_INSTANTE },
+      [],
+      [{ usadas: 2, apartadas: 0, no_shows: 0 }],
     );
 
     const ficha = await getClienteFicha("cli-ficha", client);
 
-    // The exact nested PostgREST filter: strictly-later days, OR same-day at/after
-    // the venta's gym-local time (null hora counted — no time to disprove).
-    expect(orCalls).toEqual([
-      `fecha.gt.${OLD_DIA},and(fecha.eq.${OLD_DIA},or(hora.gte.12:00:00,hora.is.null))`,
+    expect(rpcCalls).toEqual([
+      { name: "conteo_cargable", args: { p_cliente_id: "cli-ficha", p_desde: OLD_INSTANTE } },
     ]);
     expect(ficha?.clasesGauge?.usadas).toBe(2);
+  });
+
+  it("an in-window anchor never calls the RPC — the rows in hand already reach it", async () => {
+    const { client, rpcCalls } = makeFichaFake([]);
+    await getClienteFicha("cli-ficha", client);
+    expect(rpcCalls).toEqual([]);
   });
 
   // ── Slice 2 §D1/§D4: the bookings leg ────────────────────────────
@@ -1277,32 +1287,25 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     expect(ficha?.saldo.noShows).toBe(0);
   });
 
-  // §D4's fallback rule: an old anchor makes the exact head-count the source for the asistencia
-  // leg, and that count cannot express the "already charged at booking" join — so the DAL has to
-  // subtract those rows, or every booked-and-attended class is counted twice.
-  it("old anchor: the head-count is re-read from the ANCHOR day and nets out already-counted bookings", async () => {
+  // The RPC's answer REPLACES both legs (it is the same rule over the wider range), and the rows in
+  // hand stay the DISPLAY's: the bookings read keeps the historial's 30-day floor, so an old-anchor
+  // member's "No asistió — cargada" lines cover the same month the visits beside them do (§D4
+  // "window unchanged") while the counts span everything since the sale.
+  it("old anchor: the RPC's count replaces both legs, and the bookings read keeps the 30-day floor", async () => {
     const { client, gteCalls } = makeFichaFake(
-      [
-        // Both predate the 30-day window, so only the head-count can see them; the first is the
-        // check-in of the booking below.
-        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "12:02:00", consumio: false, perdonada: false, deleted_at: null, reservation_id: "r-1" },
-        { cliente_id: "cli-ficha", fecha: OLD_DIA, hora: "16:00:00", consumio: true, perdonada: false, deleted_at: null, reservation_id: null },
-      ],
+      [],
       { ...FICHA_VENTA, fecha: OLD_INSTANTE, created_at: OLD_INSTANTE },
-      [
-        booking({
-          created_at: instanteEnZona(OLD_DIA_DATE, "13:00", TZ).toISOString(),
-          status: "asistida",
-          class_session: sesion(OLD_DIA_DATE),
-        }),
-      ],
+      [booking({ class_session: sesion(AYER) })],
+      [{ usadas: 4, apartadas: 1, no_shows: 3 }],
     );
     const ficha = await getClienteFicha("cli-ficha", client);
-    // The bookings read is re-issued from the anchor day, not the 30-day floor.
-    expect(gteCalls).toContainEqual(["class_session.starts_at", `${OLD_DIA}T00:00:00Z`]);
-    // head-count 2 − 1 already-charged booking = 1 on the asistencia leg, + 1 on the bookings leg.
-    expect(ficha?.clasesGauge?.usadas).toBe(2);
-    expect(ficha?.saldo.noShows).toBe(0);
+    const ventanaIso = toIsoDay(addDays(HOY_GYM, -30));
+    expect(gteCalls).toContainEqual(["class_session.starts_at", `${ventanaIso}T00:00:00Z`]);
+    expect(ficha?.clasesGauge?.usadas).toBe(4); // NOT 5 — the ended hold in hand is already inside it
+    expect(ficha?.clasesGauge?.apartadas).toBe(1);
+    expect(ficha?.saldo.derived).toBe(3); // 8 granted − 4 used − 1 held
+    // The booking in hand still RENDERS its line: display is row-derived, the arithmetic is not.
+    expect(ficha?.historial.filter((h) => h.tipo === "no_asistio")).toHaveLength(1);
   });
 
   // Paquete-swap spec §4: `ClienteFichaDTO.paquetes` is the SAME catalog read already fetched
