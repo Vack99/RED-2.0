@@ -31,9 +31,11 @@ import "server-only";
  *     `refresh_token_already_used`, which `apps/client/src/proxy.ts` classifies as a dead
  *     session and rides the cookie teardown — i.e. real sign-outs. Do NOT "complete" this
  *     shield by adding a timeout there.
- * Read-only RPCs are POSTs too (`marcadas_presencia`, `contar_reservas_activas`, …) and are
- * therefore NOT bounded here; separating them needs a writer/reader allowlist guarded
- * against `tools/guards/denial-suite.ts`, which is a bigger change than this one.
+ * Read-only RPCs are POSTs by default and would therefore NOT be bounded here — so the
+ * ones on the render paths now ask postgrest for a real GET (`.rpc(fn, args, { get: true })`,
+ * legal only for a `STABLE`/`IMMUTABLE` function with scalar args) and are bounded like any
+ * other read. Array-arg readers (`contar_reservas_activas`) and every VOLATILE RPC stay POST
+ * and stay unbounded.
  */
 
 /**

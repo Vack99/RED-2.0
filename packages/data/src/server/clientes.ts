@@ -74,7 +74,7 @@ export const getClientesLite = cache(
         .select("id, nombre, tel, paquete_nombre, email, invitacion_enviada_at, auth_user_id, created_at")
         .eq("gym_id", gym.id)
         .order("nombre"),
-      supabase.rpc("ventas_count_por_cliente", { p_gym_id: gym.id }),
+      supabase.rpc("ventas_count_por_cliente", { p_gym_id: gym.id }, { get: true }),
     ]);
 
     if (!data) return [];
@@ -248,9 +248,9 @@ export const getClientesRoster = cache(
       supabase.rpc("asistencias_mes_por_cliente", {
         p_gym_id: gym.id,
         p_desde: monthStartIso(hoy),
-      }),
+      }, { get: true }),
       getPaseSueltoNombres(supabase),
-      supabase.rpc("asistencias_ultima_visita_por_cliente", { p_gym_id: gym.id }),
+      supabase.rpc("asistencias_ultima_visita_por_cliente", { p_gym_id: gym.id }, { get: true }),
     ]);
 
     const clientes = clientesRes.data;
@@ -331,7 +331,7 @@ export const getRosterResumen = cache(
       getPaseSueltoNombres(supabase),
       // The SAME asistencias_ultima_visita_por_cliente RPC getClientesRoster reads
       // (#226): one grouped DB-side read, not a full-roster asistencias pull.
-      supabase.rpc("asistencias_ultima_visita_por_cliente", { p_gym_id: gym.id }),
+      supabase.rpc("asistencias_ultima_visita_por_cliente", { p_gym_id: gym.id }, { get: true }),
     ]);
 
     // Fail loud (#226 F4 precedent): a swallowed error here would silently read as
@@ -476,7 +476,7 @@ export const getClienteFicha = cache(
       const { data: conteo } = await supabase.rpc("conteo_cargable", {
         p_cliente_id: id,
         p_desde: ventas[0].created_at,
-      });
+      }, { get: true });
       const fila = conteo?.[0];
       if (fila) conteoFueraDeVentana = { usadas: fila.usadas, apartadas: fila.apartadas };
     }

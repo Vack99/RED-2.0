@@ -50,7 +50,7 @@ async function presenciaEnVentana(
     p_gym_id: gymId,
     p_desde: toIsoDay(desde),
     p_hasta: toIsoDay(hasta),
-  });
+  }, { get: true });
   return (data as Presencia) ?? {};
 }
 

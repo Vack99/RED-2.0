@@ -147,7 +147,7 @@ export const getIdentidadLegal = cache(
     const supabase = client ?? (await createClient());
     const gym = await getOperatorGym(supabase);
     const { data, error } = await supabase
-      .rpc("obtener_identidad_legal", { p_gym_id: gym.id })
+      .rpc("obtener_identidad_legal", { p_gym_id: gym.id }, { get: true })
       .maybeSingle();
     // Fail-closed, matching getAcuerdoAceptado: an error reads as "nothing filled in yet" (the
     // editor's own empty state), never as a thrown page. A read error must still be visible in the

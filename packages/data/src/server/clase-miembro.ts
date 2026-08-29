@@ -244,7 +244,7 @@ export const getClaseDetalleMiembro = cache(
           .lt("starts_at", diaHigh.toISOString()),
         contarActivosMiembro(supabase, [sesion.id]),
         fetchFavoritoId(supabase, gymId),
-        supabase.rpc("roster_clase", { p_session_id: sesion.id }),
+        supabase.rpc("roster_clase", { p_session_id: sesion.id }, { get: true }),
       ]);
 
     // The member's OWN active bookings among that day's sessions (RLS returns only their

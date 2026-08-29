@@ -3,6 +3,7 @@ import "server-only";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../database.types";
+import { fetchBlindado } from "./fetch-shield";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -27,11 +28,17 @@ export type AppScope = "admin" | "client";
  * `gym`/`gym_domain` rows (ADR-0013 §3), so it needs no cookies/session and runs
  * in the proxy's pre-render context. The URL/anon key are identical for every
  * tenant (ADR-0008), so there is no per-gym secret here.
+ *
+ * It is the FIFTH Supabase construction site, and it ran unshielded until 2026-08-29:
+ * `gymTenant`/`overridesUncached` are PostgREST GETs on both apps' root layouts, so a
+ * stalled read here hung every render. `global.fetch` bounds them like the other four
+ * (`./fetch-shield`).
  */
 function anonClient(): SupabaseServer {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
+    { global: { fetch: fetchBlindado } },
   );
 }
 
