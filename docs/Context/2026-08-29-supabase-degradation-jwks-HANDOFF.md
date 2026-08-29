@@ -16,6 +16,10 @@
 > region as the DB — the perf-loop's open colocation item); (B) `packages/data/src/server/fetch-shield.ts`
 > as `global.fetch` on every server client: GET/HEAD reads bounded (8 s + one untimed retry), `jwks.json`
 > bounded (2.5 s → pinned key set), every POST untouched. Diagnose by colo first next time.
+> **Verified green on the branch:** `pnpm lint && pnpm typecheck && pnpm test` (1765), `pnpm exec next build`
+> ×2 (admin + client), `pnpm test:e2e` 3/3 against the `red-demo` twin, live GET-vs-POST parity 7/7
+> byte-identical, and an admin smoke of 6 pages all 200 — the region decision is now
+> [ADR-0017](../adr/0017-vercel-function-region-colocated-with-supabase.md).
 
 ---
 
