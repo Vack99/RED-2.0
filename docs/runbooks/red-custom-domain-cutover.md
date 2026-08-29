@@ -218,6 +218,8 @@ deploys **both** Vercel apps and needs explicit owner consent for that specific 
 
 ### Step 4 — auth walk on the new host
 
+> ✅ **WALKED 2026-08-28 (owner, after push `95583ac`)** — REENVIAR link minted on `www.redfunctionaltraining.com`, fresh-provision rail set a password, session survived a browser restart, reset mail landed on www, Turnstile submitted. Only **Step 6 (announce)** remains.
+
 Human, with a disposable `+alias` — never a real member, never by deleting an auth user.
 
 1. `/entrar` → login → lands authenticated on `/reservar`.
