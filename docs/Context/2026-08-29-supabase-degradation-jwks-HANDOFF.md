@@ -3,6 +3,20 @@
 **Type:** incident diagnosis + next-session plan. Nothing pushed from this doc's session after `95583ac`.
 **Repo state:** `main` = `ff1824f` local (1 ahead of origin: docs-only), origin = `95583ac`. Working tree clean except untracked `apps/mobile/` (node_modules junk) and `t3.json`. Docker Desktop + local Supabase stack running (fine to leave).
 
+
+> **CORRECTION (same day, later session) — §0 item 3 and §3 are superseded.** Grouping `edge_logs` by
+> `request.cf.colo` shows **all 65 requests over 5 s in 24 h entered Cloudflare at IAD** (AWS us-east-1
+> IPs = the `iad1` Vercel page functions); SJC/LHR/SIN/LAX/FRA/DFW/PDX produced zero. Same minutes, same
+> URL from SJC: 26–91 ms. GoTrue self-reported `jwks.json` at avg 3.9 ms while the edge measured 266 s.
+> The stall is path-agnostic (`gym`, `clientes`, `paquetes`, `asistencias`, `ventas`, read-RPCs all
+> stalled from IAD) — a per-request lottery on the IAD colo → Supabase (us-west-2) leg, ~9 % of IAD
+> requests in the worst hour. **JWKS was never special**: auth-js 2.106.2 already keeps a process-global
+> JWKS cache (`GLOBAL_JWKS`, 10-min TTL); "new client per request re-fetches" is false. Shield shipped on
+> branch `fix/pdx1-colocation-fetch-shield`: (A) `"regions": ["pdx1"]` in both `vercel.json` (same AWS
+> region as the DB — the perf-loop's open colocation item); (B) `packages/data/src/server/fetch-shield.ts`
+> as `global.fetch` on every server client: GET/HEAD reads bounded (8 s + one untimed retry), `jwks.json`
+> bounded (2.5 s → pinned key set), every POST untouched. Diagnose by colo first next time.
+
 ---
 
 ## 0. TL;DR
