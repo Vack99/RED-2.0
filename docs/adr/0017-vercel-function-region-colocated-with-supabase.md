@@ -29,8 +29,18 @@ group by colo order by n desc
 ```
 
 - Cold starts now serve Mexico from the US West coast instead of the East. Irrelevant next to the DB round trips, which dominate every render.
+- **Residual, accepted: Routing Middleware (`proxy.ts`) still runs in every region.** Vercel's middleware `config` takes only `matcher` and `runtime` ([routing-middleware/api](https://vercel.com/docs/routing-middleware/api)); Next.js's `preferredRegion` is honoured on Vercel only under `runtime = 'edge'`, which a Proxy file cannot set (it throws). So a visitor whose PoP routes to `iad1` still gets `gym_id_por_host` + a token refresh (both POST, unbounded by design) over the IAD leg; `jwks.json` and the `gym` read there are shield-bounded. Post-deploy sample: 4 of 60 middleware calls (7 %) entered at IAD, none from Mexico's usual path (SJC). Not worth a workaround; revisit only if IAD middleware stalls reappear in the colo query.
 
 ## What a future reader must not undo
 
 - Do not drop `regions` from either `vercel.json` because "the dashboard already says Portland". The dashboard is per-project state that a re-link or a new project loses silently; the committed file is the fact.
 - Do not add a second region for "coverage" while a single primary database sits in us-west-2 (§2). Reach for read replicas first (§4).
+
+## Verified 2026-08-29 (deploy of 337feb4, window 17:50–19:45Z)
+
+- **Page functions: PDX only.** 97 server calls (`paquetes`, `class_session`, `clientes`, `asistencias`, `gym_membership`, `ventas`, the read-RPCs, `jwks.json`) — p50 44 ms, p95 210 ms, max 327 ms, **0 over 5 s**. The last IAD page-function address stream ended 17:09Z, before the deploy.
+- **Everything not at PDX is middleware** (only `gym_id_por_host`, `gym`, `jwks.json`, `/auth/v1/token` appear): SJC 37, LHR 9, SIN 8, IAD 4, FRA 2 — max 1.3 s, 0 stalls.
+- **Same 24 h before the deploy, for scale:** IAD 3 714 calls, **103 over 5 s**, max 266 s; PDX 474 calls, 0 stalls, p50 18 ms. During the incident hours (14:00–17:45Z) the stalls at IAD were path-agnostic but heaviest on the auth origin: `jwks.json` 51/63, `/auth/v1/token` 13/14, `gym` 4/119, `gym_id_por_host` 1/22.
+- DFW's 300 calls at 17:15–17:40Z were this machine's `test:e2e` + smoke runs (Mexican residential IP), not Vercel.
+
+Re-run: the query above, plus `countIf(toInt32OrZero(log_attributes['response.origin_time']) > 5000)` per colo. Green = PDX carries the page paths with 0 stalls; other colos show only the four middleware paths.

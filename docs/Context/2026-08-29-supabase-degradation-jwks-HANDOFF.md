@@ -20,6 +20,10 @@
 > ×2 (admin + client), `pnpm test:e2e` 3/3 against the `red-demo` twin, live GET-vs-POST parity 7/7
 > byte-identical, and an admin smoke of 6 pages all 200 — the region decision is now
 > [ADR-0017](../adr/0017-vercel-function-region-colocated-with-supabase.md).
+> **Pushed 08-29 @337feb4 and verified on the live deploy (17:50–19:45Z):** page functions enter at **PDX only**
+> — 97 calls, p50 44 ms, p95 210 ms, max 327 ms, 0 over 5 s (vs IAD the previous 24 h: 3 714 calls, 103 over
+> 5 s, max 266 s). Every non-PDX entry is `proxy.ts`, which Vercel runs in all regions and cannot be pinned
+> (accepted residual, ADR-0017 Consequences). Region ruling: stay on `pdx1` alone; do not add `iad1`.
 
 ---
 
