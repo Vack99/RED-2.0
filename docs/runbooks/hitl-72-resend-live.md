@@ -17,6 +17,7 @@ This is an **owner-executed, agent-prepared** runbook: every step is a dashboard
 | gym | client host | admin host |
 |---|---|---|
 | red | `red.ibookit.lat` | `red-admin.ibookit.lat` |
+| red | `www.redfunctionaltraining.com` (2026-08-28, `es_principal`) | — |
 | forge | `forge.ibookit.lat` | `forge-admin.ibookit.lat` |
 | red-demo | `red-demo.ibookit.lat` | `red-demo-admin.ibookit.lat` |
 | forge-demo | `forge-demo.ibookit.lat` | `forge-demo-admin.ibookit.lat` |
@@ -143,7 +144,7 @@ The confirmation + recovery links Supabase mails must be **allow-listed**, or th
   - `http://localhost:3000/**` (client dev — `next dev` default port; keep only if you confirm/reset against local)
   - one `https://<host>/**` line for **each future gym's BYO client domain** as it onboards.
   - *Path pattern in play:* the links resolve to `…/auth/confirm?code=<pkce>` (signup), `…/auth/confirm?codigo=<invite>` (invite claim), and `…/auth/confirm?next=/restablecer` (password reset → lands on `/restablecer`). A single `/**` per host covers all three; if you prefer explicit paths, allow `…/auth/confirm` and `…/restablecer`.
-  - *Verify:* each active client host has a matching entry (a click from §F resolves instead of erroring `redirect_to not allowed`).
+  - *Verify:* each active client host has a matching entry (a click from §F resolves instead of landing on the home page with the path silently stripped — a missing entry is clamped to the Site URL with **no** error; probe with the curl recipe in `red-custom-domain-cutover.md` §3 Step 1).
 
 ---
 
@@ -221,7 +222,12 @@ The system degrades gracefully by design; no single step here can brick a sale o
 - **Domain not yet verified (A3) / SMTP misconfigured (B):** auth mail falls back to Supabase's **built-in dev mailer (~2/hour)** — slow and spam-prone but not dead; existing sessions unaffected. Fix DNS/SMTP and re-verify; no code change.
 - **`RESEND_API_KEY`/`RESEND_FROM` unset or wrong (D):** `resendTransport` returns `no-configurado` and `enviarInvitacion` returns `ok:false` — **the sale still completes**; the member's invite state stays `sin invitación`, **re-sendable** later via REENVIAR. Invite send is best-effort by contract (ADR-0015): a sale never fails because mail failed.
 - **`PLATFORM_CLIENT_FALLBACK_HOST` unset (D):** invites for **mapped** gyms are unaffected (they use their own `gym_domain` host); only **unmapped** gyms get `ok:false` (`sin-host`) — again re-sendable once set.
-- **Redirect URL missing (C):** the auth email still sends, but the click errors `redirect_to not allowed`. Add the host to the allow-list and re-click — no re-send of the sale needed.
+- **Redirect URL missing (C):** the auth email still sends, but the click does **not** error loudly.
+  GoTrue silently clamps a non-allow-listed `redirect_to` to the Site URL with the path stripped
+  (303; `POST /auth/v1/recover` still returns `200 {}`), so nothing reads `token_hash` and the
+  member lands on the home page with no session, no error. Probe with the curl recipe in
+  `docs/runbooks/red-custom-domain-cutover.md` §3 Step 1 rather than trusting a client-visible
+  error. Add the host to the allow-list and re-click — no re-send of the sale needed.
 - **Migrations not yet applied (E):** the app code is already live-tolerant (best-effort send, idempotent claim), but the invite rail can't mint/claim codes until E2 lands. Apply-first per the deploy note; the drop of `set_notificaciones` (E2.1) is one-way — the pre-gate dump (E1) is the rollback.
 - **Rate limit set too high vs Resend quota (B2):** excess auth mail silently fails at Resend once the daily cap hits; lower the Supabase limit or upgrade the Resend plan. No data risk.
 
@@ -245,4 +251,4 @@ Owner read the live dashboard (Authentication → URL Configuration); transcribe
 - **Site URL:** `https://red.ibookit.lat`
 - **Redirect URLs (9):** `https://red-2-0-client.vercel.app` · `https://forge-red-2-0-client.vercel.app/**` · `http://localhost:3000/**` · `https://app.ibookit.lat/**` · `https://app.ibookit.lat` · `https://red.ibookit.lat/**` · `https://forge.ibookit.lat/**` · `https://red-demo.ibookit.lat/**` · `https://forge-demo.ibookit.lat/**`
 
-**Verdict: PASS.** No entry broader than one host — every `/**` is a path wildcard on a single hostname; no `*.ibookit.lat`. The send-email hook's brand-pinning trust model holds. Same-day cleanup: owner deleted the two `*.vercel.app` client entries and `http://localhost:3000/**`. **Live list is now 6 entries, all single-host `ibookit.lat`:** `app` (bare + `/**`), `red`, `forge`, `red-demo`, `forge-demo` (all `/**`). Local-dev auth against the LIVE project now fails `redirect_to not allowed` by design — local dev uses the local stack. Next audit: diff the dashboard against this 6-entry list.
+**Verdict: PASS.** No entry broader than one host — every `/**` is a path wildcard on a single hostname; no `*.ibookit.lat`. The send-email hook's brand-pinning trust model holds. Same-day cleanup: owner deleted the two `*.vercel.app` client entries and `http://localhost:3000/**`. **Live list was 6 entries, all single-host `ibookit.lat`:** `app` (bare + `/**`), `red`, `forge`, `red-demo`, `forge-demo` (all `/**`). Local-dev auth against the LIVE project no longer resolves — a `http://localhost:3000/...` `redirect_to` is silently clamped to the Site URL with the path stripped (no error is shown; see §0 of `red-custom-domain-cutover.md`); local dev uses the local stack. **Updated 2026-08-28 (`red-custom-domain-cutover.md` §3 Step 1): list is now 7 entries** — added `https://www.redfunctionaltraining.com/**`, the only entry on a non-`ibookit.lat` registrable domain. Next audit: diff the dashboard against this 7-entry list.

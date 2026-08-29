@@ -95,22 +95,32 @@ export function resendTransport(): MailTransport {
  * default host + `?gym={slug}` so every gym's funnel works from day one — `https://{PLATFORM_CLIENT_
  * FALLBACK_HOST}{ruta}?gym={slug}&codigo=X`. No host and no fallback env → `null` (the caller reports a
  * clean failure; nothing is sent). `client` is injectable for tests (ADR-0001).
+ *
+ * WHICH host, when a gym maps several: PRINCIPAL FIRST — the gym's declared canonical host
+ * (`gym_domain.es_principal`, at most one per `(gym_id, app)` by partial unique index
+ * `gym_domain_principal_uniq`), then `created_at` ascending as the tie-break for pairs that have
+ * declared nothing. The order is a preference, never a filter: an unflagged gym keeps the exact
+ * oldest-wins pick it had before, so no gym can be turned into a silently unsent invite by a
+ * missing flag. `.localhost` rows are excluded BEFORE either order and the flag cannot resurrect
+ * one.
  */
 export async function construirUrlInvitacion(
   { gymId, gymSlug, codigo, ruta }: { gymId: string; gymSlug: string; codigo: string; ruta: "/activar" },
   client: SupabaseServer,
 ): Promise<string | null> {
-  // A gym may map several client hosts (dev mirror + live); order by created_at so the choice is
-  // deterministic (the earliest-mapped host wins) rather than a plan-order coin flip. `.localhost`
-  // rows are dev-only tenancy hosts (unreachable from a member's phone) — never an invite target:
-  // red-demo's dev row predates its public host, so without this filter every demo invite carried
-  // an unreachable localhost link (found live 2026-07-09).
+  // A gym may map several client hosts (dev mirror + live, or a platform subdomain + its own
+  // domain); the declared principal wins, and created_at ascending decides the rest so the choice
+  // is deterministic rather than a plan-order coin flip. `.localhost` rows are dev-only tenancy
+  // hosts (unreachable from a member's phone) — never an invite target: red-demo's dev row
+  // predates its public host, so without this filter every demo invite carried an unreachable
+  // localhost link (found live 2026-07-09).
   const { data } = await client
     .from("gym_domain")
     .select("hostname")
     .eq("gym_id", gymId)
     .eq("app", "client")
     .not("hostname", "like", "%localhost")
+    .order("es_principal", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();

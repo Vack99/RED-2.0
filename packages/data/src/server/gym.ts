@@ -103,9 +103,13 @@ export async function getOperatorGym(client?: SupabaseServer): Promise<OperatorG
  * non-negotiable constraint); it reads under the caller's session, and #216 scoped
  * `gym_domain` to exactly that.
  *
- * A gym may map several admin hosts (dev mirror + live): `created_at` order + first-wins
- * makes the choice deterministic rather than a plan-order coin flip, and `.localhost`
- * rows are dev-only tenancy hosts — never a reachable target (the same rule
+ * A gym may map several admin hosts (dev mirror + live): PRINCIPAL FIRST — the gym's
+ * declared canonical host (`gym_domain.es_principal`, at most one per `(gym_id, app)` by
+ * partial unique index `gym_domain_principal_uniq`) — then `created_at` ascending as the
+ * tie-break for pairs that have declared nothing, so the pick stays deterministic rather
+ * than a plan-order coin flip and an unflagged gym keeps its old oldest-wins host instead
+ * of vanishing from the map. `.localhost` rows are dev-only tenancy hosts, excluded before
+ * either order and never resurrected by the flag — never a reachable target (the same rule
  * `construirUrlInvitacion` applies to the client side). A gym with no admin host is
  * simply absent from the map; the caller renders it without a link.
  */
@@ -120,6 +124,7 @@ export async function getAdminHosts(
     .in("gym_id", [...gymIds])
     .eq("app", "admin")
     .not("hostname", "like", "%localhost")
+    .order("es_principal", { ascending: false })
     .order("created_at", { ascending: true });
 
   const hosts: Record<string, string> = {};
@@ -131,7 +136,9 @@ export async function getAdminHosts(
  * `gym_id → client hostname` for ONE gym (#256) — the aviso's `{{url_aviso_integral}}` merge
  * field needs the client app's REAL host to preview accurately from the admin app (a different
  * host than the member ever sees it on). Singular sibling of `getAdminHosts` above: same
- * dev-host exclusion and `created_at` tie-break, `app='client'` instead of `'admin'`, one gym
+ * dev-host exclusion, same principal-first order (`gym_domain.es_principal`, one per
+ * `(gym_id, app)` by partial unique index `gym_domain_principal_uniq`) with `created_at`
+ * ascending as the tie-break for unflagged pairs, `app='client'` instead of `'admin'`, one gym
  * because the CUENTA preview only ever needs its OWN. `null` when unmapped — the merge field
  * then stays visibly unresolved in the preview rather than a fabricated URL.
  */
@@ -143,6 +150,7 @@ export async function getClientHost(gymId: string, client?: SupabaseServer): Pro
     .eq("gym_id", gymId)
     .eq("app", "client")
     .not("hostname", "like", "%localhost")
+    .order("es_principal", { ascending: false })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle();

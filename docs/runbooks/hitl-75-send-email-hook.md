@@ -80,5 +80,5 @@ The minted link's host is trusted **only** because Supabase clamps `email_data.r
 - **Hook secret mismatch (b/c):** the function returns 401 on every call → Supabase surfaces a hook error and (per its retry policy) the mail is not sent. Fix the secret; no data risk.
 - **Resend key wrong / Resend down (b):** the function returns 503 → Supabase retries ≤3×; if still failing the auth action completes but no mail arrives (best-effort). Fix the key; the member can re-request.
 - **Landing not deployed (a):** confirmation clicks dead-end. **This is why step a is first.** Disable the hook (f) until the landing is live.
-- **A gym's client host missing from the allow-list (§C):** the auth mail still sends, but the click errors `redirect_to not allowed`. Add the host and re-click.
+- **A gym's client host missing from the allow-list (§C):** the auth mail still sends, but the click does **not** error — GoTrue silently clamps the non-allow-listed `redirect_to` to the Site URL with the path stripped, so the member lands on the home page with no session and no signal (see `red-custom-domain-cutover.md` §0). Add the host and re-click.
 - **Anything unexpected:** disable the hook (f) — SMTP + §B3 templates resume instantly.

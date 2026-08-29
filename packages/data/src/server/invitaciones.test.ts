@@ -258,6 +258,56 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     expect(url).toBe("https://red-demo.ibookit.lat/activar?codigo=NV9HD6IB");
   });
 
+  it("the declared principal host wins over the older one (live regression 2026-08-28: RED's own domain)", async () => {
+    // RED's own domain landed as a SECOND app='client' row on 2026-08-28, so oldest-wins kept
+    // minting invite links on `red.ibookit.lat` after the cutover. `es_principal` is the fix:
+    // ordered `es_principal desc, created_at asc`, so the declared host wins and the retired one
+    // keeps its row for old links.
+    const rows = [
+      { hostname: "red.ibookit.lat", gym_id: "gym-1", app: "client", created_at: "2026-07-09", es_principal: false },
+      {
+        hostname: "www.redfunctionaltraining.com",
+        gym_id: "gym-1",
+        app: "client",
+        created_at: "2026-08-28",
+        es_principal: true,
+      },
+    ];
+    let filtered: Record<string, unknown>[] = rows;
+    const keys: [string, boolean][] = [];
+    const b = {
+      select: () => b,
+      eq: (col: string, val: unknown) => ((filtered = filtered.filter((r) => r[col] === val)), b),
+      not: (col: string) => ((filtered = filtered.filter((r) => !String(r[col]).endsWith("localhost"))), b),
+      // Direction-aware and multi-key: the picker chains two orders, and a fake that re-sorted per
+      // call (or ignored `ascending`) would score `false` above `true` and hide the fix.
+      order: (col: string, opts?: { ascending?: boolean }) => (keys.push([col, opts?.ascending !== false]), b),
+      limit: () => b,
+      maybeSingle: async () => ({
+        data:
+          [...filtered].sort((x, y) => {
+            for (const [col, asc] of keys) {
+              const xv = x[col];
+              const yv = y[col];
+              const d =
+                typeof xv === "boolean" || typeof yv === "boolean"
+                  ? Number(xv === true) - Number(yv === true)
+                  : String(xv).localeCompare(String(yv));
+              if (d !== 0) return asc ? d : -d;
+            }
+            return 0;
+          })[0] ?? null,
+        error: null,
+      }),
+    };
+    const client = { from: () => b } as unknown as SupabaseServer;
+    const url = await construirUrlInvitacion(
+      { gymId: "gym-1", gymSlug: "red", codigo: "NV9HD6IB", ruta: "/activar" },
+      client,
+    );
+    expect(url).toBe("https://www.redfunctionaltraining.com/activar?codigo=NV9HD6IB");
+  });
+
   it("no client host and no fallback env → null (caller reports a clean failure)", async () => {
     delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
     const fake = makeFake({ domainHost: null });

@@ -39,7 +39,13 @@ export const SUPABASE_COOKIE_OPTIONS: CookieOptionsWithName | undefined = isProd
 /**
  * Same gate, for the plain `gym` tenant cookie both `proxy.ts` files set
  * outside `@supabase/ssr` (it is presentation-only, ADR-0008, not an auth
- * cookie — but it is still cookie state on the same shared `ibookit.lat`
- * registrable domain, so it gets the same treatment).
+ * cookie — but it is still cookie state, so it gets the same treatment).
+ *
+ * (2026-08-28: the "same shared `ibookit.lat` registrable domain" premise this
+ * comment used to state is stale — RED now also serves from
+ * `www.redfunctionaltraining.com`, a different registrable domain. `__Host-`
+ * forbids a `Domain` attribute by RFC, so the two hosts' cookie jars are
+ * disjoint by design; do NOT "fix" that by adding `Domain=` here — it breaks
+ * `__Host-` outright.)
  */
 export const SECURE_COOKIES = isProd

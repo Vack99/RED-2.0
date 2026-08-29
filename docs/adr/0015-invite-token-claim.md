@@ -12,7 +12,7 @@ Two doors create a member: the staff sale (`registrar_venta`) and self-registrat
 - **Delivery is an automatic email at the moment the sale (or a later email backfill) records an address** — Resend API, platform sender per ADR-0014, gym's name in the copy. Send is best-effort: a sale never fails because mail failed; the invite state stays re-sendable.
 - **On claim, the verified login email overwrites `clientes.email`** — verified beats staff-typed; one contact truth per row.
 - **ADR-0009's email claim survives unchanged as the fallback rail** for members who self-register without ever receiving an invite.
-- **The host is never an authz input** (ADR-0008 held): an invite opened on the wrong gym's host is hard-redirected to the code's canonical client host; the claim writes membership for the token's gym regardless of where it was opened.
+- **The host is never an authz input** (ADR-0008 held): an invite opened on the wrong gym's host is hard-redirected to the code's canonical client host (the `gym_domain` row with `es_principal = true` for that gym's `app='client'`, else the oldest non-localhost row — ADR-0012's 2026-08-28 amendment; see `construirUrlInvitacion`); the claim writes membership for the token's gym regardless of where it was opened.
 
 ## Considered and rejected
 

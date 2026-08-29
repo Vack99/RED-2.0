@@ -52,13 +52,14 @@ stranded on a page that looks fine.
 
 ## 1. Which links move, and which do not
 
-This is the fact the cutover turns on. **Only one of four link-minting rails uses the
-oldest-row-wins host picker.** The other three derive `origin` from the live request host, so they
-follow whichever door the member walked in through.
+This is the fact the cutover turns on. **Only one of four link-minting rails picks its host from
+the domain map** — it used an oldest-row-wins picker (now principal-first — §6 F1). The other
+three derive `origin` from the live request host, so they follow whichever door the member walked
+in through.
 
 | Rail | Origin source | On the new host |
 |---|---|---|
-| Admin invite email | `construirUrlInvitacion` — `invitaciones.ts:112` `.order('created_at').limit(1)` | **holds** at `red.ibookit.lat` |
+| Admin invite email | `construirUrlInvitacion` — `invitaciones.ts:120-126` `.order('es_principal',{ascending:false}).order('created_at').limit(1)` | **held** at `red.ibookit.lat` until 2026-08-28; **moves** to `www.redfunctionaltraining.com` since `es_principal` shipped (§6 F1) |
 | Password reset | `entrar/actions.ts:34` `` `${x-forwarded-proto}://${host}` `` | **moves** to the new domain |
 | `cuenta_existente` magic link | `activar/actions.ts:85`, same idiom | **moves** |
 | Plain-signup confirm | `registro/actions.ts:45,49` | **moves** |
@@ -226,6 +227,9 @@ Human, with a disposable `+alias` — never a real member, never by deleting an 
    `www.redfunctionaltraining.com` (a `red.ibookit.lat` link proves the allow-list entry is missing).
 4. Click → lands on `/restablecer` on the new host with a live recovery session.
 5. `/registro` and `/contacto` → Turnstile renders, submit succeeds.
+6. **(2026-08-28)** `es_principal` shipped (F1) — a freshly-minted admin invite link now also
+   lands on `www.redfunctionaltraining.com`, not just reset/magic-link/signup. The walk above
+   should cover the invite rail too, not only the three live-request-host rails.
 
 ### Step 5 — commit locally
 
@@ -278,8 +282,10 @@ Do not start until every verification above is green.
 - **No `gym_id_por_host` change.** Live body is byte-identical to
   `supabase/functions-canonical/`, single overload. A new row is just data. Host is lower-cased and
   port-stripped before the lookup (`resolve-tenant.ts:168`), so no case/port variant row is needed.
-- **No `gym_domain` DDL.** There is no unique on `(gym_id, app)`, so a second client row is
-  structurally legal.
+- **No `gym_domain` DDL for this row.** There was no unique on `(gym_id, app)` at cutover time, so
+  a second client row was structurally legal with zero schema change (F1, shipped 2026-08-28,
+  later added `es_principal` + a *partial* unique index scoped to `es_principal=true` — it still
+  does not constrain unflagged rows like this one).
 - **No test / guard / suite edits.** `gym_tenant_anon_read.sql:53` picks `order by hostname limit 1`
   = `forge-admin.ibookit.lat`, unchanged. `anon-read-allowlist.json` is keyed on tables and
   deliberately excludes `gym_domain` (#216). Adding `gym_id_por_host` to `rpc-coverage.json` would
@@ -341,33 +347,59 @@ to hand out; **not** valid as verification.
 
 ## 6. Follow-ups (batch into one owner-consented push, after the cutover)
 
-**F1 — canonical-host precedence.** There are **five** oldest-row-wins selectors, not one:
-`construirUrlInvitacion` (`invitaciones.ts:114`), `getClientHost` (`gym.ts:146`), `getAdminHosts`
-(`gym.ts:123`), plus two reimplemented client-side on the `mobile-admin` branch
-(`apps/mobile/src/data/cuenta.ts:72,107` → `cuenta/legal.ts:129`, and `data/respaldo.ts:81`).
-Visible consequence today: the admin CUENTA screen previews the aviso's `{{url_aviso_integral}}` as
-`https://red.ibookit.lat/legal` while members on the new host read
+**F1 — canonical-host precedence.** ✅ **SHIPPED 2026-08-28** — migration
+`20260828130000_gym_domain_es_principal.sql`; RED flipped. There **were five** oldest-row-wins
+selectors, not one: `construirUrlInvitacion` (`invitaciones.ts:118-126`), `getClientHost`
+(`gym.ts:148-155`), `getAdminHosts` (`gym.ts:122-128`), plus two reimplemented client-side on the
+`mobile-admin` branch (`apps/mobile/src/data/cuenta.ts:72,107` → `cuenta/legal.ts:129`, and
+`data/respaldo.ts:81`). The three web selectors are fixed here; the two on the mobile lane are
+**not** (item 7). Consequence **before** the fix: the admin CUENTA screen previewed the aviso's
+`{{url_aviso_integral}}` as `https://red.ibookit.lat/legal` while members on the new host read
 `https://www.redfunctionaltraining.com/legal` (`aviso-legal.ts:33` derives it from the live
-request). Ship as schema + code:
+request) — still true on the mobile lane until item 7 lands. Shipped as schema + code:
 1. `alter table public.gym_domain add column es_principal boolean not null default false;` +
    `create unique index gym_domain_principal_uniq on public.gym_domain (gym_id, app) where es_principal;`
-   + backfill the current non-localhost winner per `(gym_id, app)`. The **partial unique index is
-   the only shield in this repo's toolkit that binds a row typed into the Supabase dashboard** —
-   every `tools/guards/*` replays migrations and is blind to prod drift, which is exactly how the
+   — **no backfill.** An unflagged `(gym_id, app)` pair keeps today's oldest-non-localhost-wins
+   behavior; only RED's row is flagged (item 6, below). The **partial unique index is the only
+   shield in this repo's toolkit that binds a row typed into the Supabase dashboard** — every
+   `tools/guards/*` replays migrations and is blind to prod drift, which is exactly how the
    2026-08-27 `registrar_venta` outage happened.
-2. Replace `.order('created_at')` with `.eq('es_principal', true)` in all three DAL selectors.
-3. Regenerate `packages/data/src/database.types.ts` in the same commit (pre-commit runs typecheck).
+2. The three DAL selectors order by `es_principal DESC, created_at ASC` — **not**
+   `.eq('es_principal', true)` as originally sketched. `.eq` would return zero rows for every
+   unflagged `(gym_id, app)` pair (there is no backfill, item 1), breaking every gym but RED; the
+   ordered form degrades to the old oldest-wins tiebreak when nothing is flagged, and picks the
+   flagged row first when one is.
+3. Regenerated `packages/data/src/database.types.ts` in the same commit (pre-commit runs typecheck).
 4. ~15 lines in `supabase/tests/gym_tenant_anon_read.sql` (already in `SUITE`) proving the index
    refuses a second `es_principal` row per `(gym_id, app)`.
-5. Invert `gym.test.ts:213` and `:296` (both pin oldest-wins *and* `orderCalls == ['created_at']`);
-   add the arm to `invitaciones.test.ts` beside the existing `:237` localhost case.
-6. Flip RED last, one statement, when the domain has a web-filter category:
-   `update public.gym_domain set es_principal = true where hostname = 'www.redfunctionaltraining.com';`
-7. **Mobile-lane merge obligation** — record in `docs/mobile/HANDOFF-2026-08-26-RESKIN-EXECUTION.md`,
-   same mechanism as the `registrar_venta` migration-dedupe trap: patch `cuenta.ts` (SELECT list +
-   filter), `legal.ts:129`, `respaldo.ts:83`, and `filas.ts:122`
-   (`HOST_FALLBACK = "ibookit.lat"`, printed to a BYO-domain operator). Otherwise merging the mobile
-   lane silently reintroduces oldest-wins in two more places that cannot even see `es_principal`.
+5. Both `gym.test.ts` fakes gained a direction-aware multi-key comparator (a per-`.order()`
+   re-sort would rank `false` above `true`, since `String(false) < String(true)`, and the second
+   `.order()` would overwrite the first); the two `orderCalls` pins (`:213`, `:296`) were updated
+   to `[['es_principal',false],['created_at',true]]` and both keep their oldest-wins *outcome*
+   assertion. `invitaciones.test.ts` is additive only — the `:237` localhost case is untouched.
+   All three files gained an `es_principal`-flagged arm asserting the declared host sorts ahead of
+   an older unflagged row, plus a `.localhost`-flagged-loses arm.
+6. Flipped RED last, one atomic statement scoped by gym and app — not the naked single-row `UPDATE`
+   on hostname originally sketched (that shape would `23505` against the partial unique index the
+   moment any other row for the same `(gym_id, app)` were ever flagged):
+   `update public.gym_domain set es_principal = (hostname = 'www.redfunctionaltraining.com') where
+   gym_id = (select id from gym where slug='red') and app='client';`
+7. **Mobile-lane merge obligation** — same mechanism as the `registrar_venta` migration-dedupe
+   trap: patch `cuenta.ts` (SELECT list + filter), `cuenta/legal.ts:129`, `data/respaldo.ts:83`,
+   `cuenta/filas.ts:122` (`HOST_FALLBACK = "ibookit.lat"`, printed to a BYO-domain operator) and
+   `cuenta/filas.test.ts:138-140` (pins `HOST_FALLBACK` and `subtituloCuenta("Forge", null) ===
+   "Forge · ibookit.lat"`). **Decide the belt explicitly:** the mobile PostgREST seam
+   (`apps/mobile/src/data/postgrest.ts:47`) declares `order(columna: string)` — ascending-only —
+   and the interface has no `not` verb (`eq`/`in`/`is`/`gte`/`lt`/`order`/`limit` only), so
+   `es_principal desc` is **not expressible through it as-is**. Either widen the belt with a
+   direction arg or accept `.eq` semantics there, but do not default into `.eq`:
+   `.eq('es_principal', true)` returns zero rows for every unflagged gym and would print
+   `HOST_FALLBACK = 'ibookit.lat'` to a BYO-domain operator. Otherwise merging the mobile lane
+   silently reintroduces oldest-wins in two more places that cannot even see `es_principal`.
+   *This obligation lives only here:* `docs/mobile/HANDOFF-2026-08-26-RESKIN-EXECUTION.md` exists
+   only in the `mobile-admin` worktree, not on `main`, so route this block to the mobile-lane
+   owner (or paste it into that handoff from the worktree) — the merge will not read `main` docs
+   it has never seen.
 
 *Rejected:* backdating `created_at` (encodes a lie in a column three surfaces tie-break on);
 deleting the old row (see Forbidden #1).

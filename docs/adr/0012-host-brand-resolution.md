@@ -1,6 +1,6 @@
 # ADR-0012 — Host→brand resolution: one shared `proxy.ts` seam, a static registry stubbing the Phase-3 `gym`-row lookup
 
-**Status:** Accepted · **Date:** 2026-06-30 · **Amended:** 2026-07-01 (keyspace split, `gym_domain` host modeling, admin-shell scope — per the multitenant-branding scale audit); 2026-07-02 (Phase-3 grill: the swap relocates resolution to the data tier — see §5); 2026-07-02 (Phase 4: the neutral `base` module, the `brandCss` module ⊕ `token_overrides` merge, and `DEFAULT_BRAND = 'base'` land — the Forward-looking design below is now realized; see the Phase-4 note under Forward-looking) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (`proxy.ts` not `middleware.ts`, Node-only, `getClaims()`/`getUser()`), [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) (host resolves brand **only, never authz**; presentation-only brand modules; two multi-tenant deploys + one shared Supabase), [ADR-0011](0011-monorepo-packaging-jit-packages-cross-package-boundary.md) (JIT `@gym/*` packages; §6 the `brand ✗→ data/domain` edge lands when `packages/brand` is created) · **Realizes:** roadmap **Phase 2** ("Multi-tenant tracer / de-risker") in [`docs/planning/2026-06-29-multi-gym-platform-roadmap.md`](../planning/2026-06-29-multi-gym-platform-roadmap.md)
+**Status:** Accepted · **Date:** 2026-06-30 · **Amended:** 2026-07-01 (keyspace split, `gym_domain` host modeling, admin-shell scope — per the multitenant-branding scale audit); 2026-07-02 (Phase-3 grill: the swap relocates resolution to the data tier — see §5); 2026-07-02 (Phase 4: the neutral `base` module, the `brandCss` module ⊕ `token_overrides` merge, and `DEFAULT_BRAND = 'base'` land — the Forward-looking design below is now realized; see the Phase-4 note under Forward-looking); 2026-08-28 (BYO-domain canonical host: outbound link minting must name one `es_principal` host per `(gym_id, app)` — inbound stays N→1; see the 2026-08-28 amendment below) · **Builds on:** [ADR-0001](0001-supabase-rls-no-orm.md) (`proxy.ts` not `middleware.ts`, Node-only, `getClaims()`/`getUser()`), [ADR-0008](0008-platform-multitenant-gym-rls-brand-modules.md) (host resolves brand **only, never authz**; presentation-only brand modules; two multi-tenant deploys + one shared Supabase), [ADR-0011](0011-monorepo-packaging-jit-packages-cross-package-boundary.md) (JIT `@gym/*` packages; §6 the `brand ✗→ data/domain` edge lands when `packages/brand` is created) · **Realizes:** roadmap **Phase 2** ("Multi-tenant tracer / de-risker") in [`docs/planning/2026-06-29-multi-gym-platform-roadmap.md`](../planning/2026-06-29-multi-gym-platform-roadmap.md)
 
 ## Context
 
@@ -87,6 +87,18 @@ The Forward-looking design above is now code (no ADR-0015 — these refine, not 
 - **`base.css` = `base-module baseline ⊕ gym-row token DATA`, zod-validated before serialization** — exactly the Forward-looking `dangerouslySetInnerHTML` guard, now enforced.
 
 Still Phase-3-forward (unchanged): the host→`gym`/`gym_domain` DB lookup that supplies the real `token_overrides` row (this phase uses an app-side fixture argument — a one-line swap at go-live), and any hot host→id Edge Config cache.
+
+### Amended (2026-08-28 — BYO-domain canonical host)
+
+A BYO-domain customer (RED, `www.redfunctionaltraining.com`) is a **second** `app='client'` row for
+the same `gym_id`, not a replacement of the platform-subdomain row. **Inbound** resolution stays
+N→1 and unchanged (`gym_id_por_host` still takes one hostname, still returns one `gym_id`). What
+this amends is **outbound**: minting a link (invite email, CUENTA preview, legal aviso) must name
+exactly **one** canonical host per `(gym_id, app)`, and that must be a **declared fact**, not an
+insertion-order accident. `gym_domain.es_principal` (partial-unique per `(gym_id, app)`) is that
+fact; the three outbound DAL selectors order by `es_principal DESC, created_at ASC` so an unflagged
+pair still degrades to the old oldest-wins tiebreak. See
+`docs/runbooks/red-custom-domain-cutover.md` §6 F1.
 
 ## What a future reader must not undo
 

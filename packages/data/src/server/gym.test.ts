@@ -4,6 +4,32 @@ import { getAdminHosts, getClientHost, getOperatorGym, getOperatorGyms } from ".
 import type { SupabaseServer } from "./supabase";
 
 /**
+ * Multi-key, direction-aware comparator for the fakes below. The host pickers now chain TWO
+ * `.order()`s (`es_principal desc, created_at asc`), and a fake that re-sorts the whole list on
+ * every `.order()` call would LIE about both halves: the second sort discards the first, and
+ * `String(false) < String(true)` puts the principal LAST. So the fakes record the keys and sort
+ * once, here. Booleans (and a `es_principal` the fixture simply omits — `false` in the DB, whose
+ * `not null default false` makes a missing value impossible) compare as numbers; text compares
+ * as text.
+ */
+function comparar(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+  keys: readonly [string, boolean][],
+): number {
+  for (const [col, ascending] of keys) {
+    const av = a[col];
+    const bv = b[col];
+    const d =
+      typeof av === "boolean" || typeof bv === "boolean" || av == null || bv == null
+        ? Number(av === true) - Number(bv === true)
+        : String(av).localeCompare(String(bv));
+    if (d !== 0) return ascending ? d : -d;
+  }
+  return 0;
+}
+
+/**
  * getOperatorGyms/getOperatorGym — the operator's gym/tz/slug resolution (ADR-0013
  * membership). Spec 2026-07-13 §1.3: the staff-role filter and the `gym_id` order live
  * IN THE QUERY (`.in()` + `.order()`), not in JS — they are what make the pick
@@ -36,12 +62,13 @@ function makeFake(opts: {
     ...m,
   }));
   const inCalls: [string, unknown[]][] = [];
-  const orderCalls: string[] = [];
+  const orderCalls: [string, boolean][] = [];
   const eqCalls: [string, unknown][] = [];
   const notCalls: [string, string, unknown][] = [];
 
   function listBuilder(rows: Record<string, unknown>[]) {
     let list = [...rows];
+    const keys: [string, boolean][] = [];
     const b: Record<string, unknown> = {
       select: () => b,
       in: (col: string, vals: unknown[]) => {
@@ -59,13 +86,14 @@ function makeFake(opts: {
         list = list.filter((r) => !String(r[col]).endsWith("localhost"));
         return b;
       },
-      order: (col: string) => {
-        orderCalls.push(col);
-        list = [...list].sort((a, bb) => String(a[col]).localeCompare(String(bb[col])));
+      order: (col: string, opts?: { ascending?: boolean }) => {
+        const key: [string, boolean] = [col, opts?.ascending !== false];
+        orderCalls.push(key);
+        keys.push(key);
         return b;
       },
       then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
-        resolve({ data: list, error: null }),
+        resolve({ data: [...list].sort((a, bb) => comparar(a, bb, keys)), error: null }),
     };
     return b;
   }
@@ -123,7 +151,7 @@ describe("getOperatorGym", () => {
     const { client, inCalls, orderCalls } = makeFake({});
     await getOperatorGym(client);
     expect(inCalls).toEqual([["role", ["owner", "operator"]]]);
-    expect(orderCalls).toEqual(["gym_id"]);
+    expect(orderCalls).toEqual([["gym_id", true]]);
   });
 
   it("under multi-membership, deterministically resolves the FIRST staff gym by gym_id — never the member row", async () => {
@@ -210,7 +238,7 @@ describe("getAdminHosts", () => {
     expect(notCalls).toEqual([["hostname", "like", "%localhost"]]);
   });
 
-  it("first-wins on created_at when a gym maps several admin hosts (dev mirror + live)", async () => {
+  it("first-wins on created_at when a gym maps several admin hosts and NEITHER is principal", async () => {
     const { client, orderCalls } = makeFake({
       dominios: [
         { gym_id: "gym-a", hostname: "nuevo.forge.mx", app: "admin", created_at: "2026-01-01" },
@@ -218,7 +246,22 @@ describe("getAdminHosts", () => {
       ],
     });
     expect(await getAdminHosts(["gym-a"], client)).toEqual({ "gym-a": "admin.forge.mx" });
-    expect(orderCalls).toEqual(["created_at"]);
+    expect(orderCalls).toEqual([
+      ["es_principal", false],
+      ["created_at", true],
+    ]);
+  });
+
+  // The declared canonical host BEATS age — the whole point of es_principal. Without the
+  // principal-first key the chooser would keep linking the retired host forever.
+  it("the declared principal wins even when it is the NEWER admin host", async () => {
+    const { client } = makeFake({
+      dominios: [
+        { gym_id: "gym-a", hostname: "viejo.forge.mx", app: "admin", created_at: "2020-01-01", es_principal: false },
+        { gym_id: "gym-a", hostname: "nuevo.forge.mx", app: "admin", created_at: "2026-01-01", es_principal: true },
+      ],
+    });
+    expect(await getAdminHosts(["gym-a"], client)).toEqual({ "gym-a": "nuevo.forge.mx" });
   });
 
   it("omits a gym with no admin host — the chooser renders it without a link", async () => {
@@ -237,11 +280,12 @@ function makeClientHostFake(dominios: Record<string, unknown>[]) {
   let list = [...dominios];
   const eqCalls: [string, unknown][] = [];
   const notCalls: [string, string, unknown][] = [];
-  const orderCalls: string[] = [];
+  const orderCalls: [string, boolean][] = [];
   let limitCall: number | null = null;
   const client = {
     from: (table: string) => {
       if (table !== "gym_domain") throw new Error(`unexpected table ${table}`);
+      const keys: [string, boolean][] = [];
       const b: Record<string, unknown> = {
         select: () => b,
         eq: (col: string, val: unknown) => {
@@ -254,17 +298,22 @@ function makeClientHostFake(dominios: Record<string, unknown>[]) {
           list = list.filter((r) => !String(r[col]).endsWith("localhost"));
           return b;
         },
-        order: (col: string) => {
-          orderCalls.push(col);
-          list = [...list].sort((a, bb) => String(a[col]).localeCompare(String(bb[col])));
+        order: (col: string, opts?: { ascending?: boolean }) => {
+          const key: [string, boolean] = [col, opts?.ascending !== false];
+          orderCalls.push(key);
+          keys.push(key);
           return b;
         },
+        // Records only — the slice has to happen AFTER the sort, or `limit(1)` would keep the
+        // first row of the UNSORTED list and the order keys would never decide anything.
         limit: (n: number) => {
           limitCall = n;
-          list = list.slice(0, n);
           return b;
         },
-        maybeSingle: async () => ({ data: list[0] ?? null, error: null }),
+        maybeSingle: async () => ({
+          data: [...list].sort((a, bb) => comparar(a, bb, keys)).slice(0, limitCall ?? list.length)[0] ?? null,
+          error: null,
+        }),
       };
       return b;
     },
@@ -293,14 +342,42 @@ describe("getClientHost", () => {
     expect(notCalls).toEqual([["hostname", "like", "%localhost"]]);
   });
 
-  it("first-wins on created_at when a gym maps several client hosts (dev mirror + live)", async () => {
+  it("first-wins on created_at when a gym maps several client hosts and NEITHER is principal", async () => {
     const { client, orderCalls, limitCall } = makeClientHostFake([
       { gym_id: "gym-a", hostname: "nuevo.forge.mx", app: "client", created_at: "2026-01-01" },
       { gym_id: "gym-a", hostname: "app.forge.mx", app: "client", created_at: "2020-01-01" },
     ]);
     expect(await getClientHost("gym-a", client)).toBe("app.forge.mx");
-    expect(orderCalls).toEqual(["created_at"]);
+    expect(orderCalls).toEqual([
+      ["es_principal", false],
+      ["created_at", true],
+    ]);
     expect(limitCall()).toBe(1);
+  });
+
+  // RED's shape after 2026-08-28: its own domain is the NEWEST row and the declared principal.
+  it("the declared principal wins even when it is the NEWER client host", async () => {
+    const { client } = makeClientHostFake([
+      { gym_id: "gym-a", hostname: "red.ibookit.lat", app: "client", created_at: "2026-07-09", es_principal: false },
+      {
+        gym_id: "gym-a",
+        hostname: "www.redfunctionaltraining.com",
+        app: "client",
+        created_at: "2026-08-28",
+        es_principal: true,
+      },
+    ]);
+    expect(await getClientHost("gym-a", client)).toBe("www.redfunctionaltraining.com");
+  });
+
+  // es_principal is a preference applied AFTER the dev-host filter, never a way back in: a
+  // mis-flagged `.localhost` row must not become a member-facing URL.
+  it("a principal `.localhost` row still loses to the unflagged public host", async () => {
+    const { client } = makeClientHostFake([
+      { gym_id: "gym-a", hostname: "app.forge.localhost", app: "client", created_at: "2020-01-01", es_principal: true },
+      { gym_id: "gym-a", hostname: "app.forge.mx", app: "client", created_at: "2024-01-01", es_principal: false },
+    ]);
+    expect(await getClientHost("gym-a", client)).toBe("app.forge.mx");
   });
 
   it("returns null for a gym with no mapped client host — the caller's merge field stays unresolved, never fabricated", async () => {

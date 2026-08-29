@@ -29,6 +29,9 @@
 --
 -- Join on `gym.slug`, never a hardcoded prod UUID (ADR-0013 §5): a UUID either FK-aborts the
 -- whole migration replay on a scratch project or silently inserts zero rows there.
+--
+-- 2026-08-28: canonical-host precedence shipped in 20260828130000_gym_domain_es_principal.sql
+-- (es_principal); this row is now RED's principal client host.
 insert into public.gym_domain (gym_id, hostname, app)
 select g.id, v.hostname, v.app
 from (values ('red', 'www.redfunctionaltraining.com', 'client')) as v(slug, hostname, app)

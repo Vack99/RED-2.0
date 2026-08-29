@@ -90,7 +90,7 @@ These are minutes each and several of them gate the code work.
 
 ## Tier 2 — Infrastructure
 
-- [ ] **6. External TLS + uptime monitor.** ⚠️ **This is the item that defuses the Oct 7 bomb permanently.** UptimeRobot / BetterStack / Checkly free tier on `red.ibookit.lat`, `forge.ibookit.lat` and both `-admin` hosts, with **TLS expiry alerts at 21 / 14 / 7 days**. Closes both the certificate time bomb and the "is Vercel up" gap in one move.
+- [ ] **6. External TLS + uptime monitor.** ⚠️ **This is the item that defuses the Oct 7 bomb permanently.** UptimeRobot / BetterStack / Checkly free tier on `red.ibookit.lat`, `forge.ibookit.lat`, `www.redfunctionaltraining.com` (2026-08-28, RED's second live client host — its own registrar/cert lifecycle, not covered by the `ibookit.lat` cert batch below) and both `-admin` hosts, with **TLS expiry alerts at 21 / 14 / 7 days**. Closes both the certificate time bomb and the "is Vercel up" gap in one move.
 
 - [ ] <a id="i2"></a>**7. Give the domain a real front door.** Fixes the `www` hard-failure and the missing apex.
   - Namecheap Advanced DNS: **A record, Host `@`**, value from [O9](#tier-0--owner-do-first-unblocks-the-rest).
@@ -110,7 +110,10 @@ These are minutes each and several of them gate the code work.
   - Note: the app *does* ship a per-brand `/icon` route returning 200 — that is not a gap.
   - Note: Open Graph richness is **not** a categorization input per any vendor doc. This is for the human-visible WhatsApp preview and for crawlability, nothing more.
 
-- [ ] **10. Submit to the remaining categorization vendors.** All require a human browser.
+- [ ] **10. Submit to the remaining categorization vendors.** All require a human browser. Include
+  `www.redfunctionaltraining.com` in every submission alongside the O4 hostname list — it's RED's
+  second live client host (2026-08-28) and, per D3 below, does not inherit `ibookit.lat`'s aged-out
+  NRD status.
 
   | Vendor | URL | Note |
   |---|---|---|
@@ -191,7 +194,7 @@ Ranked by how invisible they are. Each ends with a member unable to use the app 
 
 - [ ] **D1.** Public **Company Name** and reply-to **email** for vendor categorization submissions. Blocks [O4](#tier-0--owner-do-first-unblocks-the-rest) and item 10.
 - [ ] **D2.** Which of the six marketing candidates ships at the apex. Blocks item 8.
-- [ ] **D3.** Fallback door: cheap `?gym=` appending, or register a second independent domain? Blocks item 12. Note a second domain also needs a Supabase **Site URL** ruling, not just an allowlist entry.
+- [ ] **D3.** Fallback door: cheap `?gym=` appending, or register a second independent domain? Blocks item 12. Note a second domain also needs a Supabase **Site URL** ruling, not just an allowlist entry. **Partially resolved for RED only (2026-08-28):** `www.redfunctionaltraining.com` is exactly path (b), live and mapped (`gym_domain` + `es_principal`, `docs/runbooks/red-custom-domain-cutover.md`). This is not a general resolution, and it does **not** inherit the "aged out" NRD reasoning in [Rejected](#rejected--do-not-re-litigate) — that was derived from `ibookit.lat` being 41 days old at the time; RED's new domain was registered 2026-08-28 and starts its own categorization/NRD clock from zero. Other gyms and the general D3 ruling remain open; item 12 still blocked for them.
 - [ ] **D4.** Keep or scope the `*.ibookit.lat` wildcard. Blocks item 14.
 - [ ] **D5.** Does this become a GitHub issue set (`to-tickets`) or stay a single tracked doc? Per [[pipeline-earns-its-place]], decompose only if pieces ship and verify independently — items 1–5 plausibly ship as one slice.
 

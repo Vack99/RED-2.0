@@ -243,5 +243,37 @@ end $$;
 
 reset role;
 
+-- ── 4) One DECLARED principal host per (gym_id, app) ─ the partial unique index (2026-08-28) ─
+-- `es_principal` is what the three outbound link minters order on; a second flagged row for the
+-- same pair would make the canonical host a coin flip again. `gym_domain_principal_uniq` is
+-- partial, so the losers stay unconstrained and the flag is per-app, not per-gym.
+do $$
+declare
+  g   uuid;
+  dup boolean := false;
+begin
+  insert into public.gym (slug, brand_name, timezone, brand_module_id)
+    values ('principal-uniq-suite', 'Principal Uniq Suite', 'UTC', 'forge') returning id into g;
+
+  insert into public.gym_domain (gym_id, hostname, app, es_principal)
+    values (g, 'a.principal-uniq.test', 'client', true);
+
+  begin
+    insert into public.gym_domain (gym_id, hostname, app, es_principal)
+      values (g, 'b.principal-uniq.test', 'client', true);
+  exception when unique_violation then dup := true;
+  end;
+  if not dup then
+    raise exception 'DENIAL FAIL: second es_principal row per (gym_id, app) was accepted';
+  end if;
+
+  insert into public.gym_domain (gym_id, hostname, app, es_principal)
+    values (g, 'c.principal-uniq.test', 'client', false);  -- partial index binds only principals
+  insert into public.gym_domain (gym_id, hostname, app, es_principal)
+    values (g, 'd.principal-uniq.test', 'admin', true);    -- per-app: admin has its own principal
+
+  raise notice 'gym_domain principal: exactly one per (gym_id, app), unflagged rows unconstrained';
+end $$;
+
 select 'gym tenant anon-read: OK' as result;
 rollback;

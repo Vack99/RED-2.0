@@ -797,6 +797,7 @@ export type Database = {
         Row: {
           app: string
           created_at: string
+          es_principal: boolean
           gym_id: string
           hostname: string
           id: string
@@ -804,6 +805,7 @@ export type Database = {
         Insert: {
           app: string
           created_at?: string
+          es_principal?: boolean
           gym_id: string
           hostname: string
           id?: string
@@ -811,6 +813,7 @@ export type Database = {
         Update: {
           app?: string
           created_at?: string
+          es_principal?: boolean
           gym_id?: string
           hostname?: string
           id?: string
