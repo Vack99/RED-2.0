@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+import { fetchBlindado } from "@gym/data/server/fetch-shield";
 import { resolveTenant, tenantHeaders } from "@gym/data/server/resolve-tenant";
 import { SECURE_COOKIES, SUPABASE_COOKIE_OPTIONS } from "@gym/data/cookie-options";
 import type { Database } from "@gym/data";
@@ -154,6 +155,9 @@ export async function proxy(request: NextRequest) {
       // MUST match the other three @supabase/ssr construction sites exactly
       // (#209) — see @gym/data/cookie-options.
       cookieOptions: SUPABASE_COOKIE_OPTIONS,
+      // Bounds the JWKS lookup this `getClaims()` depends on; the token refresh
+      // (a POST) stays untouched — @gym/data/server/fetch-shield.
+      global: { fetch: fetchBlindado },
     },
   );
 

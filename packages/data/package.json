@@ -19,6 +19,7 @@
     "./server/coach": "./src/server/coach.ts",
     "./server/cobro": "./src/server/cobro.ts",
     "./server/derive": "./src/server/derive.ts",
+    "./server/fetch-shield": "./src/server/fetch-shield.ts",
     "./server/gym": "./src/server/gym.ts",
     "./server/gym-content": "./src/server/gym-content.ts",
     "./server/invitaciones": "./src/server/invitaciones.ts",
