@@ -3,7 +3,7 @@ import "server-only";
 import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
 import type { Database } from "../database.types";
-import { fetchBlindado } from "./fetch-shield";
+import { shieldedFetch } from "./fetch-shield";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -31,14 +31,16 @@ export type AppScope = "admin" | "client";
  *
  * It is the FIFTH Supabase construction site, and it ran unshielded until 2026-08-29:
  * `gymTenant`/`overridesUncached` are PostgREST GETs on both apps' root layouts, so a
- * stalled read here hung every render. `global.fetch` bounds them like the other four
- * (`./fetch-shield`).
+ * stalled read here hung every render. `global.fetch` bounds those two like the other four
+ * sites (`./fetch-shield`). The `gym_id_por_host` RPC below is NOT bounded: it stays a POST
+ * because `p_app ?? null` would serialise as the literal text `'null'` in a GET query string
+ * and match no row.
  */
 function anonClient(): SupabaseServer {
   return createSupabaseClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
-    { global: { fetch: fetchBlindado } },
+    { global: { fetch: shieldedFetch } },
   );
 }
 

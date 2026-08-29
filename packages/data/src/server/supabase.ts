@@ -7,7 +7,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
 import { SUPABASE_COOKIE_OPTIONS } from '../cookie-options'
 import type { Database } from '../database.types'
-import { fetchBlindado } from './fetch-shield'
+import { shieldedFetch } from './fetch-shield'
 
 /**
  * Per-request Supabase client for Server Components, the DAL, and Server Actions
@@ -47,7 +47,7 @@ export const createClient = cache(async () => {
       },
       cookieOptions: SUPABASE_COOKIE_OPTIONS,
       // Bounds the reads + the JWKS lookup; leaves every write untouched (./fetch-shield).
-      global: { fetch: fetchBlindado },
+      global: { fetch: shieldedFetch },
     },
   )
 })
@@ -74,7 +74,7 @@ export function createAnonClient(gymId?: string): SupabaseServer {
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!,
     {
       global: {
-        fetch: fetchBlindado,
+        fetch: shieldedFetch,
         ...(gymId ? { headers: { 'x-gym-id': gymId } } : {}),
       },
     },
