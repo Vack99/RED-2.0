@@ -1,5 +1,5 @@
 import type { PaqueteSeleccion } from "@gym/data/server/ventas";
-import { addDays, foldDiacritics, isTelValido, parseDay, telDigits, toIsoDay } from "@gym/format";
+import { addDays, foldDiacritics, isEmailValido, isTelValido, parseDay, telDigits, toIsoDay } from "@gym/format";
 
 /** The NUEVO/EXISTENTE toggle — the two sale doors. */
 type Mode = "new" | "existing";
@@ -18,18 +18,34 @@ export function telError(tel: string, blurred: boolean): string | null {
 }
 
 /**
+ * Inline error for the email field (NUEVO's invite target, EXISTENTE's C7 backfill).
+ * Same discipline as `telError`: a half-typed address is invalid on every keystroke, so
+ * it only speaks once the operator has LEFT the field. An empty field never errors — the
+ * sale does not want an email, it only refuses an undeliverable one.
+ */
+export function emailError(email: string, blurred: boolean): string | null {
+  const v = email.trim();
+  if (!blurred || v === "" || isEmailValido(v)) return null;
+  return "Correo inválido";
+}
+
+/**
  * CLIENTE-section completion — the CONTINUAR enablement. NUEVO needs a ≥3-char
  * name and, if a phone is typed at all, a complete one (#190 made the phone
  * optional; a half-typed 1–9 digits still blocks). EXISTENTE needs a picked
- * client. Email is deliberately absent from the signature: it can never gate the
- * sale (#64 — the email is the invite trigger, optional, never a blocker).
+ * client. A MISSING email still never gates the sale (#64 — the email is the invite
+ * trigger, optional); a TYPED one must be deliverable, in both modes: a non-ASCII
+ * address (the `ñ` a desk operator typed) is refused by Resend forever, so letting it
+ * through only buys an invite that can never be sent.
  */
 export function clienteListo(
   mode: Mode,
   nombre: string,
   tel: string,
   hasExisting: boolean,
+  email: string,
 ): boolean {
+  if (email.trim() !== "" && !isEmailValido(email)) return false;
   return mode === "new"
     // Blank is tested on the trimmed STRING, not on the digit count, so this gate is the
     // same predicate crearVentaSchema's refine applies: a punctuation-only "-" is a typo the

@@ -6,6 +6,7 @@ import {
   customErrors,
   customSeleccion,
   customValido,
+  emailError,
   inicioEfectivo,
   inicioMinIso,
   paqueteListo,
@@ -66,29 +67,64 @@ describe("inicioEfectivo — clamp the pick + report backdate (spec D6)", () => 
   });
 });
 
-describe("clienteListo — CONTINUAR enablement (email can never gate)", () => {
+describe("emailError — inline email error (the ñ a desk operator typed)", () => {
+  it("stays quiet while unblurred, however broken the half-typed address is", () => {
+    expect(emailError("Ivanmonta", false)).toBeNull();
+    expect(emailError("Ivanmontañez77@gmail.com", false)).toBeNull();
+  });
+
+  it("names a non-ASCII address once the field is left", () => {
+    expect(emailError("Ivanmontañez77@gmail.com", true)).toBe("Correo inválido");
+  });
+
+  it("stays null for an empty field — no email is always allowed", () => {
+    expect(emailError("", true)).toBeNull();
+    expect(emailError("   ", true)).toBeNull();
+  });
+
+  it("stays null for a deliverable address", () => {
+    expect(emailError("Ivanmontanez77@gmail.com", true)).toBeNull();
+  });
+});
+
+describe("clienteListo — CONTINUAR enablement (a MISSING email never gates, a bad one does)", () => {
   it("is true for a ≥3-char name + valid tel, even with no email", () => {
-    expect(clienteListo("new", "Ana", "614 218 3401", false)).toBe(true);
+    expect(clienteListo("new", "Ana", "614 218 3401", false, "")).toBe(true);
   });
 
   it("is false below the 3-char name boundary", () => {
-    expect(clienteListo("new", "An", "614 218 3401", false)).toBe(false);
+    expect(clienteListo("new", "An", "614 218 3401", false, "")).toBe(false);
   });
 
   it("tracks the 10-digit tel boundary (9 / 10 / 11 digits)", () => {
-    expect(clienteListo("new", "Ana", "614 218 340", false)).toBe(false); // 9
-    expect(clienteListo("new", "Ana", "614 218 3401", false)).toBe(true); // 10
-    expect(clienteListo("new", "Ana", "614 218 34012", false)).toBe(false); // 11
+    expect(clienteListo("new", "Ana", "614 218 340", false, "")).toBe(false); // 9
+    expect(clienteListo("new", "Ana", "614 218 3401", false, "")).toBe(true); // 10
+    expect(clienteListo("new", "Ana", "614 218 34012", false, "")).toBe(false); // 11
   });
 
   it("accepts a blank tel — the phone is optional (#190)", () => {
-    expect(clienteListo("new", "Ana", "", false)).toBe(true);
-    expect(clienteListo("new", "Ana", "  ", false)).toBe(true);
+    expect(clienteListo("new", "Ana", "", false, "")).toBe(true);
+    expect(clienteListo("new", "Ana", "  ", false, "")).toBe(true);
   });
 
   it("EXISTENTE depends only on a picked client (name/tel ignored)", () => {
-    expect(clienteListo("existing", "", "", true)).toBe(true);
-    expect(clienteListo("existing", "Ana", "614 218 3401", false)).toBe(false);
+    expect(clienteListo("existing", "", "", true, "")).toBe(true);
+    expect(clienteListo("existing", "Ana", "614 218 3401", false, "")).toBe(false);
+  });
+
+  it("blocks a NUEVO sale carrying a non-ASCII email (Resend can never deliver it)", () => {
+    expect(clienteListo("new", "Ana", "614 218 3401", false, "Ivanmontañez77@gmail.com")).toBe(false);
+    expect(clienteListo("new", "Ana", "614 218 3401", false, "Ivanmontanez77@gmail.com")).toBe(true);
+  });
+
+  it("blocks an EXISTENTE renewal whose C7 backfill email is undeliverable", () => {
+    expect(clienteListo("existing", "", "", true, "correo@español.mx")).toBe(false);
+    expect(clienteListo("existing", "", "", true, "correo@espanol.mx")).toBe(true);
+  });
+
+  it("a blank/whitespace email still never gates either door (§3.4)", () => {
+    expect(clienteListo("new", "Ana", "", false, "   ")).toBe(true);
+    expect(clienteListo("existing", "", "", true, "   ")).toBe(true);
   });
 });
 

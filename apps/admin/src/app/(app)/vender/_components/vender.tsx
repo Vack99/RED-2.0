@@ -22,6 +22,7 @@ import {
   CUSTOM_VACIO,
   customSeleccion,
   customValido,
+  emailError,
   inicioEfectivo,
   inicioMinIso,
   paqueteListo,
@@ -146,7 +147,9 @@ export function VenderScreen({
   }, [mode, nuevo.tel, nuevo.email, clientes]);
   const showDup = dupMatch && dupMatch.id !== dismissedDupId ? dupMatch : null;
 
-  const clienteValid = clienteListo(mode, nuevo.nombre, nuevo.tel, !!existing);
+  // The email actually headed for the RPC — NUEVO's typed one, EXISTENTE's C7 backfill.
+  const emailEnviado = mode === "new" ? nuevo.email : backfillEmail;
+  const clienteValid = clienteListo(mode, nuevo.nombre, nuevo.tel, !!existing, emailEnviado);
   const paqueteValid = paqueteListo(sel, custom);
   const precio = precioSeleccionado(sel, paq?.precio ?? null, custom);
   const canSubmit = clienteValid && paqueteValid && !!metodo && !submitting;
@@ -201,7 +204,9 @@ export function VenderScreen({
   // with a client already picked, or back to "new" with valid fields.
   const handleSetMode = (m: Mode) => {
     setMode(m);
-    maybeAdvanceCliente(clienteListo(m, nuevo.nombre, nuevo.tel, !!existing));
+    maybeAdvanceCliente(
+      clienteListo(m, nuevo.nombre, nuevo.tel, !!existing, m === "new" ? nuevo.email : backfillEmail),
+    );
   };
 
   const selectPaquete = (id: string) => {
@@ -616,6 +621,10 @@ function ClienteEditor({
   // errors once the operator leaves the field; an over-long one errors on sight.
   const [telBlurred, setTelBlurred] = React.useState(false);
   const telErr = telError(nuevo.tel, telBlurred);
+  // One blur flag for the email: the NUEVO field and the EXISTENTE backfill are the same
+  // field in two mutually exclusive modes, and only one is ever mounted at a time.
+  const [emailBlurred, setEmailBlurred] = React.useState(false);
+  const emailErr = emailError(mode === "new" ? nuevo.email : backfillEmail, emailBlurred);
   return (
     <>
       <div className="flex" style={{ marginBottom: 22, borderBottom: "1px solid var(--line)" }}>
@@ -645,13 +654,16 @@ function ClienteEditor({
               <div role="alert" style={{ marginTop: 6, fontSize: 12, color: "var(--red)", fontWeight: 600, letterSpacing: 0.2 }}>{telErr}</div>
             )}
           </div>
-          <div className="flex flex-col" style={{ gap: 6 }}>
+          <div className="flex flex-col" style={{ gap: 6 }} onBlur={() => setEmailBlurred(true)}>
             <Input
               placeholder="Email para la app (opcional)"
               value={nuevo.email}
               onChange={(v) => setNuevo((n) => ({ ...n, email: v }))}
               inputMode="email"
             />
+            {emailErr && (
+              <div role="alert" style={{ fontSize: 12, color: "var(--red)", fontWeight: 600, letterSpacing: 0.2 }}>{emailErr}</div>
+            )}
             <div style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.2 }}>Si agregas su correo, recibe la invitación a la app.</div>
           </div>
           {dup && (
@@ -690,7 +702,7 @@ function ClienteEditor({
           <Button
             variant="secondary"
             full
-            disabled={!clienteListo("new", nuevo.nombre, nuevo.tel, false)}
+            disabled={!clienteListo("new", nuevo.nombre, nuevo.tel, false, nuevo.email)}
             onClick={onContinue}
           >
             CONTINUAR
@@ -730,13 +742,16 @@ function ClienteEditor({
             {/* C7: a member with no email on file can pick one up on renewal — the
                 RPC coalesces it into their row so the app invite becomes reachable. */}
             {!existing.email && (
-              <div className="flex flex-col" style={{ gap: 6 }}>
+              <div className="flex flex-col" style={{ gap: 6 }} onBlur={() => setEmailBlurred(true)}>
                 <Input
                   placeholder="Email para la app (opcional)"
                   value={backfillEmail}
                   onChange={setBackfillEmail}
                   inputMode="email"
                 />
+                {emailErr && (
+                  <div role="alert" style={{ fontSize: 12, color: "var(--red)", fontWeight: 600, letterSpacing: 0.2 }}>{emailErr}</div>
+                )}
                 <div style={{ fontSize: 11, color: "var(--muted)", letterSpacing: 0.2 }}>Si agregas su correo, recibe la invitación a la app.</div>
               </div>
             )}

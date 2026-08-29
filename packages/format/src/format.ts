@@ -69,11 +69,16 @@ export function isTelValido(raw: string): boolean {
 /**
  * Email intake rule — the single home for "what does a plausible email look like", mirroring
  * `isTelValido`'s role. A pragmatic client-side gate (enables/disables a Save button); the DAL's
- * `z.string().email()` is the real validation authority (design 2026-07-08 §4 — this surface is an
- * edit, not a sale, so it validates; the sale-path `email` field (crearVentaSchema) stays deliberately unvalidated).
+ * zod schemas are the real validation authority (design 2026-07-08 §4).
+ *
+ * ASCII-only, both halves: Resend refuses any non-ASCII address outright (422 "The email address
+ * contains non-ASCII characters"), so an accented or `ñ`-carrying address is not a stricter taste,
+ * it is undeliverable — a desk operator typed `Ivanmontañez77@gmail.com` and the invite could never
+ * be sent. `[!-?A-~]` is printable ASCII minus space and minus `@` (0x40), so the structure below is
+ * the same local@domain.tld shape as before with the non-ASCII door closed.
  */
 export function isEmailValido(raw: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw.trim());
+  return /^[!-?A-~]+@[!-?A-~]+\.[!-?A-~]+$/.test(raw.trim());
 }
 
 /**

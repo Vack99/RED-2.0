@@ -5,7 +5,7 @@ import { z } from "zod";
 import { diasRestantes } from "@gym/domain/rules";
 import type { Clases, MetodoPago, PlantillaContext } from "@gym/domain/types";
 import { asClienteId, asPaqueteId, type ClienteId, type PaqueteId } from "@gym/domain/ids";
-import { firstName, fmtShort, hoyEnZona, iniciales, isTelValido, parseDay, toIsoDay } from "@gym/format";
+import { firstName, fmtShort, hoyEnZona, iniciales, isEmailValido, isTelValido, parseDay, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -57,9 +57,17 @@ export const crearVentaSchema = z
     nuevoNombre: z.string().optional(),
     nuevoTel: z.string().optional(),
     // Optional contact email — captured in NEW mode (invite target) OR backfilled
-    // in EXISTING mode on renewal (C7). Never `.email()`-validated: the sale must
-    // never gate on it (§3.4). Trimmed so a blank field forwards nothing.
-    email: z.string().trim().optional(),
+    // in EXISTING mode on renewal (C7). Trimmed so a blank field forwards nothing.
+    // §3.4 still holds — ABSENCE never gates the sale — but a typed address that can
+    // never be delivered to does: a desk operator typed `Ivanmontañez77@gmail.com` and
+    // Resend refused every invite with a 422 ("contains non-ASCII characters"), leaving
+    // the row unreachable and the ficha toasting a generic retry. `isEmailValido` (the
+    // one intake rule, shared with the form) is the check, not `.email()`.
+    email: z
+      .string()
+      .trim()
+      .optional()
+      .refine((v) => !v || isEmailValido(v), "Correo inválido"),
     clienteId: z.string().transform(asClienteId).optional(),
     paquete: paqueteSeleccionSchema,
     metodo: z.enum(METODOS),
@@ -106,7 +114,8 @@ export interface VentaResult {
   mensajes: MensajeDTO[];
   /** The email captured for a NEW client — the invite funnel's target (design §3); null otherwise. The
    *  action reads this to decide whether to auto-send the invite (mode NEW + email) and to render "enviada
-   *  a {email}" on the recibo. Never a `.email()`-validated value (the sale path never gates on email). */
+   *  a {email}" on the recibo. Never a `.email()`-validated value — only deliverability-checked
+   *  (isEmailValido), since an absent email still never gates the sale. */
   emailIngresado: string | null;
   /** The receipt mail's recipient (#99), BOTH modes: the typed input wins (a C7 backfill email is
    *  coalesced onto the row inside the RPC, so the pre-RPC read is stale for it), then the client's

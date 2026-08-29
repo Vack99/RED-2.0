@@ -435,7 +435,7 @@ describe("resendTransport — missing env is a clean failure (never a live call)
 
 });
 
-describe("resendTransport — 429 error taxonomy (#151 part 1)", () => {
+describe("resendTransport — HTTP error taxonomy (#151 part 1’s 429s + the non-ASCII 422)", () => {
   const keys = ["RESEND_API_KEY", "RESEND_FROM"] as const;
   const OLD = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
   const originalFetch = global.fetch;
@@ -481,5 +481,27 @@ describe("resendTransport — 429 error taxonomy (#151 part 1)", () => {
   it("still returns the generic status string for a non-429 failure (e.g. a bad address)", async () => {
     stubFetch(400, { name: "invalid_parameter" });
     expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 400" });
+  });
+
+  // The desk’s ñ defect: Resend refuses a non-ASCII address with a 422 naming the `to` field.
+  // Mapped to a NAMED error so the ficha stops telling the operator to retry something that can
+  // never succeed.
+  it("maps Resend’s 422 non-ASCII refusal to 'correo-invalido'", async () => {
+    stubFetch(422, {
+      statusCode: 422,
+      name: "validation_error",
+      message: "Invalid `to` field. The email address contains non-ASCII characters.",
+    });
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "correo-invalido" });
+  });
+
+  it("keeps the generic status string for a 422 that is not about the `to` address", async () => {
+    stubFetch(422, { statusCode: 422, name: "validation_error", message: "Missing `subject` field." });
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 422" });
+  });
+
+  it("keeps the generic status string when the 422 body isn’t JSON", async () => {
+    global.fetch = (async () => new Response("<html>422</html>", { status: 422 })) as typeof fetch;
+    expect(await resendTransport().send(msg)).toEqual({ ok: false, error: "resend 422" });
   });
 });

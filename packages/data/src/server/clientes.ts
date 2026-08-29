@@ -509,9 +509,9 @@ export const getClienteFicha = cache(
  *  (clientes_tel_10_digits_ck) states, which since #190 reads `tel is null or …`. Blank tel is legal and
  *  means CLEAR (the RPC writes p_tel unconditionally), which is how the placeholder phone gets removed;
  *  it is sent as `null`, never `''` (the CHECK rejects '' — it strips to 0 digits). `email` is OPTIONAL
- *  and `.email()`-VALIDATED (design §4) — unlike the sale-path `email` field (crearVentaSchema in
- *  ventas.ts, deliberately unvalidated: cash sale never gated), this surface is an edit, not a sale, so
- *  validation is safe here. Blank/whitespace-only email means "no change" (preprocessed to `undefined`,
+ *  and `.email()`-VALIDATED (design §4) — stricter than the sale-path `email` field
+ *  (crearVentaSchema in ventas.ts, deliberability-checked only: a cash sale is never gated on the
+ *  email's SHAPE, only on it being an address Resend can deliver to). Blank/whitespace-only email means "no change" (preprocessed to `undefined`,
  *  never forwarded as `''`) — this slice has no explicit "clear the email" arm. */
 export const actualizarClienteSchema = z.object({
   clienteId: z.string().uuid(),

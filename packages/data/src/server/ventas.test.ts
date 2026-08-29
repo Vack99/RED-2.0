@@ -309,13 +309,24 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     ).toThrow();
   });
 
-  // §3.4 — the optional email must NEVER block a sale. Forwarding a MALFORMED value proves it:
-  // it is passed through as entered (it just won't match at claim time — the same harmless
-  // outcome as omitting it), which also regression-guards against a `.email()` format check that
-  // would throw a ZodError from the unguarded `crearVentaSchema.parse` and reject the whole sale.
-  it("forwards the entered email as p_email without validating it (never blocks the sale)", async () => {
-    await crearVenta(input({ mode: "new", email: "maria@" }), fake.client);
-    expect(lastRpc(fake).args).toHaveProperty("p_email", "maria@");
+  // §3.4 — an ABSENT email must never block a sale (the "sends only identity" test above pins
+  // that: no p_email at all). What a typed one may not be is UNDELIVERABLE: Resend refuses any
+  // non-ASCII address with a 422, so the row would be reachable by nothing. The form gates it
+  // first; this is the server-side belt.
+  it("forwards the entered email as p_email", async () => {
+    await crearVenta(input({ mode: "new", email: "maria@correo.mx" }), fake.client);
+    expect(lastRpc(fake).args).toHaveProperty("p_email", "maria@correo.mx");
+  });
+
+  it("refuses a non-ASCII email at schema parse (the ñ a desk operator typed)", () => {
+    expect(() => crearVentaSchema.parse(input({ mode: "new", email: "Ivanmontañez77@gmail.com" }))).toThrow();
+    expect(() => crearVentaSchema.parse(input({ mode: "new", email: "Ivanmontanez77@gmail.com" }))).not.toThrow();
+  });
+
+  it("still parses with no email at all — absence never gates the sale (§3.4)", () => {
+    expect(() => crearVentaSchema.parse(input({ mode: "new" }))).not.toThrow();
+    expect(() => crearVentaSchema.parse(input({ mode: "new", email: "" }))).not.toThrow();
+    expect(() => crearVentaSchema.parse(input({ mode: "new", email: "   " }))).not.toThrow();
   });
 
   it("forwards the entered email as p_email in existing mode too (C7 backfill on renewal)", async () => {

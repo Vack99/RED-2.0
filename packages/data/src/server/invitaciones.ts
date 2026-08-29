@@ -77,6 +77,17 @@ export function resendTransport(): MailTransport {
               return { ok: false, error: body.name };
             }
           }
+          // The address itself is the problem, not the moment: Resend answers 422
+          // `Invalid \`to\` field. The email address contains non-ASCII characters.` for an
+          // `ñ`/accent a desk operator typed. Named here so the ficha can say "fix the
+          // correo" instead of the generic "intenta de nuevo más tarde" — retrying never
+          // helps. Other 422s (a bad `from`, a missing subject) keep the generic string.
+          if (res.status === 422) {
+            const body: { message?: string } | null = await res.json().catch(() => null);
+            if (body?.message && /invalid `to`|non-ascii/i.test(body.message)) {
+              return { ok: false, error: "correo-invalido" };
+            }
+          }
           return { ok: false, error: `resend ${res.status}` };
         }
         return { ok: true };

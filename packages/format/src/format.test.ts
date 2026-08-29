@@ -114,4 +114,26 @@ describe("isEmailValido", () => {
   it("rejects empty input", () => {
     expect(isEmailValido("")).toBe(false);
   });
+
+  it("rejects a non-ASCII local part — Resend cannot deliver to it (the ñ at the desk)", () => {
+    expect(isEmailValido("Ivanmontañez77@gmail.com")).toBe(false);
+    expect(isEmailValido("Ivanmontanez77@gmail.com")).toBe(true);
+  });
+
+  it("rejects a non-ASCII domain", () => {
+    expect(isEmailValido("correo@español.mx")).toBe(false);
+  });
+
+  it("rejects an accented address (á/é are the same undeliverable class as ñ)", () => {
+    expect(isEmailValido("josé@correo.mx")).toBe(false);
+    expect(isEmailValido("socio@córreo.mx")).toBe(false);
+  });
+
+  it("rejects an inner space", () => {
+    expect(isEmailValido("a b@c.d")).toBe(false);
+  });
+
+  it("accepts a minimal ASCII address", () => {
+    expect(isEmailValido("a@b.co")).toBe(true);
+  });
 });

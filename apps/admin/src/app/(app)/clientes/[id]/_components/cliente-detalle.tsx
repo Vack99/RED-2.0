@@ -88,7 +88,12 @@ export function ClienteDetalle({ ficha }: { ficha: ClienteFichaDTO }) {
         forgeToast({
           tone: "warning",
           title: "No pudimos enviar la invitación",
-          body: "Intenta de nuevo más tarde.",
+          // Resend refuses a non-ASCII address outright (422 → the transport's "correo-invalido"),
+          // so "intenta de nuevo más tarde" would be a lie: only editing the correo can fix it.
+          body:
+            res.motivo === "envio-fallido" && res.error === "correo-invalido"
+              ? "El correo tiene caracteres no válidos (ñ o acentos). Corrígelo con EDITAR."
+              : "Intenta de nuevo más tarde.",
         });
       }
     } catch {
