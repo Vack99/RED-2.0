@@ -19,13 +19,22 @@ export function telError(tel: string, blurred: boolean): string | null {
 
 /**
  * Inline error for the email field (NUEVO's invite target, EXISTENTE's C7 backfill).
- * Same discipline as `telError`: a half-typed address is invalid on every keystroke, so
- * it only speaks once the operator has LEFT the field. An empty field never errors — the
- * sale does not want an email, it only refuses an undeliverable one.
+ * Two-tier, exactly like `telError`'s `>10` arm: a HALF-TYPED ASCII address ("maria@") is
+ * wrong on every keystroke, so it waits for blur; a NON-ASCII character is wrong on sight
+ * and never becomes right by typing more, so it speaks immediately.
+ *
+ * Blur alone cannot carry it: `emailBlurred` lives in `ClienteEditor`, which
+ * `AccordionSection` UNMOUNTS on collapse, so reopening CLIENTE re-seeds it to `false` and
+ * a blur-only error would vanish while `clienteListo` keeps COBRAR dead with nothing but
+ * "Falta cliente" — and a tap on an already-DISABLED button never fires a blur either.
+ *
+ * An empty field never errors: the sale does not want an email, it only refuses a bad one.
  */
 export function emailError(email: string, blurred: boolean): string | null {
   const v = email.trim();
-  if (!blurred || v === "" || isEmailValido(v)) return null;
+  if (v === "" || isEmailValido(v)) return null;
+  // Shape errors wait for blur; a non-ASCII character shows at once.
+  if (!blurred && !/[^\x20-\x7E]/.test(v)) return null;
   return "Correo inválido";
 }
 
@@ -34,9 +43,11 @@ export function emailError(email: string, blurred: boolean): string | null {
  * name and, if a phone is typed at all, a complete one (#190 made the phone
  * optional; a half-typed 1–9 digits still blocks). EXISTENTE needs a picked
  * client. A MISSING email still never gates the sale (#64 — the email is the invite
- * trigger, optional); a TYPED one must be deliverable, in both modes: a non-ASCII
- * address (the `ñ` a desk operator typed) is refused by Resend forever, so letting it
- * through only buys an invite that can never be sent.
+ * trigger, optional); a TYPED one must be a well-formed ASCII address, in both modes.
+ * This WIDENS spec §3.4 (decided 2026-08-29, 4b5432e): not just the `ñ` a desk operator
+ * typed — which Resend refuses forever — but "maria@" too. An address that reaches
+ * nobody buys an invite that can never be sent, and the operator only learns that days
+ * later, from the ficha.
  */
 export function clienteListo(
   mode: Mode,

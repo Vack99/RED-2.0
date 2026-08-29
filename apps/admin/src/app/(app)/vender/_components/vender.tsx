@@ -633,7 +633,9 @@ function ClienteEditor({
           return (
             <button
               key={t.k}
-              onClick={() => setMode(t.k)}
+              // One email field in two places: a blur in NUEVO must not pre-error the
+              // EXISTENTE backfill's first keystroke (a non-ASCII one still shows on sight).
+              onClick={() => { setEmailBlurred(false); setMode(t.k); }}
               className="flex-1 font-bold"
               style={{ padding: "10px 0", marginBottom: -1, background: "transparent", border: "none", borderBottom: `2px solid ${on ? "var(--yellow)" : "transparent"}`, color: on ? "var(--yellow)" : "var(--muted)", fontSize: 11, letterSpacing: 1.4, cursor: "pointer" }}
             >

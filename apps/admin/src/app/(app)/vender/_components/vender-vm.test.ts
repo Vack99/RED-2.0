@@ -68,12 +68,20 @@ describe("inicioEfectivo — clamp the pick + report backdate (spec D6)", () => 
 });
 
 describe("emailError — inline email error (the ñ a desk operator typed)", () => {
-  it("stays quiet while unblurred, however broken the half-typed address is", () => {
+  it("stays quiet while a half-typed ASCII address is still being typed", () => {
     expect(emailError("Ivanmonta", false)).toBeNull();
-    expect(emailError("Ivanmontañez77@gmail.com", false)).toBeNull();
+    expect(emailError("maria@", false)).toBeNull();
   });
 
-  it("names a non-ASCII address once the field is left", () => {
+  it("names a half-typed ASCII address once the field is left", () => {
+    expect(emailError("maria@", true)).toBe("Correo inválido");
+  });
+
+  // Blur cannot be the only trigger: ClienteEditor unmounts on accordion collapse (the flag
+  // re-seeds to false), and a tap on the already-disabled COBRAR fires no blur — so the one
+  // error the operator can NEVER type their way out of must show on sight.
+  it("names a non-ASCII address ON SIGHT, blurred or not", () => {
+    expect(emailError("Ivanmontañez77@gmail.com", false)).toBe("Correo inválido");
     expect(emailError("Ivanmontañez77@gmail.com", true)).toBe("Correo inválido");
   });
 

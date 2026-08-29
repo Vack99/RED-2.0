@@ -318,6 +318,13 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     expect(lastRpc(fake).args).toHaveProperty("p_email", "maria@correo.mx");
   });
 
+  // The guard this replaced asserted the opposite (a malformed email was forwarded as entered).
+  // §3.4 was WIDENED on 2026-08-29 (4b5432e): absence still never gates, but an address that
+  // reaches nobody does — an invite sent to "maria@" is a member the gym cannot contact.
+  it("refuses an ASCII-but-malformed email at schema parse (§3.4 widened)", () => {
+    expect(() => crearVentaSchema.parse(input({ mode: "new", email: "maria@" }))).toThrow();
+  });
+
   it("refuses a non-ASCII email at schema parse (the ñ a desk operator typed)", () => {
     expect(() => crearVentaSchema.parse(input({ mode: "new", email: "Ivanmontañez77@gmail.com" }))).toThrow();
     expect(() => crearVentaSchema.parse(input({ mode: "new", email: "Ivanmontanez77@gmail.com" }))).not.toThrow();

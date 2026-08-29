@@ -75,7 +75,8 @@ export async function crearVentaAction(raw: unknown): Promise<CrearVentaResult> 
  * address the client just gave. Strictly an in-session retry from the sale's own return values — no
  * receipt archive, and capturing the address here does NOT write it to the client row (that's the ficha's
  * job). `emailOverride` (the just-captured address) wins over the sale-time resolution; it is deliberately
- * NOT `.email()`-validated (same posture as the sale path — garbage bounces, it doesn't block).
+ * unvalidated HERE — unlike the sale path, which since 4b5432e refuses a typed-but-unreachable
+ * address; this is a manual retry the operator watches, so a bad one just reports `fallo`.
  *
  * Guarded by the caller's own gym membership (`getOperatorGym` throws without one), and the sender
  * identity is NOT trusted from the payload: `negocio` — the `From:` display name and the ticket's
