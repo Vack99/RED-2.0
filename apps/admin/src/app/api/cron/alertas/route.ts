@@ -1,12 +1,13 @@
 /**
- * Daily auth/mail health cron — the alerting shield the session-persistence analysis asked
- * for (§D). Supabase's free tier has no log drains and no alerting, so an `invalid_grant`
- * spike or a run of `send-email` failures is invisible until a member complains. Once a day
- * this reads the last 24h of the project's own logs through the Management API and mails the
- * owner if either signal is nonzero.
+ * Hourly auth/mail health cron — the alerting shield the session-persistence analysis asked
+ * for (§D), widened by the 2026-08-30 auth-door incident (shield plan §3(d)). Supabase's free
+ * tier has no log drains and no alerting, so an `invalid_grant` spike, a run of `send-email`
+ * failures, or a member wedged between the signup and confirmation doors is invisible until
+ * someone complains at the counter. Every hour this reads the project's own logs AND its
+ * `auth.users` table through the Management API and mails the owner if any signal fires.
  *
  * It only wires already-tested pieces together —
- *   auth (CRON_SECRET) → config → two log queries → shape (resumirAlerta) → send (resendTransport)
+ *   auth (CRON_SECRET) → config → three queries → shape (resumirAlerta) → send (resendTransport)
  * — so the thresholds and the message live in `./resumen` and every I/O path here resolves to
  * a value instead of throwing.
  *
@@ -28,14 +29,15 @@
  * dependency). NOT the `send-email` edge function: that one is GoTrue's auth hook, signature-
  * verified against a Standard Webhooks payload, and is not a general mail API.
  *
- * SCHEDULE (`apps/admin/vercel.json` — JSON, so the reasoning lives here): `0 12 * * *`.
- * 12:00 UTC is 05:00–06:00 across Mexico's zones, so the mail is already waiting when the
- * owner's day starts and the run itself never lands inside anyone's business hours. Mexico
- * has run without DST since 2022, so this stays put year-round. Daily also matches what the
- * data supports: the API caps a log query at a 24h window, and consecutive runs tile the
- * timeline exactly.
+ * SCHEDULE (`apps/admin/vercel.json` — JSON, so the reasoning lives here): `0 * * * *`, hourly.
+ * It was daily at 12:00 UTC until 2026-08-30. Daily was indefensible once the wedge signal
+ * landed: the Iván wedge sat 34h, already 3× that detection interval, and the send-email
+ * fail-closed change (plan fix a5) turns a misprovisioned host into a hard signup failure that
+ * a once-a-day check would sit on. `VENTANA_MS` shrank with the cadence so consecutive runs
+ * still tile the timeline exactly — a 24h window read hourly would re-count and re-mail the
+ * same burst 24 times.
  *
- * runtime = "nodejs": matches the app's other route handler; the work is two outbound fetches
+ * runtime = "nodejs": matches the app's other route handler; the work is three outbound fetches
  * plus a send, all well inside the 60s ceiling this asks for.
  */
 
@@ -44,15 +46,17 @@ import { resendTransport } from "@gym/data/server/invitaciones";
 import {
   resumirAlerta,
   SQL_INVALID_GRANT,
+  SQL_REGISTROS_ATORADOS,
   SQL_SEND_EMAIL_FALLOS,
   type ConteosAlerta,
+  type RegistroAtorado,
   type Ventana,
 } from "./resumen";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const VENTANA_MS = 24 * 60 * 60 * 1000;
+const VENTANA_MS = 60 * 60 * 1000;
 
 /**
  * The project ref the app already talks to: the subdomain of `NEXT_PUBLIC_SUPABASE_URL`
@@ -106,6 +110,47 @@ async function contar(
   }
 }
 
+/**
+ * The wedge signal (shield plan §3(d)). Same host, same PAT, different endpoint: `database/query`
+ * runs plain SQL as `postgres`, which is the ONLY role `registros_atorados()` is executable by —
+ * EXECUTE is revoked from public/anon/authenticated and re-granted to nobody, so the function is
+ * unreachable from PostgREST and from both apps.
+ *
+ * Never throws, same contract as `contar`: an unusable answer is `{ filas: null, error }`, which
+ * `resumirAlerta` treats as a reason to page rather than as all-clear. The rows are shape-checked
+ * one by one — a schema drift that renamed a column must read as "the detector stopped working",
+ * not as an alert body full of `undefined`.
+ */
+async function consultarAtorados(
+  ref: string,
+  token: string,
+): Promise<{ filas: RegistroAtorado[] | null; error?: string }> {
+  const etiqueta = "registros-atorados";
+  try {
+    const res = await fetch(`https://api.supabase.com/v1/projects/${ref}/database/query`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ query: SQL_REGISTROS_ATORADOS }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) return { filas: null, error: `${etiqueta}: HTTP ${res.status}` };
+    const cuerpo: unknown = await res.json();
+    if (!Array.isArray(cuerpo)) return { filas: null, error: `${etiqueta}: respuesta sin filas` };
+    const filas = cuerpo.filter(
+      (f): f is RegistroAtorado =>
+        typeof (f as RegistroAtorado)?.correo === "string" &&
+        typeof (f as RegistroAtorado)?.motivo === "string" &&
+        typeof (f as RegistroAtorado)?.horas === "number",
+    );
+    if (filas.length !== cuerpo.length) {
+      return { filas: null, error: `${etiqueta}: fila con forma inesperada` };
+    }
+    return { filas };
+  } catch (e) {
+    return { filas: null, error: `${etiqueta}: ${e instanceof Error ? e.message : "error de red"}` };
+  }
+}
+
 export async function GET(request: Request): Promise<Response> {
   const secreto = process.env.CRON_SECRET;
   if (!secreto || request.headers.get("authorization") !== `Bearer ${secreto}`) {
@@ -130,24 +175,44 @@ export async function GET(request: Request): Promise<Response> {
   }
 
   // Both ends floored to the minute: the API rounds the range to the nearest minute and
-  // rejects anything over 24h, so flooring first makes the span exactly 24h with no rounding
-  // ambiguity — and consecutive daily runs tile the timeline with no gap and no overlap.
+  // rejects anything over 24h, so flooring first makes the span exactly `VENTANA_MS` with no
+  // rounding ambiguity — and consecutive hourly runs tile the timeline with no gap and no
+  // overlap. Only the two LOG queries take this window; the wedge query is point-in-time.
   const hasta = new Date(Math.floor(Date.now() / 60_000) * 60_000);
   const ventana: Ventana = {
     desde: new Date(hasta.getTime() - VENTANA_MS).toISOString(),
     hasta: hasta.toISOString(),
   };
 
-  const [auth, correoHook] = await Promise.all([
+  const [auth, correoHook, atorados] = await Promise.all([
     contar(ref, token, SQL_INVALID_GRANT, ventana, "invalid_grant"),
     contar(ref, token, SQL_SEND_EMAIL_FALLOS, ventana, "send-email"),
+    consultarAtorados(ref, token),
   ]);
 
   const conteos: ConteosAlerta = {
     invalidGrant: auth.total,
     sendEmailFallos: correoHook.total,
-    errores: [auth.error, correoHook.error].filter((e): e is string => e !== undefined),
+    atorados: atorados.filas,
+    errores: [auth.error, correoHook.error, atorados.error].filter(
+      (e): e is string => e !== undefined,
+    ),
   };
+
+  // The non-Resend leg of the wedge signal (plan §3(d) "Channel"): the same counts land in the
+  // Vercel runtime log AND in this route's own JSON, so the detector does not die with the thing
+  // it detects — FC-08's single Resend key backs the alert mail AND every rail the alert is about.
+  // Deliberately no addresses on either: the counts, the two shapes and the worst age are enough
+  // to know something is wrong and go read the mail (or run the RPC), and a member's address in a
+  // log line is the LM-7 leak. Written every run, clean or not — a signal that only appears when
+  // it is bad cannot be distinguished from a signal that stopped running.
+  const atoradosResumen = {
+    total: conteos.atorados?.length ?? null,
+    sinConfirmar: conteos.atorados?.filter((a) => a.motivo === "sin-confirmar").length ?? null,
+    sinVincular: conteos.atorados?.filter((a) => a.motivo === "sin-vincular").length ?? null,
+    horasMax: conteos.atorados?.length ? Math.max(...conteos.atorados.map((a) => a.horas)) : 0,
+  };
+  console.warn(JSON.stringify({ evento: "registros-atorados", ...atoradosResumen }));
 
   const alerta = resumirAlerta(conteos, ventana);
   const envio = alerta
@@ -168,6 +233,7 @@ export async function GET(request: Request): Promise<Response> {
     {
       ventana,
       ...conteos,
+      atorados: atoradosResumen,
       alerta: alerta !== null,
       correo: envio === null ? "no-requerido" : envio.ok ? "enviado" : `fallo: ${envio.error}`,
     },

@@ -2,7 +2,7 @@
 
 import Script from "next/script";
 import Link from "next/link";
-import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { validarCorreo } from "../../../lib/auth-validacion";
 import { activarAction, type ActivarActionState } from "../actions";
@@ -16,7 +16,18 @@ type TurnstileWindow = typeof window & {
   onActivarTurnstileSuccess?: (token: string) => void;
   onActivarTurnstileExpired?: () => void;
   onActivarTurnstileError?: () => void;
+  turnstile?: { reset: (id?: string) => void };
 };
+
+// The widget's own failure shapes (incident FC-14): the CDN script never arrives, the challenge
+// expires before submit, or Cloudflare rejects it. All three used to leave `turnstileToken` null
+// forever with no on-screen sign why — this is the one dictionary the retry UI reads.
+const TURNSTILE_MENSAJE = {
+  sinCargar: "No pudimos cargar la verificación.",
+  expirado: "La verificación expiró.",
+  error: "Hubo un problema con la verificación.",
+} as const;
+type TurnstileProblema = keyof typeof TURNSTILE_MENSAJE;
 
 const LABEL = "block text-[10px] font-bold uppercase tracking-[2px] text-muted transition-colors group-focus-within:text-accent";
 const INPUT = "w-full border-b bg-transparent py-3 text-[16px] text-fg outline-none transition-colors focus:border-accent";
@@ -45,13 +56,42 @@ export function ActivarForm({
   const [email, setEmail] = useState("");
   const [errCorreo, setErrCorreo] = useState<string | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileProblema, setTurnstileProblema] = useState<TurnstileProblema | null>(null);
+  const turnstileResuelto = useRef(false);
 
   useEffect(() => {
     const w = window as TurnstileWindow;
-    w.onActivarTurnstileSuccess = (token) => setTurnstileToken(token);
-    w.onActivarTurnstileExpired = () => setTurnstileToken(null);
-    w.onActivarTurnstileError = () => setTurnstileToken(null);
+    w.onActivarTurnstileSuccess = (token) => {
+      turnstileResuelto.current = true;
+      setTurnstileToken(token);
+      setTurnstileProblema(null);
+    };
+    w.onActivarTurnstileExpired = () => {
+      turnstileResuelto.current = true;
+      setTurnstileToken(null);
+      setTurnstileProblema("expirado");
+    };
+    w.onActivarTurnstileError = () => {
+      turnstileResuelto.current = true;
+      setTurnstileToken(null);
+      setTurnstileProblema("error");
+    };
+    // If the widget script never calls back at all (blocked, offline, dead CDN), the submit
+    // button used to stay disabled forever with zero explanation (FC-14) — this is that floor.
+    const timer = window.setTimeout(() => {
+      if (!turnstileResuelto.current) setTurnstileProblema("sinCargar");
+    }, 10_000);
+    return () => window.clearTimeout(timer);
   }, []);
+
+  function reintentarTurnstile() {
+    if (turnstileProblema === "sinCargar") {
+      window.location.reload();
+      return;
+    }
+    setTurnstileProblema(null);
+    (window as TurnstileWindow).turnstile?.reset();
+  }
 
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -102,9 +142,37 @@ export function ActivarForm({
     );
   }
 
+  if (state.status === "cuentaExistenteFallo") {
+    return (
+      <div className="flex w-full flex-col text-center" style={{ maxWidth: 340, gap: 16 }}>
+        <h1 className="text-[22px] font-light uppercase tracking-[5px] text-fg">No salió el correo</h1>
+        <p role="alert" className="text-[13px] text-muted">
+          No pudimos enviarte el enlace ahora mismo. Intenta de nuevo.
+        </p>
+        {/* A full reload, not a state reset: the Turnstile token this attempt spent is
+            single-use, so the retry needs a freshly rendered widget to be submittable. */}
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="mt-1 flex w-full items-center justify-center bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition hover:brightness-105"
+        >
+          Intentar de nuevo
+        </button>
+        <Link href="/entrar" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
+          Iniciar sesión
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <>
-      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
+        onError={() => setTurnstileProblema("sinCargar")}
+      />
       <form onSubmit={onSubmit} className="flex w-full flex-col" style={{ maxWidth: 340, gap: 22 }}>
         {codigo && <input type="hidden" name="codigo" value={codigo} />}
 
@@ -193,6 +261,22 @@ export function ActivarForm({
           data-expired-callback="onActivarTurnstileExpired"
           data-error-callback="onActivarTurnstileError"
         />
+        {turnstileProblema && (
+          <div
+            role="alert"
+            className="flex flex-col items-center gap-2 border px-4 py-3 text-center text-[12.5px] font-medium"
+            style={{ color: "var(--red)", borderColor: "var(--red)", background: "var(--red-soft)" }}
+          >
+            <span>{TURNSTILE_MENSAJE[turnstileProblema]}</span>
+            <button
+              type="button"
+              onClick={reintentarTurnstile}
+              className="text-[11px] font-extrabold uppercase tracking-[1.5px] underline underline-offset-2"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
 
         <button
           type="submit"

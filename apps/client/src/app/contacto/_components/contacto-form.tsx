@@ -1,7 +1,7 @@
 "use client";
 
 import Script from "next/script";
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 
 import { TURNSTILE_SITE_KEY as SITE_KEY } from "../../../lib/turnstile-site-key";
 import { enviarContactoAction, type ContactoActionState } from "../actions";
@@ -15,7 +15,18 @@ type TurnstileWindow = typeof window & {
   onContactoTurnstileSuccess?: (token: string) => void;
   onContactoTurnstileExpired?: () => void;
   onContactoTurnstileError?: () => void;
+  turnstile?: { reset: (id?: string) => void };
 };
+
+// The widget's own failure shapes (incident FC-14): the CDN script never arrives, the challenge
+// expires before submit, or Cloudflare rejects it. All three used to leave `turnstileToken` null
+// forever with no on-screen sign why — this is the one dictionary the retry UI reads.
+const TURNSTILE_MENSAJE = {
+  sinCargar: "No pudimos cargar la verificación.",
+  expirado: "La verificación expiró.",
+  error: "Hubo un problema con la verificación.",
+} as const;
+type TurnstileProblema = keyof typeof TURNSTILE_MENSAJE;
 
 // Underline field styling (the mock's `.field`), identical to the entrar/registro screens:
 // uppercase micro-label, a bottom-ruled input/textarea that turns accent on focus and the
@@ -34,13 +45,42 @@ export function ContactoForm() {
   const [state, action, pending] = useActionState(enviarContactoAction, INICIAL);
   const invalid = state.status === "invalid" ? state.fields : undefined;
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileProblema, setTurnstileProblema] = useState<TurnstileProblema | null>(null);
+  const turnstileResuelto = useRef(false);
 
   useEffect(() => {
     const w = window as TurnstileWindow;
-    w.onContactoTurnstileSuccess = (token) => setTurnstileToken(token);
-    w.onContactoTurnstileExpired = () => setTurnstileToken(null);
-    w.onContactoTurnstileError = () => setTurnstileToken(null);
+    w.onContactoTurnstileSuccess = (token) => {
+      turnstileResuelto.current = true;
+      setTurnstileToken(token);
+      setTurnstileProblema(null);
+    };
+    w.onContactoTurnstileExpired = () => {
+      turnstileResuelto.current = true;
+      setTurnstileToken(null);
+      setTurnstileProblema("expirado");
+    };
+    w.onContactoTurnstileError = () => {
+      turnstileResuelto.current = true;
+      setTurnstileToken(null);
+      setTurnstileProblema("error");
+    };
+    // If the widget script never calls back at all (blocked, offline, dead CDN), the submit
+    // button used to stay disabled forever with zero explanation (FC-14) — this is that floor.
+    const timer = window.setTimeout(() => {
+      if (!turnstileResuelto.current) setTurnstileProblema("sinCargar");
+    }, 10_000);
+    return () => window.clearTimeout(timer);
   }, []);
+
+  function reintentarTurnstile() {
+    if (turnstileProblema === "sinCargar") {
+      window.location.reload();
+      return;
+    }
+    setTurnstileProblema(null);
+    (window as TurnstileWindow).turnstile?.reset();
+  }
 
   if (state.status === "success") {
     return (
@@ -53,7 +93,12 @@ export function ContactoForm() {
 
   return (
     <>
-      <Script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer />
+      <Script
+        src="https://challenges.cloudflare.com/turnstile/v0/api.js"
+        async
+        defer
+        onError={() => setTurnstileProblema("sinCargar")}
+      />
       <form action={action} className="flex flex-col gap-6">
         {state.status === "error" && (
           <div
@@ -127,6 +172,22 @@ export function ContactoForm() {
           data-expired-callback="onContactoTurnstileExpired"
           data-error-callback="onContactoTurnstileError"
         />
+        {turnstileProblema && (
+          <div
+            role="alert"
+            className="flex flex-col items-center gap-2 border px-4 py-3 text-center text-[12.5px] font-medium"
+            style={{ color: "var(--red)", borderColor: "var(--red)", background: "var(--red-soft)" }}
+          >
+            <span>{TURNSTILE_MENSAJE[turnstileProblema]}</span>
+            <button
+              type="button"
+              onClick={reintentarTurnstile}
+              className="text-[11px] font-extrabold uppercase tracking-[1.5px] underline underline-offset-2"
+            >
+              Reintentar
+            </button>
+          </div>
+        )}
 
         <button
           type="submit"

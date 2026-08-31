@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   firmaCodigo,
@@ -7,6 +7,7 @@ import {
   intentarReclamoPorEmail,
   invitacionInfo,
   parseCodigoInvitacion,
+  registrarSocio,
   registroSchema,
   telefonoAE164,
 } from "./registro";
@@ -61,6 +62,295 @@ describe("telefonoAE164", () => {
 
   it("strips every non-digit before prefixing +52", () => {
     expect(telefonoAE164("(614) 111-2233")).toBe("+526141112233");
+  });
+});
+
+// The signUp door itself. GoTrue answers three structurally different situations with a
+// 200, and this door used to render all three as one identical "Revisa tu correo"
+// (incident 2026-08-30: FC-02 the retry that kills the live link, FC-18 the mail that is
+// never sent, FC-19 English in a Spanish form). What is proven here is that each outcome
+// is now told apart, that a resubmit inside the window spends no mail from the
+// project-wide auth bucket, and that no GoTrue string reaches the member verbatim.
+describe("registrarSocio", () => {
+  const MINUTO = 60 * 1000;
+  const DIA = 24 * 60 * MINUTO;
+  const OPTS = { emailRedirectTo: "https://gym.test/auth/confirm" };
+
+  let n = 0;
+  /** A fresh address per test: the send throttle is module-level state that outlives one
+   *  `it`, so a reused address would make the tests throttle each other. */
+  const correo = () => `socio${++n}@correo.mx`;
+
+  const alta = (email: string) => ({
+    nombre: "Ana López",
+    email,
+    password: "unbuenpass",
+    telefono: "614 111 2233",
+    acepta: true,
+  });
+
+  /** A GoTrue user row `edadMs` old. `identities: []` is the sanitized answer GoTrue
+   *  returns for an ALREADY-CONFIRMED address (and it mails nothing). */
+  const usuario = (edadMs = 0, identities: unknown = [{ id: "i-1" }]) => ({
+    id: "u-1",
+    created_at: new Date(Date.now() - edadMs).toISOString(),
+    identities,
+  });
+  const usuarioNuevo = () => ({ data: { user: usuario(), session: null }, error: null });
+  const NUEVO = { ok: true, estado: "nuevo", requiereConfirmacion: true };
+
+  /** The fake answers at CALL time — several tests advance fake timers between calls and
+   *  `created_at` has to move with the clock. */
+  function fakeSignUp(
+    respuesta: (args: unknown) => { data: unknown; error: unknown },
+  ): SupabaseServer {
+    return {
+      auth: { signUp: async (args: unknown) => respuesta(args) },
+    } as unknown as SupabaseServer;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("refuses a bad intake before touching GoTrue", async () => {
+    const client = fakeSignUp(() => {
+      throw new Error("signUp must not run on invalid intake");
+    });
+    expect(await registrarSocio({ ...alta(correo()), telefono: "614" }, OPTS, client)).toEqual({
+      ok: false,
+      error: "Teléfono inválido (10 dígitos)",
+    });
+  });
+
+  it("reports `nuevo` for a first-time address, with the name + E.164 phone GoTrue stores", async () => {
+    const email = correo();
+    let visto: unknown = null;
+    const client = fakeSignUp((args) => {
+      visto = args;
+      return usuarioNuevo();
+    });
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
+    expect(visto).toEqual({
+      email,
+      password: "unbuenpass",
+      options: {
+        emailRedirectTo: OPTS.emailRedirectTo,
+        data: { full_name: "Ana López", phone_e164: "+526141112233" },
+      },
+    });
+  });
+
+  it("reports `requiereConfirmacion:false` when a session comes back (confirmations off)", async () => {
+    const client = fakeSignUp(() => ({
+      data: { user: usuario(), session: { access_token: "t" } },
+      error: null,
+    }));
+    expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual({
+      ok: true,
+      estado: "nuevo",
+      requiereConfirmacion: false,
+    });
+  });
+
+  it("reports `cuentaExistente` for the identity-less answer, and spends no throttle (FC-18)", async () => {
+    // GoTrue mails NOTHING here, so the address must stay free to try again — throttling
+    // it would charge the member for a send that never happened.
+    const email = correo();
+    let llamadas = 0;
+    const client = fakeSignUp(() => {
+      llamadas += 1;
+      return { data: { user: usuario(0, []), session: null }, error: null };
+    });
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual({
+      ok: true,
+      estado: "cuentaExistente",
+    });
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual({
+      ok: true,
+      estado: "cuentaExistente",
+    });
+    expect(llamadas).toBe(2);
+  });
+
+  it("reports `yaEnviado` when GoTrue returns a pre-existing unconfirmed row (FC-02)", async () => {
+    // The row predates this request, so the mail just sent REPLACED the pending link:
+    // the screen has to say "open the newest one", not "check your mail".
+    const client = fakeSignUp(() => ({
+      data: { user: usuario(30 * MINUTO), session: null },
+      error: null,
+    }));
+    expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual({
+      ok: true,
+      estado: "yaEnviado",
+    });
+  });
+
+  it("treats a response with no identities array as a send, never as an existing account", async () => {
+    const client = fakeSignUp(() => ({
+      data: { user: usuario(0, undefined), session: null },
+      error: null,
+    }));
+    expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual(NUEVO);
+  });
+
+  it("reports `nuevo` when GoTrue returns no user row at all", async () => {
+    const client = fakeSignUp(() => ({ data: { user: null, session: null }, error: null }));
+    expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual(NUEVO);
+  });
+
+  it("answers a resubmit inside the window from memory, spending no second mail", async () => {
+    const email = correo();
+    let llamadas = 0;
+    const client = fakeSignUp(() => {
+      llamadas += 1;
+      return usuarioNuevo();
+    });
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual({
+      ok: true,
+      estado: "yaEnviado",
+    });
+    expect(llamadas).toBe(1);
+  });
+
+  it("throttles the address case-insensitively", async () => {
+    const email = correo();
+    let llamadas = 0;
+    const client = fakeSignUp(() => {
+      llamadas += 1;
+      return usuarioNuevo();
+    });
+    await registrarSocio(alta(email), OPTS, client);
+    expect(await registrarSocio(alta(email.toUpperCase()), OPTS, client)).toEqual({
+      ok: true,
+      estado: "yaEnviado",
+    });
+    expect(llamadas).toBe(1);
+  });
+
+  it("lets the address through again once the 5-minute window passes", async () => {
+    vi.useFakeTimers();
+    const email = correo();
+    let llamadas = 0;
+    const client = fakeSignUp(() => {
+      llamadas += 1;
+      return usuarioNuevo();
+    });
+    await registrarSocio(alta(email), OPTS, client);
+    vi.advanceTimersByTime(4 * MINUTO);
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual({
+      ok: true,
+      estado: "yaEnviado",
+    });
+    vi.advanceTimersByTime(2 * MINUTO);
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
+    expect(llamadas).toBe(2);
+  });
+
+  it("caps one address at 10 mails a day — one member cannot starve the shared bucket (FC-09)", async () => {
+    vi.useFakeTimers();
+    const email = correo();
+    let llamadas = 0;
+    const client = fakeSignUp(() => {
+      llamadas += 1;
+      return usuarioNuevo();
+    });
+    for (let i = 0; i < 10; i += 1) {
+      expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
+      vi.advanceTimersByTime(5 * MINUTO + 1000);
+    }
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual({
+      ok: true,
+      estado: "yaEnviado",
+    });
+    expect(llamadas).toBe(10);
+  });
+
+  it("forgets an address once its day rolls over (the throttle map stays bounded)", async () => {
+    vi.useFakeTimers();
+    const viejo = correo();
+    let llamadas = 0;
+    const client = fakeSignUp(() => {
+      llamadas += 1;
+      return usuarioNuevo();
+    });
+    await registrarSocio(alta(viejo), OPTS, client);
+    vi.advanceTimersByTime(DIA + MINUTO);
+    // A send for ANOTHER address is what sweeps the stale entry out of the map…
+    await registrarSocio(alta(correo()), OPTS, client);
+    // …and the rolled-over address starts over with a full daily allowance.
+    expect(await registrarSocio(alta(viejo), OPTS, client)).toEqual(NUEVO);
+    expect(llamadas).toBe(3);
+  });
+
+  describe("GoTrue errors → es-MX (FC-19)", () => {
+    const conError = (error: unknown) =>
+      fakeSignUp(() => ({ data: { user: null, session: null }, error }));
+
+    beforeEach(() => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+
+    it.each([
+      ["over_email_send_rate_limit", "Ya enviamos varios correos"],
+      ["email_address_invalid", "Ese correo no es válido"],
+      ["weak_password", "Esa contraseña es muy débil"],
+      ["signup_disabled", "El registro está cerrado"],
+    ])("maps %s to Spanish", async (code, esperado) => {
+      const client = conError({ code, status: 400, message: "Password should be at least…" });
+      expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual({
+        ok: false,
+        error: expect.stringContaining(esperado),
+      });
+    });
+
+    it("maps a code-less 429 to the throttle message", async () => {
+      const client = conError({ status: 429, message: "Too many requests" });
+      expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual({
+        ok: false,
+        error: expect.stringContaining("Ya enviamos varios correos"),
+      });
+    });
+
+    it("falls back to Spanish for an unknown code — the raw English never reaches the form", async () => {
+      const client = conError({ code: "codigo_nuevo", status: 500, message: "Database error" });
+      const res = await registrarSocio(alta(correo()), OPTS, client);
+      expect(res).toEqual({ ok: false, error: "No pudimos crear tu cuenta. Inténtalo de nuevo en unos minutos." });
+    });
+
+    it("logs the raw code/status server-side, and never the address", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const email = correo();
+      const client = conError({ code: "weak_password", status: 422, message: "Password is too weak" });
+      await registrarSocio(alta(email), OPTS, client);
+      expect(warn).toHaveBeenCalledTimes(1);
+      const linea = String(warn.mock.calls[0]?.[0]);
+      expect(JSON.parse(linea)).toMatchObject({
+        event: "registro-signup-error",
+        code: "weak_password",
+        status: 422,
+      });
+      expect(linea).not.toContain(email);
+    });
+
+    it("does not arm the throttle on a refused send (nothing was mailed)", async () => {
+      const email = correo();
+      let llamadas = 0;
+      const client = fakeSignUp(() => {
+        llamadas += 1;
+        return llamadas === 1
+          ? {
+              data: { user: null, session: null },
+              error: { code: "weak_password", status: 422, message: "weak" },
+            }
+          : usuarioNuevo();
+      });
+      expect((await registrarSocio(alta(email), OPTS, client)).ok).toBe(false);
+      expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
+      expect(llamadas).toBe(2);
+    });
   });
 });
 

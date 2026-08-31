@@ -234,12 +234,12 @@ export async function enviarInvitacion(
     );
     if (!url) return { ok: false, motivo: "sin-host" };
 
-    // Pre-fill the activation email as a DISPLAY param on the emailed link (owner decision 2026-07-15):
-    // the member confirms with a button instead of retyping. Enforcement is unchanged — the edge fn still
-    // matches whatever the form submits against the roster row, so a tampered param just fails email_no_coincide.
-    const urlConCorreo = `${url}&correo=${encodeURIComponent(email)}`;
-
-    const mensaje = mensajeInvitacion({ nombre, gymNombre: gym_nombre, email, url: urlConCorreo });
+    // The pre-fill DISPLAY param (owner decision 2026-07-15) was cut (fix 10, 2026-08-30): a claim
+    // code plus a plaintext email in one URL survives in browser history, referrer headers, and mail
+    // server logs longer than the code's own bearer-token exposure justifies. /activar degrades to
+    // its typed-input mode without it — the edge fn was always the real gate, matching whatever the
+    // form submits against the roster row.
+    const mensaje = mensajeInvitacion({ nombre, gymNombre: gym_nombre, email, url });
     mensaje.from = remitenteConNombre(gym_nombre, process.env.RESEND_FROM);
     const envio = await transport.send(mensaje);
     if (!envio.ok) return { ok: false, motivo: "envio-fallido", error: envio.error };

@@ -65,11 +65,99 @@ export function parseCodigoInvitacion(raw: unknown): string | null {
 type ReclamoCliente =
   Database["public"]["Functions"]["reclamar_o_crear_cliente"]["Returns"][number];
 
-/** signUp outcome — a discriminated result so the action renders one message
- *  surface without throwing on the expected validation/duplicate paths. */
+/**
+ * signUp outcome — a discriminated result so the action renders one message surface
+ * without throwing on the expected validation/duplicate paths. The three `ok:true`
+ * arms are the three DIFFERENT things GoTrue does, which this door used to collapse
+ * into one identical "Revisa tu correo" screen (incident 2026-08-30, FC-02/FC-18):
+ *
+ * - `nuevo` — a first confirmation mail was sent.
+ * - `yaEnviado` — the address already had a pending unconfirmed signup, so the mail
+ *   GoTrue just sent REPLACED the previous link (`auth.one_time_tokens` is UNIQUE on
+ *   `(user_id, token_type)`, so the older mail in that inbox is now dead). The screen
+ *   has to say which mail to open; reporting plain success is what wedged a member.
+ * - `cuentaExistente` — the address is already CONFIRMED and NO mail was sent at all.
+ */
 export type RegistroResultado =
-  | { ok: true; requiereConfirmacion: boolean }
+  | { ok: true; estado: "nuevo"; requiereConfirmacion: boolean }
+  | { ok: true; estado: "yaEnviado" }
+  | { ok: true; estado: "cuentaExistente" }
   | { ok: false; error: string };
+
+const DEMASIADOS_CORREOS =
+  "Ya enviamos varios correos a esta dirección. Espera unos minutos antes de volver a intentarlo.";
+const ERROR_GENERICO = "No pudimos crear tu cuenta. Inténtalo de nuevo en unos minutos.";
+
+/** GoTrue codes → es-MX, the map `sesion.ts` already keeps for login (:16-25). Until now
+ *  this door rendered `error.message` verbatim, so a Spanish signup form answered in
+ *  English (FC-19). An unmapped code falls back rather than leaking the raw string. */
+const ERRORES_SIGNUP: Record<string, string> = {
+  over_email_send_rate_limit: DEMASIADOS_CORREOS,
+  email_address_invalid: "Ese correo no es válido. Revísalo e inténtalo de nuevo.",
+  weak_password: "Esa contraseña es muy débil. Usa al menos 8 caracteres y combina letras y números.",
+  signup_disabled: "El registro está cerrado en este momento. Pide tu acceso en el gimnasio.",
+};
+
+function mensajeDeError(error: {
+  code?: string | undefined;
+  status?: number | undefined;
+}): string {
+  const mapeado = error.code ? ERRORES_SIGNUP[error.code] : undefined;
+  if (mapeado) return mapeado;
+  // Any other 429-class code the SDK adds later is still a throttle, not a bad password.
+  if (error.status === 429) return DEMASIADOS_CORREOS;
+  return ERROR_GENERICO;
+}
+
+/**
+ * Per-address send throttle for the signup rail. The auth-email quota is ONE project-wide
+ * bucket shared by every gym (~50/hr, FC-09) and GoTrue's own floor is 60s per address —
+ * 60/hr, above the whole platform's budget — so the app has to be the one that says no.
+ * Two limits: `ESPERA_MS` between sends to one address, and `MAX_POR_DIA` per rolling day.
+ * Past either, the door reports `yaEnviado` without calling signUp, which is the truth: a
+ * live link is already sitting in that inbox, and minting another would only kill it.
+ *
+ * BEST-EFFORT, DELIBERATELY: this Map is one serverless instance's memory, so N warm
+ * instances allow up to N× these numbers and a cold start forgets everything. It caps the
+ * loop that actually happened — one person resubmitting one form on one connection, four
+ * mails in 28 minutes — not a distributed attacker; that is Turnstile's job at the door
+ * and GoTrue's 60s floor underneath. A hard cap needs shared state (a sends table or KV);
+ * this buys the fix without a migration.
+ */
+const ESPERA_MS = 5 * 60 * 1000;
+const MAX_POR_DIA = 10;
+const DIA_MS = 24 * 60 * 60 * 1000;
+
+type Envio = { ultimo: number; cuenta: number; ventana: number };
+const envios = new Map<string, Envio>();
+
+function enEspera(clave: string, ahora: number): boolean {
+  const previo = envios.get(clave);
+  if (previo === undefined) return false;
+  if (ahora - previo.ventana >= DIA_MS) return false;
+  return ahora - previo.ultimo < ESPERA_MS || previo.cuenta >= MAX_POR_DIA;
+}
+
+function registrarEnvio(clave: string, ahora: number): void {
+  const previo = envios.get(clave);
+  const vigente = previo !== undefined && ahora - previo.ventana < DIA_MS;
+  envios.set(clave, {
+    ultimo: ahora,
+    cuenta: vigente ? previo.cuenta + 1 : 1,
+    ventana: vigente ? previo.ventana : ahora,
+  });
+  // This Map is the throttle's only state, so it also has to be the thing that forgets:
+  // without the sweep a long-lived instance keeps one entry per address forever.
+  for (const [otra, envio] of envios) {
+    if (ahora - envio.ventana >= DIA_MS) envios.delete(otra);
+  }
+}
+
+/** How fresh `auth.users.created_at` has to be for the returned row to be the one this
+ *  request just created. Wide enough to absorb clock skew between GoTrue and this
+ *  process; landing on the wrong side of it only costs the more generic screen for a
+ *  mail that was in fact just sent. */
+const VENTANA_NUEVO_MS = 60 * 1000;
 
 /**
  * Self-register a socio. Validates the intake, then `signUp` with the person's
@@ -77,6 +165,12 @@ export type RegistroResultado =
  * the claim RPC reads on the create path). Confirm-email-required means no session
  * exists until verification, so `requiereConfirmacion` is `session === null`.
  * `client` is injectable for tests (ADR-0001).
+ *
+ * Reading WHICH outcome happened is the point (see `RegistroResultado`). GoTrue answers
+ * an already-confirmed address with a freshly-minted fake user carrying no identities
+ * and sends nothing (`sanitizeUser`); an already-pending one comes back verbatim, with
+ * its original `created_at`, after the confirmation was re-sent and the previous token
+ * rotated away. Both used to render as "Revisa tu correo".
  */
 export async function registrarSocio(
   raw: unknown,
@@ -88,6 +182,12 @@ export async function registrarSocio(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
   const input = parsed.data;
+  const clave = input.email.toLowerCase();
+  const ahora = Date.now();
+  // A reload, a double-tap or an impatient resubmit is not a new intent. Answering it from
+  // memory is what keeps the retry from rotating the link the member is already holding.
+  if (enEspera(clave, ahora)) return { ok: true, estado: "yaEnviado" };
+
   const supabase = client ?? (await createClient());
 
   const { data, error } = await supabase.auth.signUp({
@@ -98,9 +198,28 @@ export async function registrarSocio(
       data: { full_name: input.nombre, phone_e164: telefonoAE164(input.telefono) },
     },
   });
-  if (error) return { ok: false, error: error.message };
-  const requiereConfirmacion = data.session === null;
-  return { ok: true, requiereConfirmacion };
+  if (error) {
+    // The member now gets a mapped message, so the raw code/status only survives here —
+    // same structured shape `solicitarReset` uses, and never the address.
+    console.warn(
+      JSON.stringify({
+        event: "registro-signup-error",
+        code: error.code,
+        status: error.status,
+        error: error.message,
+      }),
+    );
+    return { ok: false, error: mensajeDeError(error) };
+  }
+  // No mail was sent on this arm, so it must not spend the throttle either.
+  if (data.user?.identities?.length === 0) return { ok: true, estado: "cuentaExistente" };
+
+  registrarEnvio(clave, ahora);
+  const creado = Date.parse(data.user?.created_at ?? "");
+  if (Number.isFinite(creado) && ahora - creado > VENTANA_NUEVO_MS) {
+    return { ok: true, estado: "yaEnviado" };
+  }
+  return { ok: true, estado: "nuevo", requiereConfirmacion: data.session === null };
 }
 
 /**

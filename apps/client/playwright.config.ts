@@ -1,8 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * The repo's only browser-level suite: the session-persistence regression shield
- * (`e2e/session.spec.ts`). It is deliberately NOT in the pre-commit gate — `pnpm lint`,
+ * The repo's browser-level suites: the session-persistence regression shield
+ * (`e2e/session.spec.ts`) and the signup-rail shield (`e2e/signup.spec.ts`). They are
+ * deliberately NOT in the pre-commit gate — `pnpm lint`,
  * `pnpm typecheck` and `pnpm test` are untouched. Like `pnpm test:denial` (AGENTS.md),
  * this is a **documented pre-merge convention**: run `pnpm test:e2e` green before a
  * change to the auth/session surface fast-forwards to `main`.
@@ -41,6 +42,15 @@ import { defineConfig, devices } from "@playwright/test";
  * dev. This is load-bearing, not cosmetic: the demo account holds memberships in more
  * than one gym, and on a bare `localhost` the DAL's oldest-membership fallback serves a
  * DIFFERENT gym's agenda. Override with `E2E_HOST` only if your resolver disagrees.
+ *
+ * ## Turnstile
+ *
+ * `webServer.env` pins Cloudflare's documented always-pass TEST pair for the run, so
+ * `e2e/signup.spec.ts` can drive the real `/registro` form (widget included) on any
+ * machine — a developer with production keys in `.env.local` would otherwise face a
+ * challenge no test can answer. Playwright merges this over `process.env`, and
+ * `@next/env` never overwrites a variable the process already has, so it beats
+ * `.env.local` for both the build (`NEXT_PUBLIC_*` is inlined there) and the server.
  */
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 
@@ -61,6 +71,12 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: `pnpm exec next build && pnpm exec next start --port ${PORT}`,
+    // Cloudflare's always-pass test pair (docs: "Dummy sitekeys and secret keys"), public by
+    // publication and valid on every hostname. Never the gym's real keys.
+    env: {
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: "1x00000000000000000000AA",
+      TURNSTILE_SECRET_KEY: "1x0000000000000000000000000000000AA",
+    },
     // Probe the loopback literal — Node's resolver, unlike Chromium's, has no
     // `*.localhost` rule. The tests still reach this same server by tenant hostname.
     url: `http://127.0.0.1:${PORT}/entrar`,

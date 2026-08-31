@@ -23,7 +23,7 @@ Supabase's Send Email Hook *"replaces Supabase's built-in email sending"*. On ev
 
 Verify the **client** Vercel deployment serving `red-demo.ibookit.lat` (and the other client hosts) includes the `token_hash` landing — the `/auth/confirm` route's new `?token_hash=&type=` branch (this branch's `feat(client)` commit). Enabling the hook **before** the landing is live dead-ends every confirmation click (the link would land on a route that only understands the old PKCE `?code=`).
 
-- *Verify:* the client deployment for the merge commit is **READY**; opening `https://red-demo.ibookit.lat/auth/confirm?token_hash=x&type=email` reaches the route (a redirect to `/entrar?error=confirmacion` is the expected "invalid token" response — it proves the branch runs, not a 404).
+- *Verify:* the client deployment for the merge commit is **READY**; opening `https://red-demo.ibookit.lat/auth/confirm?token_hash=x&type=email` reaches the route (a redirect to `/entrar?error=token-rechazado` is the expected "invalid token" response — it proves the branch runs, not a 404; before the 2026-08-30 shield this read `error=confirmacion`).
 
 ### b. Register the hook + generate its secret — do **NOT** enable yet
 

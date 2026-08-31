@@ -37,6 +37,7 @@ export type ActivarActionState =
   | { status: "idle" }
   | { status: "yaReclamado" }
   | { status: "cuentaExistente" }
+  | { status: "cuentaExistenteFallo" }
   | { status: "error"; mensaje: string; login?: boolean };
 
 const GENERICO = "No pudimos activar tu cuenta. Intenta de nuevo.";
@@ -83,11 +84,14 @@ export async function activarAction(
       // The firma is minted here and rides the link so the firma-gated claim accepts it
       // (TENANT_ASSERTION_KEY is present — iniciarActivacion just used it to reach here).
       const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-      await enviarMagicLink(
+      const enviado = await enviarMagicLink(
         email,
         `${origin}/auth/confirm?codigo=${codigo}&firma=${firmaCodigo(codigo)}&next=/reservar`,
       );
-      return { status: "cuentaExistente" };
+      // A throttled or refused send used to render "Revisa tu correo" for mail that never
+      // left (FC-16) — the rescue rail failing in total silence. Saying so leaks nothing
+      // here: `cuenta_existente` is the premise of this branch, not a disclosure.
+      return enviado.ok ? { status: "cuentaExistente" } : { status: "cuentaExistenteFallo" };
     }
     case "codigo_invalido":
       return {

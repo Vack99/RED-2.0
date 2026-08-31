@@ -79,6 +79,7 @@ Deno.serve(async (req: Request) => {
     user: { email: string };
     email_data: {
       token_hash: string;
+      token: string;
       redirect_to: string;
       email_action_type: string;
     };
@@ -98,12 +99,13 @@ Deno.serve(async (req: Request) => {
     mail = construirCorreoAuth({
       emailActionType: email_data.email_action_type,
       tokenHash: email_data.token_hash,
+      token: email_data.token,
       redirectTo: email_data.redirect_to,
       gymNombre,
     });
   } catch {
-    // Empty/unparseable redirect_to: fail closed rather than defaulting to the
-    // platform's global Site URL, which would auto-enroll this user into
+    // Empty/unparseable/wrong-path redirect_to: fail closed rather than defaulting
+    // to the platform's global Site URL, which would auto-enroll this user into
     // whichever gym owns that host (#217).
     return json(400, { error: { http_code: 400, message: "redirect_to vacío o inválido" } });
   }

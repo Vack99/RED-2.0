@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useActionState, useState, type FormEvent } from "react";
+import { startTransition, useActionState, useEffect, useState, type FormEvent } from "react";
 
 import {
   validarCorreo,
@@ -9,20 +9,43 @@ import {
 } from "../../../lib/auth-validacion";
 import {
   entrarAction,
+  reenviarAction,
   resetAction,
   type EntrarActionState,
+  type ReenviarActionState,
   type ResetActionState,
 } from "../actions";
 
 const LOGIN_INICIAL: EntrarActionState = { status: "idle" };
 const RESET_INICIAL: ResetActionState = { status: "idle" };
+const REENVIO_INICIAL: ReenviarActionState = { status: "idle" };
 
-// `/auth/confirm` bounces a link it could not exchange to `/entrar?error=confirmacion`
-// (expired, already used, or opened in another browser). The page reads the param; this
-// is the copy it becomes — the same banner surface a failed sign-in uses, because landing
-// on an unexplained login form is exactly the dead end the redirect used to produce.
-const ENLACE_INVALIDO =
-  "El enlace de tu correo ya expiró o ya se usó. Entra con tu contraseña o pide uno nuevo.";
+// `/auth/confirm` bounces a link it could not use to `/entrar?error=<motivo>`, one code per
+// failure shape. This is the copy each becomes — the same banner surface a failed sign-in
+// uses, because landing on an unexplained login form is exactly the dead end that turned an
+// ordinary expired link into a 34-hour wedge (incident 2026-08-30).
+//
+// What every arm has in common is what the old copy got wrong: it told people to "entra con
+// tu contraseña", which for an unconfirmed account is guaranteed to fail, and to "pide uno
+// nuevo", which named no control. Both remedies below are real and on this screen.
+const CADUCO = "El enlace de tu correo ya expiró o ya se usó. Pide uno nuevo o escribe tu código.";
+const AVISOS: Readonly<Record<string, string>> = {
+  "sin-token": "El enlace llegó incompleto. Pide uno nuevo o escribe tu código.",
+  "tipo-no-soportado": "El enlace llegó dañado. Pide uno nuevo o escribe tu código.",
+  "code-rechazado": CADUCO,
+  "token-rechazado": CADUCO,
+  // Pre-08-30 catch-all: links minted before the split still land with this code.
+  confirmacion: CADUCO,
+  // Not from `/auth/confirm`: `/codigo` sends anyone without a code here, and the motivo is
+  // what RAISES the rescue block — a bare `/entrar` renders no resend control, which is the
+  // same "pide uno nuevo" naming no control that FC-17 is.
+  "sin-codigo": "Pide un correo nuevo: llega con el enlace y con el código de 6 dígitos.",
+};
+
+// Client half of `reenvio-limite.ts`'s 5-minute per-address window: the button says how
+// long, instead of letting someone spend the shared auth-mail bucket on refused sends.
+const ESPERA_S = 300;
+const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
 // Underline field styling (the mock's `.field`): uppercase micro-label, a
 // bottom-ruled input that turns accent on focus and danger when invalid. Paint is
@@ -39,21 +62,49 @@ const INPUT =
  * trip so obvious typos surface as inline field errors; a wrong credential still
  * collapses to the action's single opaque banner. No prefilled credentials.
  *
- * `enlaceInvalido` (server-resolved from `?error=confirmacion`) seeds that same banner
- * with the dead-email-link explanation; a real sign-in attempt then supersedes it.
+ * `motivoEnlace` (the `?error=` code `/auth/confirm` redirected with) seeds that same
+ * banner with the dead-email-link explanation; a real sign-in attempt then supersedes it.
+ * Both that banner and an unconfirmed-email login failure raise the rescue block: resend
+ * the confirmation mail, or type the 6-digit code the mail prints beside the link.
  */
-export function EntrarForm({ enlaceInvalido = false }: { readonly enlaceInvalido?: boolean }) {
+export function EntrarForm({ motivoEnlace = null }: { readonly motivoEnlace?: string | null }) {
   const [mode, setMode] = useState<"login" | "reset">("login");
   const [loginState, dispatchLogin, loginPending] = useActionState(entrarAction, LOGIN_INICIAL);
   const [resetState, dispatchReset, resetPending] = useActionState(resetAction, RESET_INICIAL);
-  const aviso =
-    loginState.status === "error" ? loginState.error : enlaceInvalido ? ENLACE_INVALIDO : null;
+  const [reenvioState, dispatchReenvio, reenvioPending] = useActionState(
+    reenviarAction,
+    REENVIO_INICIAL,
+  );
+  // An unrecognized code still explains itself with the generic dead-link copy — a motivo
+  // the route learns to emit before this map learns to render it must never reproduce the
+  // blank, unexplained login screen this whole surface exists to kill.
+  const avisoEnlace = motivoEnlace ? (AVISOS[motivoEnlace] ?? CADUCO) : null;
+  const aviso = loginState.status === "error" ? loginState.error : avisoEnlace;
+  const rescate =
+    avisoEnlace !== null || (loginState.status === "error" && loginState.noConfirmado === true);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [errCorreo, setErrCorreo] = useState<string | null>(null);
   const [errPassword, setErrPassword] = useState<string | null>(null);
+  const [espera, setEspera] = useState(0);
+
+  useEffect(() => {
+    if (espera <= 0) return;
+    const id = setTimeout(() => setEspera((s) => s - 1), 1000);
+    return () => clearTimeout(id);
+  }, [espera]);
+
+  function onReenviar() {
+    const ce = validarCorreo(email);
+    setErrCorreo(ce);
+    if (ce) return;
+    const fd = new FormData();
+    fd.set("email", email);
+    setEspera(ESPERA_S);
+    startTransition(() => dispatchReenvio(fd));
+  }
 
   function onSubmitLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -179,6 +230,41 @@ export function EntrarForm({ enlaceInvalido = false }: { readonly enlaceInvalido
           <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
         )}
       </div>
+
+      {/* The rescue block (shield plan fix 2 + the fable verdict's OTP rail): the two
+          remedies a dead confirmation link actually has. It sits under the correo field
+          because both read it — the resend needs the address, and /codigo asks for it
+          again. Never rendered on a plain wrong-password failure. */}
+      {rescate && (
+        <div className="flex flex-col gap-2.5 border px-4 py-3.5" style={{ borderColor: "var(--line-soft)" }}>
+          <button
+            type="button"
+            onClick={onReenviar}
+            disabled={reenvioPending || espera > 0}
+            className="w-full border py-3 text-[11.5px] font-bold uppercase tracking-[1.4px] text-fg transition hover:bg-surface disabled:opacity-40"
+            style={{ borderColor: "var(--line-soft)" }}
+          >
+            {reenvioPending
+              ? "Enviando…"
+              : espera > 0
+                ? `Reenviar en ${mmss(espera)}`
+                : "Reenviar correo de confirmación"}
+          </button>
+          {reenvioState.status === "enviado" && (
+            <p role="status" className="text-[12px] text-muted">
+              Si tu cuenta está pendiente de confirmar, ya te enviamos un correo nuevo. Abre el más
+              reciente y revisa también tu carpeta de spam.
+            </p>
+          )}
+          <p className="text-[12px] text-muted">
+            ¿El enlace no funciona?{" "}
+            <Link href="/codigo" className="font-semibold text-accent">
+              Escribe el código de 6 dígitos
+            </Link>{" "}
+            que viene en el correo.
+          </p>
+        </div>
+      )}
 
       <div className="group">
         <div className="flex items-baseline justify-between">

@@ -13,6 +13,18 @@ import { createClient, type SupabaseServer } from "./supabase";
 /** A discriminated result so the actions render one message surface. */
 export type SesionResultado = { ok: true } | { ok: false; error: string };
 
+/** The session-establishing arms (`confirmarCodigo`, `confirmarTokenHash`) carry GoTrue's
+ *  own `code`/`status` on failure so `/auth/confirm` can log WHY a link died — expired vs
+ *  already-used vs malformed. The 2026-08-30 wedge is unexplained precisely because that
+ *  route collapsed four distinct failures into one silent redirect. */
+export type ConfirmacionResultado =
+  | { ok: true }
+  | { ok: false; error: string; code?: string | undefined; status?: number | undefined };
+
+/** Login's failure adds one flag the copy cannot carry: an unconfirmed address is the ONE
+ *  arm with a working remedy (resend), and the form has to know which arm it is to offer it. */
+export type LoginResultado = { ok: true } | { ok: false; error: string; noConfirmado?: true };
+
 /** GoTrue throttles by IP+email; the 429 arrives as `over_request_rate_limit` (and the raw
  *  status, for any 429-class code the SDK adds later). BOTH sign-in attempts in
  *  `iniciarSesion` map through this: a throttled attempt that reports "wrong password" is
@@ -41,7 +53,7 @@ export async function iniciarSesion(
   email: string,
   password: string,
   client?: SupabaseServer,
-): Promise<SesionResultado> {
+): Promise<LoginResultado> {
   const supabase = client ?? (await createClient());
   const correo = email.trim();
   const { error } = await supabase.auth.signInWithPassword({
@@ -50,9 +62,13 @@ export async function iniciarSesion(
   });
   if (!error) return { ok: true };
   if (error.code === "email_not_confirmed") {
+    // The old copy ("Revisa el enlace que te enviamos") sent this cohort back to a link that,
+    // for the 2026-08-30 victims, had already been rotated away by their own retries — and the
+    // product had no resend control at all. `noConfirmado` is what lets the form offer one.
     return {
       ok: false,
-      error: "Confirma tu correo antes de entrar. Revisa el enlace que te enviamos.",
+      error: "Confirma tu correo antes de entrar. Si no llegó, reenvíalo aquí abajo.",
+      noConfirmado: true,
     };
   }
   if (esLimiteDeIntentos(error)) return { ok: false, error: DEMASIADOS_INTENTOS };
@@ -108,13 +124,57 @@ export async function solicitarReset(
 }
 
 /**
+ * Re-send the signup confirmation mail. The door the copy already promised and the
+ * product never had: before this, the only way to get a fresh confirmation link was to
+ * re-POST `/registro`, which ROTATES the single `auth.one_time_tokens` row — the retry
+ * was the damage (incident 2026-08-30, FC-01/FC-02).
+ *
+ * Reports honestly here; the anti-enumeration posture lives at the ACTION layer, which
+ * answers "enviado" for a registered address, an unregistered one and a throttled one
+ * alike. `emailRedirectTo` is the `/auth/confirm` landing, built the way every other
+ * sender in this repo builds it (request host + `/auth/confirm`).
+ */
+export async function reenviarConfirmacion(
+  email: string,
+  emailRedirectTo: string,
+  client?: SupabaseServer,
+): Promise<SesionResultado> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: email.trim(),
+    options: { emailRedirectTo },
+  });
+  if (error) {
+    // Same structured line `solicitarReset` writes — never the address (the log would
+    // re-create the enumeration channel the response refuses).
+    console.warn(
+      JSON.stringify({
+        event: "reenvio-confirmacion-error",
+        code: error.code,
+        status: error.status,
+        emailRedirectTo,
+        error: error.message,
+      }),
+    );
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+/**
  * Send a passwordless sign-in (magic link) to an EXISTING account only
  * (`shouldCreateUser:false` — never provisions here). The activation door's
  * `cuenta_existente` rail (audit §4): a pre-existing account gets inbox proof via a
  * magic link instead of a password-reset mail, so the member signs straight in with no
  * gratuitous password change. `emailRedirectTo` is the `/auth/confirm` landing that
- * binds this gym's membership (codigo+firma) on the verified session. Always resolves
- * ok (never leak whether an address is registered).
+ * binds this gym's membership (codigo+firma) on the verified session.
+ *
+ * Reports the real outcome. It used to discard `signInWithOtp`'s result entirely and
+ * promise "Revisa tu correo" for a mail that was never sent (FC-16) — and this is the ONE
+ * rail where honesty leaks nothing: the only caller reached this branch because the
+ * activation edge function already answered `cuenta_existente`, so the account's existence
+ * is a premise of the screen, not a disclosure.
  */
 export async function enviarMagicLink(
   email: string,
@@ -122,10 +182,23 @@ export async function enviarMagicLink(
   client?: SupabaseServer,
 ): Promise<SesionResultado> {
   const supabase = client ?? (await createClient());
-  await supabase.auth.signInWithOtp({
+  const { error } = await supabase.auth.signInWithOtp({
     email: email.trim(),
     options: { shouldCreateUser: false, emailRedirectTo },
   });
+  if (error) {
+    // The redirect carries the invite `codigo` + its `firma`, so the URL stays out of the
+    // log — code and message are what diagnose a throttle or a bad address.
+    console.warn(
+      JSON.stringify({
+        event: "magic-link-send-error",
+        code: error.code,
+        status: error.status,
+        error: error.message,
+      }),
+    );
+    return { ok: false, error: error.message };
+  }
   return { ok: true };
 }
 
@@ -138,10 +211,12 @@ export async function enviarMagicLink(
 export async function confirmarCodigo(
   code: string,
   client?: SupabaseServer,
-): Promise<SesionResultado> {
+): Promise<ConfirmacionResultado> {
   const supabase = client ?? (await createClient());
   const { error } = await supabase.auth.exchangeCodeForSession(code);
-  return error ? { ok: false, error: error.message } : { ok: true };
+  return error
+    ? { ok: false, error: error.message, code: error.code, status: error.status }
+    : { ok: true };
 }
 
 /** The OTP types an auth-mail `token_hash` link can carry (Send Email Hook, #75).
@@ -160,9 +235,33 @@ export async function confirmarTokenHash(
   type: TipoTokenHash,
   tokenHash: string,
   client?: SupabaseServer,
-): Promise<SesionResultado> {
+): Promise<ConfirmacionResultado> {
   const supabase = client ?? (await createClient());
   const { error } = await supabase.auth.verifyOtp({ type, token_hash: tokenHash });
+  return error
+    ? { ok: false, error: error.message, code: error.code, status: error.status }
+    : { ok: true };
+}
+
+/**
+ * Verify the 6-digit code the confirmation mail prints beside the link, and establish the
+ * session on `client`. The OTP fallback rail (2026-08-30 shield plan, fable verdict #1):
+ * the code survives everything that kills a link — query stripping, in-app-webview URL
+ * mangling, a prefetcher burning the single-use `token_hash`, a host split-brain — because
+ * the member carries it by hand. `type: "email"` is what the hook mints for signup
+ * confirmations (`correo.ts`'s `tipoOtp`), the same OTP the `token_hash` link redeems.
+ */
+export async function confirmarCodigoDeCorreo(
+  email: string,
+  token: string,
+  client?: SupabaseServer,
+): Promise<SesionResultado> {
+  const supabase = client ?? (await createClient());
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.trim(),
+    token,
+    type: "email",
+  });
   return error ? { ok: false, error: error.message } : { ok: true };
 }
 

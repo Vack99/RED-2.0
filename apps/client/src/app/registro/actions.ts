@@ -4,7 +4,9 @@ import { headers } from "next/headers";
 
 import { registrarSocio } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
+import { reenviarConfirmacion } from "@gym/data/server/sesion";
 
+import { permitirReenvio } from "../../lib/reenvio-limite";
 import { verificarTurnstile } from "../../lib/turnstile";
 
 /**
@@ -22,7 +24,12 @@ import { verificarTurnstile } from "../../lib/turnstile";
 export type RegistroActionState =
   | { status: "idle" }
   | { status: "error"; error: string }
-  | { status: "success" };
+  /** A first confirmation mail is on its way. */
+  | { status: "success" }
+  /** The address is already confirmed — nothing was sent; the door is `/entrar`. */
+  | { status: "cuentaExistente" }
+  /** A pending signup already existed, so this send replaced the previous link. */
+  | { status: "yaEnviado" };
 
 export async function registrarAction(
   _prev: RegistroActionState,
@@ -58,5 +65,38 @@ export async function registrarAction(
     { emailRedirectTo: confirmUrl },
   );
 
-  return result.ok ? { status: "success" } : { status: "error", error: result.error };
+  // The three outcomes stay apart all the way to the screen: collapsing them into one
+  // "Revisa tu correo" is what left a member resubmitting this form until every link she
+  // held was dead (incident 2026-08-30, FC-02/FC-18).
+  if (!result.ok) return { status: "error", error: result.error };
+  if (result.estado === "cuentaExistente") return { status: "cuentaExistente" };
+  if (result.estado === "yaEnviado") return { status: "yaEnviado" };
+  return { status: "success" };
+}
+
+export type ReenvioActionState = { status: "idle" } | { status: "enviado" };
+
+/**
+ * Resend the signup confirmation for the address the member just typed — the control the
+ * "abre el más reciente" screen offers instead of resubmitting the whole form (which is
+ * what rotates the link). Reports "enviado" unconditionally, the same posture `resetAction`
+ * takes: the answer must not reveal whether an address is registered.
+ *
+ * Gated by the same `permitirReenvio` counter `/entrar`'s resend uses — this action has no
+ * Turnstile and Server Functions are reachable by direct POST, so without it a scripted loop
+ * against one known address would spend the shared 50/hr auth-mail bucket AND rotate that
+ * member's live confirmation link every minute (FC-02/FC-09 turned into a remote weapon).
+ * A refused send still answers "enviado".
+ */
+export async function reenviarConfirmacionAction(
+  _prev: ReenvioActionState,
+  formData: FormData,
+): Promise<ReenvioActionState> {
+  const email = String(formData.get("email") ?? "").trim();
+  if (email && permitirReenvio(email)) {
+    const h = await headers();
+    const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
+    await reenviarConfirmacion(email, `${origin}/auth/confirm`);
+  }
+  return { status: "enviado" };
 }

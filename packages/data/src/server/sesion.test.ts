@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { actualizarPassword, confirmarTokenHash, enviarMagicLink, iniciarSesion } from "./sesion";
+import {
+  actualizarPassword,
+  confirmarCodigoDeCorreo,
+  confirmarTokenHash,
+  enviarMagicLink,
+  iniciarSesion,
+  reenviarConfirmacion,
+} from "./sesion";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -53,15 +60,27 @@ describe("iniciarSesion — error map + trim parity", () => {
     });
   });
 
-  it("keeps the unconfirmed-email path distinct from a wrong credential", async () => {
+  // `noConfirmado` is not decoration: it is the ONLY thing that tells the form to render
+  // the resend control, and the copy no longer points at a link that may already have been
+  // rotated away by the member's own retries (incident 2026-08-30).
+  it("keeps the unconfirmed-email path distinct from a wrong credential, and flags it", async () => {
     const { client } = conError({ code: "email_not_confirmed", status: 400 });
 
     const res = await iniciarSesion("ana@correo.mx", "secreta123", client);
 
     expect(res).toEqual({
       ok: false,
-      error: "Confirma tu correo antes de entrar. Revisa el enlace que te enviamos.",
+      error: "Confirma tu correo antes de entrar. Si no llegó, reenvíalo aquí abajo.",
+      noConfirmado: true,
     });
+  });
+
+  it("never flags a wrong credential as unconfirmed (no resend control on that arm)", async () => {
+    const { client } = conError({ code: "invalid_credentials", status: 400 });
+
+    const res = await iniciarSesion("ana@correo.mx", "secreta123", client);
+
+    expect(res).not.toHaveProperty("noConfirmado");
   });
 
   it("still collapses a genuine credential failure to one opaque message", async () => {
@@ -171,13 +190,104 @@ describe("confirmarTokenHash — verifyOtp args + error mapping", () => {
 
     expect(res).toEqual({ ok: false, error: "Token has expired" });
   });
+
+  // The route logs `code`/`status`, and a message alone cannot tell "expired" from
+  // "already used" — which is exactly the distinction the 08-30 wedge needed and lacked.
+  it("carries GoTrue's code + status through so /auth/confirm can log WHY", async () => {
+    const verifyOtp = vi
+      .fn()
+      .mockResolvedValue({ error: { message: "Token has expired", code: "otp_expired", status: 403 } });
+    const client = { auth: { verifyOtp } } as unknown as SupabaseServer;
+
+    const res = await confirmarTokenHash("email", "hash-3", client);
+
+    expect(res).toEqual({ ok: false, error: "Token has expired", code: "otp_expired", status: 403 });
+  });
+});
+
+/**
+ * The OTP fallback rail (fable verdict #1): the 6-digit code the confirmation mail prints
+ * beside the link, redeemed by hand when the link itself dies in transit.
+ */
+describe("confirmarCodigoDeCorreo — verifyOtp args + error mapping", () => {
+  it("forwards the trimmed email + token as an 'email' OTP", async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: null });
+    const client = { auth: { verifyOtp } } as unknown as SupabaseServer;
+
+    const res = await confirmarCodigoDeCorreo("  ana@correo.mx ", "123456", client);
+
+    expect(res).toEqual({ ok: true });
+    expect(verifyOtp).toHaveBeenCalledWith({
+      email: "ana@correo.mx",
+      token: "123456",
+      type: "email",
+    });
+  });
+
+  it("maps a rejected code to { ok:false, error } (the action collapses it to one message)", async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: { message: "Token has expired" } });
+    const client = { auth: { verifyOtp } } as unknown as SupabaseServer;
+
+    const res = await confirmarCodigoDeCorreo("ana@correo.mx", "000000", client);
+
+    expect(res).toEqual({ ok: false, error: "Token has expired" });
+  });
+});
+
+/**
+ * `reenviarConfirmacion` is the door FC-01 proved did not exist: `grep "\.resend("` over
+ * the whole repo returned zero hits, so the only fresh confirmation link came from
+ * re-POSTing /registro — which rotates the previous one away. It reports honestly; the
+ * "enviado"-regardless posture is the ACTION's, not the DAL's.
+ */
+describe("reenviarConfirmacion — resend args + honest result", () => {
+  it("forwards { type:'signup', trimmed email, emailRedirectTo } and resolves ok", async () => {
+    const resend = vi.fn().mockResolvedValue({ error: null });
+    const client = { auth: { resend } } as unknown as SupabaseServer;
+
+    const res = await reenviarConfirmacion(
+      "  ana@correo.mx ",
+      "https://red.example/auth/confirm",
+      client,
+    );
+
+    expect(res).toEqual({ ok: true });
+    expect(resend).toHaveBeenCalledWith({
+      type: "signup",
+      email: "ana@correo.mx",
+      options: { emailRedirectTo: "https://red.example/auth/confirm" },
+    });
+  });
+
+  it("reports the failure and logs it WITHOUT the address (the log would re-open the enumeration channel)", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const resend = vi
+      .fn()
+      .mockResolvedValue({ error: { message: "email rate limit exceeded", code: "over_email_send_rate_limit", status: 429 } });
+    const client = { auth: { resend } } as unknown as SupabaseServer;
+
+    const res = await reenviarConfirmacion("ana@correo.mx", "https://red.example/auth/confirm", client);
+
+    expect(res).toEqual({ ok: false, error: "email rate limit exceeded" });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const linea = String(warn.mock.calls[0]?.[0]);
+    expect(JSON.parse(linea)).toMatchObject({
+      event: "reenvio-confirmacion-error",
+      code: "over_email_send_rate_limit",
+      status: 429,
+    });
+    expect(linea).not.toContain("ana@correo.mx");
+    warn.mockRestore();
+  });
 });
 
 /**
  * `enviarMagicLink` is the activation `cuenta_existente` rail (audit §4): a passwordless
  * sign-in to an EXISTING account only. We inject a fake `auth.signInWithOtp` and assert the
- * exact args it forwards (shouldCreateUser:false is load-bearing — never provision here) and
- * that it always resolves ok (never leaks whether an address is registered).
+ * exact args it forwards (shouldCreateUser:false is load-bearing — never provision here)
+ * and that a failed send is now REPORTED: it used to discard the result and promise "Revisa
+ * tu correo" for mail that never left (FC-16), and nothing leaks by saying so — the caller
+ * only reaches this rail once the activation edge function answered `cuenta_existente`.
  */
 describe("enviarMagicLink — signInWithOtp args", () => {
   it("forwards the trimmed email + shouldCreateUser:false + emailRedirectTo, resolves ok", async () => {
@@ -196,12 +306,30 @@ describe("enviarMagicLink — signInWithOtp args", () => {
     });
   });
 
-  it("resolves ok even when signInWithOtp errors (never leaks registration state)", async () => {
-    const signInWithOtp = vi.fn().mockResolvedValue({ error: { message: "rate limited" } });
+  it("reports a failed send instead of promising 'Revisa tu correo', and logs code/status", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const signInWithOtp = vi
+      .fn()
+      .mockResolvedValue({ error: { message: "rate limited", code: "over_email_send_rate_limit", status: 429 } });
     const client = { auth: { signInWithOtp } } as unknown as SupabaseServer;
 
-    const res = await enviarMagicLink("ana@correo.mx", "https://red.example/auth/confirm", client);
+    const res = await enviarMagicLink(
+      "ana@correo.mx",
+      "https://red.example/auth/confirm?codigo=ABCD2345&firma=ff&next=/reservar",
+      client,
+    );
 
-    expect(res).toEqual({ ok: true });
+    expect(res).toEqual({ ok: false, error: "rate limited" });
+    expect(warn).toHaveBeenCalledTimes(1);
+    const linea = String(warn.mock.calls[0]?.[0]);
+    expect(JSON.parse(linea)).toMatchObject({
+      event: "magic-link-send-error",
+      code: "over_email_send_rate_limit",
+      status: 429,
+    });
+    // The redirect carries the invite code AND its firma — neither belongs in a log line.
+    expect(linea).not.toContain("ABCD2345");
+    expect(linea).not.toContain("ana@correo.mx");
+    warn.mockRestore();
   });
 });

@@ -17,9 +17,11 @@ import { EntrarForm } from "./_components/entrar-form";
  * Without it, a member whose session was healthy and auto-refreshing still saw a password
  * prompt every time any link (the drawer's own CTAs included) landed them here.
  *
- * `?error=confirmacion` is `/auth/confirm`'s failure landing (an expired or already-burnt
- * email link). Nothing read it, so that redirect rendered a blank login screen with no
- * explanation; it is now passed to the form as a banner.
+ * `?error=` is `/auth/confirm`'s failure landing, now one code per motivo (`sin-token`,
+ * `tipo-no-soportado`, `code-rechazado`, `token-rechazado` — plus the pre-08-30
+ * `confirmacion` catch-all, still in flight in old links, and `sin-codigo`, which `/codigo`
+ * sends). The form turns it into a banner that names what happened and offers the two
+ * remedies that exist: resend, or the code.
  */
 export default async function EntrarPage({
   searchParams,
@@ -32,7 +34,7 @@ export default async function EntrarPage({
 
   const [brand, sp] = await Promise.all([resolveBrand(), searchParams]);
   const LoginHero = brand.loginAnimation;
-  const form = <EntrarForm enlaceInvalido={sp.error === "confirmacion"} />;
+  const form = <EntrarForm motivoEnlace={sp.error ?? null} />;
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>{form}</LoginHero>
