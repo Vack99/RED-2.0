@@ -3,9 +3,8 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { permitirReenvio } from "@gym/data/server/reenvio-limite";
 import { iniciarSesion, reenviarConfirmacion, solicitarReset } from "@gym/data/server/sesion";
-
-import { permitirReenvio } from "../../lib/reenvio-limite";
 
 /**
  * Login + forgot-password + resend-confirmation server actions (ADR-0009: email+password
@@ -57,7 +56,9 @@ export async function resetAction(
  * Always answers "enviado": a registered address, an unregistered one, one already
  * confirmed and one the throttle just refused are indistinguishable from here, the same
  * posture `resetAction` holds. `permitirReenvio` is the app-side cap on the shared 50/hr
- * auth-mail bucket (best-effort, in-process — see its note).
+ * auth-mail bucket — ONE counter across all three mail-sending doors (this one,
+ * `/registro`'s resend, and `registrarSocio`'s signUp), best-effort and in-process; see
+ * `@gym/data/server/reenvio-limite`.
  */
 export type ReenviarActionState = { status: "idle" } | { status: "enviado" };
 

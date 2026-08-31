@@ -42,8 +42,9 @@ const AVISOS: Readonly<Record<string, string>> = {
   "sin-codigo": "Pide un correo nuevo: llega con el enlace y con el código de 6 dígitos.",
 };
 
-// Client half of `reenvio-limite.ts`'s 5-minute per-address window: the button says how
-// long, instead of letting someone spend the shared auth-mail bucket on refused sends.
+// Client half of `@gym/data/server/reenvio-limite`'s 5-minute per-address window: the
+// button says how long, instead of letting someone spend the shared auth-mail bucket on
+// refused sends.
 const ESPERA_S = 300;
 const mmss = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -353,6 +354,13 @@ export function EntrarForm({ motivoEnlace = null }: { readonly motivoEnlace?: st
       </div>
 
       <div className="flex flex-col items-center gap-3 text-center text-[13px]">
+        {/* Always visible, unlike the rescue block above: the confirmation mail tells the
+            member to "escribe este código en la página de acceso", and until now this page
+            only linked /codigo from inside an error state — someone arriving cold from that
+            mail found no way in. Secondary by styling, on purpose. */}
+        <Link href="/codigo" className="font-semibold text-accent">
+          ¿Tienes un código de tu correo?
+        </Link>
         <p className="text-muted">
           ¿Aún no entrenas con nosotros?{" "}
           <Link href="/reservar" className="font-semibold text-accent">

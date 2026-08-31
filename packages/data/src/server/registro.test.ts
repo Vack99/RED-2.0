@@ -77,9 +77,17 @@ describe("registrarSocio", () => {
   const OPTS = { emailRedirectTo: "https://gym.test/auth/confirm" };
 
   let n = 0;
-  /** A fresh address per test: the send throttle is module-level state that outlives one
-   *  `it`, so a reused address would make the tests throttle each other. */
+  /** A fresh address per test: the send throttle is `./reenvio-limite`'s module-level state
+   *  (shared with both resend doors) and it outlives one `it`, so a reused address would
+   *  make the tests throttle each other. */
   const correo = () => `socio${++n}@correo.mx`;
+
+  /** The daily cap is per UTC calendar day, so the fake clock is pinned to midday: a run
+   *  that started minutes before UTC midnight would otherwise roll the day mid-test. */
+  const relojFijo = () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.UTC(2026, 7, 30, 12, 0, 0));
+  };
 
   const alta = (email: string) => ({
     nombre: "Ana López",
@@ -231,7 +239,7 @@ describe("registrarSocio", () => {
   });
 
   it("lets the address through again once the 5-minute window passes", async () => {
-    vi.useFakeTimers();
+    relojFijo();
     const email = correo();
     let llamadas = 0;
     const client = fakeSignUp(() => {
@@ -249,15 +257,15 @@ describe("registrarSocio", () => {
     expect(llamadas).toBe(2);
   });
 
-  it("caps one address at 10 mails a day — one member cannot starve the shared bucket (FC-09)", async () => {
-    vi.useFakeTimers();
+  it("caps one address at 5 mails a day — one member cannot starve the shared bucket (FC-09)", async () => {
+    relojFijo();
     const email = correo();
     let llamadas = 0;
     const client = fakeSignUp(() => {
       llamadas += 1;
       return usuarioNuevo();
     });
-    for (let i = 0; i < 10; i += 1) {
+    for (let i = 0; i < 5; i += 1) {
       expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
       vi.advanceTimersByTime(5 * MINUTO + 1000);
     }
@@ -265,24 +273,28 @@ describe("registrarSocio", () => {
       ok: true,
       estado: "yaEnviado",
     });
-    expect(llamadas).toBe(10);
+    expect(llamadas).toBe(5);
   });
 
-  it("forgets an address once its day rolls over (the throttle map stays bounded)", async () => {
-    vi.useFakeTimers();
-    const viejo = correo();
+  it("gives the address a fresh allowance once the UTC day rolls over", async () => {
+    relojFijo();
+    const email = correo();
     let llamadas = 0;
     const client = fakeSignUp(() => {
       llamadas += 1;
       return usuarioNuevo();
     });
-    await registrarSocio(alta(viejo), OPTS, client);
-    vi.advanceTimersByTime(DIA + MINUTO);
-    // A send for ANOTHER address is what sweeps the stale entry out of the map…
-    await registrarSocio(alta(correo()), OPTS, client);
-    // …and the rolled-over address starts over with a full daily allowance.
-    expect(await registrarSocio(alta(viejo), OPTS, client)).toEqual(NUEVO);
-    expect(llamadas).toBe(3);
+    for (let i = 0; i < 5; i += 1) {
+      await registrarSocio(alta(email), OPTS, client);
+      vi.advanceTimersByTime(5 * MINUTO + 1000);
+    }
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual({
+      ok: true,
+      estado: "yaEnviado",
+    });
+    vi.advanceTimersByTime(DIA);
+    expect(await registrarSocio(alta(email), OPTS, client)).toEqual(NUEVO);
+    expect(llamadas).toBe(6);
   });
 
   describe("GoTrue errors → es-MX (FC-19)", () => {

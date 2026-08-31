@@ -7,6 +7,7 @@ import { createHmac } from "node:crypto";
 import { isTelValido, telDigits } from "@gym/format";
 
 import type { Database } from "../database.types";
+import { enEsperaReenvio, registrarReenvio } from "./reenvio-limite";
 import { createClient, type SupabaseServer } from "./supabase";
 
 /**
@@ -109,50 +110,6 @@ function mensajeDeError(error: {
   return ERROR_GENERICO;
 }
 
-/**
- * Per-address send throttle for the signup rail. The auth-email quota is ONE project-wide
- * bucket shared by every gym (~50/hr, FC-09) and GoTrue's own floor is 60s per address —
- * 60/hr, above the whole platform's budget — so the app has to be the one that says no.
- * Two limits: `ESPERA_MS` between sends to one address, and `MAX_POR_DIA` per rolling day.
- * Past either, the door reports `yaEnviado` without calling signUp, which is the truth: a
- * live link is already sitting in that inbox, and minting another would only kill it.
- *
- * BEST-EFFORT, DELIBERATELY: this Map is one serverless instance's memory, so N warm
- * instances allow up to N× these numbers and a cold start forgets everything. It caps the
- * loop that actually happened — one person resubmitting one form on one connection, four
- * mails in 28 minutes — not a distributed attacker; that is Turnstile's job at the door
- * and GoTrue's 60s floor underneath. A hard cap needs shared state (a sends table or KV);
- * this buys the fix without a migration.
- */
-const ESPERA_MS = 5 * 60 * 1000;
-const MAX_POR_DIA = 10;
-const DIA_MS = 24 * 60 * 60 * 1000;
-
-type Envio = { ultimo: number; cuenta: number; ventana: number };
-const envios = new Map<string, Envio>();
-
-function enEspera(clave: string, ahora: number): boolean {
-  const previo = envios.get(clave);
-  if (previo === undefined) return false;
-  if (ahora - previo.ventana >= DIA_MS) return false;
-  return ahora - previo.ultimo < ESPERA_MS || previo.cuenta >= MAX_POR_DIA;
-}
-
-function registrarEnvio(clave: string, ahora: number): void {
-  const previo = envios.get(clave);
-  const vigente = previo !== undefined && ahora - previo.ventana < DIA_MS;
-  envios.set(clave, {
-    ultimo: ahora,
-    cuenta: vigente ? previo.cuenta + 1 : 1,
-    ventana: vigente ? previo.ventana : ahora,
-  });
-  // This Map is the throttle's only state, so it also has to be the thing that forgets:
-  // without the sweep a long-lived instance keeps one entry per address forever.
-  for (const [otra, envio] of envios) {
-    if (ahora - envio.ventana >= DIA_MS) envios.delete(otra);
-  }
-}
-
 /** How fresh `auth.users.created_at` has to be for the returned row to be the one this
  *  request just created. Wide enough to absorb clock skew between GoTrue and this
  *  process; landing on the wrong side of it only costs the more generic screen for a
@@ -182,11 +139,14 @@ export async function registrarSocio(
     return { ok: false, error: parsed.error.issues[0]?.message ?? "Datos inválidos" };
   }
   const input = parsed.data;
-  const clave = input.email.toLowerCase();
   const ahora = Date.now();
   // A reload, a double-tap or an impatient resubmit is not a new intent. Answering it from
   // memory is what keeps the retry from rotating the link the member is already holding.
-  if (enEspera(clave, ahora)) return { ok: true, estado: "yaEnviado" };
+  // The counter is `./reenvio-limite`'s — the SAME one both resend doors spend, so this
+  // door and `/entrar`'s rescue button cannot take turns doubling one address's budget.
+  // Checked here and charged below rather than in one call: GoTrue answers an
+  // already-confirmed address without mailing anything, and that arm must spend nothing.
+  if (enEsperaReenvio(input.email, ahora)) return { ok: true, estado: "yaEnviado" };
 
   const supabase = client ?? (await createClient());
 
@@ -214,7 +174,7 @@ export async function registrarSocio(
   // No mail was sent on this arm, so it must not spend the throttle either.
   if (data.user?.identities?.length === 0) return { ok: true, estado: "cuentaExistente" };
 
-  registrarEnvio(clave, ahora);
+  registrarReenvio(input.email, ahora);
   const creado = Date.parse(data.user?.created_at ?? "");
   if (Number.isFinite(creado) && ahora - creado > VENTANA_NUEVO_MS) {
     return { ok: true, estado: "yaEnviado" };

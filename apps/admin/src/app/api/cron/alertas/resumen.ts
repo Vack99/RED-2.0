@@ -6,6 +6,12 @@
  * are unit-testable with no token, no network and no Next request machinery, the same way
  * `cuenta/respaldo/route.ts` keeps its handler free of logic and only wires tested pieces.
  *
+ * TWO CADENCES ON ONE CRON. The wedge signal (c) is why the schedule went hourly, and it
+ * pages on any run. The two LOG signals (a) and (b) keep their ORIGINAL 24h lookback and
+ * their original once-a-day voice: they may only raise the alarm on the run at
+ * `HORA_RESUMEN_DIARIO`. See that constant for why, and for what a rolling 24h window read
+ * hourly would otherwise do.
+ *
  * DIALECT — two different ones, which is the trap here. (a) and (b) run against Supabase's
  * UNIFIED logs stream in **ClickHouse SQL**: one `logs` table narrowed by `source`, nested
  * fields read via `log_attributes['<key>']`. This is deliberately NOT the older BigQuery shape
@@ -30,12 +36,12 @@
  * shed cookie lands — so the threshold (`UMBRAL_AUTH`) tolerates one isolated burst per window
  * and pages only on what a burst cannot explain: a systemic session-death regression.
  *
- * The 2026-08-30 move to an hourly cadence shrank the window to 1h so consecutive runs still
- * TILE the timeline (route.ts keeps that property; a 24h window read hourly would re-count the
- * same burst 24 times and mail about it 24 times). The threshold is unchanged because its unit
- * is one burst, not one day — what changes is sensitivity: two bursts within an HOUR now page,
- * while a slow drip spread across a day no longer accumulates past 10. That trade is deliberate.
- * A systemic session-death regression is a rate, and it shows up inside the hour.
+ * The window is 24h and the threshold counts against a DAY, which is what it was calibrated
+ * for. The 2026-08-30 move to an hourly cadence briefly shrank it to 1h so consecutive runs
+ * would tile the timeline; that silently weakened this detector, because the failure it was
+ * built to catch is a slow drip — 3 or 4 lines an hour never crosses 10 inside one hour, but
+ * it is 80 lines a day. The 24h lookback is back, and the re-alerting a rolling window read
+ * hourly would cause is handled by `HORA_RESUMEN_DIARIO` instead of by shrinking the window.
  */
 export const SQL_INVALID_GRANT = `select count(*) as total
 from logs
@@ -45,7 +51,8 @@ where source = 'auth_logs'
     or position(event_message, 'Invalid Refresh Token') > 0
   )`;
 
-/** One dead-session event ≈ one proxy fan-out burst (≤~10 lines). Above this = systemic. */
+/** One dead-session event ≈ one proxy fan-out burst (≤~10 lines). Above this, in a day, is
+ *  more than one member's bad afternoon: systemic. */
 export const UMBRAL_AUTH = 10;
 
 /**
@@ -98,6 +105,29 @@ export interface Ventana {
   hasta: string;
 }
 
+/**
+ * The one run a day where the two LOG signals may raise the alarm — 12:00 UTC, the slot this
+ * cron held before it went hourly on 2026-08-30.
+ *
+ * Their window is 24h and it ROLLS: an unrepaired drip is still in the window an hour later,
+ * so an ungated hourly run would mail about the same 24h of logs up to 24 times. The choices
+ * were (i) shrink the window to 1h so runs tile — which is what shipped, and it cost the
+ * detectors the very drip they exist to catch — (ii) remember what was already reported, which
+ * needs persistent state this route deliberately has none of (it is idempotent by
+ * construction), or (iii) keep the 24h window and let it speak once a day. (iii) is this.
+ *
+ * Derived from `ventana.hasta`, which IS the run's own clock (route.ts floors `Date.now()` to
+ * the minute), so it needs no argument, no env var and no stored cursor.
+ *
+ * RESIDUAL, stated rather than hidden: these two signals are back to a detection latency of up
+ * to 24h, exactly the latency they had by design before 2026-08-30 — the hourly cadence buys
+ * nothing for them. It was never for them: it is for the wedge signal (c), a person who cannot
+ * get in, and that one still pages on every run. Second residual: a cron invocation delayed
+ * past the top of the hour into 13:00 UTC skips that day's digest entirely; the next day's
+ * window still covers the drip, so a persistent problem is reported one day late, not lost.
+ */
+const HORA_RESUMEN_DIARIO = 12;
+
 /** What the three queries came back with. `null` = that query did not answer; the reason is in
  *  `errores`. */
 export interface ConteosAlerta {
@@ -124,6 +154,11 @@ const escaparHtml = (s: string): string =>
  * The whole threshold: alert when auth failures exceed one fan-out burst (`UMBRAL_AUTH`),
  * when any send-email failure lands, when ANY registration is wedged, or when a query failed.
  *
+ * The two LOG arms only count on the daily run (`HORA_RESUMEN_DIARIO`) — their 24h window
+ * rolls, so every other hour would re-report the same day. The wedge and error arms page on
+ * any run: a wedge is a person locked out right now, and a query that did not answer means
+ * the shield is blind right now. Both are read fresh every run, so neither is a re-report.
+ *
  * The wedge arm has no tolerance band and deliberately so: `UMBRAL_AUTH` exists because one
  * member event produces a BURST of log lines, whereas one wedged member is exactly one row —
  * the count is already the number of people who cannot get in, and the suppressions that keep
@@ -132,13 +167,14 @@ const escaparHtml = (s: string): string =>
  * A failed query counts because a shield that silently stopped looking is the exact failure
  * this cron exists to prevent — an expired PAT would otherwise read as "all clear" forever.
  * Returns `null` when the window is clean, so the caller's rule is `if (alerta) send(alerta)`
- * and no unsent subject line is ever constructed.
+ * and no unsent subject line is ever constructed. The counts themselves are ALWAYS rendered
+ * once something fires: a wedge alert at 03:00 still shows what the last 24h of logs held.
  */
 export function resumirAlerta(conteos: ConteosAlerta, ventana: Ventana): MensajeAlerta | null {
   const { invalidGrant, sendEmailFallos, atorados, errores } = conteos;
+  const turnoDiario = new Date(ventana.hasta).getUTCHours() === HORA_RESUMEN_DIARIO;
   const alertar =
-    (invalidGrant ?? 0) > UMBRAL_AUTH ||
-    (sendEmailFallos ?? 0) > 0 ||
+    (turnoDiario && ((invalidGrant ?? 0) > UMBRAL_AUTH || (sendEmailFallos ?? 0) > 0)) ||
     (atorados?.length ?? 0) > 0 ||
     errores.length > 0;
   if (!alertar) return null;

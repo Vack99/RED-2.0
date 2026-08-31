@@ -11,7 +11,12 @@ import {
   type ConteosAlerta,
 } from "./resumen";
 
-const VENTANA = { desde: "2026-08-21T11:00:00.000Z", hasta: "2026-08-21T12:00:00.000Z" };
+/** A 24h lookback ending on the 12:00 UTC daily slot — the one run where the two LOG signals
+ *  are allowed to speak. Every legacy-signal case below uses it; the cadence gate has its own
+ *  describe block driven by `FUERA_DE_TURNO`. */
+const VENTANA = { desde: "2026-08-20T12:00:00.000Z", hasta: "2026-08-21T12:00:00.000Z" };
+/** The same 24h window read on any other hourly run. */
+const FUERA_DE_TURNO = { desde: "2026-08-20T03:00:00.000Z", hasta: "2026-08-21T03:00:00.000Z" };
 const LIMPIO: ConteosAlerta = {
   invalidGrant: 0,
   sendEmailFallos: 0,
@@ -132,6 +137,62 @@ describe("resumirAlerta", () => {
     expect(alerta).not.toBeNull();
     expect(alerta!.texto).toContain("registros atorados (auth.users): sin dato");
     expect(alerta!.texto).toContain("- registros-atorados: HTTP 500");
+  });
+});
+
+/**
+ * The cadence gate. The cron is hourly for the WEDGE signal; the two log signals kept their
+ * 24h lookback, and a rolling 24h window read every hour would otherwise mail about the same
+ * day up to 24 times. So they speak once, at 12:00 UTC, and everything that is fresh on every
+ * run — a wedge, a blind query — still pages at any hour.
+ */
+describe("las dos señales de log hablan una vez al día", () => {
+  it("stays silent on a 24h drip outside the daily slot — no 24 emails for one day of logs", () => {
+    expect(resumirAlerta({ ...LIMPIO, invalidGrant: UMBRAL_AUTH + 30 }, FUERA_DE_TURNO)).toBeNull();
+    expect(resumirAlerta({ ...LIMPIO, sendEmailFallos: 4 }, FUERA_DE_TURNO)).toBeNull();
+  });
+
+  it("reports that same drip on the 12:00 UTC run", () => {
+    const alerta = resumirAlerta({ ...LIMPIO, invalidGrant: UMBRAL_AUTH + 30 }, VENTANA);
+    expect(alerta).not.toBeNull();
+    expect(alerta!.texto).toContain(`invalid_grant (auth_logs): ${UMBRAL_AUTH + 30}`);
+  });
+
+  it("a slow drip that never crosses the threshold inside one hour still crosses it in a day", () => {
+    // 3 lines an hour is 72 a day: invisible to a 1h window, systemic to the 24h one.
+    expect(resumirAlerta({ ...LIMPIO, invalidGrant: 3 }, VENTANA)).toBeNull();
+    expect(resumirAlerta({ ...LIMPIO, invalidGrant: 72 }, VENTANA)).not.toBeNull();
+  });
+
+  it("a wedged member pages at any hour — that is what the hourly cadence is for", () => {
+    const alerta = resumirAlerta(
+      { ...LIMPIO, atorados: [{ correo: "ivan@x.mx", motivo: "sin-vincular", horas: 34 }] },
+      FUERA_DE_TURNO,
+    );
+    expect(alerta).not.toBeNull();
+    expect(alerta!.texto).toContain("- ivan@x.mx · sin-vincular · 34h");
+  });
+
+  it("a blind query pages at any hour too — a shield that stopped looking is not a digest", () => {
+    const alerta = resumirAlerta(
+      { ...LIMPIO, atorados: null, errores: ["registros-atorados: HTTP 401"] },
+      FUERA_DE_TURNO,
+    );
+    expect(alerta).not.toBeNull();
+  });
+
+  it("still renders the 24h log counts in an off-hour alert raised by another signal", () => {
+    const alerta = resumirAlerta(
+      {
+        invalidGrant: 40,
+        sendEmailFallos: 2,
+        atorados: [{ correo: "ivan@x.mx", motivo: "sin-confirmar", horas: 5 }],
+        errores: [],
+      },
+      FUERA_DE_TURNO,
+    );
+    expect(alerta!.texto).toContain("invalid_grant (auth_logs): 40");
+    expect(alerta!.texto).toContain("send-email no-2xx (function_edge_logs): 2");
   });
 });
 

@@ -23,9 +23,11 @@ import pg from "pg";
 //                             the Supabase dashboard's Connect panel (session or transaction
 //                             pooler both work; this script only ever SELECTs). [required]
 //
-// Step 4 (Turnstile hostname listing) is Cloudflare-dashboard-only — nothing here can read
-// it — so it prints a manual-check reminder instead of asserting anything (per the plan's
-// own instruction: "print a manual-check reminder instead of asserting").
+// Step 4 (Turnstile hostname listing) is the one check this file cannot make: a widget's
+// allowed-hostname list is readable only from the Cloudflare dashboard — there is no API
+// surface for it that we hold credentials to (the siteverify endpoint validates a token, it
+// does not enumerate the configuration). So it prints a manual-check reminder rather than
+// asserting something it never actually looked at.
 
 const PROJECT_REF = "hjppxawglmukfvsgmcog";
 

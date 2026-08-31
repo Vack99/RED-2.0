@@ -33,9 +33,12 @@
  * It was daily at 12:00 UTC until 2026-08-30. Daily was indefensible once the wedge signal
  * landed: the Iván wedge sat 34h, already 3× that detection interval, and the send-email
  * fail-closed change (plan fix a5) turns a misprovisioned host into a hard signup failure that
- * a once-a-day check would sit on. `VENTANA_MS` shrank with the cadence so consecutive runs
- * still tile the timeline exactly — a 24h window read hourly would re-count and re-mail the
- * same burst 24 times.
+ * a once-a-day check would sit on.
+ *
+ * `VENTANA_MS` did NOT shrink with the cadence — it briefly did, and that quietly cost the two
+ * log detectors the slow drip they were calibrated on. The window stays 24h; the re-mailing a
+ * rolling window would cause is handled in `./resumen` by letting those two signals speak only
+ * on the 12:00 UTC run. See `HORA_RESUMEN_DIARIO` there for the trade and its residual.
  *
  * runtime = "nodejs": matches the app's other route handler; the work is three outbound fetches
  * plus a send, all well inside the 60s ceiling this asks for.
@@ -56,7 +59,9 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const VENTANA_MS = 60 * 60 * 1000;
+/** The two LOG queries' lookback. 24h is also the API's hard ceiling for a log range, so this
+ *  is the widest window available — and the one `UMBRAL_AUTH` was calibrated against. */
+const VENTANA_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The project ref the app already talks to: the subdomain of `NEXT_PUBLIC_SUPABASE_URL`
@@ -176,8 +181,11 @@ export async function GET(request: Request): Promise<Response> {
 
   // Both ends floored to the minute: the API rounds the range to the nearest minute and
   // rejects anything over 24h, so flooring first makes the span exactly `VENTANA_MS` with no
-  // rounding ambiguity — and consecutive hourly runs tile the timeline with no gap and no
-  // overlap. Only the two LOG queries take this window; the wedge query is point-in-time.
+  // rounding ambiguity. Consecutive runs now OVERLAP rather than tile — that is what a 24h
+  // lookback read hourly means, and `resumirAlerta` is where the overlap is prevented from
+  // becoming 24 identical emails. Only the two LOG queries take this window; the wedge query
+  // is point-in-time. `hasta` also carries the run's hour, which is how `resumirAlerta` knows
+  // whether this is the daily slot — so it must stay the real clock, never a rounded hour.
   const hasta = new Date(Math.floor(Date.now() / 60_000) * 60_000);
   const ventana: Ventana = {
     desde: new Date(hasta.getTime() - VENTANA_MS).toISOString(),

@@ -2,11 +2,11 @@
 
 import { headers } from "next/headers";
 
+import { permitirReenvio } from "@gym/data/server/reenvio-limite";
 import { registrarSocio } from "@gym/data/server/registro";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { reenviarConfirmacion } from "@gym/data/server/sesion";
 
-import { permitirReenvio } from "../../lib/reenvio-limite";
 import { verificarTurnstile } from "../../lib/turnstile";
 
 /**
@@ -82,11 +82,12 @@ export type ReenvioActionState = { status: "idle" } | { status: "enviado" };
  * what rotates the link). Reports "enviado" unconditionally, the same posture `resetAction`
  * takes: the answer must not reveal whether an address is registered.
  *
- * Gated by the same `permitirReenvio` counter `/entrar`'s resend uses — this action has no
- * Turnstile and Server Functions are reachable by direct POST, so without it a scripted loop
- * against one known address would spend the shared 50/hr auth-mail bucket AND rotate that
- * member's live confirmation link every minute (FC-02/FC-09 turned into a remote weapon).
- * A refused send still answers "enviado".
+ * Gated by the same `permitirReenvio` counter `/entrar`'s resend AND `registrarSocio`'s own
+ * signUp spend (`@gym/data/server/reenvio-limite`) — this action has no Turnstile and Server
+ * Functions are reachable by direct POST, so without it a scripted loop against one known
+ * address would spend the shared 50/hr auth-mail bucket AND rotate that member's live
+ * confirmation link every minute (FC-02/FC-09 turned into a remote weapon). A refused send
+ * still answers "enviado".
  */
 export async function reenviarConfirmacionAction(
   _prev: ReenvioActionState,
