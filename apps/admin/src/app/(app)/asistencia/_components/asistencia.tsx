@@ -15,6 +15,7 @@ import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
 import { marcadasDeMesAction, togglePaseAction, visitasDelDiaAction } from "../actions";
+import { fechaSeleccionable, opcionesEntrada, type OpcionEntrada } from "./entrada";
 import { ctxDe, LIBRE, personasEn, reciboResultado, setVisita, sugerenciaVenta, visitaDe, type Visita, type VentaSugerida } from "./marcadas";
 
 // The day strip reaches this many days back from today, each rendering a has-marks dot.
@@ -80,6 +81,7 @@ export function AsistenciaScreen({
   reservas,
   reservaAtribuible,
   ctxInicial,
+  entradaPendiente,
 }: {
   clientes: PaseClienteDTO[];
   marcadas: MarcadasInicial;
@@ -91,8 +93,13 @@ export function AsistenciaScreen({
   /** clienteId → the session a LIBRE tap would be attributed to (the RESERVA chip's
    *  source). Resolved server-side so SSR and hydration agree on "nearest to now". */
   reservaAtribuible: Record<string, string>;
-  /** The opening context, resolved server-side so SSR and hydration agree. */
+  /** The opening context, resolved server-side so SSR and hydration agree. On Cupo this
+   *  is only meaningful when `entradaPendiente` is false (a valid `?sesion=` resolved
+   *  it) — the entry step below picks it otherwise. */
   ctxInicial: string;
+  /** Cupo only (#330): the desk must ask which class/ACCESO LIBRE before the roster
+   *  shows names. Always false on Lista — that mode never sees the step. */
+  entradaPendiente: boolean;
 }) {
   const hoy = React.useMemo(() => parseDay(hoyIso), [hoyIso]);
   // Imperative nav for the #237 sale bridge below: its href carries a dynamic `?cliente=`
@@ -123,6 +130,10 @@ export function AsistenciaScreen({
   const [selDate, setSelDate] = React.useState<Date>(() => parseDay(hoyIso));
   const [query, setQuery] = React.useState("");
   const [calOpen, setCalOpen] = React.useState(false);
+  // The Cupo entry step (#330): shown instead of the roster until the operator picks a
+  // class/ACCESO LIBRE, or a valid `?sesion=` already resolved `ctxInicial` server-side.
+  // Always false on Lista (`entradaPendiente` is always false for that mode).
+  const [mostrarEntrada, setMostrarEntrada] = React.useState(entradaPendiente);
 
   // ── The kiosk outlives the day (#231) ─────────────────────────────────────────
   // `hoyIso` is stamped ONCE, at SSR, and is the `fecha` every toggle below writes — so a
@@ -154,6 +165,9 @@ export function AsistenciaScreen({
   //  • today's VISIT ROWS, from the same fresh payload. An absent key means "not loaded
   //    yet" (see the state's own comment) and the day fetch below is past-days-only, so an
   //    unseeded new today would hang the roster on "Cargando…" forever.
+  //  • the Cupo ENTRY STEP (#330), re-armed to whatever the fresh `entradaPendiente` says:
+  //    a rollover invalidates `ctxInicial` exactly like it invalidates `ctx` above, so a
+  //    step already answered for the old today must ask again for the new one.
   // Adjusted during render off the prop's identity, matching `prevClientes` below — an
   // effect would be a second commit AND is rejected outright by react-hooks/set-state-in-effect.
   const [prevHoyIso, setPrevHoyIso] = React.useState(hoyIso);
@@ -162,6 +176,7 @@ export function AsistenciaScreen({
     setPrevHoyIso(hoyIso);
     setCtx(ctxInicial);
     setVisitasPorDia((m) => ({ ...m, [hoyIso]: inicial.visitasHoy }));
+    setMostrarEntrada(entradaPendiente);
   }
 
   // A day's dot/count: a LOADED day counts its visits' distinct members (matching
@@ -243,6 +258,15 @@ export function AsistenciaScreen({
   const visitasDia = visitasPorDia[selIso]; // undefined while a picked past day loads
   const diaCargando = visitasDia === undefined;
   const visitas = visitasDia ?? [];
+
+  // The Cupo entry step's choice list for the day strip's current selection — today's
+  // classes (with their live N/M) then ACCESO LIBRE last, or LIBRE alone for any other
+  // date (entrada.ts). `visitas` is always loaded here for `selIso === hoyIso` (seeded at
+  // mount), the only case its counts matter.
+  const opcionesPaso = React.useMemo(
+    () => opcionesEntrada(selIso, hoyIso, sesiones, visitasDia ?? []),
+    [selIso, hoyIso, sesiones, visitasDia],
+  );
 
   // The context the tap writes: the picked class on today, ACCESO LIBRE on a past day —
   // the only context a back-dated 2-arg toggle can own.
@@ -460,9 +484,33 @@ export function AsistenciaScreen({
         </button>
       </div>
 
-      {/* Day strip */}
-      <DayStrip hoy={hoy} countFor={countFor} selDate={selDate} onSelect={setSelDate} />
+      {/* Day strip — also the Cupo entry step's date control (#330): a future day is
+          never reachable through it (the loop below never renders one), guarded again
+          here in case that ever changes. */}
+      <DayStrip
+        hoy={hoy}
+        countFor={countFor}
+        selDate={selDate}
+        onSelect={(d) => {
+          if (fechaSeleccionable(isoDay(d), hoyIso)) setSelDate(d);
+        }}
+      />
 
+      {/* The Cupo entry step (#330): asks which class (or ACCESO LIBRE) of the day strip's
+          current selection before the roster shows names — replaces the ±90 auto-guess.
+          Picking writes nothing; it only sets `ctx`/`selDate`, which the roster below
+          already knows how to render and write into. Never shown on Lista
+          (`entradaPendiente` is always false for that mode) or once answered. */}
+      {mostrarEntrada ? (
+        <EntradaStep
+          opciones={opcionesPaso}
+          onElegir={(id) => {
+            setCtx(id);
+            setMostrarEntrada(false);
+          }}
+        />
+      ) : (
+        <>
       {/* Context block: the thin pill selector + the one number. */}
       <div
         style={{
@@ -609,6 +657,8 @@ export function AsistenciaScreen({
           </>
         )}
       </div>
+        </>
+      )}
 
       <div style={{ height: 24 }} />
 
@@ -624,6 +674,55 @@ export function AsistenciaScreen({
           }}
         />
       </Sheet>
+    </div>
+  );
+}
+
+/** The Cupo entry step's choice list (#330) — one full-width row per option, LIBRE last.
+ *  A tap is the whole gesture: no confirm, no second screen — matches the pill row it
+ *  precedes (and, once answered, is replaced by). */
+function EntradaStep({
+  opciones,
+  onElegir,
+}: {
+  opciones: OpcionEntrada[];
+  onElegir: (id: string) => void;
+}) {
+  return (
+    <div>
+      <div style={{ padding: "16px 22px 6px" }}>
+        <Eyebrow>¿A qué asistencia?</Eyebrow>
+      </div>
+      <div style={{ borderTop: "1px solid var(--line)" }}>
+        {opciones.map((o) => (
+          <button
+            key={o.id}
+            onClick={() => onElegir(o.id)}
+            className="forge-pressable flex w-full items-center justify-between"
+            style={{
+              gap: 12,
+              padding: "16px 22px",
+              background: "transparent",
+              border: "none",
+              borderBottom: "1px solid var(--line)",
+              cursor: "pointer",
+              textAlign: "left",
+            }}
+          >
+            <span className="flex items-center" style={{ gap: 10 }}>
+              {o.hora && (
+                <Tnum style={{ fontSize: 12, fontWeight: 800, color: "var(--gold)" }}>{o.hora}</Tnum>
+              )}
+              <span className="uppercase font-extrabold" style={{ fontSize: 14, letterSpacing: 0.4 }}>
+                {o.tipo}
+              </span>
+            </span>
+            {o.ocupacion && (
+              <Tnum style={{ fontSize: 13, fontWeight: 700, color: "var(--muted)" }}>{o.ocupacion}</Tnum>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
