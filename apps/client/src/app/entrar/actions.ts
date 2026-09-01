@@ -3,8 +3,12 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { resolverMiembroGym } from "@gym/data/server/inquilino";
 import { permitirReenvio } from "@gym/data/server/reenvio-limite";
 import { iniciarSesion, reenviarConfirmacion, solicitarReset } from "@gym/data/server/sesion";
+import { createClient } from "@gym/data/server/supabase";
+
+import { destinoClases } from "../../lib/reserva-vista";
 
 /**
  * Login + forgot-password + resend-confirmation server actions (ADR-0009: email+password
@@ -19,16 +23,25 @@ export async function entrarAction(
   _prev: EntrarActionState,
   formData: FormData,
 ): Promise<EntrarActionState> {
+  // A shared client (not the default-per-call `createClient()`) so `resolverMiembroGym`
+  // below reads the SAME session `iniciarSesion` just established, not a separate one.
+  const supabase = await createClient();
   const result = await iniciarSesion(
     String(formData.get("email") ?? ""),
     String(formData.get("password") ?? ""),
+    supabase,
   );
   // `noConfirmado` is the one failure with a remedy on this screen — it turns the banner
   // into a resend button instead of an instruction the member cannot follow.
   if (!result.ok) {
     return { status: "error", error: result.error, noConfirmado: result.noConfirmado === true };
   }
-  redirect("/reservar");
+  // Modos Lista/Cupo (#332): login lands on /saldo for a Lista gym, /reservar for Cupo — the
+  // SAME branch every other routing surface reads off `reservasHabilitadas`
+  // (apps/client/src/lib/reserva-vista.ts). No membership yet (e.g. a dropped claim) defaults
+  // to Cupo's /reservar, which re-runs its own claim self-heal and falls back gracefully.
+  const miembro = await resolverMiembroGym(supabase);
+  redirect(destinoClases(miembro?.reservasHabilitadas ?? true));
 }
 
 export type ResetActionState = { status: "idle" } | { status: "sent" };

@@ -4,6 +4,7 @@ import {
   actualizarAboutValue,
   actualizarFacility,
   actualizarFaq,
+  actualizarHorario,
   actualizarStat,
   crearAboutValue,
   crearFacility,
@@ -538,5 +539,83 @@ describe("gym-content DAL — public anon reads", () => {
     const stats = await getStatsPublicas(GYM, fake.client);
     expect(stats).toEqual([{ id: "s1", label: "Coaches", value: "3" }]);
     expect(fake.eqCalls).toEqual([{ table: "stat", col: "gym_id", val: GYM }]);
+  });
+});
+
+interface HorarioCalls {
+  upsert?: { payload: Record<string, unknown>; config: unknown };
+}
+
+/** `actualizarHorario` writes a DIFFERENT table (`gym_contact`) than the shared `makeFake` above
+ *  and via `.upsert()`, not `.update()` — its own small fake, mirroring legal.test.ts's
+ *  `fakeActualizarIdentidad`. */
+function fakeActualizarHorario(opts: {
+  sub?: string | null;
+  upsertError?: unknown;
+}): { client: SupabaseServer; calls: HorarioCalls } {
+  const sub = opts.sub === undefined ? "op-1" : opts.sub;
+  const calls: HorarioCalls = {};
+  const client = {
+    auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
+    from: (table: string) => {
+      if (table === "gym_membership") {
+        return {
+          select: () => ({
+            in: () => ({
+              order: async () => ({
+                data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "gym_contact") {
+        return {
+          upsert: (payload: Record<string, unknown>, config: unknown) => {
+            calls.upsert = { payload, config };
+            return Promise.resolve({ error: opts.upsertError ?? null });
+          },
+        };
+      }
+      throw new Error(`unexpected table ${table}`);
+    },
+  };
+  return { client: client as unknown as SupabaseServer, calls };
+}
+
+describe("actualizarHorario", () => {
+  it("upserts gym_contact with the exact gym_id/hours_text payload, onConflict gym_id", async () => {
+    const fake = fakeActualizarHorario({});
+    await actualizarHorario({ horario: "Lun-Vie 6:00-21:00, Sáb 8:00-14:00" }, fake.client);
+    expect(fake.calls.upsert).toEqual({
+      payload: { gym_id: "gym-1", hours_text: "Lun-Vie 6:00-21:00, Sáb 8:00-14:00" },
+      config: { onConflict: "gym_id" },
+    });
+  });
+
+  it("a blank input clears the field (writes null, not an empty string)", async () => {
+    const fake = fakeActualizarHorario({});
+    await actualizarHorario({ horario: "   " }, fake.client);
+    expect(fake.calls.upsert?.payload).toEqual({ gym_id: "gym-1", hours_text: null });
+  });
+
+  it("rejects a horario over 200 characters", async () => {
+    const fake = fakeActualizarHorario({});
+    await expect(actualizarHorario({ horario: "a".repeat(201) }, fake.client)).rejects.toThrow();
+  });
+
+  it("throws when unauthenticated", async () => {
+    const fake = fakeActualizarHorario({ sub: null });
+    await expect(actualizarHorario({ horario: "Lun-Sáb 6:00-21:00" }, fake.client)).rejects.toThrow(
+      "No autenticado",
+    );
+  });
+
+  it("throws when the upsert errors", async () => {
+    const fake = fakeActualizarHorario({ upsertError: { message: "boom" } });
+    await expect(actualizarHorario({ horario: "Lun-Sáb 6:00-21:00" }, fake.client)).rejects.toThrow(
+      "No se pudo guardar el horario",
+    );
   });
 });

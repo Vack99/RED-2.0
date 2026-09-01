@@ -34,6 +34,10 @@ export interface MarketingGym {
   aboutStory: string | null;
   aboutPullQuote: string | null;
   aboutTagline: string | null;
+  /** `gym.booking_enabled` (Modos Lista/Cupo, #326/#332) — read PRE-LOGIN, unlike every other
+   *  member-side reader of this column: the public landing and the drawer nav/footer CTA must
+   *  read as Lista (no "Reservar" anywhere) before an anonymous visitor ever signs in. */
+  bookingEnabled: boolean;
 }
 
 /** Resolve the marketing gym from its slug (the proxy's x-gym stamp). Returns null for an unknown slug
@@ -48,7 +52,7 @@ export const getMarketingGym = cache(
   ): Promise<MarketingGym | null> => {
     const { data } = await client
       .from("gym")
-      .select("id, brand_name, timezone, about_story, about_pull_quote, about_tagline")
+      .select("id, brand_name, timezone, about_story, about_pull_quote, about_tagline, booking_enabled")
       .eq("slug", slug)
       .maybeSingle();
     return data
@@ -59,6 +63,7 @@ export const getMarketingGym = cache(
           aboutStory: data.about_story,
           aboutPullQuote: data.about_pull_quote,
           aboutTagline: data.about_tagline,
+          bookingEnabled: data.booking_enabled,
         }
       : null;
   },
@@ -157,6 +162,10 @@ export interface ContactoDTO {
   email: string | null;
   instagram: string | null;
   horarios: HorarioDTO[];
+  /** `gym_contact.hours_text` (#332) — the ONE free-text opening-hours field the Lista public
+   *  landing renders, distinct from the structured `horarios` above. Null until the operator
+   *  fills it in Cuenta's contenido sheet. */
+  horarioTexto: string | null;
 }
 
 /** Map the stored `hours` jsonb (an array of `{day, opens, closes}` or `{day, closed:true}`) into the
@@ -187,7 +196,7 @@ export const getContacto = cache(
   async (gymId: string, client: SupabaseServer = createAnonClient(gymId)): Promise<ContactoDTO | null> => {
     const { data } = await client
       .from("gym_contact")
-      .select("address_line, address_note, latitude, longitude, whatsapp, email, instagram, hours")
+      .select("address_line, address_note, latitude, longitude, whatsapp, email, instagram, hours, hours_text")
       .eq("gym_id", gymId)
       .maybeSingle();
     if (!data) return null;
@@ -200,6 +209,7 @@ export const getContacto = cache(
       email: data.email,
       instagram: data.instagram,
       horarios: parseHorarios(data.hours),
+      horarioTexto: data.hours_text,
     };
   },
 );

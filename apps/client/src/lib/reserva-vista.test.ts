@@ -3,7 +3,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   badgeDeReserva,
+  destinoClases,
+  footerCtaVista,
+  heroCtaVista,
   LINEA_BLOQUEO,
+  navClasesVista,
   presentarAvisoReserva,
   presentarEstadoReserva,
 } from "./reserva-vista";
@@ -225,5 +229,48 @@ describe("LINEA_BLOQUEO", () => {
     expect(LINEA_BLOQUEO.vencido).toContain("Tu paquete venció");
     expect(LINEA_BLOQUEO.sin_clases).toContain("No te quedan clases");
     expect(LINEA_BLOQUEO.deshabilitada).toContain("no toma reservas");
+  });
+});
+
+/**
+ * Modos Lista/Cupo (#332) — the member app's routing surface, branched on the EXISTING
+ * `reservasHabilitadas` flag (never a new `modo` derivation — #327 owns that in @gym/domain,
+ * in a parallel worktree this ticket does not have). Cupo (true) must reproduce every target/
+ * label the shipped drawer + login redirect already use verbatim (the e2e session shield
+ * asserts them against red-demo) — these cases exist to pin that, not just to cover Lista.
+ */
+describe("destinoClases", () => {
+  it("Cupo (reservasHabilitadas: true) aims at /reservar", () => {
+    expect(destinoClases(true)).toBe("/reservar");
+  });
+  it("Lista (reservasHabilitadas: false) aims at /saldo — no booking surface exists", () => {
+    expect(destinoClases(false)).toBe("/saldo");
+  });
+});
+
+describe("navClasesVista", () => {
+  it("Cupo: the drawer's 'Clases' row, tagged 'Hoy', at /reservar", () => {
+    expect(navClasesVista(true)).toEqual({ label: "Clases", href: "/reservar", tag: "Hoy" });
+  });
+  it("Lista: 'Mi saldo' at /saldo, no tag", () => {
+    expect(navClasesVista(false)).toEqual({ label: "Mi saldo", href: "/saldo", tag: null });
+  });
+});
+
+describe("footerCtaVista", () => {
+  it("Cupo: 'Reservar clase' at /reservar", () => {
+    expect(footerCtaVista(true)).toEqual({ label: "Reservar clase", href: "/reservar" });
+  });
+  it("Lista: 'Mi saldo' at /saldo — never 'Reservar' copy on a gym with no booking surface", () => {
+    expect(footerCtaVista(false)).toEqual({ label: "Mi saldo", href: "/saldo" });
+  });
+});
+
+describe("heroCtaVista", () => {
+  it("Cupo: 'Reservar clase' at /reservar", () => {
+    expect(heroCtaVista(true)).toEqual({ label: "Reservar clase", href: "/reservar" });
+  });
+  it("Lista: 'Ver planes' at /precios — the landing's real primary action with no booking surface", () => {
+    expect(heroCtaVista(false)).toEqual({ label: "Ver planes", href: "/precios" });
   });
 });

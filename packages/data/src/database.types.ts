@@ -753,6 +753,7 @@ export type Database = {
           email: string | null
           gym_id: string
           hours: Json
+          hours_text: string | null
           instagram: string | null
           latitude: number | null
           longitude: number | null
@@ -765,6 +766,7 @@ export type Database = {
           email?: string | null
           gym_id: string
           hours?: Json
+          hours_text?: string | null
           instagram?: string | null
           latitude?: number | null
           longitude?: number | null
@@ -777,6 +779,7 @@ export type Database = {
           email?: string | null
           gym_id?: string
           hours?: Json
+          hours_text?: string | null
           instagram?: string | null
           latitude?: number | null
           longitude?: number | null

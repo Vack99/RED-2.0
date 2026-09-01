@@ -68,6 +68,12 @@ export default async function ReservarPage({
   }
   if (!esMiembro) return <SinMembresia />;
 
+  // Modos Lista/Cupo (#332): a Lista gym has no booking surface at all — /reservar redirects to
+  // /saldo before the agenda read below ever runs. Checked here (not the raw gym row) so it goes
+  // through the SAME saldo DTO every booking surface already reads.
+  const saldoInicial = await getSaldoMiembro();
+  if (!saldoInicial.reservasHabilitadas) redirect("/saldo");
+
   // Host reconciliation (audit #17 / spec §5.5) happens INSIDE the DAL: each reader resolves
   // the request's own tenant (`slugDelHost`), so a member in several gyms reads THIS gym's
   // agenda + perfil with nothing to thread through — and nothing to forget.

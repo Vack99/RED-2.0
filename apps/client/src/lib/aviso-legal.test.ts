@@ -34,6 +34,7 @@ const GYM: MarketingGym = {
   aboutStory: null,
   aboutPullQuote: null,
   aboutTagline: null,
+  bookingEnabled: false,
 };
 
 afterEach(() => {

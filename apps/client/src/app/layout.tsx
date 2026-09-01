@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { headers } from "next/headers";
 import { JetBrains_Mono, Outfit } from "next/font/google";
 
 import { brandCss } from "@gym/brand";
+import { getMarketingGym } from "@gym/data/server/marketing";
 import { createClient } from "@gym/data/server/supabase";
 
 import "./globals.css";
@@ -71,6 +73,14 @@ export default async function RootLayout({
   const { data } = await supabase.auth.getClaims();
   const signedIn = Boolean(data?.claims?.sub);
 
+  // Modos Lista/Cupo (#332): the drawer's nav/footer CTA must read as Lista BEFORE login too
+  // (an anonymous visitor should never see a "Reservar" affordance that would only dead-end),
+  // so this resolves the HOST's gym the same way every other public marketing reader in this
+  // app does (getMarketingGym by x-gym slug) — never the signed-in member's own gym.
+  const gymSlug = (await headers()).get("x-gym");
+  const marketingGym = gymSlug ? await getMarketingGym(gymSlug) : null;
+  const reservasHabilitadas = marketingGym?.bookingEnabled ?? true;
+
   // `brandCss` serves the module baseline ⊕ the gym's `token_overrides` (grill
   // (b)): the app fetches the override DATA (the resolved tenant's `gym` row) and
   // passes it as an argument — `brandCss` validates it (zod-guarded before it
@@ -94,7 +104,7 @@ export default async function RootLayout({
             screens carry in their scrhead — or, once signed in, the members' affordance instead
             (Slice 2 / B5). It hides itself on the auth routes, where the login hero owns the full
             viewport. */}
-        <PublicHeader logo={<Logo />} signedIn={signedIn} />
+        <PublicHeader logo={<Logo />} signedIn={signedIn} reservasHabilitadas={reservasHabilitadas} />
         {children}
       </body>
     </html>

@@ -4,10 +4,12 @@ import Link from "next/link";
 
 import { brands, DEFAULT_BRAND, type BrandId } from "@gym/brand";
 import {
+  getContacto,
   getHorarioHoyPublico,
   getMarketingGym,
   getPlanesPublicos,
 } from "@gym/data/server/marketing";
+import { heroCtaVista } from "../../lib/reserva-vista";
 import { PricingTeaser } from "../_components/pricing-teaser";
 
 export const metadata: Metadata = {
@@ -17,14 +19,22 @@ export const metadata: Metadata = {
 };
 
 /**
- * The public comercial landing (PRD #49 S2, mock `comercial` slot): the gym's identity, a today-schedule
- * teaser, and a pricing teaser — all reading the real anon catalog, none hardcoded. The gym is resolved
- * from the proxy's `x-gym` stamp; the hero lockup from the `x-brand` module. Paint is token-driven, so a
- * RED host renders RED and a Forge host renders Forge with no brand-specific copy in this file.
+ * The public comercial landing (PRD #49 S2, mock `comercial` slot): the gym's identity plus a
+ * pricing teaser, always reading the real anon catalog, none hardcoded. The gym is resolved from
+ * the proxy's `x-gym` stamp; the hero lockup from the `x-brand` module. Paint is token-driven, so
+ * a RED host renders RED and a Forge host renders Forge with no brand-specific copy in this file.
  *
- * Marketing prose (the tagline, footer descriptor, hours) has no data column yet — it is generic,
- * platform-true copy shared across brands (the same posture as the Precios "Todos los planes incluyen"
- * row), never a per-gym claim; a later schema slice can data-drive it.
+ * Modos Lista/Cupo (#326/#332): on Cupo (`reservasHabilitadas`) this is UNCHANGED — the
+ * today-schedule teaser, "Reservar clase" hero, and generic footer line. On Lista (no booking
+ * surface at all) the schedule teaser never renders and never fetches; the hero CTA reads
+ * "Ver planes" (`heroCtaVista`); and hours/location/WhatsApp sections take its place, built from
+ * the SAME `getContacto` reader Contacto already uses. No "Reservar" copy survives on that arm.
+ *
+ * Marketing prose (the tagline, footer descriptor, Cupo's generic hours line) has no data column
+ * yet on the Cupo arm — it stays generic, platform-true copy (the same posture as the Precios
+ * "Todos los planes incluyen" row), never a per-gym claim; Lista's hours ARE per-gym now
+ * (`gym_contact.hours_text`, #332) because that arm has nothing else to say the schedule teaser
+ * used to say.
  */
 export default async function Home() {
   const h = await headers();
@@ -37,20 +47,18 @@ export default async function Home() {
   const Logo = brands[brandId].logo;
   const { tagline } = brands[brandId].copy;
 
-  // The booking funnel's destination, for every CTA on this page: always /reservar.
-  // Login-first funnel (owner ruling) — /reservar's guard redirects an unauth visitor to
-  // /entrar, and /entrar is the one place "Crea tu cuenta" (→ /registro) is offered. A
-  // signed-in member goes straight through; a prospect meets the login page first, not a
-  // registration form.
   const gym = slug ? await getMarketingGym(slug) : null;
-  const reservar = "/reservar";
+  const reservasHabilitadas = gym?.bookingEnabled ?? true;
+  const lista = gym != null && !reservasHabilitadas;
+  const cta = heroCtaVista(reservasHabilitadas);
 
-  const [planes, horario] = gym
+  const [planes, horario, contacto] = gym
     ? await Promise.all([
         getPlanesPublicos(gym.id),
-        getHorarioHoyPublico(gym.id, gym.timezone),
+        reservasHabilitadas ? getHorarioHoyPublico(gym.id, gym.timezone) : Promise.resolve([]),
+        lista ? getContacto(gym.id) : Promise.resolve(null),
       ])
-    : [[], []];
+    : [[], [], null];
   const brandName = gym?.brandName ?? brands[brandId].copy.name;
 
   return (
@@ -75,48 +83,89 @@ export default async function Home() {
         )}
 
         <Link
-          href={reservar}
+          href={cta.href}
           className="btn-primary mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-accent-fg hover:opacity-90"
         >
-          Reservar clase
+          {cta.label}
           <span aria-hidden>→</span>
         </Link>
       </section>
 
       <PricingTeaser planes={planes} />
 
-      <section className="cm-sched mt-12 px-7">
-        <h2 className="h text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
-          Hoy en {brandName}
-        </h2>
-        {horario.length > 0 ? (
-          <div className="mt-4">
-            {horario.map((s) => (
-              <Link
-                key={s.id}
-                href={reservar}
-                className="cm-srow flex items-baseline justify-between border-t border-line py-3.5 last:border-b"
-              >
-                <span className="flex items-baseline gap-[18px]">
-                  <span className="min-w-[46px] text-[13px] font-bold tabular-nums text-accent">
-                    {s.hora}
+      {!lista && (
+        <section className="cm-sched mt-12 px-7">
+          <h2 className="h text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
+            Hoy en {brandName}
+          </h2>
+          {horario.length > 0 ? (
+            <div className="mt-4">
+              {horario.map((s) => (
+                <Link
+                  key={s.id}
+                  href="/reservar"
+                  className="cm-srow flex items-baseline justify-between border-t border-line py-3.5 last:border-b"
+                >
+                  <span className="flex items-baseline gap-[18px]">
+                    <span className="min-w-[46px] text-[13px] font-bold tabular-nums text-accent">
+                      {s.hora}
+                    </span>
+                    <span className="text-[15px] font-medium text-fg">
+                      {s.tipo}
+                    </span>
                   </span>
-                  <span className="text-[15px] font-medium text-fg">
-                    {s.tipo}
+                  <span className="text-[11px] tabular-nums text-muted">
+                    {s.disponibles} lugares
                   </span>
-                </span>
-                <span className="text-[11px] tabular-nums text-muted">
-                  {s.disponibles} lugares
-                </span>
-              </Link>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-4 text-sm text-muted">
-            Hoy no hay clases programadas. Vuelve mañana.
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-4 text-sm text-muted">
+              Hoy no hay clases programadas. Vuelve mañana.
+            </p>
+          )}
+        </section>
+      )}
+
+      {lista && (
+        <section className="mt-12 px-7">
+          <h2 className="h text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
+            Horario
+          </h2>
+          <p className="mt-4 text-sm text-fg">
+            {contacto?.horarioTexto ?? "Horario próximamente."}
           </p>
-        )}
-      </section>
+        </section>
+      )}
+
+      {lista && contacto?.addressLine && (
+        <section className="mt-10 px-7">
+          <h2 className="h text-[10px] font-bold uppercase tracking-[0.2em] text-muted">
+            Ubicación
+          </h2>
+          <p className="mt-4 text-sm text-fg">{contacto.addressLine}</p>
+          <Link
+            href={"/contacto" as Route}
+            className="mt-2 inline-block text-[11px] font-semibold uppercase tracking-[0.14em] text-accent"
+          >
+            Ver mapa →
+          </Link>
+        </section>
+      )}
+
+      {lista && contacto?.whatsapp && (
+        <section className="mt-10 px-7">
+          <a
+            href={`https://wa.me/${contacto.whatsapp}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex w-full items-center justify-center gap-2 rounded-full border border-line bg-surface px-7 py-3.5 text-sm font-semibold text-fg hover:border-accent"
+          >
+            Escríbenos por WhatsApp
+          </a>
+        </section>
+      )}
 
       <footer className="cm-foot mt-14 px-7 text-center">
         <p className="text-[15px] font-medium text-fg">{brandName} — estudio funcional</p>

@@ -1,8 +1,10 @@
 import { redirect } from "next/navigation";
 
+import { resolverMiembroGym } from "@gym/data/server/inquilino";
 import { createClient } from "@gym/data/server/supabase";
 
 import { resolveBrand } from "../../lib/brand";
+import { destinoClases } from "../../lib/reserva-vista";
 import { AuthShell } from "../_components/auth-shell";
 import { EntrarForm } from "./_components/entrar-form";
 
@@ -30,7 +32,12 @@ export default async function EntrarPage({
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
-  if (data?.claims?.sub) redirect("/reservar");
+  if (data?.claims?.sub) {
+    // Modos Lista/Cupo (#332): a live session bounces to /saldo on Lista, /reservar on Cupo —
+    // the same branch `entrarAction` reads on the login path itself.
+    const miembro = await resolverMiembroGym(supabase);
+    redirect(destinoClases(miembro?.reservasHabilitadas ?? true));
+  }
 
   const [brand, sp] = await Promise.all([resolveBrand(), searchParams]);
   const LoginHero = brand.loginAnimation;
