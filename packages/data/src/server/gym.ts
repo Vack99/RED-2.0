@@ -13,6 +13,10 @@ export interface OperatorGym {
   slug: string;
   /** Per-tenant brand, mixed-case as stored (e.g. "RED", "Forge"); render sites uppercase. */
   brandName: string;
+  /** `gym.booking_enabled` — the ONE fact `@gym/domain`'s `modo()` derives into `'lista' |
+   *  'cupo'` (spec #326). Carried raw here (not pre-derived) so every caller applies the
+   *  same one derivation instead of each admin surface re-deciding the mode. */
+  bookingEnabled: boolean;
   /** The resolving session's `auth.uid()` — the claim `sub` `requireOperator` already
    *  returned. Carried so the tenant-crossing log line (#204) can name WHO crossed
    *  without a second `getClaims()` round trip. */
@@ -51,7 +55,7 @@ const resolveOperatorGyms = cache(
     // single object per row, never an array (the shape `resolverMiembroGym` reads).
     const { data: memberships } = await supabase
       .from("gym_membership")
-      .select("gym_id, gym(timezone, slug, brand_name)")
+      .select("gym_id, gym(timezone, slug, brand_name, booking_enabled)")
       .in("role", ["owner", "operator"])
       .order("gym_id");
 
@@ -63,6 +67,7 @@ const resolveOperatorGyms = cache(
               timezone: m.gym.timezone,
               slug: m.gym.slug,
               brandName: m.gym.brand_name,
+              bookingEnabled: m.gym.booking_enabled,
               userId,
             },
           ]

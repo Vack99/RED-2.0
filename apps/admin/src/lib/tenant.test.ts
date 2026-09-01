@@ -20,6 +20,7 @@ const gym = (over: Partial<OperatorGym> = {}): OperatorGym => ({
   timezone: "America/Chihuahua",
   slug: "forge",
   brandName: "Forge",
+  bookingEnabled: false,
   userId: "op-1",
   ...over,
 });

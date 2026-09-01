@@ -13,6 +13,7 @@ import type {
   EstadoCliente,
   EstadoSesion,
   MetodoPago,
+  Modo,
   NivelUrgencia,
   PlantillaContext,
   PlantillaHorario,
@@ -32,6 +33,16 @@ import type {
 // importable second opinion that the database had already stopped asking for and that the ruling
 // then made wrong. The rule now lives in exactly one place, pinned by
 // supabase/tests/registrar_venta_stacking.sql.
+
+/**
+ * The gym's mode, derived ONCE from the one flag that decides it (spec #326). Every
+ * branch — admin nav, `/agenda`'s redirect, Cuenta's hidden ajustes, the member app's
+ * `reservasHabilitadas` — reads THIS, never `booking_enabled` directly and never "does
+ * today have sessions".
+ */
+export function modo(bookingEnabled: boolean): Modo {
+  return bookingEnabled ? "cupo" : "lista";
+}
 
 /**
  * A package's display name is its class grant. The DB RPC actualizar_paquete

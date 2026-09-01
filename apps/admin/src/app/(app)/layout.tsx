@@ -2,24 +2,20 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { getAdminHosts, getOperatorGyms } from "@gym/data/server/gym";
-import { TabBar, type TabItem } from "@gym/ui/forge/tab-bar";
+import { modo } from "@gym/domain/rules";
+import { TabBar } from "@gym/ui/forge/tab-bar";
 
+import { tabsPara } from "../../lib/tabs";
 import { auditTenantInEffect } from "../../lib/tenant";
 import { SinGimnasio } from "./_components/sin-gimnasio";
 import { VariosGimnasios } from "./_components/varios-gimnasios";
 
 // The admin app owns its nav table (brand-specific routes + labels); @gym/ui's
 // TabBar is brand-neutral and receives it as a prop. With typedRoutes on, a
-// renamed/typo'd href is a build error here (audit 2026-06-30).
-const TABS: readonly TabItem[] = [
-  { href: "/inicio", label: "INICIO", icon: "home" },
-  { href: "/clientes", label: "CLIENTES", icon: "users" },
-  { href: "/asistencia", label: "ASIST", icon: "check", primary: true },
-  // AGENDA takes vender's slot (PRD #36 h); vender stays reachable from the
-  // cliente ficha (RENOVAR) + the INICIO "nuevo cliente" quick action.
-  { href: "/agenda", label: "AGENDA", icon: "cal" },
-  { href: "/cuenta", label: "CUENTA", icon: "user" },
-];
+// renamed/typo'd href is a build error here (audit 2026-06-30). The table itself
+// is now a pure function of mode (`tabsPara`, spec #326): AGENDA takes vender's
+// slot on Cupo, VENDER takes it on Lista; vender stays reachable from the cliente
+// ficha (RENOVAR) + the INICIO "nuevo cliente" quick action either way.
 
 /**
  * App shell: a full-bleed, mobile-first phone-width column centered on a
@@ -42,6 +38,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   let contenido: React.ReactNode = children;
   const mostrarTabBar = decision.kind === "render";
+  // The gym the request actually renders under — `decision.gym`'s slug is always one of
+  // `gyms` in the "render" arm (decideTenant only ever names a slug it was given). Any other
+  // arm never reaches the tab bar, so the "cupo" fallback below is never rendered — it only
+  // keeps this a total function.
+  const gymEnEfecto = decision.kind === "render" ? gyms.find((g) => g.slug === decision.gym) : undefined;
+  const modoActivo = modo(gymEnEfecto?.bookingEnabled ?? true);
 
   if (decision.kind === "none") {
     contenido = <SinGimnasio />;
@@ -70,7 +72,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <div className="flex min-h-dvh w-full justify-center bg-backdrop">
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-canvas sm:max-w-[440px] sm:shadow-2xl">
         <main className="forge-scroll relative flex-1 overflow-y-auto">{contenido}</main>
-        {mostrarTabBar && <TabBar items={TABS} />}
+        {mostrarTabBar && <TabBar items={tabsPara(modoActivo)} />}
       </div>
     </div>
   );

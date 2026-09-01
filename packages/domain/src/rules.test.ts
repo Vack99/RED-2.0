@@ -1,7 +1,16 @@
 import { describe, it, expect } from "vitest";
-import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, urgenciaCliente, ventanaArribo } from "./rules";
+import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, urgenciaCliente, ventanaArribo } from "./rules";
 import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
+
+describe("modo", () => {
+  it("derives 'cupo' when the gym takes bookings", () => {
+    expect(modo(true)).toBe("cupo");
+  });
+  it("derives 'lista' when the gym takes no bookings — forge's shape", () => {
+    expect(modo(false)).toBe("lista");
+  });
+});
 
 describe("nombrePaquete", () => {
   it("derives 'Ilimitado' for a null grant", () => {

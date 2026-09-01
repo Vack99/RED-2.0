@@ -12,6 +12,7 @@ import { listarPlantillas } from "@gym/data/server/plantillas";
 import { getMesesRespaldo } from "@gym/data/server/respaldo";
 import { getResumenMes } from "@gym/data/server/resumen";
 import { urlAvisoIntegralDesde } from "@gym/domain/legal";
+import { modo } from "@gym/domain/rules";
 import { fmtMesAnio, formatTelMx, hoyEnZona } from "@gym/format";
 
 import { resolveBrand } from "../../../lib/brand";
@@ -23,7 +24,12 @@ export default async function Page() {
   // per-BRAND-MODULE literal shared by every gym on that module — review finding 1: passing the
   // latter into a legal document naming the responsable rendered the same commercial name for
   // every gym sharing a brand).
-  const { id: gymId, timezone: tz, brandName: gymBrandName } = await getOperatorGym();
+  const { id: gymId, timezone: tz, brandName: gymBrandName, bookingEnabled } = await getOperatorGym();
+  // Lista has no coaches, class types or WhatsApp templates to configure (spec #326): on
+  // Lista these three reads are not even issued, not just hidden — `CuentaScreen` gets `[]`
+  // for each and doesn't mount the sheets that would open them.
+  const modoActivo = modo(bookingEnabled);
+  const esCupo = modoActivo === "cupo";
   const [
     perfil,
     resumen,
@@ -47,9 +53,9 @@ export default async function Page() {
     getResumenMes(),
     getCobro(),
     getPlanesEditor(undefined, tz),
-    listarPlantillas(),
-    getCoaches(),
-    getClassTypes(),
+    esCupo ? listarPlantillas() : Promise.resolve([]),
+    esCupo ? getCoaches() : Promise.resolve([]),
+    esCupo ? getClassTypes() : Promise.resolve([]),
     resolveBrand(),
     listAboutValues(),
     listFacilities(),
@@ -68,6 +74,7 @@ export default async function Page() {
 
   return (
     <CuentaScreen
+      modo={modoActivo}
       perfil={perfil}
       resumen={resumen}
       cobro={cobro}

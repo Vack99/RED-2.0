@@ -15,7 +15,7 @@ import {
   Tnum,
 } from "@gym/ui/forge/ui";
 import { identidadDesde, identidadLegalCompleta } from "@gym/domain/legal";
-import type { ResumenMes } from "@gym/domain/types";
+import type { Modo, ResumenMes } from "@gym/domain/types";
 import type { ClassTypeDTO } from "@gym/data/server/class-type";
 import type { CoachDTO } from "@gym/data/server/coach";
 import type { CobroDTO } from "@gym/data/server/cobro";
@@ -38,6 +38,11 @@ import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
 
 interface CuentaScreenProps {
+  /** The gym's booking door (spec #326). Lista hides Clases, Coaches and Plantillas —
+   *  the AJUSTES rows this screen has no use for when there's no schedule to staff or
+   *  book-triggered WhatsApp templates to send — and doesn't mount their sheets, so
+   *  none is reachable by any deep link or search param either. */
+  modo: Modo;
   perfil: PerfilDTO | null;
   resumen: ResumenMes;
   cobro: CobroDTO | null;
@@ -114,6 +119,7 @@ function DeltaCaption({ actual, prev }: { actual: number; prev: number }) {
 }
 
 export function CuentaScreen({
+  modo,
   perfil,
   resumen,
   cobro,
@@ -176,25 +182,36 @@ export function CuentaScreen({
     identidadDesde(identidadLegal, gymBrandName, telefonoContactoAviso, emailContactoAviso, urlAvisoIntegral),
   );
 
+  const esCupo = modo === "cupo";
+
+  // Cupo-only rows (schedule staffing + booking-triggered messaging) — omitted from the
+  // array entirely on Lista, not just hidden, so there's no click handler left to reach
+  // them by any deep link or search param either (spec #326, ticket #327 AC4).
+  const ajustesCupo: { icon: IconName; label: string; sub: string; onClick: () => void }[] = esCupo
+    ? [
+        {
+          icon: "users",
+          label: "COACHES",
+          sub: `${coaches.length} coach${coaches.length === 1 ? "" : "es"}`,
+          onClick: () => setCoachesOpen(true),
+        },
+        {
+          icon: "flame",
+          label: "TIPOS DE CLASE",
+          sub: `${classTypes.length} tipo${classTypes.length === 1 ? "" : "s"} de clase`,
+          onClick: () => setClassTypesOpen(true),
+        },
+        {
+          icon: "wa",
+          label: "PLANTILLAS DE WHATSAPP",
+          sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`,
+          onClick: () => setPlantillasOpen(true),
+        },
+      ]
+    : [];
+
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
-    {
-      icon: "users",
-      label: "COACHES",
-      sub: `${coaches.length} coach${coaches.length === 1 ? "" : "es"}`,
-      onClick: () => setCoachesOpen(true),
-    },
-    {
-      icon: "flame",
-      label: "TIPOS DE CLASE",
-      sub: `${classTypes.length} tipo${classTypes.length === 1 ? "" : "s"} de clase`,
-      onClick: () => setClassTypesOpen(true),
-    },
-    {
-      icon: "wa",
-      label: "PLANTILLAS DE WHATSAPP",
-      sub: `${plantillas.length} configurada${plantillas.length === 1 ? "" : "s"}`,
-      onClick: () => setPlantillasOpen(true),
-    },
+    ...ajustesCupo,
     {
       icon: "flame",
       label: "CONTENIDO DEL GIMNASIO",
@@ -225,19 +242,27 @@ export function CuentaScreen({
 
   return (
     <div>
-      <PlantillasSheet
-        open={plantillasOpen}
-        onClose={() => setPlantillasOpen(false)}
-        plantillas={plantillas}
-        negocio={negocio}
-        brandName={brandName}
-      />
+      {esCupo && (
+        <>
+          <PlantillasSheet
+            open={plantillasOpen}
+            onClose={() => setPlantillasOpen(false)}
+            plantillas={plantillas}
+            negocio={negocio}
+            brandName={brandName}
+          />
+
+          <CoachesSheet open={coachesOpen} onClose={() => setCoachesOpen(false)} coaches={coaches} />
+
+          <ClassTypesSheet
+            open={classTypesOpen}
+            onClose={() => setClassTypesOpen(false)}
+            classTypes={classTypes}
+          />
+        </>
+      )}
 
       <PaquetesSheet open={paquetesOpen} onClose={() => setPaquetesOpen(false)} paquetes={paquetes} />
-
-      <CoachesSheet open={coachesOpen} onClose={() => setCoachesOpen(false)} coaches={coaches} />
-
-      <ClassTypesSheet open={classTypesOpen} onClose={() => setClassTypesOpen(false)} classTypes={classTypes} />
 
       <GymContentSheet
         open={contenidoOpen}

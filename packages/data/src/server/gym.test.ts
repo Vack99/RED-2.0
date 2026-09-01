@@ -49,6 +49,7 @@ function makeFake(opts: {
   gymTimezone?: string;
   gymSlug?: string;
   gymBrandName?: string;
+  gymBookingEnabled?: boolean;
   dominios?: Record<string, unknown>[];
 }) {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
@@ -56,6 +57,7 @@ function makeFake(opts: {
     timezone: opts.gymTimezone ?? "America/Chihuahua",
     slug: opts.gymSlug ?? "forge",
     brand_name: opts.gymBrandName ?? "Forge",
+    booking_enabled: opts.gymBookingEnabled ?? false,
   };
   const membership = (opts.membership ?? [{ gym_id: "gym-1", role: "owner" }]).map((m) => ({
     gym: gymPorDefecto,
@@ -117,6 +119,7 @@ describe("getOperatorGym", () => {
       timezone: "America/Chihuahua",
       slug: "forge",
       brandName: "Forge",
+      bookingEnabled: false,
       userId: "op-1",
     });
   });
@@ -128,6 +131,7 @@ describe("getOperatorGym", () => {
       timezone: "America/Chihuahua",
       slug: "forge",
       brandName: "Forge",
+      bookingEnabled: false,
       userId: "op-1",
     });
   });
@@ -138,6 +142,17 @@ describe("getOperatorGym", () => {
       gymBrandName: "RED",
     });
     expect((await getOperatorGym(client)).brandName).toBe("RED");
+  });
+
+  // The mode spine (#327): `modo()` in @gym/domain derives 'lista' | 'cupo' from THIS raw
+  // flag, so the read has to carry it through untouched — not pre-derived here, so every
+  // caller applies the same one derivation.
+  it("passes gym.booking_enabled through as the raw bookingEnabled flag", async () => {
+    const { client } = makeFake({
+      membership: [{ gym_id: "gym-1", role: "owner" }],
+      gymBookingEnabled: true,
+    });
+    expect((await getOperatorGym(client)).bookingEnabled).toBe(true);
   });
 
   // The crossing log (#204) names WHO crossed. It reads the sub off this DTO rather

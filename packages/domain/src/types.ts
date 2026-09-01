@@ -8,6 +8,11 @@
 // rules in rules.ts; nothing here imports React, Supabase, or a screen.
 // ──────────────────────────────────────────────────────────────
 
+/** The gym's booking door — derived ONCE from `gym.booking_enabled` (`modo`, rules.ts) and
+ *  read by every branch across both apps. `"cupo"` books seats ahead of time; `"lista"` marks
+ *  who showed up, no schedule. Never re-derive this from "does today have sessions" (spec #326). */
+export type Modo = "lista" | "cupo";
+
 /** A class count. Ilimitado packages have no numeric limit. */
 export type Clases = number | "ilimitado";
 

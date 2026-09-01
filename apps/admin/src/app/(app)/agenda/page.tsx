@@ -1,6 +1,9 @@
+import { redirect } from "next/navigation";
+
 import { HORIZONTE_SEMANAS, getAgendaSemana } from "@gym/data/server/agenda";
 import { getClassTypes, getCoaches } from "@gym/data/server/catalog";
 import { getOperatorGym } from "@gym/data/server/gym";
+import { modo } from "@gym/domain/rules";
 import {
   DOW,
   MON,
@@ -42,7 +45,12 @@ export default async function Page({
 }: {
   searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }) {
-  const { timezone: tz } = await getOperatorGym();
+  const gym = await getOperatorGym();
+  // Lista has no schedule (spec #326): a typed/stale `/agenda` URL redirects server-side
+  // to `/inicio`, before any agenda read runs — no flash, no wasted reads.
+  if (modo(gym.bookingEnabled) === "lista") redirect("/inicio");
+
+  const tz = gym.timezone;
   const todayIso = hoyIsoEnZona(tz);
   const dParam = (await searchParams).d;
   const d = typeof dParam === "string" ? dParam : todayIso;
