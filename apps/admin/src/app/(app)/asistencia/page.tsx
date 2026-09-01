@@ -18,9 +18,19 @@ function etiquetaSesion(s: SesionAgendaDTO): string {
   return topTag({ isNext: false, isSpecial: s.esEspecial, specialName: s.nombreEspecial }) ?? s.tipo;
 }
 
-export default async function Page() {
+export default async function Page({
+  searchParams,
+}: {
+  searchParams: Promise<{ sesion?: string }>;
+}) {
   const { timezone: tz } = await getOperatorGym();
   const hoyIso = hoyIsoEnZona(tz);
+  // `?sesion=` (#328) — /inicio's Cupo day-card hero deep-links the desk here with a
+  // session already chosen, skipping the ±90 preselect it would otherwise run. Only
+  // trusted once the id is confirmed to belong to TODAY's own agenda read below (an
+  // id from a stale link, a different day, or a gym with no schedule falls back to
+  // the ordinary `sesionCercana` ladder — never a raw, unchecked query param).
+  const sesionParam = (await searchParams).sesion;
 
   // getAgendaDia depends ONLY on hoyIso (resolved above), never on clientes/marcadas — so it
   // rides in the SAME round trip as that pair, not after it (perf #242): the previous
@@ -64,7 +74,11 @@ export default async function Page() {
       // renders or React reports a mismatch. That is also why the session instants stay on
       // the server — the screen receives only ids and gym-local hora labels.
       const ahora = new Date();
-      ctxInicial = sesionCercana(agenda.sesiones, ahora);
+      const preseleccion =
+        typeof sesionParam === "string" && agenda.sesiones.some((s) => s.id === sesionParam)
+          ? sesionParam
+          : null;
+      ctxInicial = preseleccion ?? sesionCercana(agenda.sesiones, ahora);
       reservaAtribuiblePorCliente = reservaAtribuible(agenda.sesiones, reservas, ahora);
     } catch (err) {
       console.error(

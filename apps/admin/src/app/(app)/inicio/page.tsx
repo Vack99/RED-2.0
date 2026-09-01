@@ -1,39 +1,52 @@
-import { getAsistenciasHoy } from "@gym/data/server/asistencia";
+import type { Route } from "next";
+
 import { getRosterResumen } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
-import { getResumenMes } from "@gym/data/server/resumen";
-import { fmtEyebrow, hoyEnZona } from "@gym/format";
+import { modo } from "@gym/domain/rules";
+import { fmtDiaInicio, hoyEnZona, toIsoDay } from "@gym/format";
 
-import { resolveBrand } from "../../../lib/brand";
 import { InicioScreen } from "./_components/inicio";
+import { derivarDia } from "./_components/inicio-vm";
+import { leerDia } from "./reads";
 
+/**
+ * /inicio (#328, spec #326) — the home rebuild on main's current skin. The day-card's
+ * schedule read is issued ONLY on Cupo (`leerDia`, ../reads.ts — Lista never touches
+ * the client at all, `data-seam.test.ts`). Every clock read lives HERE, on the
+ * server, against the gym's tz — never the browser clock, and never in the client
+ * render (InicioScreen is a plain server component; SSR and hydration are identical
+ * by construction).
+ */
 export default async function Page() {
-  const { timezone: tz } = await getOperatorGym();
-  const [resumen, roster, recientes, brand] = await Promise.all([
-    getResumenMes(),
-    getRosterResumen(),
-    getAsistenciasHoy(),
-    resolveBrand(),
-  ]);
+  const gym = await getOperatorGym();
+  const gymModo = modo(gym.bookingEnabled);
+  const hoyLocal = hoyEnZona(gym.timezone);
+  const hoyIso = toIsoDay(hoyLocal);
 
-  const eyebrow = fmtEyebrow(hoyEnZona(tz));
-  // The home lockup is the resolved marca's logo (grill lock (g)) — rendered
-  // server-side so the client screen just slots the element (a server logo type
-  // can't cross into a client component).
-  const Lockup = brand.logo;
+  const [roster, lectura] = await Promise.all([getRosterResumen(), leerDia(gymModo, hoyIso)]);
+
+  const ahora = new Date();
+  const sesiones = lectura.agenda?.sesiones ?? [];
+  const dia = derivarDia(sesiones, lectura.visitas, gym.timezone, ahora);
+
+  // "Apartar lugar" lands on the NEXT upcoming class's agenda entry — the existing
+  // reserva-manual flow lives there; with nothing left today it falls back to the
+  // plain agenda. Unused on Lista, which never renders the link at all.
+  const proxima = sesiones.find((s) => s.startsAt.getTime() > ahora.getTime());
 
   return (
     <InicioScreen
-      resumen={resumen}
+      modo={gymModo}
+      fecha={fmtDiaInicio(hoyLocal)}
+      gymNombre={gym.brandName}
+      inicialCuenta={gym.brandName.trim().charAt(0).toUpperCase()}
+      dia={dia}
+      apartarHref={(proxima ? `/agenda?sesion=${proxima.id}` : "/agenda") as Route}
       vigentes={roster.vigentes}
       total={roster.total}
       nuevosOnline={roster.nuevosOnline}
       porRenovar={roster.porRenovar}
       aunATiempo={roster.aunATiempo}
-      fueraDeAlcance={roster.fueraDeAlcance}
-      recientes={recientes}
-      eyebrow={eyebrow}
-      lockup={<Lockup size={12} />}
     />
   );
 }

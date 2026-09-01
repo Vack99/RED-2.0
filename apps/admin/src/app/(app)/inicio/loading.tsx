@@ -1,168 +1,58 @@
 import { Skeleton } from "@gym/ui/forge/skeleton";
-import { Card, Eyebrow, H1, SectionHeader } from "@gym/ui/forge/ui";
+import { Card, Eyebrow } from "@gym/ui/forge/ui";
 
 /**
- * Route loading fallback mirroring inicio.tsx — brand row, greeting, ASISTENCIAS
- * hero, stat pair, online tile, PASE CTA, quick actions, recent-asistencias rows.
+ * Route loading fallback mirroring inicio.tsx (#328): header → day card → 50/50
+ * action pair → MEMBRESÍAS merged card → online strip. Renders the Cupo shape (the
+ * richer of the two skeletons) since the resolved mode isn't known until the real
+ * page's `getOperatorGym()` read lands.
  */
 export default function Loading() {
   return (
-    <div>
-      {/* Brand row — lockup + the account "D" button */}
-      <div className="flex items-center justify-between" style={{ padding: "14px 22px 16px" }}>
-        <Skeleton width={104} height={20} />
-        <Skeleton width={36} height={36} />
+    <div style={{ padding: "18px 22px 32px" }}>
+      {/* Header — date + gym name + account initial */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-baseline" style={{ gap: 9 }}>
+          <Skeleton width={72} height={12} />
+          <Skeleton width={54} height={10} />
+        </div>
+        <Skeleton width={34} height={34} />
       </div>
 
-      {/* Greeting — data eyebrow (server-formatted date) + static H1 */}
-      <div style={{ padding: "0 22px 14px" }}>
-        <Skeleton width={150} height={11} />
-        <H1 size={40} style={{ marginTop: 8 }}>
-          BUENOS DÍAS,
-          <br />
-          <span style={{ color: "var(--gold)" }}>COACH.</span>
-        </H1>
-      </div>
-
-      {/* Hero — asistencias hoy */}
-      <Card glow style={{ margin: "12px 16px 0" }}>
-        <div className="flex items-start justify-between">
-          <Eyebrow>ASISTENCIAS · HOY</Eyebrow>
-          <Skeleton width={88} height={11} />
+      {/* Day card */}
+      <Card style={{ marginTop: 16, padding: "18px 20px" }}>
+        <div className="flex items-baseline justify-between">
+          <Skeleton width={110} height={10} />
+          <Skeleton width={60} height={12} />
         </div>
-        <div className="flex items-end" style={{ gap: 10, marginTop: 8 }}>
-          <Skeleton width={92} height={64} />
-          <span style={{ fontSize: 13, color: "var(--muted)", paddingBottom: 10 }}>de pase registrado</span>
-        </div>
-        {/* sparkline — the last-7-days series */}
-        <div className="flex items-end" style={{ gap: 4, marginTop: 16, height: 30 }}>
-          {[0, 1, 2, 3, 4, 5, 6].map((i) => (
-            <Skeleton key={i} height={30} style={{ flex: 1 }} />
-          ))}
-        </div>
-        <div className="flex justify-between" style={{ marginTop: 8, fontSize: 10, color: "var(--muted)", letterSpacing: 1 }}>
-          <span>7 DÍAS ATRÁS</span>
-          <span>HOY</span>
-        </div>
+        <Skeleton width="70%" height={22} style={{ marginTop: 8 }} />
+        <Skeleton height={44} style={{ marginTop: 12 }} />
       </Card>
 
-      {/* Secondary stats */}
-      <div className="grid grid-cols-2" style={{ padding: "10px 16px 0", gap: 8 }}>
-        <Card style={{ padding: "14px 16px" }}>
-          <Eyebrow>VIGENTES</Eyebrow>
-          <Skeleton width={64} height={28} style={{ marginTop: 4 }} />
-        </Card>
-        <Card style={{ padding: "14px 16px" }}>
-          <Eyebrow>SEMANA · INGRESOS</Eyebrow>
-          <Skeleton width={96} height={22} style={{ marginTop: 4 }} />
-        </Card>
+      {/* 50/50 action pair */}
+      <div className="flex" style={{ marginTop: 8, gap: 8 }}>
+        <Skeleton height={46} style={{ flex: 1 }} />
+        <Skeleton height={46} style={{ flex: 1 }} />
       </div>
 
-      {/* Nuevos registros online tile */}
-      <div style={{ padding: "10px 16px 0" }}>
-        <div className="flex items-center border border-line bg-surface" style={{ padding: "14px 16px", gap: 14 }}>
-          <Skeleton width={34} height={34} />
-          <div className="min-w-0 flex-1">
-            <Eyebrow>NUEVOS REGISTROS ONLINE</Eyebrow>
-            <Skeleton width={130} height={10} style={{ marginTop: 5 }} />
-          </div>
-          <Skeleton width={30} height={26} />
-          <Skeleton width={14} height={14} />
+      {/* MEMBRESÍAS */}
+      <div className="flex items-baseline justify-between" style={{ marginTop: 24, padding: "0 2px" }}>
+        <Eyebrow style={{ fontSize: 10 }}>MEMBRESÍAS</Eyebrow>
+        <Skeleton width={90} height={10.5} />
+      </div>
+      <Card style={{ marginTop: 9, padding: "16px 18px" }}>
+        <div className="flex items-baseline justify-between">
+          <Skeleton width={90} height={15} />
+          <Skeleton width={30} height={24} />
         </div>
-      </div>
-
-      {/* Big CTA — PASE DE LISTA */}
-      <div style={{ padding: "16px 16px 0" }}>
-        <Skeleton height={54} />
-      </div>
-
-      {/* Quick actions — POR VENCER is gone (#228), replaced by the POR RENOVAR
-          tile below; static label, skeleton icon */}
-      <div style={{ padding: "20px 16px 0" }}>
-        <div className="flex flex-col border border-line bg-surface" style={{ padding: 16, gap: 14 }}>
-          <Skeleton width={22} height={22} />
-          <div>
-            <div className="font-extrabold" style={{ fontSize: 11.5, letterSpacing: 1.2 }}>NUEVO CLIENTE</div>
-            <div style={{ fontSize: 10.5, color: "var(--muted)", marginTop: 4, letterSpacing: 0.4 }}>
-              Registrar venta
-            </div>
-          </div>
+        <Skeleton width="80%" height={11} style={{ marginTop: 8 }} />
+        <div className="grid" style={{ marginTop: 12, gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
+          {[0, 1, 2, 3, 4, 5].map((i) => (
+            <Skeleton key={i} height={38} />
+          ))}
         </div>
-      </div>
-
-      {/* MEMBRESÍAS — the POR RENOVAR tile's section header (#228 opus review F10),
-          then both tiles: POR RENOVAR (header row + 6-cell bucket grid + CTA
-          footer) and AÚN A TIEMPO (#229 — header row + CTA footer only, no grid:
-          the engine's aunATiempo count has no bucket breakdown to mirror), each
-          matching inicio.tsx's own tile shape. `total` isn't known yet, so the
-          trailing "N SOCIOS" is a skeleton too. */}
-      <SectionHeader trailing={<Skeleton width={70} height={10.5} />}>MEMBRESÍAS</SectionHeader>
-      <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}>
-        <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
-          <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
-            <Skeleton width={15} height={15} />
-            <div className="min-w-0 flex-1">
-              <Eyebrow>POR RENOVAR</Eyebrow>
-              <Skeleton width={150} height={10} style={{ marginTop: 5 }} />
-            </div>
-            <Skeleton width={30} height={26} />
-          </div>
-          <div style={{ padding: "12px 16px 14px" }}>
-            <div className="grid" style={{ gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <Skeleton key={i} height={50} />
-              ))}
-            </div>
-          </div>
-          <div style={{ padding: "12px 16px", borderTop: "1px solid var(--line)" }}>
-            <Skeleton height={13} />
-          </div>
-        </div>
-        <div style={{ border: "1px solid var(--line)", background: "var(--surface)" }}>
-          <div className="flex items-center" style={{ gap: 10, padding: "13px 16px 12px", borderBottom: "1px solid var(--line)" }}>
-            <Skeleton width={15} height={15} />
-            <div className="min-w-0 flex-1">
-              <Eyebrow>AÚN A TIEMPO</Eyebrow>
-              <Skeleton width={150} height={10} style={{ marginTop: 5 }} />
-            </div>
-            <Skeleton width={30} height={26} />
-          </div>
-          {/* The day-16+ disclosure footer (#229 opus review F3) — always
-              visible, ahead of the CTA/zero-state branch. */}
-          <div style={{ padding: "10px 16px 11px", borderBottom: "1px solid var(--line)" }}>
-            <Skeleton height={10} width="80%" />
-          </div>
-          <div style={{ padding: "12px 16px" }}>
-            <Skeleton height={13} />
-          </div>
-        </div>
-      </div>
-
-      {/* Recent activity — ~3 rows */}
-      <SectionHeader trailing="HOY">ÚLTIMAS ASISTENCIAS</SectionHeader>
-      <div>
-        {[0, 1, 2].map((i) => (
-          <div
-            key={i}
-            className="flex items-center"
-            style={{
-              gap: 14,
-              padding: "12px 22px",
-              borderTop: i === 0 ? "1px solid var(--line)" : "none",
-              borderBottom: "1px solid var(--line)",
-            }}
-          >
-            <Skeleton width={38} height={38} />
-            <div className="min-w-0 flex-1">
-              <Skeleton width="52%" height={14} />
-              <Skeleton width={120} height={11} style={{ marginTop: 5 }} />
-            </div>
-            <Skeleton width={22} height={22} />
-          </div>
-        ))}
-      </div>
-
-      <div style={{ height: 32 }} />
+        <Skeleton height={13} style={{ marginTop: 13 }} />
+      </Card>
     </div>
   );
 }
