@@ -2,10 +2,12 @@ import { getAgendaDia, type AgendaDiaDTO, type SesionAgendaDTO } from "@gym/data
 import { getMarcadas, getReservasDelDia, type ReservaDelDia } from "@gym/data/server/asistencia";
 import { getClientesParaPase } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
+import { modo } from "@gym/domain/rules";
 import { hoyIsoEnZona, horaEnZona } from "@gym/format";
 import { topTag } from "@gym/ui/forge/agenda/session-card";
 
 import { AsistenciaScreen, type SesionDelDia } from "./_components/asistencia";
+import { ctxDesdeSesionParam } from "./_components/entrada";
 import { LIBRE, reservaAtribuible, sesionCercana } from "./_components/marcadas";
 
 /**
@@ -18,9 +20,20 @@ function etiquetaSesion(s: SesionAgendaDTO): string {
   return topTag({ isNext: false, isSpecial: s.esEspecial, specialName: s.nombreEspecial }) ?? s.tipo;
 }
 
-export default async function Page() {
-  const { timezone: tz } = await getOperatorGym();
+export default async function Page({
+  searchParams,
+}: {
+  // ?sesion=<id> — the home hero's PASAR LISTA or a peek row (#328) — skips the Cupo
+  // entry step (#330) and lands the desk directly on that class's roster. Lista never
+  // sends it: it has no classes to link to (#329).
+  searchParams: Promise<{ sesion?: string }>;
+}) {
+  const [{ sesion: sesionParam }, { timezone: tz, bookingEnabled }] = await Promise.all([
+    searchParams,
+    getOperatorGym(),
+  ]);
   const hoyIso = hoyIsoEnZona(tz);
+  const modoActivo = modo(bookingEnabled);
 
   // getAgendaDia depends ONLY on hoyIso (resolved above), never on clientes/marcadas — so it
   // rides in the SAME round trip as that pair, not after it (perf #242): the previous
@@ -49,6 +62,10 @@ export default async function Page() {
   let reservas: Record<string, ReservaDelDia[]> = {};
   let reservaAtribuiblePorCliente: Record<string, string> = {};
   let ctxInicial: string = LIBRE;
+  // Cupo only (#330): whether the desk must ask before the roster shows names. Lista's
+  // ACCESO LIBRE notebook (#329) never asks, so this stays false for that mode no matter
+  // what the schedule read below does.
+  let entradaPendiente = false;
   if (agenda) {
     sesiones = agenda.sesiones.map((s) => ({
       id: s.id,
@@ -56,15 +73,27 @@ export default async function Page() {
       tipo: etiquetaSesion(s),
       capacidad: s.capacidad,
     }));
+    // Resolved here, not in a state initializer: it measures a distance from an absolute
+    // NOW, which must be the same value in the SSR and hydration renders or React reports
+    // a mismatch. That is also why the session instants stay on the server — the screen
+    // receives only ids and gym-local hora labels. Independent of the reservas read below
+    // (which can fail on its own) — a class list is enough to pick or ask.
+    const ahora = new Date();
+    if (modoActivo === "lista") {
+      // Unchanged pending #329, which forces Lista to LIBRE and stops this schedule read
+      // from being issued for that mode at all.
+      ctxInicial = sesionCercana(agenda.sesiones, ahora);
+    } else {
+      // The ±90-minute guess is no longer how Cupo picks a class: a valid `?sesion=`
+      // (the home hero / a peek row, #328) names it, anything else means the entry step
+      // must ask (entrada.ts's opcionesEntrada renders the list it asks with).
+      const ctxParam = ctxDesdeSesionParam(sesionParam, sesiones);
+      if (ctxParam) ctxInicial = ctxParam;
+      else entradaPendiente = true;
+    }
     try {
       // Bookings drive the CON RESERVA group; skipped entirely for a gym with no schedule.
       reservas = await getReservasDelDia(agenda.sesiones.map((s) => s.id));
-      // Both of these are resolved here, not in a state initializer: each measures a
-      // distance from an absolute NOW, which must be the same value in the SSR and hydration
-      // renders or React reports a mismatch. That is also why the session instants stay on
-      // the server — the screen receives only ids and gym-local hora labels.
-      const ahora = new Date();
-      ctxInicial = sesionCercana(agenda.sesiones, ahora);
       reservaAtribuiblePorCliente = reservaAtribuible(agenda.sesiones, reservas, ahora);
     } catch (err) {
       console.error(
@@ -72,6 +101,10 @@ export default async function Page() {
         err,
       );
     }
+  } else if (modoActivo === "cupo") {
+    // No maintained schedule, or the agenda read itself failed — the entry step still
+    // asks, offering only ACCESO LIBRE (opcionesEntrada with an empty session list).
+    entradaPendiente = true;
   }
 
   return (
@@ -83,6 +116,7 @@ export default async function Page() {
       reservas={reservas}
       reservaAtribuible={reservaAtribuiblePorCliente}
       ctxInicial={ctxInicial}
+      entradaPendiente={entradaPendiente}
     />
   );
 }
