@@ -2,6 +2,7 @@ import { getAgendaDia, type AgendaDiaDTO, type SesionAgendaDTO } from "@gym/data
 import { getMarcadas, getReservasDelDia, type ReservaDelDia } from "@gym/data/server/asistencia";
 import { getClientesParaPase } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
+import { modo } from "@gym/domain/rules";
 import { hoyIsoEnZona, horaEnZona } from "@gym/format";
 import { topTag } from "@gym/ui/forge/agenda/session-card";
 
@@ -23,14 +24,17 @@ export default async function Page({
 }: {
   searchParams: Promise<{ sesion?: string }>;
 }) {
-  const { timezone: tz } = await getOperatorGym();
+  const [{ sesion: sesionParam }, { timezone: tz, bookingEnabled }] = await Promise.all([
+    searchParams,
+    getOperatorGym(),
+  ]);
   const hoyIso = hoyIsoEnZona(tz);
   // `?sesion=` (#328) — /inicio's Cupo day-card hero deep-links the desk here with a
   // session already chosen, skipping the ±90 preselect it would otherwise run. Only
   // trusted once the id is confirmed to belong to TODAY's own agenda read below (an
   // id from a stale link, a different day, or a gym with no schedule falls back to
   // the ordinary `sesionCercana` ladder — never a raw, unchecked query param).
-  const sesionParam = (await searchParams).sesion;
+  const esCupo = modo(bookingEnabled) === "cupo";
 
   // getAgendaDia depends ONLY on hoyIso (resolved above), never on clientes/marcadas — so it
   // rides in the SAME round trip as that pair, not after it (perf #242): the previous
@@ -39,13 +43,21 @@ export default async function Page({
   // (ADR-0010). Its own failure is caught HERE, inside the leg, rather than left to reject
   // the whole Promise.all — a failing schedule read must never cost the roster/marcadas that
   // already succeeded.
+  //
+  // On Lista the read is never ISSUED at all (spec #326/#329), not merely discarded: the
+  // desk is the notebook, so there is no schedule to ask for. `Promise.resolve(null)` takes
+  // the same branch below (`if (agenda)` stays false) that a failed Cupo read already takes,
+  // which is how a gym with no maintained schedule has always rendered — ACCESO LIBRE, full
+  // roster, no pills.
   const [clientes, marcadas, agenda] = await Promise.all([
     getClientesParaPase(),
     getMarcadas(),
-    getAgendaDia(hoyIso).catch((err): AgendaDiaDTO | null => {
-      console.error("[asistencia] schedule read failed — falling back to ACCESO LIBRE", err);
-      return null;
-    }),
+    esCupo
+      ? getAgendaDia(hoyIso).catch((err): AgendaDiaDTO | null => {
+          console.error("[asistencia] schedule read failed — falling back to ACCESO LIBRE", err);
+          return null;
+        })
+      : Promise.resolve(null),
   ]);
 
   // The schedule is an ENHANCEMENT of the desk, never its precondition: a gym with no
