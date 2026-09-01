@@ -427,6 +427,37 @@ export function muestraEspecial(estado: EstadoSesion, esEspecial: boolean): bool
   return esEspecial && estado !== "a_continuacion";
 }
 
+/**
+ * The day's session in progress RIGHT NOW: `ahora ∈ [startsAt, startsAt + duración)`,
+ * half-open on both edges — live AT its start instant, no longer live AT the instant its
+ * duración ends. LIVENESS only: it is not the ±90-minute nearness pick (that is
+ * `sesionMasCercana` below — /inicio's day-card hero ladder asks THIS one first and that
+ * one second, because live wins over near), and not the `termino` tense either
+ * (`derivarEstadoSesion` has no live state — a running class reads `termino` there, which
+ * is exactly why this derivation exists).
+ *
+ * Overlapping sessions: the most recently STARTED live one wins — the class being
+ * marshalled at the door right now — with the later list entry breaking a same-instant
+ * tie (the DAL's read order is startsAt ascending). `null` for an empty day, a gap
+ * between classes, or a day that is over. Generic over the caller's own session shape;
+ * compares absolute instants, never wall-clock strings.
+ *
+ * Extracted into `@gym/domain` (#328 prefactor) so /inicio's day-card hero and any other
+ * caller share one liveness rule instead of each re-deriving it.
+ */
+export function enCurso<S extends { startsAt: Date; duracionMin: number }>(
+  sesiones: readonly S[],
+  ahora: Date,
+): S | null {
+  let viva: S | null = null;
+  for (const s of sesiones) {
+    const inicio = s.startsAt.getTime();
+    const dentro = inicio <= ahora.getTime() && ahora.getTime() < inicio + s.duracionMin * 60_000;
+    if (dentro && (viva === null || inicio >= viva.startsAt.getTime())) viva = s;
+  }
+  return viva;
+}
+
 // ── Arrival window (reservation truthfulness, 2026-07-29) ────────────────
 
 /**
@@ -435,6 +466,37 @@ export function muestraEspecial(estado: EstadoSesion, esEspecial: boolean): bool
  * the server agree on what "around class time" means.
  */
 export const VENTANA_ARRIBO_PREVIA_MIN = 90;
+
+/**
+ * The session whose START is nearest `ahora`, within ±`ventanaMin` minutes — the desk's
+ * kiosk preselect rule (Zen Planner: "your current class of the day will automatically be
+ * highlighted and selected"), extracted HERE (#328 prefactor) so /asistencia's opening
+ * context (its own `sesionCercana` wrapper) and /inicio's day-card hero pick are the same
+ * ±90 semantics by construction, not by two loops agreeing. Distance is `|startsAt − ahora|`
+ * over ABSOLUTE instants (never wall-clock strings), the window edge is INCLUSIVE (a class
+ * exactly 90 minutes out still matches), and a tie keeps the FIRST entry in the caller's
+ * order (the DAL's startsAt ascending). `null` when nothing is inside the window.
+ *
+ * Nearness ONLY — no liveness: a caller that wants "live wins" (as /inicio's hero does)
+ * asks `enCurso` first, because a long class deep in its window can be farther by start-
+ * distance than a short one that just ended, and this function would pick the dead one.
+ */
+export function sesionMasCercana<S extends { startsAt: Date }>(
+  sesiones: readonly S[],
+  ahora: Date,
+  ventanaMin: number = VENTANA_ARRIBO_PREVIA_MIN,
+): S | null {
+  let mejor: S | null = null;
+  let dist = Infinity;
+  for (const s of sesiones) {
+    const delta = Math.abs(s.startsAt.getTime() - ahora.getTime());
+    if (delta < dist) {
+      dist = delta;
+      mejor = s;
+    }
+  }
+  return dist <= ventanaMin * 60_000 ? mejor : null;
+}
 
 /**
  * Arrival grace after a class ends, in minutes — how long a booking stays markable once

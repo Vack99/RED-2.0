@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { railAccent, serieTag, topTag } from "./session-card";
+import { nombreSesion, railAccent, serieTag, topTag } from "./session-card";
 
 /**
  * The card's two accent axes are independent of the occupancy `estado`:
@@ -31,6 +31,19 @@ describe("topTag", () => {
   });
   it("is null for an ordinary session", () => {
     expect(topTag({ isNext: false, isSpecial: false })).toBeNull();
+  });
+});
+
+describe("nombreSesion — a class's plain title (#328 prefactor)", () => {
+  it("an especial names itself", () => {
+    expect(nombreSesion("Functional", { isSpecial: true, specialName: "Open box" })).toBe("Open box");
+  });
+  it("an unnamed especial reads 'Especial'", () => {
+    expect(nombreSesion("Functional", { isSpecial: true, specialName: "  " })).toBe("Especial");
+    expect(nombreSesion("Functional", { isSpecial: true })).toBe("Especial");
+  });
+  it("an ordinary class reads its tipo", () => {
+    expect(nombreSesion("Functional", { isSpecial: false })).toBe("Functional");
   });
 });
 
