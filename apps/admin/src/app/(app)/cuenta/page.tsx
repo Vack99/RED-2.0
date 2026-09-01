@@ -95,6 +95,7 @@ export default async function Page() {
       telefonoContactoAviso={contacto?.whatsapp ? formatTelMx(contacto.whatsapp) : null}
       emailContactoAviso={contacto?.email ?? null}
       urlAvisoIntegral={clientHost ? urlAvisoIntegralDesde(`https://${clientHost}`) : null}
+      horarioTexto={contacto?.horarioTexto ?? null}
     />
   );
 }

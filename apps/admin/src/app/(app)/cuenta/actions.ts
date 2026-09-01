@@ -20,6 +20,7 @@ import {
   actualizarAboutValue,
   actualizarFacility,
   actualizarFaq,
+  actualizarHorario,
   actualizarStat,
   crearAboutValue,
   crearFacility,
@@ -158,6 +159,10 @@ export async function eliminarFacilityAction(raw: unknown): Promise<void> {
 }
 export async function reordenarFacilitiesAction(raw: unknown): Promise<void> {
   return reordenarFacilities(raw);
+}
+
+export async function actualizarHorarioAction(raw: unknown): Promise<void> {
+  return actualizarHorario(raw);
 }
 
 export async function crearStatAction(raw: unknown): Promise<void> {

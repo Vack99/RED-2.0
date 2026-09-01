@@ -458,3 +458,39 @@ export async function reordenarStats(raw: unknown, client?: SupabaseServer): Pro
   );
   if (results.some((r) => r.error)) throw new Error("No se pudo reordenar los stats");
 }
+
+// ── horario (gym_contact.hours_text) ────────────────────────────────────────
+// Modos Lista/Cupo, #326/#332: the ONE free-text opening-hours field, edited alongside the
+// four content types above in the same contenido sheet. It lives on `gym_contact` (marketing.ts's
+// 1:1 satellite, already staff-write/member-read/anon-read RLS from birth — #53), not on any of
+// the four tables this file otherwise owns, so there is no `list*`/anon-twin pair to write here:
+// the read side is `getContacto`/`ContactoDTO.horarioTexto` (marketing.ts), reused as-is by both
+// the Cuenta editor and the client app's public landing. This is the write half only.
+
+/** A blank input CLEARS the field (writes `null`), matching the `campoOpcional` idiom used across
+ *  this DAL (legal.ts's razonSocial/domicilio, etc.) — never an empty string in the column. */
+export const actualizarHorarioSchema = z.object({
+  horario: z.preprocess(
+    (v) => (typeof v === "string" && v.trim() === "" ? null : v),
+    z.string().trim().max(200).nullable(),
+  ),
+});
+export type ActualizarHorarioInput = z.infer<typeof actualizarHorarioSchema>;
+
+/** Save the gym's free-text opening hours — a direct upsert onto `gym_contact` (staff-scoped via
+ *  its own insert/update RLS policies, is_staff_of; no RPC, matching the about_value/facility/
+ *  faq/stat writes above and `actualizarIdentidadLegal`'s gym_legal upsert). Upsert, not update:
+ *  `gym_contact` is a 1:1 satellite that may not yet have a row for this gym (e.g. a Lista gym
+ *  seeded with only whatsapp/instagram — 20260710140000). Only `gym_id`/`hours_text` ride in the
+ *  payload, so a fresh insert takes every other column's default and an existing row's other
+ *  columns (whatsapp, hours, address…) are left untouched. Injectable (ADR-0001). */
+export async function actualizarHorario(raw: unknown, client?: SupabaseServer): Promise<void> {
+  const input = actualizarHorarioSchema.parse(raw);
+  const supabase = client ?? (await createClient());
+  await requireOperator(supabase);
+  const gym = await getOperatorGym(supabase);
+  const { error } = await supabase
+    .from("gym_contact")
+    .upsert({ gym_id: gym.id, hours_text: input.horario }, { onConflict: "gym_id" });
+  if (error) throw new Error("No se pudo guardar el horario");
+}

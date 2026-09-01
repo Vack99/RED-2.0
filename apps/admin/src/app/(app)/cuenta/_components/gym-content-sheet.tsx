@@ -12,6 +12,7 @@ import {
   actualizarAboutValueAction,
   actualizarFacilityAction,
   actualizarFaqAction,
+  actualizarHorarioAction,
   actualizarStatAction,
   crearAboutValueAction,
   crearFacilityAction,
@@ -28,14 +29,17 @@ import {
 } from "../actions";
 
 /** The four "acerca de" content types the operator authors here — the Phase-6
- *  client app's nosotros/marketing pages render exactly these tables (PRD #36 S3). */
-type Tab = "valores" | "instalaciones" | "stats" | "faq";
+ *  client app's nosotros/marketing pages render exactly these tables (PRD #36 S3) —
+ *  plus HORARIO, the single free-text opening-hours field the Lista public landing
+ *  renders (#332). */
+type Tab = "valores" | "instalaciones" | "stats" | "faq" | "horario";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "valores", label: "VALORES" },
   { id: "instalaciones", label: "INSTALACIONES" },
   { id: "stats", label: "STATS" },
   { id: "faq", label: "FAQ" },
+  { id: "horario", label: "HORARIO" },
 ];
 
 export function GymContentSheet({
@@ -45,6 +49,7 @@ export function GymContentSheet({
   facilities,
   stats,
   faqs,
+  horarioTexto,
 }: {
   open: boolean;
   onClose: () => void;
@@ -52,6 +57,8 @@ export function GymContentSheet({
   facilities: FacilityDTO[];
   stats: StatDTO[];
   faqs: FaqDTO[];
+  /** `gym_contact.hours_text` (#332) — one text field, no list/editor pane. */
+  horarioTexto: string | null;
 }) {
   const [tab, setTab] = React.useState<Tab>("valores");
 
@@ -98,6 +105,7 @@ export function GymContentSheet({
       {tab === "instalaciones" && <FacilitiesPane items={facilities} />}
       {tab === "stats" && <StatsPane items={stats} />}
       {tab === "faq" && <FaqsPane items={faqs} />}
+      {tab === "horario" && <HorarioPane valor={horarioTexto} />}
     </Sheet>
   );
 }
@@ -522,6 +530,53 @@ function FaqEditor({ item, onDone }: { item?: FaqDTO; onDone: () => void }) {
         <Textarea placeholder="No, manejamos paquetes por clases." value={answer} onChange={setAnswer} rows={4} />
       </label>
     </EditorShell>
+  );
+}
+
+// ── HORARIO (gym_contact.hours_text) ────────────────────────────────────────
+// The odd one out on purpose: a single free-text field, not a reorderable list — so this
+// pane skips the list/editor split every other tab uses and is just an input + save.
+function HorarioPane({ valor }: { valor: string | null }) {
+  const router = useRouter();
+  const [texto, setTexto] = React.useState(valor ?? "");
+  const [saving, setSaving] = React.useState(false);
+
+  const valido = texto.trim().length <= 200;
+  const dirty = texto !== (valor ?? "");
+  const canSave = valido && dirty && !saving;
+
+  const guardar = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    try {
+      await actualizarHorarioAction({ horario: texto });
+      forgeToast({ tone: "success", title: "Horario actualizado" });
+      router.refresh();
+    } catch (e) {
+      forgeToast({ tone: "warning", title: "No se pudo guardar", body: e instanceof Error ? e.message : "Intenta de nuevo." });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col" style={{ padding: "0 16px", gap: 18 }}>
+      <label className="flex flex-col" style={{ gap: 8 }}>
+        <Eyebrow style={{ paddingLeft: 2 }}>HORARIO DE APERTURA</Eyebrow>
+        <Textarea
+          placeholder="Ej. Lun-Vie 6:00-21:00 · Sáb 8:00-14:00"
+          value={texto}
+          onChange={setTexto}
+          rows={3}
+        />
+      </label>
+      <div style={{ fontSize: 11.5, lineHeight: 1.5, color: "var(--muted)" }}>
+        Esto es lo que verán tus miembros en la página pública del gimnasio.
+      </div>
+      <Button variant="primary" size="lg" full icon="check" disabled={!canSave} onClick={guardar}>
+        {saving ? "GUARDANDO…" : "GUARDAR"}
+      </Button>
+    </div>
   );
 }
 

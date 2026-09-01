@@ -76,6 +76,10 @@ interface CuentaScreenProps {
   /** The aviso's own stable public URL on this gym's mapped CLIENT host — null when unmapped
    *  (#256). */
   urlAvisoIntegral: string | null;
+  /** `gym_contact.hours_text` (#332) — the ONE free-text opening-hours field, editable in the
+   *  same contenido sheet as the four "Contenido del gimnasio" resources above and rendered on
+   *  the client app's Lista public landing. Content, not mode — any gym may fill it in. */
+  horarioTexto: string | null;
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -140,6 +144,7 @@ export function CuentaScreen({
   telefonoContactoAviso,
   emailContactoAviso,
   urlAvisoIntegral,
+  horarioTexto,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -271,6 +276,7 @@ export function CuentaScreen({
         facilities={facilities}
         stats={stats}
         faqs={faqs}
+        horarioTexto={horarioTexto}
       />
 
       <MensajesSheet open={mensajesOpen} onClose={() => setMensajesOpen(false)} mensajes={mensajes} />

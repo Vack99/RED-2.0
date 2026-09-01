@@ -22,6 +22,7 @@ const COVERED = [
   "apps/client/src/app/nosotros/loading.tsx",
   "apps/client/src/app/precios/loading.tsx",
   "apps/client/src/app/reservar/loading.tsx",
+  "apps/client/src/app/saldo/loading.tsx",
 ];
 
 const repoRoot = join(fileURLToPath(import.meta.url), "..", "..", "..");

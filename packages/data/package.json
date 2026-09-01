@@ -22,6 +22,7 @@
     "./server/fetch-shield": "./src/server/fetch-shield.ts",
     "./server/gym": "./src/server/gym.ts",
     "./server/gym-content": "./src/server/gym-content.ts",
+    "./server/inquilino": "./src/server/inquilino.ts",
     "./server/invitaciones": "./src/server/invitaciones.ts",
     "./server/legal": "./src/server/legal.ts",
     "./server/marketing": "./src/server/marketing.ts",

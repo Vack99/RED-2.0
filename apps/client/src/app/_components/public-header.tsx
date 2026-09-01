@@ -5,6 +5,8 @@ import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { footerCtaVista, navClasesVista } from "../../lib/reserva-vista";
+
 /** The typed-Route href next/link accepts (the `typedRoutes` union). Typing the table with this — not a
  *  bare `string` — keeps each literal below validated against the real route map at build (the same seam
  *  @gym/ui's TabBar uses to stay brand-neutral), instead of widening to an unchecked string. */
@@ -13,19 +15,23 @@ type Href = ComponentProps<typeof Link>["href"];
 /** The public nav destinations, in drawer order (mock `cm-dnav`). The drawer is the nav hub for the
  *  sibling marketing pages: Nosotros (#52) and Contacto (#53) land alongside this landing off the same
  *  base, so they are typed `as Route` — Next's sanctioned marker for an intentional cross-slice route
- *  that resolves on assembly (the guard stays live for every co-present route). "Clases" and the
- *  drawer's "Reservar clase" CTA are the booking funnel: always /reservar (owner ruling —
- *  login-first funnel). The guard on /reservar redirects an unauth visitor to /entrar, which is
- *  the one place "Crea tu cuenta" (→ /registro) is offered — registering is never the first
- *  stop. */
-const NAV_PUBLICA: { href: Href; label: string; tag?: string }[] = [
-  { href: "/", label: "Inicio" },
-  { href: "/reservar", label: "Clases", tag: "Hoy" },
-  { href: "/precios", label: "Precios" },
-  { href: "/nosotros" as Route, label: "Nosotros" },
-  { href: "/contacto" as Route, label: "Contacto" },
-  { href: "/entrar", label: "Entrar" },
-];
+ *  that resolves on assembly (the guard stays live for every co-present route). The "Clases" row and the
+ *  drawer's footer CTA are the booking funnel on Cupo (owner ruling — login-first funnel), always
+ *  /reservar; on Lista (no booking surface at all — #326/#332) both become "Mi saldo" → /saldo, read off
+ *  `navClasesVista`/`footerCtaVista` (apps/client/src/lib/reserva-vista.ts) — the one place that branch
+ *  lives, so this table never re-derives it. The guard on /reservar (Cupo) / /saldo (Lista) redirects an
+ *  unauth visitor to /entrar, which is the one place "Crea tu cuenta" (→ /registro) is offered —
+ *  registering is never the first stop. */
+function navPublica(clases: { href: Href; label: string; tag: string | null }): { href: Href; label: string; tag?: string }[] {
+  return [
+    { href: "/", label: "Inicio" },
+    { href: clases.href, label: clases.label, ...(clases.tag ? { tag: clases.tag } : {}) },
+    { href: "/precios", label: "Precios" },
+    { href: "/nosotros" as Route, label: "Nosotros" },
+    { href: "/contacto" as Route, label: "Contacto" },
+    { href: "/entrar", label: "Entrar" },
+  ];
+}
 
 // The auth routes are full-viewport brand experiences (the login hero frames the
 // form); the marketing header — whose own "Entrar" link would point at the page
@@ -48,20 +54,27 @@ const RUTAS_SIN_HEADER = new Set(["/entrar", "/registro", "/restablecer"]);
  * the final state instantly (no delayed-invisible nav items).
  *
  * `signedIn` (server-resolved via `getClaims()` in the layout — never re-derived here) swaps the
- * top-right "Entrar" link for a members' affordance into `/reservar`, so a returning member isn't
- * offered the sign-in page they already passed (B5). The booking funnel itself ("Clases" + the
- * drawer CTA) is login-first regardless of `signedIn` — both always point at `/reservar`.
+ * top-right "Entrar" link for a members' affordance into the booking-funnel destination, so a
+ * returning member isn't offered the sign-in page they already passed (B5). That destination —
+ * and the "Clases" row / drawer CTA below it — is login-first regardless of `signedIn`, and is
+ * mode-aware (#332): `/reservar` on Cupo, `/saldo` on Lista (`reservasHabilitadas`, resolved
+ * server-side in the layout from the HOST's gym — the same pre-login read every other public
+ * marketing page already does).
  */
 export function PublicHeader({
   logo,
   signedIn,
+  reservasHabilitadas,
 }: {
   readonly logo: ReactNode;
   readonly signedIn: boolean;
+  readonly reservasHabilitadas: boolean;
 }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
+  const clases = navClasesVista(reservasHabilitadas);
+  const cta = footerCtaVista(reservasHabilitadas);
 
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
 
@@ -94,7 +107,7 @@ export function PublicHeader({
         </button>
 
         <Link
-          href={signedIn ? "/reservar" : "/entrar"}
+          href={signedIn ? clases.href : "/entrar"}
           className="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted hover:text-fg"
         >
           {signedIn ? "Mi cuenta" : "Entrar"}
@@ -130,7 +143,7 @@ export function PublicHeader({
         </div>
 
         <nav className="flex-1 py-3">
-          {NAV_PUBLICA.map((item, i) => (
+          {navPublica(clases).map((item, i) => (
             <Link
               key={item.label}
               href={item.href}
@@ -156,11 +169,11 @@ export function PublicHeader({
 
         <div className="border-t border-line px-6 py-6">
           <Link
-            href="/reservar"
+            href={cta.href}
             onClick={close}
             className="flex justify-center bg-accent px-5 py-3.5 text-xs font-bold uppercase tracking-[0.16em] text-accent-fg hover:opacity-90"
           >
-            Reservar clase
+            {cta.label}
           </Link>
           <p className="mt-4 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted">
             Lun a Sáb · 05:30 – 22:00

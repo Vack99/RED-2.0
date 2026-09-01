@@ -36,6 +36,10 @@ export default async function ClasePage({
     getClaseDetalleMiembro(sessionId),
     getSaldoMiembro(),
   ]);
+  // Modos Lista/Cupo (#332): a Lista gym has no class-detail surface — any old /clase/[id] link
+  // redirects to /saldo, checked before notFound() so a stale link on a Lista gym never reads
+  // as a plain 404.
+  if (!saldo.reservasHabilitadas) redirect("/saldo");
   if (!detalle) notFound();
 
   return <ClaseDetalle detalle={detalle} saldo={saldo} />;

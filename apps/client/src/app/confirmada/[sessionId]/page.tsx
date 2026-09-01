@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { getSaldoMiembro } from "@gym/data/server/agenda-miembro";
 import { getConfirmacionReserva } from "@gym/data/server/clase-miembro";
 import { createClient } from "@gym/data/server/supabase";
 
@@ -29,6 +30,11 @@ export default async function ConfirmadaPage({
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims?.sub) redirect("/entrar");
+
+  // Modos Lista/Cupo (#332): a Lista gym has no confirmation surface — any old
+  // /confirmada/[id] link (e.g. a stale calendar reminder) redirects to /saldo.
+  const saldo = await getSaldoMiembro();
+  if (!saldo.reservasHabilitadas) redirect("/saldo");
 
   // Host reconciliation (audit #17 / spec §5.5) happens INSIDE the DAL: the presentation tenant
   // (x-gym) picks the caller's membership in THIS gym when they belong to several. RLS scopes the read.

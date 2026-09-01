@@ -151,3 +151,60 @@ export function presentarAvisoReserva(
       return { texto: `Esta reserva usa 1 de tus ${ctx.clasesRestantes} clases`, urgente: false };
   }
 }
+
+// ──────────────────────────────────────────────────────────────
+// Modos Lista/Cupo (#326/#332) — the member app's ONE branch on `reservasHabilitadas`
+// (`gym.booking_enabled`, carried through as-is: #327's `@gym/domain` `modo()` derivation
+// lands in a parallel worktree and is not available here — a future pass can repoint these
+// four functions at it without touching a single call site). Every routing surface that
+// used to hardcode "/reservar" — the login redirect, the drawer's nav row, the drawer's
+// footer CTA, the landing hero — reads its target and copy from here instead, so Lista's
+// "no 'Reservar' copy anywhere" rule has exactly one place to hold.
+// ──────────────────────────────────────────────────────────────
+
+/** Where the booking-funnel entry points aim: `/reservar` on Cupo, `/saldo` on Lista (Lista has
+ *  no booking surface at all — every old booking link redirects here server-side too). */
+export function destinoClases(reservasHabilitadas: boolean): "/reservar" | "/saldo" {
+  return reservasHabilitadas ? "/reservar" : "/saldo";
+}
+
+export interface NavClasesVista {
+  label: string;
+  href: "/reservar" | "/saldo";
+  /** The drawer's "Hoy" tag — Cupo only; Lista's saldo entry carries no tag. */
+  tag: string | null;
+}
+
+/** The drawer's "Clases" nav row → "Mi saldo" on Lista. */
+export function navClasesVista(reservasHabilitadas: boolean): NavClasesVista {
+  return reservasHabilitadas
+    ? { label: "Clases", href: "/reservar", tag: "Hoy" }
+    : { label: "Mi saldo", href: "/saldo", tag: null };
+}
+
+export interface FooterCtaVista {
+  label: string;
+  href: "/reservar" | "/saldo";
+}
+
+/** The drawer's footer CTA — "Reservar clase" on Cupo, "Mi saldo" on Lista (never "Reservar"
+ *  copy on a gym with no booking surface). */
+export function footerCtaVista(reservasHabilitadas: boolean): FooterCtaVista {
+  return reservasHabilitadas
+    ? { label: "Reservar clase", href: "/reservar" }
+    : { label: "Mi saldo", href: "/saldo" };
+}
+
+export interface HeroCtaVista {
+  label: string;
+  href: "/reservar" | "/precios";
+}
+
+/** The public landing's hero CTA — "Reservar clase" on Cupo, "Ver planes" on Lista (the
+ *  landing's real primary action for a gym that takes no bookings; the WhatsApp button is a
+ *  separate, data-presence-gated block the page composes on its own). */
+export function heroCtaVista(reservasHabilitadas: boolean): HeroCtaVista {
+  return reservasHabilitadas
+    ? { label: "Reservar clase", href: "/reservar" }
+    : { label: "Ver planes", href: "/precios" };
+}

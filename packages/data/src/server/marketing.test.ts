@@ -82,6 +82,7 @@ describe("marketing DAL — public anon reads", () => {
           about_story: "En 2019 abrimos la fragua.\n\nHoy somos familia.",
           about_pull_quote: "No competimos con nadie más que con quienes fuimos ayer.",
           about_tagline: "Fuerza · Disciplina · Resultado",
+          booking_enabled: true,
         },
       ],
     });
@@ -93,6 +94,7 @@ describe("marketing DAL — public anon reads", () => {
       aboutStory: "En 2019 abrimos la fragua.\n\nHoy somos familia.",
       aboutPullQuote: "No competimos con nadie más que con quienes fuimos ayer.",
       aboutTagline: "Fuerza · Disciplina · Resultado",
+      bookingEnabled: true,
     });
     expect(fake.eqCalls).toEqual([
       { table: "gym", col: "slug", val: "red-demo" },
@@ -300,6 +302,7 @@ describe("marketing DAL — public anon reads", () => {
             { day: "Lunes", opens: "05:30", closes: "22:00" },
             { day: "Domingo", closed: true },
           ],
+          hours_text: "Lun-Sáb 05:30-22:00",
         },
       ],
     });
@@ -316,6 +319,7 @@ describe("marketing DAL — public anon reads", () => {
         { day: "Lunes", opens: "05:30", closes: "22:00", closed: false },
         { day: "Domingo", opens: null, closes: null, closed: true },
       ],
+      horarioTexto: "Lun-Sáb 05:30-22:00",
     });
     expect(fake.eqCalls).toEqual([{ table: "gym_contact", col: "gym_id", val: GYM }]);
   });
