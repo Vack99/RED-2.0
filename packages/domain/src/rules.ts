@@ -44,6 +44,31 @@ export function modo(bookingEnabled: boolean): Modo {
   return bookingEnabled ? "cupo" : "lista";
 }
 
+/** The "Reservas en línea" confirm sheet's title + body — a PURE function of (direction,
+ *  count of future reservations) so the wording is unit-tested with no sheet, no RPC, no
+ *  count read (#331, spec #326). Turning ON never seeds anything, so the count plays no part
+ *  in its copy. Turning OFF always names N, even 0 — the owner never guesses what "cancel"
+ *  means before confirming. */
+export interface CopiaReservasEnLinea {
+  titulo: string;
+  cuerpo: string;
+}
+
+export function copiaReservasEnLinea(activar: boolean, reservasFuturas: number): CopiaReservasEnLinea {
+  if (activar) {
+    return {
+      titulo: "Activar reservas en línea",
+      cuerpo: "Aparece la agenda y tus miembros podrán reservar desde la app.",
+    };
+  }
+  const reservas =
+    reservasFuturas === 1 ? "1 reserva futura" : `${reservasFuturas} reservas futuras`;
+  return {
+    titulo: "Desactivar reservas en línea",
+    cuerpo: `Desaparece la agenda, los miembros dejan de reservar. Se cancelarán ${reservas}.`,
+  };
+}
+
 /**
  * A package's display name is its class grant. The DB RPC actualizar_paquete
  * mirrors this exact rule in SQL (it stores the derived name); keep them in

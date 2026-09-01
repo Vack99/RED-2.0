@@ -6,6 +6,7 @@ import { listAboutValues, listFacilities, listFaqs, listStats } from "@gym/data/
 import { getIdentidadLegal } from "@gym/data/server/legal";
 import { getContacto } from "@gym/data/server/marketing";
 import { listMensajes } from "@gym/data/server/mensajes";
+import { contarReservasFuturas } from "@gym/data/server/modo-reservas";
 import { getPlanesEditor } from "@gym/data/server/paquetes";
 import { getPerfil } from "@gym/data/server/perfil";
 import { listarPlantillas } from "@gym/data/server/plantillas";
@@ -48,6 +49,7 @@ export default async function Page() {
     identidadLegal,
     contacto,
     clientHost,
+    reservasFuturas,
   ] = await Promise.all([
     getPerfil(),
     getResumenMes(),
@@ -68,6 +70,9 @@ export default async function Page() {
     // stable public URL (the gym's mapped CLIENT host, a different host than this admin page).
     getContacto(gymId),
     getClientHost(gymId),
+    // #331: the OFF-direction confirm sheet's N. Only worth reading on Cupo — turning ON
+    // ignores the count, and Lista's own switch is already off.
+    esCupo ? contarReservasFuturas() : Promise.resolve(0),
   ]);
 
   const mesLabel = fmtMesAnio(hoyEnZona(tz));
@@ -95,6 +100,7 @@ export default async function Page() {
       telefonoContactoAviso={contacto?.whatsapp ? formatTelMx(contacto.whatsapp) : null}
       emailContactoAviso={contacto?.email ?? null}
       urlAvisoIntegral={clientHost ? urlAvisoIntegralDesde(`https://${clientHost}`) : null}
+      reservasFuturas={reservasFuturas}
     />
   );
 }
