@@ -39,6 +39,21 @@ export function topTag({
 }
 
 /**
+ * How a session NAMES itself outside a card's own top-tag slot: a clase especial by
+ * its own name (an unnamed one reads "Especial"), every other class by its tipo.
+ * Extracted here (#328 prefactor) so /inicio's day-card hero and rows name a class
+ * exactly as the Agenda does, sharing this one ladder instead of each screen
+ * re-deriving it. `topTag` above answers a DIFFERENT question (which badge, if any,
+ * a card's own top slot shows) — this one is the plain row/card TITLE.
+ */
+export function nombreSesion(
+  tipo: string,
+  { isSpecial, specialName }: { isSpecial: boolean; specialName?: string | null },
+): string {
+  return isSpecial ? specialName?.trim() || "Especial" : tipo;
+}
+
+/**
  * The series tag, and it names the EXCEPTION (#243): a gym runs ~21 repeating
  * schedules, so a "se repite" glyph would land on ~100% of cards and carry zero
  * information — the class that stands alone is the informative one. `null` renders

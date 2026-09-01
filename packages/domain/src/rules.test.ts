@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, urgenciaCliente, ventanaArribo } from "./rules";
+import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enCurso, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, sesionMasCercana, urgenciaCliente, ventanaArribo } from "./rules";
 import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
@@ -501,6 +501,86 @@ describe("muestraEspecial", () => {
   it("is false for a non-especial session regardless of estado", () => {
     expect(muestraEspecial("normal", false)).toBe(false);
     expect(muestraEspecial("a_continuacion", false)).toBe(false);
+  });
+});
+
+describe("enCurso — /inicio's live-class window, [start, start + duración) (#328 prefactor)", () => {
+  const DIA = (h: number, m: number) => new Date(2026, 5, 17, h, m);
+  const box = { id: "box", startsAt: DIA(9, 0), duracionMin: 60 };
+  const yoga = { id: "yoga", startsAt: DIA(11, 0), duracionMin: 45 };
+  const sesiones = [box, yoga];
+
+  it("is live AT the start instant (closed lower bound)", () => {
+    expect(enCurso(sesiones, DIA(9, 0))).toBe(box);
+  });
+
+  it("is NO LONGER live at start + duración (open upper bound) — a gap between classes is null", () => {
+    expect(enCurso(sesiones, DIA(10, 0))).toBeNull(); // 09:00 + 60 min, exactly
+    expect(enCurso(sesiones, DIA(10, 30))).toBeNull(); // mid-gap
+  });
+
+  it("null for an empty day, and null once the whole day is over", () => {
+    expect(enCurso([], DIA(9, 30))).toBeNull();
+    expect(enCurso(sesiones, DIA(23, 0))).toBeNull();
+  });
+
+  it("picks mid-class, and is NOT the desk's ±90 preselect — an hour before start is null", () => {
+    expect(enCurso(sesiones, DIA(9, 30))).toBe(box);
+    expect(enCurso(sesiones, DIA(8, 0))).toBeNull(); // sesionMasCercana would pick box here
+  });
+
+  it("overlapping sessions: the most recently STARTED live one wins", () => {
+    const larga = { id: "larga", startsAt: DIA(9, 0), duracionMin: 90 };
+    const corta = { id: "corta", startsAt: DIA(9, 30), duracionMin: 45 };
+    expect(enCurso([larga, corta], DIA(9, 45))).toBe(corta);
+    // before the overlap opens, the earlier class is the only live one
+    expect(enCurso([larga, corta], DIA(9, 15))).toBe(larga);
+    // once the later one ends (10:15), the longer earlier one is live again
+    expect(enCurso([larga, corta], DIA(10, 20))).toBe(larga);
+  });
+
+  it("back-to-back classes hand over exactly at the boundary instant", () => {
+    const primera = { id: "a", startsAt: DIA(9, 0), duracionMin: 60 };
+    const segunda = { id: "b", startsAt: DIA(10, 0), duracionMin: 60 };
+    expect(enCurso([primera, segunda], DIA(10, 0))).toBe(segunda);
+  });
+});
+
+describe("sesionMasCercana — the desk's ±90 preselect, extracted (#328 prefactor)", () => {
+  const ahora = new Date("2026-08-18T18:00:00.000Z");
+  const sesion = (id: string, offsetMin: number) => ({
+    id,
+    startsAt: new Date(ahora.getTime() + offsetMin * 60_000),
+  });
+
+  it("null with no schedule (the desk maps this to ACCESO LIBRE, /inicio to the next-upcoming fallback)", () => {
+    expect(sesionMasCercana([], ahora)).toBeNull();
+  });
+
+  it("returns the caller's own session whose start is nearest now, before or after it", () => {
+    const soon = sesion("soon", 20);
+    expect(sesionMasCercana([sesion("early", -70), soon], ahora)).toBe(soon);
+    const justPast = sesion("just-past", -10);
+    expect(sesionMasCercana([justPast, sesion("later", 45)], ahora)).toBe(justPast);
+  });
+
+  it("null when every class is outside the window", () => {
+    expect(sesionMasCercana([sesion("morning", -200), sesion("night", 240)], ahora)).toBeNull();
+  });
+
+  it("the window edge is inclusive: exactly 90 minutes out matches, 91 does not", () => {
+    expect(sesionMasCercana([sesion("edge", 90)], ahora)?.id).toBe("edge");
+    expect(sesionMasCercana([sesion("beyond", 91)], ahora)).toBeNull();
+  });
+
+  it("a distance tie keeps the FIRST entry in the caller's order", () => {
+    const antes = sesion("antes", -30);
+    expect(sesionMasCercana([antes, sesion("despues", 30)], ahora)).toBe(antes);
+  });
+
+  it("takes a caller-supplied window", () => {
+    expect(sesionMasCercana([sesion("far", 25)], ahora, 20)).toBeNull();
+    expect(sesionMasCercana([sesion("near", 15)], ahora, 20)?.id).toBe("near");
   });
 });
 

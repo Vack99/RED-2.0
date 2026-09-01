@@ -74,9 +74,16 @@ export function ClientesScreen({
 
   const list = React.useMemo(() => {
     let list = withU;
-    if (renovar) list = list.filter((x) => x.renovar);
+    // The two chips OR together, never AND: `renovar`/`aunATiempo` are disjoint
+    // tiles (#328's own comment on the shared `contarLifecycle` split), so ticking
+    // BOTH under the old AND-combination always produced zero rows — a dead-end
+    // state no chip pair should reach. ORing them is what makes /inicio's MEMBRESÍAS
+    // card's combined predicate link (`?renovar=1&atiempo=1`) land on the union its
+    // own count promises, exactly as a single active chip still narrows to its own set.
+    if (renovar && aunATiempo) list = list.filter((x) => x.renovar || x.aunATiempo);
+    else if (renovar) list = list.filter((x) => x.renovar);
+    else if (aunATiempo) list = list.filter((x) => x.aunATiempo);
     if (online) list = list.filter((x) => x.c.veredicto.pendienteOnline);
-    if (aunATiempo) list = list.filter((x) => x.aunATiempo);
     if (diasMax != null) list = list.filter((x) => diasNum(x.c) <= diasMax);
     if (clasesMax != null) list = list.filter((x) => clasesNum(x.c) <= clasesMax);
     if (query) {

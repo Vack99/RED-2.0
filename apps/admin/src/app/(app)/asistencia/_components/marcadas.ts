@@ -16,7 +16,7 @@
  * in-flight action's optimistic and reconciled states consistent.
  */
 
-import { BLOQUEOS_VENDIBLES, enVentanaArribo, VENTANA_ARRIBO_PREVIA_MIN } from "@gym/domain/rules";
+import { BLOQUEOS_VENDIBLES, enVentanaArribo, sesionMasCercana } from "@gym/domain/rules";
 
 /** The screen's context key for the class-less visit kind (ACCESO LIBRE). Never a
  *  session id — session ids are uuids, so the two can't collide. */
@@ -92,18 +92,17 @@ export function personasEn(visitas: Visita[]): number {
   return new Set(visitas.map((v) => v.clienteId)).size;
 }
 
-/** How far from now a class may start and still be the screen's opening context. This is
- *  the arrival window's own lower bound, IMPORTED rather than re-coined: the class the
- *  screen opens on and the class a LIBRE tap gets attributed to are then the same 90
- *  minutes by construction, not by two numbers agreeing. Aliased so the kiosk rule below
- *  still reads in its own vocabulary. */
-const VENTANA_CERCANA_MIN = VENTANA_ARRIBO_PREVIA_MIN;
-
 /**
- * The class whose start is nearest `ahora`, within `VENTANA_CERCANA_MIN` — Zen Planner's
- * kiosk rule ("your current class of the day will automatically be highlighted and
- * selected"). Falls back to `LIBRE`, the honest default for a gym with no maintained
- * schedule (and the ONLY context when there are no classes at all).
+ * The class whose start is nearest `ahora`, within the desk's own ±90-minute window —
+ * Zen Planner's kiosk rule ("your current class of the day will automatically be
+ * highlighted and selected"). Falls back to `LIBRE`, the honest default for a gym with
+ * no maintained schedule (and the ONLY context when there are no classes at all).
+ *
+ * A thin wrapper over `@gym/domain`'s `sesionMasCercana` (#328 prefactor — extracted
+ * there so this screen's opening context and /inicio's day-card hero pick are the SAME
+ * ±90 semantics by construction, not by two loops agreeing): same absolute-instant
+ * comparison, same inclusive edge, same first-entry tie-break, only translated from "the
+ * session" to "its id, or LIBRE" for this screen's context-key vocabulary.
  *
  * Compares ABSOLUTE instants, never wall-clock strings, so the pick is right even when
  * the operator's device sits in a different zone than the gym. Resolved on the server so
@@ -112,16 +111,7 @@ const VENTANA_CERCANA_MIN = VENTANA_ARRIBO_PREVIA_MIN;
  * carries it.
  */
 export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora: Date): string {
-  let mejor = LIBRE;
-  let dist = Infinity;
-  for (const s of sesiones) {
-    const delta = Math.abs(s.startsAt.getTime() - ahora.getTime());
-    if (delta < dist) {
-      dist = delta;
-      mejor = s.id;
-    }
-  }
-  return dist <= VENTANA_CERCANA_MIN * 60_000 ? mejor : LIBRE;
+  return sesionMasCercana(sesiones, ahora)?.id ?? LIBRE;
 }
 
 /**

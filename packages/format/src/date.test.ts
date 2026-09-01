@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   fmtDiaAgenda,
+  fmtDiaInicio,
   fmtEyebrow,
   fmtMesAnio,
   fmtNavegadorDia,
@@ -26,6 +27,15 @@ describe("fmtEyebrow", () => {
 describe("fmtMesAnio", () => {
   it("formats the uppercased month + year", () => {
     expect(fmtMesAnio(HOY)).toBe("MAYO 2026");
+  });
+});
+
+describe("fmtDiaInicio", () => {
+  it('formats /inicio\'s header date, no year ("SÁB 8 AGO")', () => {
+    expect(fmtDiaInicio(new Date(2026, 7, 8))).toBe("SÁB 8 AGO");
+  });
+  it("drops the year even for the fixed HOY fixture", () => {
+    expect(fmtDiaInicio(HOY)).toBe("MIÉ 27 MAY");
   });
 });
 

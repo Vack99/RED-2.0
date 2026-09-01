@@ -63,6 +63,14 @@ export function fmtMesAnio(d: Date): string {
   return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`.toUpperCase();
 }
 
+/** "SÁB 8 AGO" — /inicio's header date (#328, owner-ruled header: no year, no
+ *  separator dot). Its own export beside `fmtDiaAgenda`'s identical shape, on
+ *  purpose: the two screens' headers may drift independently, and the alternative —
+ *  trimming `fmtEyebrow`'s year off at the call site — is banned (DELTA §2). */
+export function fmtDiaInicio(d: Date): string {
+  return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
+}
+
 // ── Agenda formatting (Phase 5, ADR-0010) — tz-parameterized only via the
 //    caller's already-zoned Date; these functions never read a gym row. ──
 
