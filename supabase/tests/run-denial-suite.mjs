@@ -126,6 +126,11 @@ export const SUITE = [
   'aceptar_acuerdo.sql',
   'gym_legal_name_rules.sql',
   'registros_atorados.sql',
+  // cambiar_modo_reservas (#331, spec #326) runs last: it is the Cuenta "Reservas en línea"
+  // switch, reusing cancelar_reserva per row rather than adding a second cancel path, so it
+  // belongs after every booking/attendance suite above that already pins cancelar_reserva's
+  // own refund contract.
+  'cambiar_modo_reservas_rules.sql',
 ];
 
 // QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason

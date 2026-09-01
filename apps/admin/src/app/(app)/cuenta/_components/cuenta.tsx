@@ -36,6 +36,7 @@ import { LegalIdentitySheet } from "./legal-identity-sheet";
 import { MensajesSheet } from "./mensajes-sheet";
 import { PaquetesSheet } from "./paquetes-sheet";
 import { PlantillasSheet } from "./plantillas-sheet";
+import { ReservasEnLineaSheet } from "./reservas-en-linea-sheet";
 
 interface CuentaScreenProps {
   /** The gym's booking door (spec #326). Lista hides Clases, Coaches and Plantillas —
@@ -80,6 +81,9 @@ interface CuentaScreenProps {
    *  same contenido sheet as the four "Contenido del gimnasio" resources above and rendered on
    *  the client app's Lista public landing. Content, not mode — any gym may fill it in. */
   horarioTexto: string | null;
+  /** Future `reservada` bookings of this gym (#331) — the OFF-direction confirm sheet's `N`.
+   *  0 on Lista (turning ON ignores the count) or when there is simply nothing ahead. */
+  reservasFuturas: number;
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -145,6 +149,7 @@ export function CuentaScreen({
   emailContactoAviso,
   urlAvisoIntegral,
   horarioTexto,
+  reservasFuturas,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -153,6 +158,7 @@ export function CuentaScreen({
   const [contenidoOpen, setContenidoOpen] = React.useState(false);
   const [mensajesOpen, setMensajesOpen] = React.useState(false);
   const [legalOpen, setLegalOpen] = React.useState(false);
+  const [reservasEnLineaOpen, setReservasEnLineaOpen] = React.useState(false);
   const sinLeer = mensajes.filter((m) => !m.leido).length;
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
@@ -215,7 +221,15 @@ export function CuentaScreen({
       ]
     : [];
 
+  // Both modes get this row (#331): the door itself is the same switch, whichever direction
+  // it currently points — tapping proposes the OPPOSITE of `modo`.
   const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
+    {
+      icon: "cal",
+      label: "RESERVAS EN LÍNEA",
+      sub: esCupo ? "Activadas" : "Desactivadas",
+      onClick: () => setReservasEnLineaOpen(true),
+    },
     ...ajustesCupo,
     {
       icon: "flame",
@@ -289,6 +303,13 @@ export function CuentaScreen({
         telefonoContacto={telefonoContactoAviso}
         emailContacto={emailContactoAviso}
         urlAvisoIntegral={urlAvisoIntegral}
+      />
+
+      <ReservasEnLineaSheet
+        open={reservasEnLineaOpen}
+        onClose={() => setReservasEnLineaOpen(false)}
+        activar={!esCupo}
+        reservasFuturas={reservasFuturas}
       />
 
       <AppBar center="CUENTA" trailing={<ThemeToggle />} />

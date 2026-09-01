@@ -1487,6 +1487,10 @@ export type Database = {
           ultima_visita_consumida: string | null
         }[]
       }
+      cambiar_modo_reservas: {
+        Args: { p_gym_id?: string; p_habilitar: boolean }
+        Returns: number
+      }
       cancel_class_session: {
         Args: { p_session_id: string }
         Returns: undefined

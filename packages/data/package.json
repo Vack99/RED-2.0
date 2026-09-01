@@ -27,6 +27,7 @@
     "./server/legal": "./src/server/legal.ts",
     "./server/marketing": "./src/server/marketing.ts",
     "./server/mensajes": "./src/server/mensajes.ts",
+    "./server/modo-reservas": "./src/server/modo-reservas.ts",
     "./server/ocupacion": "./src/server/ocupacion.ts",
     "./server/paquetes": "./src/server/paquetes.ts",
     "./server/reenvio-limite": "./src/server/reenvio-limite.ts",

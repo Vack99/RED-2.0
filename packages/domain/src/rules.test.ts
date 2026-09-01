@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enCurso, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, sesionMasCercana, urgenciaCliente, ventanaArribo } from "./rules";
+import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, copiaReservasEnLinea, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enCurso, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, sesionMasCercana, urgenciaCliente, ventanaArribo } from "./rules";
 import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
@@ -9,6 +9,38 @@ describe("modo", () => {
   });
   it("derives 'lista' when the gym takes no bookings — forge's shape", () => {
     expect(modo(false)).toBe("lista");
+  });
+});
+
+describe("copiaReservasEnLinea", () => {
+  it("turning ON names nothing seeded, regardless of the count passed", () => {
+    expect(copiaReservasEnLinea(true, 0)).toEqual({
+      titulo: "Activar reservas en línea",
+      cuerpo: "Aparece la agenda y tus miembros podrán reservar desde la app.",
+    });
+    // The count plays no part in the ON copy — a stray non-zero count must not leak in.
+    expect(copiaReservasEnLinea(true, 7).cuerpo).toBe(
+      "Aparece la agenda y tus miembros podrán reservar desde la app.",
+    );
+  });
+
+  it("turning OFF with zero future reservations still names the zero", () => {
+    expect(copiaReservasEnLinea(false, 0)).toEqual({
+      titulo: "Desactivar reservas en línea",
+      cuerpo: "Desaparece la agenda, los miembros dejan de reservar. Se cancelarán 0 reservas futuras.",
+    });
+  });
+
+  it("turning OFF singularizes exactly one future reservation", () => {
+    expect(copiaReservasEnLinea(false, 1).cuerpo).toBe(
+      "Desaparece la agenda, los miembros dejan de reservar. Se cancelarán 1 reserva futura.",
+    );
+  });
+
+  it("turning OFF pluralizes N future reservations", () => {
+    expect(copiaReservasEnLinea(false, 12).cuerpo).toBe(
+      "Desaparece la agenda, los miembros dejan de reservar. Se cancelarán 12 reservas futuras.",
+    );
   });
 });
 
