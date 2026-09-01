@@ -16,7 +16,7 @@
  * in-flight action's optimistic and reconciled states consistent.
  */
 
-import { BLOQUEOS_VENDIBLES, enVentanaArribo, sesionMasCercana } from "@gym/domain/rules";
+import { BLOQUEOS_VENDIBLES, enVentanaArribo } from "@gym/domain/rules";
 
 /** The screen's context key for the class-less visit kind (ACCESO LIBRE). Never a
  *  session id — session ids are uuids, so the two can't collide. */
@@ -93,28 +93,6 @@ export function personasEn(visitas: Visita[]): number {
 }
 
 /**
- * The class whose start is nearest `ahora`, within the desk's own ±90-minute window —
- * Zen Planner's kiosk rule ("your current class of the day will automatically be
- * highlighted and selected"). Falls back to `LIBRE`, the honest default for a gym with
- * no maintained schedule (and the ONLY context when there are no classes at all).
- *
- * A thin wrapper over `@gym/domain`'s `sesionMasCercana` (#328 prefactor — extracted
- * there so this screen's opening context and /inicio's day-card hero pick are the SAME
- * ±90 semantics by construction, not by two loops agreeing): same absolute-instant
- * comparison, same inclusive edge, same first-entry tie-break, only translated from "the
- * session" to "its id, or LIBRE" for this screen's context-key vocabulary.
- *
- * Compares ABSOLUTE instants, never wall-clock strings, so the pick is right even when
- * the operator's device sits in a different zone than the gym. Resolved on the server so
- * the opening context is identical in the SSR and hydration renders — which is why it
- * takes the DAL's `startsAt` Date directly, and the screen's own SesionDelDia never
- * carries it.
- */
-export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora: Date): string {
-  return sesionMasCercana(sesiones, ahora)?.id ?? LIBRE;
-}
-
-/**
  * clienteId → the session a LIBRE tap on that member would be ATTRIBUTED to today: their
  * nearest booking that is still `reservada`, not a walk-in, and whose arrival window
  * CONTAINS `ahora` (#179 — the chip promises attribution only where the server's own
@@ -124,11 +102,11 @@ export function sesionCercana(sesiones: { id: string; startsAt: Date }[], ahora:
  * entry — a tap on them refuses or charges, and a chip there would promise attribution
  * the server will not give.
  *
- * The window is a DIFFERENT job from the `sesionCercana` pill's ±90 note above: the pill
- * PRESELECTS a context to open the screen on, this ATTRIBUTES a specific tap to a specific
+ * The window is a DIFFERENT job from the entry step's own class pick (#330): the step
+ * NAMES the context to open the screen on, this ATTRIBUTES a specific tap to a specific
  * booking. They share a constant (their open edge), not a purpose.
  *
- * Resolved SERVER-side (page.tsx, beside `sesionCercana`) for the same reason: the metric
+ * Resolved SERVER-side (page.tsx) for the same reason: the metric
  * is measured against an absolute instant, which must not differ between the SSR and
  * hydration renders. The reservation shape is kept structural, not imported — the DAL is
  * `server-only` and this is a "use client" module (same as `Visita` above).

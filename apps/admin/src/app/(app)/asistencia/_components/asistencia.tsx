@@ -38,8 +38,8 @@ const REFRESCO_MS = 5 * 60_000;
 
 /** One of today's classes, as the pill row needs it. Built server-side (page.tsx) from
  *  getAgendaDia — `hora` is the gym-local label, `tipo` the Agenda's display name for
- *  the session. The nearest-class default is resolved server-side (sesionCercana reads
- *  the DTO's own `startsAt`), so no absolute instant is serialized to the client. */
+ *  the session. The opening context is resolved server-side (page.tsx reads the DTO's
+ *  own `startsAt`), so no absolute instant is serialized to the client. */
 export interface SesionDelDia {
   id: string;
   hora: string;

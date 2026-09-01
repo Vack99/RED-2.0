@@ -6,7 +6,6 @@ import {
   personasEn,
   reciboResultado,
   reservaAtribuible,
-  sesionCercana,
   setVisita,
   sugerenciaVenta,
   visitaDe,
@@ -109,32 +108,6 @@ describe("personasEn — the day dot counts DISTINCT members, not rows", () => {
 
   it("is 0 for an empty day", () => {
     expect(personasEn([])).toBe(0);
-  });
-});
-
-describe("sesionCercana — the opening context", () => {
-  const ahora = new Date("2026-07-28T18:00:00.000Z");
-  const sesion = (id: string, offsetMin: number) => ({
-    id,
-    startsAt: new Date(ahora.getTime() + offsetMin * 60_000),
-  });
-
-  it("falls back to ACCESO LIBRE with no schedule — Forge's screen", () => {
-    expect(sesionCercana([], ahora)).toBe(LIBRE);
-  });
-
-  it("opens on the class nearest now, before or after it", () => {
-    expect(sesionCercana([sesion("early", -70), sesion("soon", 20)], ahora)).toBe("soon");
-    expect(sesionCercana([sesion("just-past", -10), sesion("later", 45)], ahora)).toBe("just-past");
-  });
-
-  it("falls back to ACCESO LIBRE when every class is outside the 90-minute window", () => {
-    expect(sesionCercana([sesion("morning", -200), sesion("night", 240)], ahora)).toBe(LIBRE);
-  });
-
-  it("compares absolute instants, so a class exactly 90 minutes out still opens", () => {
-    expect(sesionCercana([sesion("edge", 90)], ahora)).toBe("edge");
-    expect(sesionCercana([sesion("beyond", 91)], ahora)).toBe(LIBRE);
   });
 });
 

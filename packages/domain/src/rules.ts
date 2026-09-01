@@ -495,9 +495,10 @@ export const VENTANA_ARRIBO_PREVIA_MIN = 90;
 /**
  * The session whose START is nearest `ahora`, within ±`ventanaMin` minutes — the desk's
  * kiosk preselect rule (Zen Planner: "your current class of the day will automatically be
- * highlighted and selected"), extracted HERE (#328 prefactor) so /asistencia's opening
- * context (its own `sesionCercana` wrapper) and /inicio's day-card hero pick are the same
- * ±90 semantics by construction, not by two loops agreeing. Distance is `|startsAt − ahora|`
+ * highlighted and selected"), extracted HERE (#328 prefactor) so every caller of the
+ * kiosk rule shares the same ±90 semantics by construction, not by two loops agreeing.
+ * /inicio's day-card hero is the caller today; /asistencia's Cupo desk now ASKS instead
+ * of guessing (#330), so its own wrapper is gone. Distance is `|startsAt − ahora|`
  * over ABSOLUTE instants (never wall-clock strings), the window edge is INCLUSIVE (a class
  * exactly 90 minutes out still matches), and a tie keeps the FIRST entry in the caller's
  * order (the DAL's startsAt ascending). `null` when nothing is inside the window.

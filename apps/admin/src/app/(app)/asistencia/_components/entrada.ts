@@ -1,6 +1,6 @@
 /**
  * The Cupo desk's entry step (#330) — asks BEFORE the roster shows names, replacing the
- * ±90-minute auto-guess (`sesionCercana`) as how a class gets picked. It fixes the ONE
+ * ±90-minute auto-guess as how a class gets picked. It fixes the ONE
  * thing the roster reads before it can render: the context (`ctx`/`ctxSel` — see
  * marcadas.ts). Nothing here writes; picking an option only sets that context.
  *
