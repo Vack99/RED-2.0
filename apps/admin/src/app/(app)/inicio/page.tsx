@@ -29,9 +29,10 @@ export default async function Page() {
   const sesiones = lectura.agenda?.sesiones ?? [];
   const dia = derivarDia(sesiones, lectura.visitas, gym.timezone, ahora);
 
-  // "Apartar lugar" lands on the NEXT upcoming class's agenda entry — the existing
-  // reserva-manual flow lives there; with nothing left today it falls back to the
-  // plain agenda. Unused on Lista, which never renders the link at all.
+  // "Apartar lugar" lands on the NEXT upcoming class's own quick-glance sheet, open
+  // on arrival (`/agenda?sesion=<id>`, resolved+opened by the Agenda screen itself,
+  // #328) — the roster there is where a walk-in gets ADDED. With nothing left today
+  // it falls back to the plain agenda. Unused on Lista, which never renders the link.
   const proxima = sesiones.find((s) => s.startsAt.getTime() > ahora.getTime());
 
   return (

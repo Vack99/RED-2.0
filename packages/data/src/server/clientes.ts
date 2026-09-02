@@ -291,11 +291,6 @@ export interface RosterResumenDTO extends ResumenRoster {
    *  the directory's own AÚN A TIEMPO filter/count read, so the tile's count and
    *  `/clientes?atiempo=1`'s row count can never disagree (spec story 19). */
   aunATiempo: { total: number };
-  /** The day-16+ horizon disclosure (#229 opus review F3) — vencido, not a
-   *  one-off pass, past `RECUPERACION_DIAS` since expiry. The tile's own
-   *  footer line names this count so the "N ya pasaron ese límite" fact
-   *  (Fitco) isn't silently dropped. */
-  fueraDeAlcance: number;
 }
 
 /** `vigentes`/`total`/`nuevosOnline`/`porRenovar`/`aunATiempo` for the dashboard,
@@ -347,10 +342,10 @@ export const getRosterResumen = cache(
       visitasPorCliente(ultimasRes.data),
     );
 
-    const { vigentes, total, porRenovar, aunATiempo, fueraDeAlcance, pendienteOnline: nuevosOnline } =
+    const { vigentes, total, porRenovar, aunATiempo, pendienteOnline: nuevosOnline } =
       contarLifecycle(filas);
 
-    return { vigentes, total, nuevosOnline, porRenovar, aunATiempo, fueraDeAlcance };
+    return { vigentes, total, nuevosOnline, porRenovar, aunATiempo };
   },
 );
 

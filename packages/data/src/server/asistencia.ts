@@ -3,7 +3,7 @@ import "server-only";
 import { cache } from "react";
 import { z } from "zod";
 
-import { addDays, hoyEnZona, iniciales, toIsoDay } from "@gym/format";
+import { addDays, hoyEnZona, toIsoDay } from "@gym/format";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
@@ -89,8 +89,8 @@ export interface MarcadasInicial {
 
 /**
  * ONE day's attendance rows, one per visit, gym-scoped and soft-delete filtered — a DIRECT
- * table select rather than an RPC (the `getAsistenciasHoy` pattern): there is nothing to
- * aggregate here, the screen wants the rows themselves.
+ * table select rather than an RPC: there is nothing to aggregate here, the screen wants
+ * the rows themselves.
  *
  * Ordered by `hora` then `id` so the payload is stable across reloads (a back-entered row
  * has no hora; Postgres sorts those last, and `id` breaks the remaining ties).
@@ -341,69 +341,4 @@ export async function togglePase(
     clasesRestantes: data.clases_restantes,
     resultado: data.resultado,
   };
-}
-
-export interface AsistenciaHoy {
-  cliente_id: string;
-  nombre: string;
-  inicial: string;
-  paquete: string;
-  /** "HH:MM" check-in time, or "" for a back-entered row with no time. */
-  hora: string;
-}
-
-/**
- * Today's asistencia rows joined to clientes, ordered by time (most recent
- * first) — drives the inicio "Últimas asistencias" list. RLS-scoped read;
- * returns DTOs only (no raw rows cross the boundary, ADR-0001).
- *
- * Session pases (rows `pasar_lista_sesion` writes, with `class_session_id` set)
- * appear here — this is the feed of who checked in today, whichever seam wrote
- * it. That is true of EVERY attendance read: getMarcadas ships session rows too,
- * as visits carrying their class context (#89).
- *
- * @returns the DTO list (empty when no rows) · throws on DB error.
- */
-export async function getAsistenciasHoy(client?: SupabaseServer): Promise<AsistenciaHoy[]> {
-  const supabase = client ?? (await createClient());
-  const gym = await getOperatorGym(supabase);
-  const hoyIso = toIsoDay(hoyEnZona(gym.timezone));
-
-  const { data: asis, error } = await supabase
-    .from("asistencias")
-    .select("cliente_id, hora")
-    .eq("gym_id", gym.id)
-    .eq("fecha", hoyIso)
-    .is("deleted_at", null)
-    .order("hora", { ascending: false });
-  if (error) throw error;
-
-  const rows = asis ?? [];
-  if (rows.length === 0) return [];
-
-  const ids = [...new Set(rows.map((a) => a.cliente_id))];
-  const { data: clientes, error: cErr } = await supabase
-    .from("clientes")
-    .select("id, nombre, paquete_nombre")
-    .in("id", ids);
-  if (cErr) throw cErr;
-
-  const byId = new Map(
-    (clientes ?? []).map((c) => [
-      c.id,
-      { nombre: c.nombre, paquete: c.paquete_nombre ?? "Sin paquete" },
-    ]),
-  );
-
-  return rows.map((a) => {
-    const c = byId.get(a.cliente_id);
-    const nombre = c?.nombre ?? "—";
-    return {
-      cliente_id: a.cliente_id,
-      nombre,
-      inicial: iniciales(nombre),
-      paquete: c?.paquete ?? "Sin paquete",
-      hora: (a.hora ?? "").slice(0, 5),
-    };
-  });
 }

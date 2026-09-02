@@ -22,6 +22,7 @@ import {
 import { CUPO_OPTIONS, DURACION_OPTIONS, HORA_OPTIONS } from "@gym/ui/forge/agenda/fixtures";
 
 import { AgendaScreen, type DiaVM, type StripDay } from "./_components/agenda";
+import { resolverDiaSesion } from "./_components/resolver-sesion";
 import { toCardVM } from "./_components/session-vm";
 
 /**
@@ -52,8 +53,14 @@ export default async function Page({
 
   const tz = gym.timezone;
   const todayIso = hoyIsoEnZona(tz);
-  const dParam = (await searchParams).d;
+  const params = await searchParams;
+  const dParam = params.d;
   const d = typeof dParam === "string" ? dParam : todayIso;
+  // `?sesion=<id>` (#328) — the /inicio hero/peek deep link. Never changes WHICH week
+  // is fetched (that stays `?d=`/today, above): inicio only ever links today's own
+  // sessions, so the week that read already loads is always the right one — this is
+  // resolved against it below, once semana is in hand, purely to pick the DAY within it.
+  const sesionParam = typeof params.sesion === "string" ? params.sesion : undefined;
 
   const [semana, coaches, tipos] = await Promise.all([getAgendaSemana(d), getCoaches(), getClassTypes()]);
 
@@ -79,8 +86,17 @@ export default async function Page({
     cards: dia.sesiones.map((s) => toCardVM(s, horaEnZona(s.startsAt, tz))),
   }));
 
+  // The deep-linked session's own day, resolved against the ids of THIS loaded week
+  // only (resolverDiaSesion) — a stale/foreign-week `sesion` id resolves to null and
+  // is ignored, falling back to the ordinary `?d=`/today selection below.
+  const diaDeSesion = resolverDiaSesion(
+    semana.dias.map((dia) => ({ iso: toIsoDay(dia.fecha), ids: dia.sesiones.map((s) => s.id) })),
+    sesionParam,
+  );
+  const sesionInicial = diaDeSesion ? (sesionParam ?? null) : null;
+
   const todayIndex = stripDays.findIndex((s) => s.iso === todayIso);
-  const selectedFromParam = stripDays.findIndex((s) => s.iso === d);
+  const selectedFromParam = stripDays.findIndex((s) => s.iso === (diaDeSesion ?? d));
   const initialSelectedIndex = selectedFromParam >= 0 ? selectedFromParam : 0;
 
   return (
@@ -98,6 +114,7 @@ export default async function Page({
       weekNavRel={fmtNavegadorSemana(semana.lunes, lunesHoy)}
       weekFooter={fmtResumenSemana(semana.resumenSemana.ratioOcupacion)}
       fueraDeHorizonte={fueraDeHorizonte}
+      sesionInicial={sesionInicial}
       coaches={coaches.map((c) => ({ id: c.id, label: c.label }))}
       tipos={tipos}
       horaOptions={HORA_OPTIONS}

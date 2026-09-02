@@ -89,6 +89,11 @@ export interface AgendaScreenProps {
    *  there yet, so an empty day means "not yet", not "free" — and must not read as an
    *  invitation to hand-create a class the horizon will generate again later. */
   fueraDeHorizonte: boolean;
+  /** `?sesion=<id>` (the /inicio hero/peek deep link, #328), already resolved to a session
+   *  in THIS week and selected by page.tsx (resolverDiaSesion) — `null` when absent or when
+   *  the id was stale/foreign to the loaded week. Opens that card's own quick-glance sheet
+   *  once, on mount; never re-derived client-side. */
+  sesionInicial: string | null;
   coaches: CoachOption[];
   tipos: ClassTypeOpt[];
   horaOptions: string[];
@@ -139,6 +144,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
     weekNavRel,
     weekFooter,
     fueraDeHorizonte,
+    sesionInicial,
     coaches,
     horaOptions,
     duracionOptions,
@@ -229,6 +235,22 @@ export function AgendaScreen(props: AgendaScreenProps) {
     setGlance((g) => ({ ...g, open: false }));
   };
   const closeEditor = () => setEditor((e) => ({ ...e, open: false }));
+
+  // `?sesion=<id>` (#328): page.tsx already resolved the id to a day in THIS week and
+  // selected it (a stale/foreign id never reaches this prop), so all that's left is
+  // opening that card's OWN quick-glance sheet — the same one a tap opens — once, on
+  // mount. The ref (not just a `sesionInicial` check) is what makes it once: React
+  // Strict Mode double-invokes this effect in dev, and a later re-render must not
+  // re-open a sheet the operator already closed.
+  const sesionInicialAbierta = React.useRef(false);
+  React.useEffect(() => {
+    if (sesionInicialAbierta.current || !sesionInicial) return;
+    sesionInicialAbierta.current = true;
+    const card = selectedDay.cards.find((c) => c.id === sesionInicial);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional deep-link open on mount
+    if (card) openGlance(card, selectedDay.iso);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- deliberately mount-only: opens the deep-linked card once, off the first render's selectedDay/openGlance
+  }, []);
 
   // Every roster write shares one shape: busy-gate the cliente, run the RPC, surface its
   // Spanish raise through the toast, then reload the roster (the RPC is authoritative — never

@@ -53,11 +53,6 @@ export function fmtShort(d: Date): string {
   return `${d.getDate()} ${MON[d.getMonth()].toLowerCase()}`;
 }
 
-/** "MIÉ · 27 MAY 2026" — the dashboard greeting eyebrow (carries the year). */
-export function fmtEyebrow(d: Date): string {
-  return `${DOW[d.getDay()]} · ${d.getDate()} ${MON[d.getMonth()]} ${d.getFullYear()}`;
-}
-
 /** "MAYO 2026" — the cuenta "resumen del mes" header. */
 export function fmtMesAnio(d: Date): string {
   return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`.toUpperCase();
@@ -65,8 +60,7 @@ export function fmtMesAnio(d: Date): string {
 
 /** "SÁB 8 AGO" — /inicio's header date (#328, owner-ruled header: no year, no
  *  separator dot). Its own export beside `fmtDiaAgenda`'s identical shape, on
- *  purpose: the two screens' headers may drift independently, and the alternative —
- *  trimming `fmtEyebrow`'s year off at the call site — is banned (DELTA §2). */
+ *  purpose: the two screens' headers may drift independently. */
 export function fmtDiaInicio(d: Date): string {
   return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
 }
@@ -82,8 +76,7 @@ function difDias(a: Date, b: Date): number {
   return Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86_400_000);
 }
 
-/** "MIÉ 17 JUN" — the Agenda day heading (no year; distinct from fmtEyebrow's
- *  dashboard "MIÉ · 27 MAY 2026"). */
+/** "MIÉ 17 JUN" — the Agenda day heading (no year). */
 export function fmtDiaAgenda(d: Date): string {
   return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
 }

@@ -126,7 +126,7 @@ interface SesionRaw {
 
 /** Fetch non-cancelled sessions in `[low, high)` (an absolute UTC instant range),
  *  joined to class_type + coaches — three plain reads assembled in JS (no
- *  embedded PostgREST select), matching the rest of the DAL (e.g. getAsistenciasHoy).
+ *  embedded PostgREST select), matching the rest of the DAL.
  *  Ordered by startsAt ascending — the order `derivarEstadosDia` requires.
  *
  *  The ONE embed here is the generating `schedule_template` (#243), and it is deliberate: it

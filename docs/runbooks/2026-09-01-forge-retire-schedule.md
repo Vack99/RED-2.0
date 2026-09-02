@@ -48,13 +48,18 @@ migration, which is why a future session's reservation rows must be gone before 
 rows even could be (moot here — see below).
 
 Consequence for this recipe: **a future `class_session` with any `reservation` or `asistencias`
-row still attached refuses the delete outright** (Postgres raises a foreign-key violation; it
-does not cascade the child away). In practice this is expected to be zero for both gyms —
-`reservar_clase` already refuses on a `booking_enabled = false` gym (`supabase/functions-canonical/reservar_clase.sql:69`,
-since `20260826120100_gym_booking_enabled.sql`), so no member reservation can land on forge, and
-`asistencias` is only ever written for a session that has already started (never a future one)
-— but the pre-check below proves it rather than assumes it, and the write transaction's own
-guard halts (rather than partially executes) if that ever stops being true.
+row still attached refuses the delete outright** — Postgres raises a foreign-key violation; it
+does not cascade the child away. `reservar_clase` already refuses on a `booking_enabled = false`
+gym (`supabase/functions-canonical/reservar_clase.sql:69`, since `20260826120100_gym_booking_enabled.sql`),
+so no member reservation can land on forge. **But `asistencias` is not similarly guarded:**
+`pasar_lista_sesion` (`supabase/functions-canonical/pasar_lista_sesion.sql`) has no
+`starts_at`/started-class gate at all — only a vigencia check (`v_vence < v_fecha`) — so marking
+someone present on TODAY's later class before it starts (an ordinary early front-desk mark, not
+an edge case) writes an `asistencias` row, and a walk-in mark also writes a `reservation` row, on
+a session whose `starts_at > now()`. This recipe does not assume that leg is always empty and
+does not abort the whole gym's transaction if it isn't: the `DELETE` below is scoped to skip any
+future session that carries either row, and a post-check reports — never raises on — whatever
+survived that way.
 
 `class_session_coach` needs no guard: it cascades cleanly, and it carries no history of its own
 (it is a pure link row — who was assigned to teach a session that no longer exists is not a fact
@@ -79,14 +84,15 @@ select (starts_at > now()) as future, count(*) as n
  where gym_id = (select id from public.gym where slug = 'forge')
  group by (starts_at > now());
 
--- 3. reservation rows tied to FUTURE sessions — must be 0, or the delete below halts
+-- 3. reservation rows tied to FUTURE sessions — informational: any session found here is
+--    SKIPPED by the scoped delete below, not a blocker
 select count(*) as n
   from public.reservation r
   join public.class_session cs on cs.id = r.class_session_id
  where cs.gym_id = (select id from public.gym where slug = 'forge')
    and cs.starts_at > now();
 
--- 4. asistencias rows tied to FUTURE sessions — must be 0, or the delete below halts
+-- 4. asistencias rows tied to FUTURE sessions — informational: same skip, same reason
 select count(*) as n
   from public.asistencias a
   join public.class_session cs on cs.id = a.class_session_id
@@ -108,38 +114,16 @@ select
 ```
 
 Record all five results (and their `forge-demo` counterparts) on #329 before writing anything.
-Checks 3 and 4 must read `n = 0` — if either doesn't, **stop and re-plan** (do not proceed to
-the write transaction; the guard inside it would halt anyway, but a nonzero pre-check means the
-"future sessions are always empty" assumption above is false for this gym and needs a human
-decision, not a blind retry).
+Checks 3 and 4 are expected to read `n = 0` for a gym with zero live bookings ever (forge/
+forge-demo's live count, top of this doc) — but a nonzero result is not a stop condition here:
+the write below scopes its `DELETE` to skip exactly those sessions, and the post-check reports
+which ones survived rather than failing the whole run over them.
 
 ## The write — one transaction per gym
 
 ```sql
 -- ── forge — retire the schedule ─────────────────────────────────────────────────
 begin;
-
--- Hard guard, not an assumption: re-proves pre-checks 3/4 INSIDE the transaction
--- (closes the TOCTOU gap between recording the pre-check and running this) and
--- turns a would-be FK violation into a legible halt.
-do $$
-declare v_gym uuid := (select id from public.gym where slug = 'forge');
-begin
-  if exists (
-    select 1 from public.reservation r
-    join public.class_session cs on cs.id = r.class_session_id
-    where cs.gym_id = v_gym and cs.starts_at > now()
-  ) then
-    raise exception 'HALT: forge has a future reservation — resolve before deleting sessions';
-  end if;
-  if exists (
-    select 1 from public.asistencias a
-    join public.class_session cs on cs.id = a.class_session_id
-    where cs.gym_id = v_gym and cs.starts_at > now()
-  ) then
-    raise exception 'HALT: forge has a future attendance row — resolve before deleting sessions';
-  end if;
-end $$;
 
 -- Plantillas inactive: the cron's own gym-selection predicate then excludes forge
 -- from every future run (cron_materialize_horizon's `exists (... st.is_active)`).
@@ -150,13 +134,16 @@ update public.schedule_template
  where gym_id = (select id from public.gym where slug = 'forge')
    and is_active = true;
 
--- Future sessions gone. class_session_coach cascades (verified above, no guard
--- needed); reservation/asistencias are RESTRICT and the DO block above already
--- proved there is nothing there to violate it. Past sessions (starts_at <= now())
--- are never touched — they are outside this WHERE clause, not merely unintended.
-delete from public.class_session
- where gym_id = (select id from public.gym where slug = 'forge')
-   and starts_at > now();
+-- Future sessions gone — EXCEPT any that carry a reservation or asistencias row
+-- (`not exists` below), which the RESTRICT FKs would otherwise refuse outright and
+-- abort this WHOLE gym's transaction over. class_session_coach cascades cleanly
+-- (verified above, no guard needed) on whatever this DOES delete. Past sessions
+-- (starts_at <= now()) are never touched — outside this WHERE clause entirely.
+delete from public.class_session cs
+ where cs.gym_id = (select id from public.gym where slug = 'forge')
+   and cs.starts_at > now()
+   and not exists (select 1 from public.reservation r where r.class_session_id = cs.id)
+   and not exists (select 1 from public.asistencias a where a.class_session_id = cs.id);
 
 commit;
 ```
@@ -171,12 +158,13 @@ select count(*) filter (where is_active) as still_active, count(*) as total
  where gym_id = (select id from public.gym where slug = 'forge');
 -- expect: still_active = 0
 
--- 2. future sessions = 0
+-- 2. future sessions remaining
 select count(*) as n
   from public.class_session
  where gym_id = (select id from public.gym where slug = 'forge')
    and starts_at > now();
--- expect: n = 0
+-- expect: n = 0 for a gym with zero live bookings ever (forge/forge-demo) — a nonzero
+-- count is not a failure by itself; check 6 below names exactly which sessions and why.
 
 -- 3. past sessions unchanged — must equal pre-check block's `sesiones_pasadas`
 select count(*) as n
@@ -197,6 +185,18 @@ select count(*) as n
   join public.class_session cs on cs.id = r.class_session_id
  where cs.gym_id = (select id from public.gym where slug = 'forge')
    and cs.starts_at <= now();
+
+-- 6. survivors — future sessions the delete SKIPPED because they carry a reservation
+--    or asistencias row (never raised on, only reported here). Re-run this recipe once
+--    each one's `starts_at` rolls into the past — the ordinary past-session carve-out
+--    then protects it for real — or inspect and hand-delete after review.
+select cs.id, cs.starts_at,
+       exists (select 1 from public.reservation r where r.class_session_id = cs.id) as has_reservation,
+       exists (select 1 from public.asistencias a where a.class_session_id = cs.id) as has_asistencias
+  from public.class_session cs
+ where cs.gym_id = (select id from public.gym where slug = 'forge')
+   and cs.starts_at > now();
+-- expect: zero rows — any row here is exactly what keeps check 2's `n` above 0.
 ```
 
 Repeat pre-check → write → post-check for `forge-demo` in its own transaction. Do not batch
@@ -253,7 +253,12 @@ is false.
   reason the spec asks for.
 - Widen the `class_session` delete beyond `starts_at > now()` — a past session, however idle,
   carries real attendance and must never be touched by this recipe.
-- Skip the pre-check / DO-block guard because "it's always zero in practice" — the guard is
-  what turns that assumption into a proof, and the whole reason `RESTRICT` replaced `CASCADE`
-  on 2026-08-03 was a prior silent-destruction incident (`20260803130000`'s own header).
+- Widen the `DELETE`'s `not exists` scoping away — it is what keeps a future session that
+  happens to carry a reservation/asistencias row (`pasar_lista_sesion`'s missing started-class
+  gate makes this an ordinary case, not a hypothetical) from raising a `RESTRICT` FK violation
+  and aborting the whole gym's transaction. The same reason `RESTRICT` replaced `CASCADE` on
+  2026-08-03 in the first place (`20260803130000`'s own header) — route around a hard failure
+  there with a scope, never with a wider delete.
+- Treat a nonzero post-check 2/6 result as something to force through — it names a session that
+  needs a human decision (wait for it to become past, or inspect it), not a retry.
 - Batch `forge` and `forge-demo` into a single transaction.

@@ -4,7 +4,7 @@ import { getClientesParaPase } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
 import { modo } from "@gym/domain/rules";
 import { hoyIsoEnZona, horaEnZona } from "@gym/format";
-import { topTag } from "@gym/ui/forge/agenda/session-card";
+import { nombreSesion } from "@gym/ui/forge/agenda/session-card";
 
 import { AsistenciaScreen, type SesionDelDia } from "./_components/asistencia";
 import { ctxDesdeSesionParam } from "./_components/entrada";
@@ -13,11 +13,10 @@ import { LIBRE, reservaAtribuible } from "./_components/marcadas";
 /**
  * The desk names a class exactly as the Agenda does: an evento especial reads by its own
  * name (an unnamed one reads "Especial"), everything else by its class type. Reuses the
- * Agenda card's own `topTag` — `isNext: false` because the pill has no "A continuación"
- * slot for the especial name to lose to, which is the only thing `muestraEspecial` decides.
+ * Agenda card's own lifted `nombreSesion` (#328 prefactor) instead of re-deriving it.
  */
 function etiquetaSesion(s: SesionAgendaDTO): string {
-  return topTag({ isNext: false, isSpecial: s.esEspecial, specialName: s.nombreEspecial }) ?? s.tipo;
+  return nombreSesion(s.tipo, { isSpecial: s.esEspecial, specialName: s.nombreEspecial });
 }
 
 export default async function Page({

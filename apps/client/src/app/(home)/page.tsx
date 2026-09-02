@@ -12,11 +12,25 @@ import {
 import { heroCtaVista } from "../../lib/reserva-vista";
 import { PricingTeaser } from "../_components/pricing-teaser";
 
-export const metadata: Metadata = {
-  title: "Inicio",
-  description:
-    "Reserva tu clase y entrena desde hoy. Sin permanencia, cancelas cuando quieras.",
-};
+const DESCRIPCION_CUPO =
+  "Reserva tu clase y entrena desde hoy. Sin permanencia, cancelas cuando quieras.";
+// Lista has no booking surface at all (#326/#332) — the description must never promise a
+// "reserva" the gym doesn't take. Mirrors the copy the Lista arm's own sections below carry
+// (Horario/Ubicación), not a rewrite of the Cupo line.
+const DESCRIPCION_LISTA = "Precios, horario y ubicación — entrena con nosotros.";
+
+/** Dynamic (reads `x-gym`, same as the page body below): Lista never gets "Reserva" copy in
+ *  its `<title>`/description either. `getMarketingGym` is request-cached (React `cache()`), so
+ *  this costs no second round trip beyond the one the page body already pays. */
+export async function generateMetadata(): Promise<Metadata> {
+  const slug = (await headers()).get("x-gym");
+  const gym = slug ? await getMarketingGym(slug) : null;
+  const lista = gym != null && !gym.bookingEnabled;
+  return {
+    title: "Inicio",
+    description: lista ? DESCRIPCION_LISTA : DESCRIPCION_CUPO,
+  };
+}
 
 /**
  * The public comercial landing (PRD #49 S2, mock `comercial` slot): the gym's identity plus a
@@ -169,9 +183,19 @@ export default async function Home() {
 
       <footer className="cm-foot mt-14 px-7 text-center">
         <p className="text-[15px] font-medium text-fg">{brandName} — estudio funcional</p>
-        <p className="mt-1.5 text-[11px] text-muted">
-          Lun a Sáb · desde las 05:30
-        </p>
+        {/* Cupo keeps the generic platform line (no per-gym hours column feeds it, see the
+            module doc above); Lista has nothing else to say the schedule teaser used to say,
+            so it gets the gym's REAL hours_text when set, and omits the line rather than
+            print a fabricated one otherwise. */}
+        {lista ? (
+          contacto?.horarioTexto && (
+            <p className="mt-1.5 text-[11px] text-muted">{contacto.horarioTexto}</p>
+          )
+        ) : (
+          <p className="mt-1.5 text-[11px] text-muted">
+            Lun a Sáb · desde las 05:30
+          </p>
+        )}
         <div className="mt-5 flex items-center justify-center gap-4">
           {/* Nosotros/Contacto are sibling routes (#52/#53) landing alongside this slice — typed
               `as Route` (Next's intentional-forward-route marker); /precios is already live. */}
