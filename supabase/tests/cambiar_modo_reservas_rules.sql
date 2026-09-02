@@ -66,6 +66,12 @@ begin
 
   insert into public.gym_membership (user_id, gym_id, role) values
     (op_a, gym_a, 'operator'),
+    -- op_a ALSO staffs gym B (the two-membership operator, #219's shape): the app
+    -- (modo-reservas.ts:52) always sends p_gym_id explicitly, so the suite must exercise a
+    -- caller for whom the OMITTED-arm fallback (staff_gym(), lowest-uuid-first) would be
+    -- ambiguous between two staffed gyms — proving the explicit arg, not the default, is what
+    -- pins the flip to gym A.
+    (op_a, gym_b, 'operator'),
     (op_b, gym_b, 'operator'),
     (mem_a, gym_a, 'member'),
     (m_fin, gym_a, 'member'), (m_ilim, gym_a, 'member'), (m_past, gym_a, 'member'),
@@ -204,14 +210,18 @@ begin
 end $$;
 
 -- ── (3) THE OFF FLIP — future holds cancelled + refunded, past and other-gym left alone ───────
+-- Called with p_gym_id EXPLICIT (not defaulted): this is the arm the app actually calls
+-- (modo-reservas.ts:52 always sends p_gym_id), and op_a now staffs BOTH gym A and gym B, so
+-- the omitted-arm fallback (staff_gym(), lowest-uuid-first) would be ambiguous between the
+-- two. Naming gym A is what proves the explicit arg pins the flip correctly.
 select set_config('request.jwt.claims',
   json_build_object('sub', current_setting('t.op_a', true), 'role', 'authenticated')::text, true);
 set local role authenticated;
 do $$
 declare v_n int;
 begin
-  v_n := public.cambiar_modo_reservas(false);
-  if v_n is distinct from 2 then raise exception 'RULE FAIL(3): cambiar_modo_reservas(false) returned % (expected 2 — c_fin + c_ilim, not c_past)', v_n; end if;
+  v_n := public.cambiar_modo_reservas(false, current_setting('t.gym_a', true)::uuid);
+  if v_n is distinct from 2 then raise exception 'RULE FAIL(3): cambiar_modo_reservas(false, gym_a) returned % (expected 2 — c_fin + c_ilim, not c_past)', v_n; end if;
 end $$;
 reset role;
 
@@ -280,7 +290,7 @@ set local role authenticated;
 do $$
 declare v_n int;
 begin
-  v_n := public.cambiar_modo_reservas(false);
+  v_n := public.cambiar_modo_reservas(false, current_setting('t.gym_a', true)::uuid);
   if v_n is distinct from 0 then raise exception 'RULE FAIL(4): a second OFF call returned % (expected 0 — already off)', v_n; end if;
 end $$;
 reset role;
@@ -302,8 +312,8 @@ set local role authenticated;
 do $$
 declare v_n int;
 begin
-  v_n := public.cambiar_modo_reservas(true);
-  if v_n is distinct from 0 then raise exception 'RULE FAIL(5): cambiar_modo_reservas(true) returned % (expected 0 — turning on cancels nothing)', v_n; end if;
+  v_n := public.cambiar_modo_reservas(true, current_setting('t.gym_a', true)::uuid);
+  if v_n is distinct from 0 then raise exception 'RULE FAIL(5): cambiar_modo_reservas(true, gym_a) returned % (expected 0 — turning on cancels nothing)', v_n; end if;
 end $$;
 reset role;
 
@@ -325,7 +335,7 @@ set local role authenticated;
 do $$
 declare v_n int;
 begin
-  v_n := public.cambiar_modo_reservas(true);
+  v_n := public.cambiar_modo_reservas(true, current_setting('t.gym_a', true)::uuid);
   if v_n is distinct from 0 then raise exception 'RULE FAIL(6): a second ON call returned % (expected 0)', v_n; end if;
 end $$;
 reset role;

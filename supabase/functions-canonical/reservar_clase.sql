@@ -66,7 +66,11 @@ begin
   end if;
 
   
-  select timezone, booking_enabled into v_tz, v_reservas from public.gym where id = v_gym;
+  
+  
+  
+  
+  select timezone, booking_enabled into v_tz, v_reservas from public.gym where id = v_gym for share;
 
   
   
