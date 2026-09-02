@@ -14,32 +14,42 @@
 --   * policy denies   — a member of gym B, same topic, reads NOTHING.
 --   * bad topic       — 'gym:no-soy-uuid' denies and does NOT raise 22P02 (the safe cast).
 --
--- WHY THIS FILE NEEDS A SUPERUSER DB: `realtime.messages` is RANGE-partitioned on `inserted_at`
--- and Supabase's Realtime service — not SQL — creates the daily partitions. On a scratch/local DB
--- no partition exists, `realtime.send` swallows the failure (its body is one `WHEN OTHERS ->
--- RAISE WARNING`) and every assertion below would read 0 rows for the wrong reason. The role
--- `postgres` may NOT create one (verified live: 42501 permission denied for schema realtime), so
--- this suite runs on the LOCAL DOCKER stack, where `postgres` is superuser. It raises a named
--- exception rather than passing quietly anywhere else.
+-- WHY THIS FILE CARES ABOUT PARTITIONS: `realtime.messages` is RANGE-partitioned on `inserted_at`
+-- and Supabase's Realtime service — not SQL — creates the daily partitions, yesterday..today+3, on
+-- the first client subscribe. Where today's partition is missing, `realtime.send` swallows the
+-- failure (its body is one `WHEN OTHERS -> RAISE WARNING`) and every assertion below would read 0
+-- rows for the wrong reason. `postgres` may NOT create one — 42501, no CREATE on schema realtime,
+-- verified on BOTH live and the local docker stack, where `postgres` is `rolbypassrls` but is NOT
+-- the superuser (`supabase_admin` is). So the precondition below CHECKS FIRST and only attempts a
+-- CREATE where the partition is genuinely absent: `create table if not exists` takes the schema
+-- ACL check BEFORE its existence short-circuit, so an unguarded attempt raises 42501 against a
+-- partition that is already sitting there. Once any tab has subscribed — the normal case — this
+-- suite needs no privilege at all. Where the partition is absent AND uncreatable, it raises a
+-- named exception rather than passing quietly.
 --
 -- Self-asserting: every check RAISEs on a mismatch; a clean run returns one 'OK' row.
 -- BEGIN/ROLLBACK, so it touches no row permanently. Zero hardcoded prod UUIDs.
 --
 -- HOW TO RUN: the local docker path in the plan's Task 5 — or `node supabase/tests/run-denial-suite.mjs`
--- against a superuser target. Wired into the runner's SUITE.
+-- against any target where today's partition exists. Wired into the runner's SUITE.
 
 begin;
 
 -- ── Partition precondition ──────────────────────────────────────────────────────
 do $$
 begin
-  execute format(
-    'create table if not exists realtime.%I partition of realtime.messages for values from (%L) to (%L)',
-    'messages_' || to_char(current_date, 'YYYY_MM_DD'),
-    current_date::timestamp,
-    (current_date + 1)::timestamp);
+  if not exists (
+    select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
+     where n.nspname = 'realtime'
+       and c.relname = 'messages_' || to_char(current_date, 'YYYY_MM_DD')) then
+    execute format(
+      'create table if not exists realtime.%I partition of realtime.messages for values from (%L) to (%L)',
+      'messages_' || to_char(current_date, 'YYYY_MM_DD'),
+      current_date::timestamp,
+      (current_date + 1)::timestamp);
+  end if;
 exception when insufficient_privilege then
-  raise exception 'SETUP FAIL: cannot create today''s realtime.messages partition. This suite needs a SUPERUSER database (the local docker stack); the cloud `postgres` role has no CREATE on schema realtime.';
+  raise exception 'SETUP FAIL: today''s realtime.messages partition is missing and this role cannot create it (42501, no CREATE on schema realtime). Subscribe one Realtime client — the service provisions yesterday..today+3 on connect — or run as a role that may create it.';
 end $$;
 
 -- ── Seed (runs as the migration/service role — RLS bypassed) ─────────────────────
