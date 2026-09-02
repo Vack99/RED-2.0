@@ -71,6 +71,12 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // `pnpm test` gate keep this wiring honest (#80): denial-suite-drift.test.ts fails on a .sql that is
 // in neither SUITE nor QUARANTINE, and rpc-write-coverage.test.ts fails when a write-bearing RPC
 // (derived from the migrations, not declared) is absent from supabase/tests/rpc-coverage.json.
+// A new suite closes the list after registros_atorados: senal_gym (audit 2026-09-01) — the ONLY
+// file here whose subject is `realtime.messages` rather than a public table. It proves the
+// freshness rail's two invisible halves: one broadcast per gym per transaction, and a SELECT
+// policy that lets that gym's members subscribe and refuses everybody else's. It needs a
+// SUPERUSER database (it creates today's realtime.messages partition), so it runs on the local
+// docker stack, not on a cloud scratch project.
 export const SUITE = [
   'rls_cross_tenant_denial.sql',
   'gym_tenant_anon_read.sql',
@@ -131,6 +137,7 @@ export const SUITE = [
   // belongs after every booking/attendance suite above that already pins cancelar_reserva's
   // own refund contract.
   'cambiar_modo_reservas_rules.sql',
+  'senal_gym.sql',
 ];
 
 // QUARANTINE — suite files that exist on disk but must NOT run yet, each with a stated reason
