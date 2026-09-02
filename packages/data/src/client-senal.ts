@@ -28,30 +28,39 @@ export type MotivoSenal = "senal" | "visible" | "rejoin";
  */
 export const senalBusy = new Set<string>();
 
-const reguladores = new Set<Regulador>();
+export interface Regulador {
+  /** Record a motive and (re)arm the trailing debounce. No-op once `destruir()` has run. */
+  pedir(motivo: MotivoSenal): void;
+  /** Cancel everything pending, unregister, and make every later `pedir()` a no-op. */
+  destruir(): void;
+}
+
+/**
+ * The internal shape kept in the `reguladores` registry. `vaciar` is deliberately absent from the
+ * exported `Regulador` — it exists only for `liberarSenal` to call when the busy set empties, and
+ * nothing outside this module has a reason to invoke it.
+ */
+interface ReguladorInterno extends Regulador {
+  vaciar(): void;
+}
+
+const reguladores = new Set<ReguladorInterno>();
 
 export function ocuparSenal(key: string): void {
   senalBusy.add(key);
 }
 
 /**
- * Release a hold and, when it was the LAST one, flush every regulator's pending motive at once.
- * That flush is the whole point: the refresh a user "missed" while their sheet was open lands the
- * instant they close it, rather than waiting for the next write anybody happens to make.
+ * Release a hold and, when it was the LAST one, ask every regulator to re-request its pending
+ * motive through the SAME trailing debounce — not fire it synchronously. A burst of ocupar/liberar
+ * cycles (twenty door taps closing in quick succession) must still collapse into ONE refresh,
+ * debounceMs after the LAST release, exactly like a burst of `pedir()` calls collapses into one
+ * refresh debounceMs after the last of them.
  */
 export function liberarSenal(key: string): void {
   senalBusy.delete(key);
   if (senalBusy.size > 0) return;
   for (const reg of [...reguladores]) reg.vaciar();
-}
-
-export interface Regulador {
-  /** Record a motive and (re)arm the trailing debounce. */
-  pedir(motivo: MotivoSenal): void;
-  /** Fire the pending motive now, if any. Called by `liberarSenal` when the busy set empties. */
-  vaciar(): void;
-  /** Cancel everything pending and unregister. */
-  destruir(): void;
 }
 
 /**
@@ -64,32 +73,39 @@ export interface Regulador {
 export function crearRegulador(onSenal: (motivo: MotivoSenal) => void, debounceMs: number): Regulador {
   let timer: ReturnType<typeof setTimeout> | null = null;
   let pendiente: MotivoSenal | null = null;
+  // Set the instant `destruir()` runs. Guards `pedir()` AND the flush path (`disparar`/`vaciar`):
+  // a broadcast landing between `reg.destruir()` and the (async) `removeChannel()` in
+  // `useSenalGym`'s cleanup still reaches this closure via the channel's `.on(...)` callback, and
+  // without this flag it would re-arm the timer and fire `onSenal` after the caller unmounted.
+  let muerto = false;
 
   const disparar = (): void => {
     timer = null;
-    // Busy: keep the motive pending and say nothing. `liberarSenal` fires it on close.
+    if (muerto) return;
+    // Busy: keep the motive pending and say nothing. `liberarSenal` re-requests it on close.
     if (senalBusy.size > 0) return;
     const motivo = pendiente;
     pendiente = null;
     if (motivo) onSenal(motivo);
   };
 
-  const reg: Regulador = {
-    pedir(motivo) {
-      pendiente = motivo;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(disparar, debounceMs);
-    },
+  const pedir = (motivo: MotivoSenal): void => {
+    if (muerto) return;
+    pendiente = motivo;
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(disparar, debounceMs);
+  };
+
+  const reg: ReguladorInterno = {
+    pedir,
     vaciar() {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      const motivo = pendiente;
-      pendiente = null;
-      if (motivo) onSenal(motivo);
+      if (muerto) return;
+      // Re-request through `pedir`, not a direct fire: this is what turns a burst of releases
+      // into one debounced call instead of one call per release.
+      if (pendiente) pedir(pendiente);
     },
     destruir() {
+      muerto = true;
       if (timer) clearTimeout(timer);
       timer = null;
       pendiente = null;
