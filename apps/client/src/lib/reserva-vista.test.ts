@@ -6,6 +6,7 @@ import {
   destinoClases,
   footerCtaVista,
   heroCtaVista,
+  landingVista,
   LINEA_BLOQUEO,
   navClasesVista,
   presentarAvisoReserva,
@@ -272,5 +273,34 @@ describe("heroCtaVista", () => {
   });
   it("Lista: 'Ver planes' at /precios — the landing's real primary action with no booking surface", () => {
     expect(heroCtaVista(false)).toEqual({ label: "Ver planes", href: "/precios" });
+  });
+});
+
+/**
+ * The public landing's own composition gate (#332, code-review item 9): `lista` is the ONE
+ * flag `(home)/page.tsx` uses to swap the schedule teaser for the hours/location/WhatsApp
+ * arms — pinned here as the pure part of that composition, since the page body itself does
+ * data fetching and JSX and is not itself unit-testable.
+ */
+describe("landingVista", () => {
+  it("Cupo gym: not lista, keeps the schedule teaser, hero CTA aims at /reservar", () => {
+    expect(landingVista({ bookingEnabled: true })).toEqual({
+      lista: false,
+      cta: { label: "Reservar clase", href: "/reservar" },
+    });
+  });
+
+  it("Lista gym: lista, no schedule teaser, hero CTA aims at /precios — never 'Reservar' copy", () => {
+    expect(landingVista({ bookingEnabled: false })).toEqual({
+      lista: true,
+      cta: { label: "Ver planes", href: "/precios" },
+    });
+  });
+
+  it("no gym resolved (unmapped host): defaults to Cupo, same as every other pre-login read", () => {
+    expect(landingVista(null)).toEqual({
+      lista: false,
+      cta: { label: "Reservar clase", href: "/reservar" },
+    });
   });
 });

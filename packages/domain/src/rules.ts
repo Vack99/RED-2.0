@@ -37,8 +37,8 @@ import type {
 /**
  * The gym's mode, derived ONCE from the one flag that decides it (spec #326). Every
  * branch — admin nav, `/agenda`'s redirect, Cuenta's hidden ajustes, the member app's
- * `reservasHabilitadas` — reads THIS, never `booking_enabled` directly and never "does
- * today have sessions".
+ * `reserva-vista.ts` routing helpers — reads THIS, never `booking_enabled` directly and
+ * never "does today have sessions".
  */
 export function modo(bookingEnabled: boolean): Modo {
   return bookingEnabled ? "cupo" : "lista";
@@ -493,12 +493,12 @@ export function enCurso<S extends { startsAt: Date; duracionMin: number }>(
 export const VENTANA_ARRIBO_PREVIA_MIN = 90;
 
 /**
- * The session whose START is nearest `ahora`, within ±`ventanaMin` minutes — the desk's
- * kiosk preselect rule (Zen Planner: "your current class of the day will automatically be
- * highlighted and selected"), extracted HERE (#328 prefactor) so every caller of the
- * kiosk rule shares the same ±90 semantics by construction, not by two loops agreeing.
- * /inicio's day-card hero is the caller today; /asistencia's Cupo desk now ASKS instead
- * of guessing (#330), so its own wrapper is gone. Distance is `|startsAt − ahora|`
+ * The session whose START is nearest `ahora`, within ±90 minutes (`VENTANA_ARRIBO_PREVIA_MIN`)
+ * — the desk's kiosk preselect rule (Zen Planner: "your current class of the day will
+ * automatically be highlighted and selected"), extracted HERE (#328 prefactor) so every
+ * caller of the kiosk rule shares the same ±90 semantics by construction, not by two loops
+ * agreeing. /inicio's day-card hero is the caller today; /asistencia's Cupo desk now ASKS
+ * instead of guessing (#330), so its own wrapper is gone. Distance is `|startsAt − ahora|`
  * over ABSOLUTE instants (never wall-clock strings), the window edge is INCLUSIVE (a class
  * exactly 90 minutes out still matches), and a tie keeps the FIRST entry in the caller's
  * order (the DAL's startsAt ascending). `null` when nothing is inside the window.
@@ -510,7 +510,6 @@ export const VENTANA_ARRIBO_PREVIA_MIN = 90;
 export function sesionMasCercana<S extends { startsAt: Date }>(
   sesiones: readonly S[],
   ahora: Date,
-  ventanaMin: number = VENTANA_ARRIBO_PREVIA_MIN,
 ): S | null {
   let mejor: S | null = null;
   let dist = Infinity;
@@ -521,7 +520,7 @@ export function sesionMasCercana<S extends { startsAt: Date }>(
       mejor = s;
     }
   }
-  return dist <= ventanaMin * 60_000 ? mejor : null;
+  return dist <= VENTANA_ARRIBO_PREVIA_MIN * 60_000 ? mejor : null;
 }
 
 /**

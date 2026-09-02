@@ -3,7 +3,7 @@ import type { Route } from "next";
 import { getRosterResumen } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
 import { modo } from "@gym/domain/rules";
-import { fmtDiaInicio, hoyEnZona, toIsoDay } from "@gym/format";
+import { fmtDiaAgenda, hoyEnZona, toIsoDay } from "@gym/format";
 
 import { InicioScreen } from "./_components/inicio";
 import { derivarDia } from "./_components/inicio-vm";
@@ -38,7 +38,7 @@ export default async function Page() {
   return (
     <InicioScreen
       modo={gymModo}
-      fecha={fmtDiaInicio(hoyLocal)}
+      fecha={fmtDiaAgenda(hoyLocal)}
       gymNombre={gym.brandName}
       inicialCuenta={gym.brandName.trim().charAt(0).toUpperCase()}
       dia={dia}

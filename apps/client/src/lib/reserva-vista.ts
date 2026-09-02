@@ -1,5 +1,6 @@
 import type { AvisoReserva, MotivoReserva, VeredictoReserva } from "@gym/domain/reserva";
-import type { EstadoSesion } from "@gym/domain/types";
+import { modo } from "@gym/domain/rules";
+import type { EstadoSesion, Modo } from "@gym/domain/types";
 
 /**
  * El veredicto de reservabilidad → la presentación del socio. `derivarReservabilidad`
@@ -153,19 +154,23 @@ export function presentarAvisoReserva(
 }
 
 // ──────────────────────────────────────────────────────────────
-// Modos Lista/Cupo (#326/#332) — the member app's ONE branch on `reservasHabilitadas`
-// (`gym.booking_enabled`, carried through as-is: #327's `@gym/domain` `modo()` derivation
-// lands in a parallel worktree and is not available here — a future pass can repoint these
-// four functions at it without touching a single call site). Every routing surface that
-// used to hardcode "/reservar" — the login redirect, the drawer's nav row, the drawer's
-// footer CTA, the landing hero — reads its target and copy from here instead, so Lista's
-// "no 'Reservar' copy anywhere" rule has exactly one place to hold.
+// Modos Lista/Cupo (#326/#332) — the member app's ONE branch on `modo()` (@gym/domain/rules,
+// derived from `gym.booking_enabled`). Every routing surface that used to hardcode "/reservar"
+// — the login redirect, the drawer's nav row, the drawer's footer CTA, the landing hero — reads
+// its target and copy from here instead, so Lista's "no 'Reservar' copy anywhere" rule has
+// exactly one place to hold. Each function below derives `modo()` once, then reads a plain
+// `Record<Modo, …>` lookup — no per-function ternary to keep in sync.
 // ──────────────────────────────────────────────────────────────
 
 /** Where the booking-funnel entry points aim: `/reservar` on Cupo, `/saldo` on Lista (Lista has
  *  no booking surface at all — every old booking link redirects here server-side too). */
+const DESTINO_CLASES: Record<Modo, "/reservar" | "/saldo"> = {
+  cupo: "/reservar",
+  lista: "/saldo",
+};
+
 export function destinoClases(reservasHabilitadas: boolean): "/reservar" | "/saldo" {
-  return reservasHabilitadas ? "/reservar" : "/saldo";
+  return DESTINO_CLASES[modo(reservasHabilitadas)];
 }
 
 export interface NavClasesVista {
@@ -175,11 +180,14 @@ export interface NavClasesVista {
   tag: string | null;
 }
 
+const NAV_CLASES_VISTA: Record<Modo, NavClasesVista> = {
+  cupo: { label: "Clases", href: "/reservar", tag: "Hoy" },
+  lista: { label: "Mi saldo", href: "/saldo", tag: null },
+};
+
 /** The drawer's "Clases" nav row → "Mi saldo" on Lista. */
 export function navClasesVista(reservasHabilitadas: boolean): NavClasesVista {
-  return reservasHabilitadas
-    ? { label: "Clases", href: "/reservar", tag: "Hoy" }
-    : { label: "Mi saldo", href: "/saldo", tag: null };
+  return NAV_CLASES_VISTA[modo(reservasHabilitadas)];
 }
 
 export interface FooterCtaVista {
@@ -187,12 +195,15 @@ export interface FooterCtaVista {
   href: "/reservar" | "/saldo";
 }
 
+const FOOTER_CTA_VISTA: Record<Modo, FooterCtaVista> = {
+  cupo: { label: "Reservar clase", href: "/reservar" },
+  lista: { label: "Mi saldo", href: "/saldo" },
+};
+
 /** The drawer's footer CTA — "Reservar clase" on Cupo, "Mi saldo" on Lista (never "Reservar"
  *  copy on a gym with no booking surface). */
 export function footerCtaVista(reservasHabilitadas: boolean): FooterCtaVista {
-  return reservasHabilitadas
-    ? { label: "Reservar clase", href: "/reservar" }
-    : { label: "Mi saldo", href: "/saldo" };
+  return FOOTER_CTA_VISTA[modo(reservasHabilitadas)];
 }
 
 export interface HeroCtaVista {
@@ -200,11 +211,29 @@ export interface HeroCtaVista {
   href: "/reservar" | "/precios";
 }
 
+const HERO_CTA_VISTA: Record<Modo, HeroCtaVista> = {
+  cupo: { label: "Reservar clase", href: "/reservar" },
+  lista: { label: "Ver planes", href: "/precios" },
+};
+
 /** The public landing's hero CTA — "Reservar clase" on Cupo, "Ver planes" on Lista (the
  *  landing's real primary action for a gym that takes no bookings; the WhatsApp button is a
  *  separate, data-presence-gated block the page composes on its own). */
 export function heroCtaVista(reservasHabilitadas: boolean): HeroCtaVista {
-  return reservasHabilitadas
-    ? { label: "Reservar clase", href: "/reservar" }
-    : { label: "Ver planes", href: "/precios" };
+  return HERO_CTA_VISTA[modo(reservasHabilitadas)];
+}
+
+export interface LandingVista {
+  /** Lista: no booking surface at all — gates the public landing's schedule teaser vs its
+   *  hours/location/WhatsApp arms (`(home)/page.tsx`). */
+  lista: boolean;
+  cta: HeroCtaVista;
+}
+
+/** The public landing's mode split (#332), computed ONCE from the resolved gym — both the
+ *  `generateMetadata` pass and the page body ask this instead of each re-deriving
+ *  `gym != null && !bookingEnabled`. */
+export function landingVista(gym: { bookingEnabled: boolean } | null): LandingVista {
+  const reservasHabilitadas = gym?.bookingEnabled ?? true;
+  return { lista: gym != null && !reservasHabilitadas, cta: heroCtaVista(reservasHabilitadas) };
 }

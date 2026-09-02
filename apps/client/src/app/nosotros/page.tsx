@@ -9,6 +9,7 @@ import {
   getMarketingGym,
   type CoachPublicoDTO,
 } from "@gym/data/server/marketing";
+import { heroCtaVista } from "../../lib/reserva-vista";
 
 export const metadata: Metadata = {
   title: "Nosotros",
@@ -66,6 +67,10 @@ export default async function NosotrosPage() {
   // The neon tagline is the gym's own `about_tagline` data; until an operator authors it, fall back to
   // stitching their value titles (the mock's "Fuerza · Disciplina · Resultado" IS the three values).
   const tagline = gym?.aboutTagline ?? valores.map((v) => v.title).join(" · ");
+  // Lista has no booking surface at all (#326/#332) — both CTAs on this page read `heroCtaVista`
+  // instead of hardcoding "Empezar ahora" → /reservar, so no "Reservar" copy survives here either.
+  const reservasHabilitadas = gym?.bookingEnabled ?? true;
+  const cta = heroCtaVista(reservasHabilitadas);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
@@ -88,10 +93,10 @@ export default async function NosotrosPage() {
         )}
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href="/reservar"
+            href={cta.href}
             className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
           >
-            Empezar ahora
+            {cta.label}
           </Link>
           <Link
             href="/precios"
@@ -219,13 +224,15 @@ export default async function NosotrosPage() {
       <section className="mx-auto mt-14 max-w-2xl rounded-3xl border border-line bg-sunk p-8 text-center">
         <h3 className="text-2xl font-bold text-fg">Empieza hoy</h3>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-          Tu primera clase no requiere permanencia. Crea tu cuenta y reserva desde el primer día.
+          {reservasHabilitadas
+            ? "Tu primera clase no requiere permanencia. Crea tu cuenta y reserva desde el primer día."
+            : "Sin permanencia, cancelas cuando quieras. Conoce nuestros planes."}
         </p>
         <Link
-          href="/reservar"
+          href={cta.href}
           className="mt-5 inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
         >
-          Empezar ahora
+          {cta.label}
         </Link>
         {tagline && (
           <p className="cm-vals mt-5">

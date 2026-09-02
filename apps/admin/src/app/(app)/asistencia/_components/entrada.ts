@@ -62,10 +62,3 @@ export function ctxDesdeSesionParam(
   if (!sesionParam) return null;
   return sesiones.some((s) => s.id === sesionParam) ? sesionParam : null;
 }
-
-/** The entry step's date bounds: today or earlier, matching the roster's own past-only
- *  rule (the day strip never renders a future day, the calendar disables one) — never a
- *  future day, which the desk has no attendance model for at all. */
-export function fechaSeleccionable(iso: string, hoyIso: string): boolean {
-  return iso <= hoyIso;
-}

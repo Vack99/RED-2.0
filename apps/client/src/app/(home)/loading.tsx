@@ -21,10 +21,11 @@ export default function Loading() {
         {/* Tagline (brand-driven) */}
         <Skeleton width={180} height={14} radius={4} style={{ marginTop: 18 }} />
 
-        {/* Static CTA the real page hardcodes */}
-        <div className="btn-primary mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5 text-sm font-semibold text-accent-fg">
-          Reservar clase
-          <span aria-hidden>→</span>
+        {/* CTA shell — the label itself is mode-dependent ("Reservar clase" on Cupo, "Ver
+            planes" on Lista, `landingVista`), so the skeleton shows the shape, not a guess
+            at the copy. */}
+        <div className="btn-primary mt-10 inline-flex items-center gap-2 rounded-full bg-accent px-7 py-3.5">
+          <Skeleton width={96} height={13} radius={3} />
         </div>
       </section>
 

@@ -40,7 +40,7 @@ const HERO_EYEBROW: Record<TenseDia, { palabra: string; tono: string }> = {
 
 interface InicioScreenProps {
   modo: Modo;
-  /** "SÁB 8 AGO" — fmtDiaInicio, gym tz (server-formatted). */
+  /** "SÁB 8 AGO" — fmtDiaAgenda, gym tz (server-formatted). */
   fecha: string;
   gymNombre: string;
   /** The gym's own initial, derived from the resolved gym — never a literal. */

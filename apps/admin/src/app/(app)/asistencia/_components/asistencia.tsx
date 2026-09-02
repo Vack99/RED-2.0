@@ -15,7 +15,7 @@ import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
 import { markInAppNav } from "../../../../lib/nav";
 import { marcadasDeMesAction, togglePaseAction, visitasDelDiaAction } from "../actions";
-import { fechaSeleccionable, opcionesEntrada, type OpcionEntrada } from "./entrada";
+import { opcionesEntrada, type OpcionEntrada } from "./entrada";
 import { ctxDe, LIBRE, personasEn, reciboResultado, setVisita, sugerenciaVenta, visitaDe, type Visita, type VentaSugerida } from "./marcadas";
 
 // The day strip reaches this many days back from today, each rendering a has-marks dot.
@@ -484,17 +484,9 @@ export function AsistenciaScreen({
         </button>
       </div>
 
-      {/* Day strip — also the Cupo entry step's date control (#330): a future day is
-          never reachable through it (the loop below never renders one), guarded again
-          here in case that ever changes. */}
-      <DayStrip
-        hoy={hoy}
-        countFor={countFor}
-        selDate={selDate}
-        onSelect={(d) => {
-          if (fechaSeleccionable(isoDay(d), hoyIso)) setSelDate(d);
-        }}
-      />
+      {/* Day strip — also the Cupo entry step's date control (#330): its own loop only
+          ever renders today or earlier, so a future day is never reachable through it. */}
+      <DayStrip hoy={hoy} countFor={countFor} selDate={selDate} onSelect={setSelDate} />
 
       {/* The Cupo entry step (#330): asks which class (or ACCESO LIBRE) of the day strip's
           current selection before the roster shows names — replaces the ±90 auto-guess.

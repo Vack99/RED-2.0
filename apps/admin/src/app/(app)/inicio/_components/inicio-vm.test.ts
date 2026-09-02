@@ -148,6 +148,15 @@ describe("derivarDia — the rows", () => {
     }
   });
 
+  it("a row that started after the hero but already finished is NOT listed (peek rows are ahead of NOW, not just ahead of the hero)", () => {
+    const larga = dto({ id: "larga", startsAt: new Date("2026-08-08T14:00:00Z"), duracionMin: 120 }); // 08:00–10:00, live
+    const corta = dto({ id: "corta", startsAt: new Date("2026-08-08T14:30:00Z"), duracionMin: 30 }); // 08:30–09:00, finished
+    const las0905 = new Date("2026-08-08T15:05:00Z"); // 09:05 local
+    const dia = derivarDia([larga, corta], [], TZ, las0905)!;
+    expect(dia.hero.id).toBe("larga");
+    expect(dia.clases).toEqual([]);
+  });
+
   it("a coachless hero reads coaches: null (the title drops its suffix)", () => {
     const las0730 = new Date("2026-08-08T13:30:00Z"); // c1 (coachless) is live
     const dia = derivarDia(DIA, VISITAS, TZ, las0730)!;

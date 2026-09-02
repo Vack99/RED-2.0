@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   fmtDiaAgenda,
-  fmtDiaInicio,
   fmtMesAnio,
   fmtNavegadorDia,
   fmtNavegadorSemana,
@@ -23,20 +22,17 @@ describe("fmtMesAnio", () => {
   });
 });
 
-describe("fmtDiaInicio", () => {
-  it('formats /inicio\'s header date, no year ("SÁB 8 AGO")', () => {
-    expect(fmtDiaInicio(new Date(2026, 7, 8))).toBe("SÁB 8 AGO");
-  });
-  it("drops the year even for the fixed HOY fixture", () => {
-    expect(fmtDiaInicio(HOY)).toBe("MIÉ 27 MAY");
-  });
-});
-
 // ── Agenda formatting (Phase 5, ADR-0010) ────────────────────────────────
 
 describe("fmtDiaAgenda", () => {
   it('formats the Agenda day heading, matching the approved mock ("MIÉ 17 JUN")', () => {
     expect(fmtDiaAgenda(new Date(2026, 5, 17))).toBe("MIÉ 17 JUN");
+  });
+  it('also formats /inicio\'s header date, no year ("SÁB 8 AGO")', () => {
+    expect(fmtDiaAgenda(new Date(2026, 7, 8))).toBe("SÁB 8 AGO");
+  });
+  it("drops the year even for the fixed HOY fixture", () => {
+    expect(fmtDiaAgenda(HOY)).toBe("MIÉ 27 MAY");
   });
 });
 

@@ -58,13 +58,6 @@ export function fmtMesAnio(d: Date): string {
   return `${MONTHS_FULL[d.getMonth()]} ${d.getFullYear()}`.toUpperCase();
 }
 
-/** "SÁB 8 AGO" — /inicio's header date (#328, owner-ruled header: no year, no
- *  separator dot). Its own export beside `fmtDiaAgenda`'s identical shape, on
- *  purpose: the two screens' headers may drift independently. */
-export function fmtDiaInicio(d: Date): string {
-  return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
-}
-
 // ── Agenda formatting (Phase 5, ADR-0010) — tz-parameterized only via the
 //    caller's already-zoned Date; these functions never read a gym row. ──
 
@@ -76,7 +69,8 @@ function difDias(a: Date, b: Date): number {
   return Math.round((startOfDay(b).getTime() - startOfDay(a).getTime()) / 86_400_000);
 }
 
-/** "MIÉ 17 JUN" — the Agenda day heading (no year). */
+/** "MIÉ 17 JUN" — the day heading (no year), shared by the Agenda and /inicio's header
+ *  (#328: identical shape, one export). */
 export function fmtDiaAgenda(d: Date): string {
   return `${DOW[d.getDay()]} ${d.getDate()} ${MON[d.getMonth()]}`;
 }

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Route } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 
@@ -12,6 +12,7 @@ import {
   getPlanesPublicos,
   type PlanPublicoDTO,
 } from "@gym/data/server/marketing";
+import { destinoClases } from "../../lib/reserva-vista";
 
 import { FaqAccordion } from "./_components/faq-accordion";
 
@@ -20,15 +21,30 @@ export const metadata: Metadata = {
   description: "Elige cómo entrenas. Sin permanencia, cancelas cuando quieras.",
 };
 
+interface PlanCta {
+  label: string;
+  href: string;
+}
+
 /** The mock's tiered CTA (three distinct labels, not a popular/other binary): a single-session drop-in
  *  invites a reservation, the popular plan is the hero action, everything else is a plan choice. Keyed on
  *  the grant model (clases) + popular, so it stays right as the operator's catalog changes. `esPaseSuelto`
  *  is the ONE membership-vs-drop-in predicate (@gym/domain/lifecycle, #222/#225) — this used to re-coin
- *  its own `clases === 1` check. */
-function ctaLabel(plan: PlanPublicoDTO): string {
-  if (plan.popular) return "Empezar ahora";
-  if (esPaseSuelto(plan.clases)) return "Reservar clase";
-  return "Elegir este plan";
+ *  its own `clases === 1` check.
+ *
+ *  Lista has no booking surface at all (#326/#332), so a plan is never "reserved" — every card points
+ *  at WhatsApp (joining/upgrading happens at the front desk) when the gym has a number, else at the
+ *  member's own saldo (`destinoClases`, the same target the drawer's booking-funnel CTA uses). */
+function ctaVista(plan: PlanPublicoDTO, reservasHabilitadas: boolean, whatsapp: string | null): PlanCta {
+  if (reservasHabilitadas) {
+    return {
+      href: "/reservar",
+      label: plan.popular ? "Empezar ahora" : esPaseSuelto(plan.clases) ? "Reservar clase" : "Elegir este plan",
+    };
+  }
+  return whatsapp
+    ? { href: `https://wa.me/${whatsapp}`, label: "Escríbenos" }
+    : { href: destinoClases(false), label: "Mi saldo" };
 }
 
 function Check() {
@@ -50,7 +66,21 @@ function Check() {
   );
 }
 
-function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
+function PlanCard({
+  plan,
+  reservasHabilitadas,
+  whatsapp,
+}: {
+  plan: PlanPublicoDTO;
+  reservasHabilitadas: boolean;
+  whatsapp: string | null;
+}) {
+  const cta = ctaVista(plan, reservasHabilitadas, whatsapp);
+  const ctaClassName = `mt-6 inline-flex justify-center rounded-full px-5 py-3 text-sm font-semibold ${
+    plan.popular
+      ? "bg-accent text-accent-fg hover:opacity-90"
+      : "border border-line text-fg hover:border-accent hover:text-accent"
+  }`;
   return (
     <div
       className={`relative flex flex-col rounded-3xl border bg-surface p-6 ${
@@ -82,16 +112,15 @@ function PlanCard({ plan }: { plan: PlanPublicoDTO }) {
           </li>
         ))}
       </ul>
-      <Link
-        href="/reservar"
-        className={`mt-6 inline-flex justify-center rounded-full px-5 py-3 text-sm font-semibold ${
-          plan.popular
-            ? "bg-accent text-accent-fg hover:opacity-90"
-            : "border border-line text-fg hover:border-accent hover:text-accent"
-        }`}
-      >
-        {ctaLabel(plan)}
-      </Link>
+      {cta.href.startsWith("http") ? (
+        <a href={cta.href} target="_blank" rel="noopener noreferrer" className={ctaClassName}>
+          {cta.label}
+        </a>
+      ) : (
+        <Link href={cta.href as Route} className={ctaClassName}>
+          {cta.label}
+        </Link>
+      )}
       {plan.nota && <p className="mt-3 text-center text-xs text-muted">{plan.nota}</p>}
     </div>
   );
@@ -117,6 +146,8 @@ export default async function PreciosPage() {
   // Same fallback as Nosotros: until an operator authors about_tagline, stitch the value titles so the
   // line always renders (the mock's "Fuerza · Disciplina · Resultado" IS the three values).
   const tagline = gym?.aboutTagline ?? valores.map((v) => v.title).join(" · ");
+  const reservasHabilitadas = gym?.bookingEnabled ?? true;
+  const whatsapp = contacto?.whatsapp ?? null;
 
   // "Todos los planes incluyen" — the mock's coaches/horario rows come from the gym's REAL data (roster
   // count + weekly hours), then the platform-universal inclusions. Each data row drops out when its
@@ -140,7 +171,9 @@ export default async function PreciosPage() {
         ]
       : []),
     { k: "Equipo y material", v: "Sin costo extra" },
-    { k: "Reserva digital", v: "Desde la app" },
+    // Lista has no booking surface at all (#326/#332) — a "Reserva digital" claim would be
+    // false for that arm, so it only lists on Cupo.
+    ...(reservasHabilitadas ? [{ k: "Reserva digital", v: "Desde la app" }] : []),
     { k: "Permanencia", v: "Ninguna" },
   ];
 
@@ -166,7 +199,12 @@ export default async function PreciosPage() {
       {planes.length > 0 ? (
         <section className="mt-10 grid gap-5 md:grid-cols-3 md:items-start">
           {planes.map((plan) => (
-            <PlanCard key={plan.id} plan={plan} />
+            <PlanCard
+              key={plan.id}
+              plan={plan}
+              reservasHabilitadas={reservasHabilitadas}
+              whatsapp={whatsapp}
+            />
           ))}
         </section>
       ) : (
@@ -203,21 +241,53 @@ export default async function PreciosPage() {
       <section className="mx-auto mt-12 max-w-2xl rounded-3xl border border-line bg-sunk p-8 text-center">
         <h3 className="text-2xl font-bold text-fg">Empieza hoy</h3>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-          Reserva tu lugar y entrena desde el primer día. Sin permanencia, cancelas cuando quieras.
+          {reservasHabilitadas
+            ? "Reserva tu lugar y entrena desde el primer día. Sin permanencia, cancelas cuando quieras."
+            : "Entrena desde el primer día. Sin permanencia, cancelas cuando quieras."}
         </p>
         <div className="mt-5 flex flex-col items-center gap-3">
-          <Link
-            href="/reservar"
-            className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
-          >
-            Empezar ahora
-          </Link>
-          <Link
-            href="/reservar"
-            className="inline-flex justify-center rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent"
-          >
-            Ver horarios
-          </Link>
+          {reservasHabilitadas ? (
+            <>
+              <Link
+                href="/reservar"
+                className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
+              >
+                Empezar ahora
+              </Link>
+              <Link
+                href="/reservar"
+                className="inline-flex justify-center rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent"
+              >
+                Ver horarios
+              </Link>
+            </>
+          ) : (
+            <>
+              {whatsapp ? (
+                <a
+                  href={`https://wa.me/${whatsapp}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
+                >
+                  Escríbenos
+                </a>
+              ) : (
+                <Link
+                  href={destinoClases(false) as Route}
+                  className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
+                >
+                  Mi saldo
+                </Link>
+              )}
+              <Link
+                href={"/contacto" as Route}
+                className="inline-flex justify-center rounded-full border border-line px-6 py-3 text-sm font-semibold text-fg hover:border-accent hover:text-accent"
+              >
+                Ver horario
+              </Link>
+            </>
+          )}
         </div>
         <p className="mt-5 text-xs text-muted">
           Sin permanencia · Cancela cuando quieras

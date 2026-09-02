@@ -38,10 +38,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   let contenido: React.ReactNode = children;
   const mostrarTabBar = decision.kind === "render";
-  // The gym the request actually renders under — `decision.gym`'s slug is always one of
-  // `gyms` in the "render" arm (decideTenant only ever names a slug it was given). Any other
-  // arm never reaches the tab bar, so the "cupo" fallback below is never rendered — it only
-  // keeps this a total function.
+  // `?? true` below is unreachable, not a real default: decideTenant only ever names a slug
+  // it was given, so this `find` always hits in the "render" arm, and every other arm never
+  // reaches the tab bar that reads `modoActivo`. Kept because narrowing it away means
+  // `TenantDecision` carrying a `Gym` instead of a slug — a wider change than this call site.
   const gymEnEfecto = decision.kind === "render" ? gyms.find((g) => g.slug === decision.gym) : undefined;
   const modoActivo = modo(gymEnEfecto?.bookingEnabled ?? true);
 

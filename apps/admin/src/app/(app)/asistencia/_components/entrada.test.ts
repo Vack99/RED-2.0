@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { LIBRE, type Visita } from "./marcadas";
-import { ctxDesdeSesionParam, fechaSeleccionable, opcionesEntrada } from "./entrada";
+import { ctxDesdeSesionParam, opcionesEntrada } from "./entrada";
 
 const HOY = "2026-09-01";
 const AYER = "2026-08-31";
@@ -76,19 +76,5 @@ describe("ctxDesdeSesionParam — the deep-link skip", () => {
 
   it("no schedule at all — any id falls back to the step", () => {
     expect(ctxDesdeSesionParam("s1", [])).toBeNull();
-  });
-});
-
-describe("fechaSeleccionable — the entry step's date bounds", () => {
-  it("today is selectable", () => {
-    expect(fechaSeleccionable(HOY, HOY)).toBe(true);
-  });
-
-  it("a past day is selectable", () => {
-    expect(fechaSeleccionable(AYER, HOY)).toBe(true);
-  });
-
-  it("a future day is never selectable", () => {
-    expect(fechaSeleccionable("2026-09-02", HOY)).toBe(false);
   });
 });

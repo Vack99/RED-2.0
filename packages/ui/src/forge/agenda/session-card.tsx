@@ -54,6 +54,21 @@ export function nombreSesion(
 }
 
 /**
+ * The same `nombreSesion` ladder, lifted straight from a session DTO's shape (structurally
+ * typed — `@gym/ui` cannot import `@gym/data`'s `SesionAgendaDTO`, ADR-0011 §1 — but every
+ * DTO that carries a session names these three fields the same way). Both /inicio's day-card
+ * and /asistencia's desk had re-coined this identical 3-line adapter; it lives here once so
+ * every DTO-holding screen names a class exactly as the Agenda does.
+ */
+export function etiquetaSesion(s: {
+  tipo: string;
+  esEspecial: boolean;
+  nombreEspecial: string | null;
+}): string {
+  return nombreSesion(s.tipo, { isSpecial: s.esEspecial, specialName: s.nombreEspecial });
+}
+
+/**
  * The series tag, and it names the EXCEPTION (#243): a gym runs ~21 repeating
  * schedules, so a "se repite" glyph would land on ~100% of cards and carry zero
  * information — the class that stands alone is the informative one. `null` renders

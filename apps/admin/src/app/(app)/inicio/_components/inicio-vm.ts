@@ -1,7 +1,7 @@
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 import { enCurso, sesionMasCercana } from "@gym/domain/rules";
 import { horaEnZona } from "@gym/format";
-import { nombreSesion } from "@gym/ui/forge/agenda/session-card";
+import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
 
 /**
  * /inicio's Cupo day-card view model (#328, spec #326). The card is the DESK's view
@@ -62,13 +62,6 @@ export interface DiaVM {
   clases: ClaseDelDia[];
 }
 
-/** The home screen names a class exactly as the Agenda does (an unnamed especial reads
- *  "Especial") — a 3-line adapter from the DAL's DTO shape to the shared `nombreSesion`
- *  ladder (`@gym/ui`), the same one the desk's own page.tsx adapts to its DTO. */
-function etiquetaSesion(s: SesionAgendaDTO): string {
-  return nombreSesion(s.tipo, { isSpecial: s.esEspecial, specialName: s.nombreEspecial });
-}
-
 /** One upcoming row: hora, agenda-parity name, reservas/cupo. */
 export function filaDia(s: SesionAgendaDTO, tz: string): ClaseDelDia {
   return {
@@ -96,7 +89,10 @@ function conteoPorSesion(visitas: readonly { sessionId: string | null }[]): Map<
  * upcoming — the doc-comment ladder above), read its tense off the domain's live window
  * (`[start, start + duración)`, half-open: a just-ended pick reads `terminada`, a
  * not-yet-started one `proxima`), and shape ONLY the classes strictly after it into
- * rows. `sesiones` arrives in the DAL's startsAt order and the rows keep it.
+ * rows. A row must be ahead of BOTH the hero's start and NOW — a short class that
+ * started after the hero but has already finished (e.g. the hero is a long live class)
+ * is history, not a row. `sesiones` arrives in the DAL's startsAt order and the rows
+ * keep it.
  */
 export function derivarDia(
   sesiones: readonly SesionAgendaDTO[],
@@ -135,7 +131,9 @@ export function derivarDia(
       cuenta,
     },
     clases: sesiones
-      .filter((s) => s.startsAt.getTime() > hero.startsAt.getTime())
+      .filter(
+        (s) => s.startsAt.getTime() > hero.startsAt.getTime() && s.startsAt.getTime() > ahora.getTime(),
+      )
       .map((s) => filaDia(s, tz)),
   };
 }

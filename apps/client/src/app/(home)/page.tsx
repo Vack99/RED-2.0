@@ -9,7 +9,7 @@ import {
   getMarketingGym,
   getPlanesPublicos,
 } from "@gym/data/server/marketing";
-import { heroCtaVista } from "../../lib/reserva-vista";
+import { landingVista } from "../../lib/reserva-vista";
 import { PricingTeaser } from "../_components/pricing-teaser";
 
 const DESCRIPCION_CUPO =
@@ -25,7 +25,7 @@ const DESCRIPCION_LISTA = "Precios, horario y ubicación — entrena con nosotro
 export async function generateMetadata(): Promise<Metadata> {
   const slug = (await headers()).get("x-gym");
   const gym = slug ? await getMarketingGym(slug) : null;
-  const lista = gym != null && !gym.bookingEnabled;
+  const { lista } = landingVista(gym);
   return {
     title: "Inicio",
     description: lista ? DESCRIPCION_LISTA : DESCRIPCION_CUPO,
@@ -38,11 +38,12 @@ export async function generateMetadata(): Promise<Metadata> {
  * the proxy's `x-gym` stamp; the hero lockup from the `x-brand` module. Paint is token-driven, so
  * a RED host renders RED and a Forge host renders Forge with no brand-specific copy in this file.
  *
- * Modos Lista/Cupo (#326/#332): on Cupo (`reservasHabilitadas`) this is UNCHANGED — the
- * today-schedule teaser, "Reservar clase" hero, and generic footer line. On Lista (no booking
- * surface at all) the schedule teaser never renders and never fetches; the hero CTA reads
- * "Ver planes" (`heroCtaVista`); and hours/location/WhatsApp sections take its place, built from
- * the SAME `getContacto` reader Contacto already uses. No "Reservar" copy survives on that arm.
+ * Modos Lista/Cupo (#326/#332), split by `landingVista(gym).lista` (`reserva-vista.ts`, shared
+ * with `generateMetadata` above): on Cupo this is UNCHANGED — the today-schedule teaser,
+ * "Reservar clase" hero, and generic footer line. On Lista (no booking surface at all) the
+ * schedule teaser never renders and never fetches; the hero CTA reads "Ver planes"; and
+ * hours/location/WhatsApp sections take its place, built from the SAME `getContacto` reader
+ * Contacto already uses. No "Reservar" copy survives on that arm.
  *
  * Marketing prose (the tagline, footer descriptor, Cupo's generic hours line) has no data column
  * yet on the Cupo arm — it stays generic, platform-true copy (the same posture as the Precios
@@ -62,14 +63,12 @@ export default async function Home() {
   const { tagline } = brands[brandId].copy;
 
   const gym = slug ? await getMarketingGym(slug) : null;
-  const reservasHabilitadas = gym?.bookingEnabled ?? true;
-  const lista = gym != null && !reservasHabilitadas;
-  const cta = heroCtaVista(reservasHabilitadas);
+  const { lista, cta } = landingVista(gym);
 
   const [planes, horario, contacto] = gym
     ? await Promise.all([
         getPlanesPublicos(gym.id),
-        reservasHabilitadas ? getHorarioHoyPublico(gym.id, gym.timezone) : Promise.resolve([]),
+        lista ? Promise.resolve([]) : getHorarioHoyPublico(gym.id, gym.timezone),
         lista ? getContacto(gym.id) : Promise.resolve(null),
       ])
     : [[], [], null];

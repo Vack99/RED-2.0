@@ -609,11 +609,6 @@ describe("sesionMasCercana — the desk's ±90 preselect, extracted (#328 prefac
     const antes = sesion("antes", -30);
     expect(sesionMasCercana([antes, sesion("despues", 30)], ahora)).toBe(antes);
   });
-
-  it("takes a caller-supplied window", () => {
-    expect(sesionMasCercana([sesion("far", 25)], ahora, 20)).toBeNull();
-    expect(sesionMasCercana([sesion("near", 15)], ahora, 20)?.id).toBe("near");
-  });
 });
 
 describe("ventanaArribo / esNoAsistio — the arrival window (2026-07-29)", () => {
