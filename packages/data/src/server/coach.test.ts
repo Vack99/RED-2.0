@@ -52,15 +52,24 @@ function makeFake(
       };
     }
 
+    // Read-path `.eq()` calls (e.g. getCoaches' `.eq("gym_id", …)`) actually filter
+    // the seeded rows — the multi-gym-staffer regression test below relies on this
+    // to prove the scope, mirroring catalog.test.ts's fake.
+    let readFiltered = coaches;
     const b: Record<string, unknown> = {
       select: () => b,
       order: () => b,
-      // Terminal `.update(...).eq(...)` — records the row filter and resolves.
+      // Terminal `.update(...).eq(...)` records the row filter and resolves; any
+      // OTHER `.eq()` (no pending write call) is a read-path filter — apply it.
       eq: (col: string, val: unknown) => {
         const last = calls[calls.length - 1];
-        last.eq = [col, val];
-        const err = opts.errorOp === "update" ? { message: "boom" } : null;
-        return Promise.resolve({ error: err });
+        if (last && last.table === name && last.op === "update" && last.eq === undefined) {
+          last.eq = [col, val];
+          const err = opts.errorOp === "update" ? { message: "boom" } : null;
+          return Promise.resolve({ error: err });
+        }
+        readFiltered = readFiltered.filter((r) => (r as Record<string, unknown>)[col] === val);
+        return b;
       },
       insert: (payload: Record<string, unknown>) => {
         calls.push({ table: name, op: "insert", payload });
@@ -72,7 +81,7 @@ function makeFake(
         return b;
       },
       then: (resolve: (v: { data: unknown[] | null; error: unknown }) => unknown) =>
-        resolve({ data: coaches, error: null }),
+        resolve({ data: readFiltered, error: null }),
     };
     return b;
   }
@@ -100,6 +109,7 @@ describe("coach DAL — reads", () => {
       coaches: [
         {
           id: "c1",
+          gym_id: "gym-1",
           name: "Marisa",
           initials: "MA",
           role: "Head coach",
@@ -110,6 +120,7 @@ describe("coach DAL — reads", () => {
         },
         {
           id: "c2",
+          gym_id: "gym-1",
           name: "Paty",
           initials: "PA",
           role: "Coach",
@@ -127,9 +138,24 @@ describe("coach DAL — reads", () => {
     ]);
   });
 
+  // Multi-gym staffer regression (RLS `is_member_of` ORs across every gym the
+  // caller staffs — ADR-0013 — so an unscoped read would return every staffed
+  // gym's roster): a sibling gym's coach must never surface here.
+  it("excludes a sibling staffed gym's coaches (scoped to the operator's gym-in-effect)", async () => {
+    const fake = makeFake({
+      coaches: [
+        { id: "c1", gym_id: "gym-1", name: "Marisa", initials: "MA", role: "Head coach", specialty: null, bio: null, is_active: true, sort_order: 0 },
+        { id: "sibling", gym_id: "gym-2", name: "Ajeno", initials: "AJ", role: "Coach", specialty: null, bio: null, is_active: true, sort_order: 0 },
+      ],
+    });
+    const list = await getCoaches(fake.client);
+    expect(list.map((c) => c.id)).toEqual(["c1"]);
+  });
+
   it("getCoaches returns [] when the read errors (best-effort)", async () => {
     const errBuilder: Record<string, unknown> = {
       select: () => errBuilder,
+      eq: () => errBuilder,
       order: () => errBuilder,
       then: (r: (v: { data: null; error: unknown }) => unknown) => r({ data: null, error: { message: "x" } }),
     };

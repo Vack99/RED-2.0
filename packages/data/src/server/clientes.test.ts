@@ -1013,6 +1013,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
 
   const FICHA_CLIENTE = {
     id: "cli-ficha",
+    gym_id: "g-1",
     nombre: "Diego Herrera",
     tel: "614 555 0100",
     paquete_nombre: "8 clases",
@@ -1127,6 +1128,32 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     };
     return { client: client as unknown as SupabaseServer, gteCalls, rpcCalls };
   }
+
+  // Multi-gym staffer regression (RLS `is_member_of` ORs across every gym the caller
+  // staffs — ADR-0013, so a plain `.eq("id", id)` read would still return the row):
+  // a cliente `id` that exists but belongs to a SIBLING staffed gym must resolve to
+  // "not found", never that other gym's ficha under this gym's chrome.
+  it("returns null for a cliente id whose row exists but in a sibling staffed gym", async () => {
+    const { client } = makeFichaFake([]);
+    const origFrom = client.from as unknown as (t: string) => unknown;
+    client.from = ((t: string) => {
+      if (t !== "clientes") return origFrom(t);
+      // Same id as FICHA_CLIENTE, but owned by gym "g-2" — the fake's default
+      // gym-in-effect is "g-1" (gym_membership above).
+      let filtered: Record<string, unknown>[] = [{ ...FICHA_CLIENTE, gym_id: "g-2" }];
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: (col: string, val: unknown) => {
+          filtered = filtered.filter((r) => r[col] === val);
+          return b;
+        },
+        maybeSingle: () => Promise.resolve({ data: filtered[0] ?? null, error: null }),
+      };
+      return b;
+    }) as SupabaseServer["from"];
+    const ficha = await getClienteFicha("cli-ficha", client);
+    expect(ficha).toBeNull();
+  });
 
   it("excludes a same-day check-in that happened BEFORE the venta's gym-local time", async () => {
     const { client } = makeFichaFake([

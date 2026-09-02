@@ -405,22 +405,31 @@ export interface SesionRosterDTO {
  *
  *  The session's own row rides along so each roster line can DERIVE `noAsistio` from the
  *  arrival window (ruling 2026-07-29). Best-effort: its error is not destructured, so a
- *  failed session read costs the NO ASISTIÓ caption, never the roster. */
+ *  failed session read costs the NO ASISTIÓ caption, never the roster.
+ *
+ *  Both `reservation` and `class_session` also carry `.eq("gym_id", …)` (spec 2026-07-13
+ *  §1.1): RLS (`is_staff_of`/`is_member_of`) is the hard boundary, but a multi-gym
+ *  staffer's `gym_membership` rows OR together (ADR-0013) — without the explicit filter,
+ *  a `sessionId` from a sibling staffed gym would resolve to that gym's roster under
+ *  THIS gym's chrome instead of "not found". */
 export const getSesionRoster = cache(
   async (sessionId: string, client?: SupabaseServer): Promise<SesionRosterDTO> => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    const gym = await getOperatorGym(supabase);
 
     const [{ data: reservas, error }, { data: sesion }, candidatosTodos] = await Promise.all([
       supabase
         .from("reservation")
         .select("member_id, status, is_walk_in")
         .eq("class_session_id", sessionId)
+        .eq("gym_id", gym.id)
         .in("status", ["reservada", "asistida"]),
       supabase
         .from("class_session")
         .select("starts_at, duration_min")
         .eq("id", sessionId)
+        .eq("gym_id", gym.id)
         .maybeSingle(),
       getClientesParaPase(supabase),
     ]);

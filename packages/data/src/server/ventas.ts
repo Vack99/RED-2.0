@@ -216,7 +216,12 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
 
   // Display-only reads (never cross the write boundary). Paquete + (existing mode)
   // the client's name/tel are independent, so fire them concurrently; NEW mode has
-  // no cliente row, so its slot resolves to null.
+  // no cliente row, so its slot resolves to null. Both also carry `.eq("gym_id", …)`
+  // (spec 2026-07-13 §1.1): RLS is the hard boundary, but a multi-gym staffer's
+  // `gym_membership` rows OR together (ADR-0013) — without it, a paqueteId/clienteId
+  // from a SIBLING staffed gym would resolve and leak that gym's display name/contact
+  // info into this gym's recibo (the write itself stays safe either way — the RPC
+  // re-derives everything server-side, ruling C13/C6).
   const isNew = input.mode === "new";
   const [paqRes, cliRes] = await Promise.all([
     // Display-only read, and ONLY for a registered plan — a custom package has no
@@ -227,12 +232,14 @@ export async function crearVenta(raw: unknown, client?: SupabaseServer): Promise
           .from("paquetes")
           .select("nombre, vigencia_tipo, vigencia_dias, precio")
           .eq("id", forPaquete(input.paquete.paqueteId))
+          .eq("gym_id", gym.id)
           .single(),
     input.mode === "existing"
       ? supabase
           .from("clientes")
           .select("nombre, tel, email")
           .eq("id", forCliente(input.clienteId!))
+          .eq("gym_id", gym.id)
           .single()
       : Promise.resolve(null),
   ]);

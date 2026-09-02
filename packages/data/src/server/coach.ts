@@ -55,15 +55,19 @@ const COACH_COLUMNS = "id, name, initials, role, specialty, bio, is_active, sort
 /** The full roster (active + inactive) for the cuenta authoring list, ordered
  *  for display — the authoring surface must keep rendering a deactivated coach
  *  (its `activo` flag drives the dimmed "INACTIVO" row). RLS (`is_member_of`)
- *  scopes rows to the caller's gym — no manual `gym_id` filter. Ties in
- *  `sort_order` (e.g. two freshly-created rows, both defaulting to 0) fall
- *  back to insertion order.
+ *  is the hard boundary, but a multi-gym staffer's `gym_membership` rows OR
+ *  together (ADR-0013), so it alone would return every staffed gym's roster —
+ *  the explicit `.eq("gym_id", …)` scopes to the operator's gym-in-effect
+ *  (spec 2026-07-13 §1.1). Ties in `sort_order` (e.g. two freshly-created
+ *  rows, both defaulting to 0) fall back to insertion order.
  *  @returns the roster · best-effort: returns [] on error. */
 export const getCoaches = cache(async (client?: SupabaseServer): Promise<CoachDTO[]> => {
   const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase);
   const { data } = await supabase
     .from("coach")
     .select(COACH_COLUMNS)
+    .eq("gym_id", gym.id)
     .order("sort_order")
     .order("created_at");
   return (data ?? []).map(toDTO);

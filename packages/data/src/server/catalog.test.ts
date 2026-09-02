@@ -89,8 +89,8 @@ describe("getCoaches", () => {
   it("maps active coach rows to {id,label}", async () => {
     const { client } = makeFake({
       coach: [
-        { id: "co1", name: "Marisa", is_active: true, sort_order: 1 },
-        { id: "co2", name: "Paty", is_active: true, sort_order: 0 },
+        { id: "co1", name: "Marisa", is_active: true, sort_order: 1, gym_id: "gym-1" },
+        { id: "co2", name: "Paty", is_active: true, sort_order: 0, gym_id: "gym-1" },
       ],
     });
     const coaches = await getCoaches(client);
@@ -104,20 +104,46 @@ describe("getCoaches", () => {
     const { client } = makeFake({ coach: [] });
     expect(await getCoaches(client)).toEqual([]);
   });
+
+  // Multi-gym staffer regression (RLS `is_staff_of` ORs across every gym the caller
+  // staffs — ADR-0013 — so an unscoped read returns every staffed gym's rows, not
+  // just the host-resolved one): a sibling gym's coach must never surface here.
+  it("excludes a sibling staffed gym's coaches (scoped to the operator's gym-in-effect)", async () => {
+    const { client } = makeFake({
+      coach: [
+        { id: "co1", name: "Marisa", is_active: true, sort_order: 0, gym_id: "gym-1" },
+        { id: "co-sibling", name: "CORE Coach", is_active: true, sort_order: 0, gym_id: "gym-2" },
+      ],
+    });
+    const coaches = await getCoaches(client);
+    expect(coaches).toEqual([{ id: "co1", label: "Marisa" }]);
+  });
 });
 
 describe("getClassTypes", () => {
   it("maps class_type rows to {id,name}, alphabetized by name", async () => {
     const { client } = makeFake({
       class_type: [
-        { id: "ct1", name: "Funcional" },
-        { id: "ct2", name: "Box" },
+        { id: "ct1", name: "Funcional", gym_id: "gym-1" },
+        { id: "ct2", name: "Box", gym_id: "gym-1" },
       ],
     });
     expect(await getClassTypes(client)).toEqual([
       { id: "ct2", name: "Box" },
       { id: "ct1", name: "Funcional" },
     ]);
+  });
+
+  // Same multi-gym regression as getCoaches above (the reported defect: a
+  // red-demo/forge-demo staffer saw forge-demo's CORE class type on red-demo's host).
+  it("excludes a sibling staffed gym's class types (scoped to the operator's gym-in-effect)", async () => {
+    const { client } = makeFake({
+      class_type: [
+        { id: "ct1", name: "Funcional", gym_id: "gym-1" },
+        { id: "ct-sibling", name: "CORE", gym_id: "gym-2" },
+      ],
+    });
+    expect(await getClassTypes(client)).toEqual([{ id: "ct1", name: "Funcional" }]);
   });
 });
 

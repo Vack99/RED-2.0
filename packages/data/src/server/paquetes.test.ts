@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actualizarPaquete, actualizarPaqueteMarketing, setPlanFeatures } from "./paquetes";
+import { actualizarPaquete, actualizarPaqueteMarketing, getPlanesEditor, setPlanFeatures } from "./paquetes";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -35,6 +35,95 @@ function makeFake(
   };
   return { rpcCalls, client: client as unknown as SupabaseServer };
 }
+
+/** A `.from()`-answering fake for the READ side (getPlanesEditor) — the write-orchestration
+ *  fake above only answers `.rpc()`. `.eq()` actually filters the seeded rows (mirrors
+ *  catalog.test.ts's fake), so a multi-gym-staffer regression test can prove the scope. */
+function makeReadFake(opts: {
+  paquetes?: Record<string, unknown>[];
+  planFeatures?: Record<string, unknown>[];
+} = {}): { client: SupabaseServer; eqCalls: Record<string, [string, unknown][]> } {
+  const eqCalls: Record<string, [string, unknown][]> = {};
+  const client = {
+    auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
+    from: (table: string) => {
+      if (table === "gym_membership") {
+        return {
+          select: () => ({
+            eq: () => ({
+              in: () => ({
+                order: async () => ({
+                  data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+                  error: null,
+                }),
+              }),
+            }),
+          }),
+        };
+      }
+      const rows = table === "paquetes" ? (opts.paquetes ?? []) : table === "plan_feature" ? (opts.planFeatures ?? []) : [];
+      eqCalls[table] ??= [];
+      let filtered = rows;
+      const b: Record<string, unknown> = {
+        select: () => b,
+        eq: (col: string, val: unknown) => {
+          eqCalls[table].push([col, val]);
+          filtered = filtered.filter((r) => (r as Record<string, unknown>)[col] === val);
+          return b;
+        },
+        order: () => b,
+        then: (resolve: (v: unknown) => unknown) => resolve({ data: filtered, error: null }),
+      };
+      return b;
+    },
+  };
+  return { client: client as unknown as SupabaseServer, eqCalls };
+}
+
+const PLAN_ROW = {
+  id: "p1",
+  gym_id: "gym-1",
+  nombre: "8 clases",
+  clases: 8,
+  vigencia_tipo: "dias",
+  vigencia_dias: 20,
+  precio: 800,
+  popular: false,
+  orden: 0,
+  code: null,
+  name: null,
+  subtitle: null,
+  badge: null,
+  cadence: null,
+};
+
+describe("paquetes DAL — getPlanesEditor read scoping (injected fake)", () => {
+  it("scopes both the paquetes leg and the plan_feature leg to the operator's gym", async () => {
+    const fake = makeReadFake({
+      paquetes: [PLAN_ROW],
+      planFeatures: [{ plan_id: "p1", gym_id: "gym-1", label: "Acceso total", orden: 0 }],
+    });
+    const list = await getPlanesEditor(fake.client);
+    expect(list[0]?.features).toEqual(["Acceso total"]);
+    expect(fake.eqCalls.paquetes).toContainEqual(["gym_id", "gym-1"]);
+    expect(fake.eqCalls.plan_feature).toContainEqual(["gym_id", "gym-1"]);
+  });
+
+  // Multi-gym staffer regression (RLS `is_staff_of` ORs across every gym the caller
+  // staffs — ADR-0013): a sibling gym's plan_feature rows must never even be fetched,
+  // even though plan-id uniqueness already made a leak harmless in the mapped output.
+  it("excludes a sibling staffed gym's plan_feature rows", async () => {
+    const fake = makeReadFake({
+      paquetes: [PLAN_ROW],
+      planFeatures: [
+        { plan_id: "p1", gym_id: "gym-1", label: "Acceso total", orden: 0 },
+        { plan_id: "sibling-plan", gym_id: "gym-2", label: "Ajeno", orden: 0 },
+      ],
+    });
+    const list = await getPlanesEditor(fake.client);
+    expect(list[0]?.features).toEqual(["Acceso total"]);
+  });
+});
 
 const ID = "11111111-1111-4111-8111-111111111111";
 const valid = (over: Record<string, unknown> = {}) => ({

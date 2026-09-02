@@ -101,8 +101,16 @@ function makeFake(opts: FakeOpts = {}): { client: SupabaseServer; calls: Calls }
               }),
             };
           }
-          // list*: .order() awaited directly
-          return { order: async () => ({ data: rows, error: null }) };
+          // list*: .eq("gym_id", …).order() — the eq actually filters the seeded
+          // rows, so a multi-gym test can prove the scope (mirrors catalog.test.ts).
+          return {
+            eq: (col: string, val: unknown) => ({
+              order: async () => ({
+                data: rows.filter((r) => r[col] === val),
+                error: null,
+              }),
+            }),
+          };
         },
         insert: (payload: Record<string, unknown>) => {
           calls.insert = payload;
@@ -135,9 +143,22 @@ const ID = "11111111-1111-4111-8111-111111111111";
 
 describe("gym-content DAL — about_value write orchestration (injected fake)", () => {
   it("listAboutValues maps rows -> AboutValueDTO[]", async () => {
-    const fake = makeFake({ rows: [{ id: "v1", title: "Comunidad", description: "Juntos, no solos.", sort_order: 0 }] });
+    const fake = makeFake({ rows: [{ id: "v1", gym_id: "gym-1", title: "Comunidad", description: "Juntos, no solos.", sort_order: 0 }] });
     const list = await listAboutValues(fake.client);
     expect(list).toEqual([{ id: "v1", title: "Comunidad", description: "Juntos, no solos." }]);
+  });
+
+  // Multi-gym staffer regression (RLS `is_member_of` ORs across every gym the caller
+  // staffs — ADR-0013 — so an unscoped read would return every staffed gym's values).
+  it("excludes a sibling staffed gym's values (scoped to the operator's gym-in-effect)", async () => {
+    const fake = makeFake({
+      rows: [
+        { id: "v1", gym_id: "gym-1", title: "Comunidad", description: "x", sort_order: 0 },
+        { id: "sibling", gym_id: "gym-2", title: "Ajeno", description: "y", sort_order: 0 },
+      ],
+    });
+    const list = await listAboutValues(fake.client);
+    expect(list.map((v) => v.id)).toEqual(["v1"]);
   });
 
   it("crearAboutValue appends sort_order = 0 when the gym has no existing rows", async () => {
@@ -217,9 +238,20 @@ describe("gym-content DAL — about_value write orchestration (injected fake)", 
 
 describe("gym-content DAL — facility write orchestration (injected fake)", () => {
   it("listFacilities maps rows -> FacilityDTO[]", async () => {
-    const fake = makeFake({ rows: [{ id: "f1", name: "Área de pesas", description: "Pesas libres.", sort_order: 0 }] });
+    const fake = makeFake({ rows: [{ id: "f1", gym_id: "gym-1", name: "Área de pesas", description: "Pesas libres.", sort_order: 0 }] });
     const list = await listFacilities(fake.client);
     expect(list).toEqual([{ id: "f1", name: "Área de pesas", description: "Pesas libres." }]);
+  });
+
+  it("excludes a sibling staffed gym's facilities (scoped to the operator's gym-in-effect)", async () => {
+    const fake = makeFake({
+      rows: [
+        { id: "f1", gym_id: "gym-1", name: "Área de pesas", description: "x", sort_order: 0 },
+        { id: "sibling", gym_id: "gym-2", name: "Ajeno", description: "y", sort_order: 0 },
+      ],
+    });
+    const list = await listFacilities(fake.client);
+    expect(list.map((f) => f.id)).toEqual(["f1"]);
   });
 
   it("crearFacility appends sort_order = 0 when the gym has no existing rows", async () => {
@@ -300,10 +332,21 @@ describe("gym-content DAL — facility write orchestration (injected fake)", () 
 describe("gym-content DAL — faq write orchestration (injected fake)", () => {
   it("listFaqs maps rows -> FaqDTO[]", async () => {
     const fake = makeFake({
-      rows: [{ id: "q1", question: "¿Necesito membresía anual?", answer: "No, por clases.", sort_order: 0 }],
+      rows: [{ id: "q1", gym_id: "gym-1", question: "¿Necesito membresía anual?", answer: "No, por clases.", sort_order: 0 }],
     });
     const list = await listFaqs(fake.client);
     expect(list).toEqual([{ id: "q1", question: "¿Necesito membresía anual?", answer: "No, por clases." }]);
+  });
+
+  it("excludes a sibling staffed gym's FAQs (scoped to the operator's gym-in-effect)", async () => {
+    const fake = makeFake({
+      rows: [
+        { id: "q1", gym_id: "gym-1", question: "¿Q?", answer: "A", sort_order: 0 },
+        { id: "sibling", gym_id: "gym-2", question: "¿Ajeno?", answer: "B", sort_order: 0 },
+      ],
+    });
+    const list = await listFaqs(fake.client);
+    expect(list.map((f) => f.id)).toEqual(["q1"]);
   });
 
   it("crearFaq appends sort_order = 0 when the gym has no existing rows", async () => {
@@ -383,9 +426,20 @@ describe("gym-content DAL — faq write orchestration (injected fake)", () => {
 
 describe("gym-content DAL — stat write orchestration (injected fake)", () => {
   it("listStats maps rows -> StatDTO[]", async () => {
-    const fake = makeFake({ rows: [{ id: "s1", label: "Miembros activos", value: "500+", sort_order: 0 }] });
+    const fake = makeFake({ rows: [{ id: "s1", gym_id: "gym-1", label: "Miembros activos", value: "500+", sort_order: 0 }] });
     const list = await listStats(fake.client);
     expect(list).toEqual([{ id: "s1", label: "Miembros activos", value: "500+" }]);
+  });
+
+  it("excludes a sibling staffed gym's stats (scoped to the operator's gym-in-effect)", async () => {
+    const fake = makeFake({
+      rows: [
+        { id: "s1", gym_id: "gym-1", label: "Miembros activos", value: "500+", sort_order: 0 },
+        { id: "sibling", gym_id: "gym-2", label: "Ajeno", value: "1", sort_order: 0 },
+      ],
+    });
+    const list = await listStats(fake.client);
+    expect(list.map((s) => s.id)).toEqual(["s1"]);
   });
 
   it("crearStat appends sort_order = 0 when the gym has no existing rows", async () => {

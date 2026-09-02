@@ -56,6 +56,10 @@ function makeFake(
     }
 
     const errsHere = opts.errorTable === undefined || opts.errorTable === name;
+    // Read-path `.eq()` calls (e.g. getClassTypes' `.eq("gym_id", …)`) actually
+    // filter the seeded rows — the multi-gym-staffer regression test below relies
+    // on this to prove the scope, mirroring catalog.test.ts's fake.
+    let readFiltered = name === "class_type" ? classTypes : [];
     const b: Record<string, unknown> = {
       select: () => b,
       order: () => b,
@@ -66,6 +70,7 @@ function makeFake(
           const err = errsHere && opts.errorOp === "update" ? { message: "boom" } : null;
           return Promise.resolve({ error: err });
         }
+        readFiltered = readFiltered.filter((r) => (r as Record<string, unknown>)[col] === val);
         return b; // read-path .eq — keep chaining
       },
       insert: (payload: Record<string, unknown>) => {
@@ -78,7 +83,7 @@ function makeFake(
         return b;
       },
       then: (resolve: (v: { data: unknown[] | null; error: unknown }) => unknown) =>
-        resolve({ data: name === "class_type" ? classTypes : [], error: null }),
+        resolve({ data: readFiltered, error: null }),
     };
     return b;
   }
@@ -108,6 +113,7 @@ describe("class-type DAL — reads", () => {
       classTypes: [
         {
           id: CT_ID,
+          gym_id: "gym-1",
           name: "CrossFit",
           sala: "Sala A",
           level: "Intermedio",
@@ -133,9 +139,44 @@ describe("class-type DAL — reads", () => {
     ]);
   });
 
+  // Multi-gym staffer regression (RLS `is_member_of` ORs across every gym the
+  // caller staffs — ADR-0013 — so an unscoped read would return every staffed
+  // gym's catalog): a sibling gym's class type must never surface here.
+  it("excludes a sibling staffed gym's class types (scoped to the operator's gym-in-effect)", async () => {
+    const fake = makeFake({
+      classTypes: [
+        {
+          id: CT_ID,
+          gym_id: "gym-1",
+          name: "CrossFit",
+          sala: null,
+          level: null,
+          description: null,
+          default_duration_min: null,
+          class_type_workblock: [],
+          class_type_bring_item: [],
+        },
+        {
+          id: "sibling-ct",
+          gym_id: "gym-2",
+          name: "CORE",
+          sala: null,
+          level: null,
+          description: null,
+          default_duration_min: null,
+          class_type_workblock: [],
+          class_type_bring_item: [],
+        },
+      ],
+    });
+    const list = await getClassTypes(fake.client);
+    expect(list.map((t) => t.id)).toEqual([CT_ID]);
+  });
+
   it("getClassTypes returns [] when the read errors (best-effort)", async () => {
     const errBuilder: Record<string, unknown> = {
       select: () => errBuilder,
+      eq: () => errBuilder,
       order: () => errBuilder,
       then: (r: (v: { data: null; error: unknown }) => unknown) => r({ data: null, error: { message: "x" } }),
     };

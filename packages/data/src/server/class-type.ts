@@ -77,13 +77,18 @@ const CLASS_TYPE_COLUMNS = `
 /** The full catalog with its ordered children embedded — one round trip for
  *  the whole cuenta authoring list (the same shape a future Agenda tipo
  *  picker/"+ new type" flow and the client showcase read). RLS
- *  (`is_member_of`) scopes rows to the caller's gym.
+ *  (`is_member_of`) is the hard boundary, but a multi-gym staffer's
+ *  `gym_membership` rows OR together (ADR-0013), so it alone would return
+ *  every staffed gym's catalog — the explicit `.eq("gym_id", …)` scopes to
+ *  the operator's gym-in-effect (spec 2026-07-13 §1.1).
  *  @returns the catalog · best-effort: returns [] on error. */
 export const getClassTypes = cache(async (client?: SupabaseServer): Promise<ClassTypeDTO[]> => {
   const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase);
   const { data } = await supabase
     .from("class_type")
     .select(CLASS_TYPE_COLUMNS)
+    .eq("gym_id", gym.id)
     .order("name")
     .order("sort_order", { referencedTable: "class_type_workblock" })
     .order("sort_order", { referencedTable: "class_type_bring_item" });

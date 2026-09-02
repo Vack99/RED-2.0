@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { createClient, type SupabaseServer } from "./supabase";
 import { requireOperator } from "./_auth";
+import { getOperatorGym } from "./gym";
 
 /** One contact-form lead as the admin read surface renders it. `leido` is derived from `read_at`
  *  (stored), never a second stored flag (ADR-0002). No `ip` — the operator never needs the request IP
@@ -18,13 +19,17 @@ export interface MensajeDTO {
   createdAt: string;
 }
 
-/** The gym's contact-form messages, newest first. RLS scopes rows to the caller's gym (is_staff_of), so
- *  no explicit gym filter is needed. Memoized per request. Best-effort: returns [] on error. */
+/** The gym's contact-form messages, newest first. RLS (`is_staff_of`) is the hard boundary,
+ *  but a multi-gym staffer's `gym_membership` rows OR together (ADR-0013), so it alone would
+ *  return every staffed gym's messages — `.eq("gym_id", …)` scopes to the operator's
+ *  gym-in-effect (spec 2026-07-13 §1.1). Memoized per request. Best-effort: returns [] on error. */
 export const listMensajes = cache(async (client?: SupabaseServer): Promise<MensajeDTO[]> => {
   const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase);
   const { data } = await supabase
     .from("contact_message")
     .select("id, nombre, correo, mensaje, read_at, created_at")
+    .eq("gym_id", gym.id)
     .order("created_at", { ascending: false });
   return (data ?? []).map((m) => ({
     id: m.id,

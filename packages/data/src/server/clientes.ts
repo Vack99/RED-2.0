@@ -380,12 +380,20 @@ export const getClienteFicha = cache(
     // early without firing the 5 downstream reads. Folding all 6 into one
     // Promise.all would waste 5 queries on every 404; one extra round trip on
     // the happy path is the accepted cost.
+    //
+    // `.eq("gym_id", gym.id)` alongside `.eq("id", id)`: RLS (`is_member_of`) is the
+    // hard boundary, but a multi-gym staffer's `gym_membership` rows OR together
+    // (ADR-0013) — without this, an `id` from a sibling staffed gym (e.g. typed into
+    // the URL, or a stale link) would resolve to that gym's cliente and leak its whole
+    // ficha (asistencias/ventas/reservas/saldo) under the WRONG gym's chrome, exactly
+    // the class of bug §1.1 already guards every roster read against.
     const { data: c } = await supabase
       .from("clientes")
       .select(
         "id, nombre, tel, paquete_nombre, clases_restantes, vence, created_at, email, invitacion_enviada_at, auth_user_id",
       )
       .eq("id", id)
+      .eq("gym_id", gym.id)
       .maybeSingle();
     if (!c) return null;
 

@@ -10,9 +10,15 @@ import { createClient, type SupabaseServer } from "./supabase";
 
 /**
  * The catalog seam the Agenda editor reads (PRD #36 e): the coach multi-select and
- * the extensible tipo picker. Isolation is RLS-by-membership (ADR-0013) — no manual
- * gym_id filter on the reads; the mint stamps gym_id from getOperatorGym so the
- * `is_staff_of` insert policy passes. `client` injectable (ADR-0001).
+ * the extensible tipo picker. RLS (`is_staff_of`) is the hard boundary, but a
+ * multi-gym staffer's `gym_membership` rows OR together (ADR-0013's per-row
+ * predicate spans every gym they staff) — so a read with no explicit filter
+ * returns EVERY staffed gym's rows, not just the one the current host names.
+ * Every read here therefore also carries `.eq("gym_id", …)` from getOperatorGym
+ * — a scope selector, not the boundary (spec 2026-07-13 §1.1; this file's own
+ * bug before the fix, sibling gyms' coaches/tipos bleeding into the NUEVA CLASE
+ * sheet under the wrong chrome). The mint stamps gym_id from getOperatorGym so
+ * the `is_staff_of` insert policy passes. `client` injectable (ADR-0001).
  */
 
 export interface CoachOptionDTO {
@@ -29,9 +35,11 @@ export interface ClassTypeDTO {
 export const getCoaches = cache(async (client?: SupabaseServer): Promise<CoachOptionDTO[]> => {
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
+  const gym = await getOperatorGym(supabase);
   const { data, error } = await supabase
     .from("coach")
     .select("id, name")
+    .eq("gym_id", gym.id)
     .eq("is_active", true)
     .order("sort_order")
     .order("name");
@@ -43,7 +51,12 @@ export const getCoaches = cache(async (client?: SupabaseServer): Promise<CoachOp
 export const getClassTypes = cache(async (client?: SupabaseServer): Promise<ClassTypeDTO[]> => {
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
-  const { data, error } = await supabase.from("class_type").select("id, name").order("name");
+  const gym = await getOperatorGym(supabase);
+  const { data, error } = await supabase
+    .from("class_type")
+    .select("id, name")
+    .eq("gym_id", gym.id)
+    .order("name");
   if (error) throw error;
   return (data ?? []).map((t) => ({ id: t.id, name: t.name }));
 });

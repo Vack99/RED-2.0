@@ -11,6 +11,7 @@ import {
   editarSesion,
   getAgendaDia,
   getAgendaSemana,
+  getSesionRoster,
   reservarClaseCliente,
   retirarHorarioRecurrente,
 } from "./agenda";
@@ -45,6 +46,10 @@ interface Rows {
   // templates sharing a group_id, separate from the per-session `schedule_template` embed above.
   schedule_template?: Record<string, unknown>[];
   gymTimezone?: string;
+  // getSesionRoster's own legs, plus getClientesParaPase's (clientes + its paseSuelto catalog leg).
+  reservation?: Record<string, unknown>[];
+  clientes?: Record<string, unknown>[];
+  paquetes?: Record<string, unknown>[];
 }
 
 interface RpcCall {
@@ -483,6 +488,36 @@ describe("getAgendaDia", () => {
     const dia = await getAgendaDia("2026-06-17", client);
     expect(dia.sesiones).toEqual([]);
     expect(dia.resumen).toEqual({ clases: 0, reservas: 0 });
+  });
+});
+
+describe("getSesionRoster", () => {
+  // Multi-gym staffer regression (RLS `is_staff_of`/`is_member_of` OR across every gym
+  // the caller staffs — ADR-0013): a sibling staffed gym's reservation for the SAME
+  // session id must never join the roster this gym's Agenda renders.
+  it("excludes a sibling staffed gym's reservation rows (scoped to the operator's gym-in-effect)", async () => {
+    const { client } = makeFake({
+      reservation: [
+        { member_id: "cli-1", status: "reservada", is_walk_in: false, class_session_id: "s1", gym_id: "gym-1" },
+        { member_id: "cli-sibling", status: "reservada", is_walk_in: false, class_session_id: "s1", gym_id: "gym-2" },
+      ],
+      class_session: [{ id: "s1", starts_at: iso(MIERCOLES, "09:00"), duration_min: 60, gym_id: "gym-1" }],
+      clientes: [
+        {
+          id: "cli-1",
+          nombre: "Ana",
+          tel: null,
+          paquete_nombre: "8 clases",
+          clases_restantes: 5,
+          vence: null,
+          auth_user_id: null,
+          gym_id: "gym-1",
+        },
+      ],
+      paquetes: [],
+    });
+    const { roster } = await getSesionRoster("s1", client);
+    expect(roster.map((r) => r.clienteId)).toEqual(["cli-1"]);
   });
 });
 

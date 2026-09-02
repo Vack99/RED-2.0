@@ -17,16 +17,38 @@ interface Recorder {
   eq?: { col: string; val: unknown };
 }
 
+/** getOperatorGym's membership resolution — shared by every table this fake answers. */
+const GYM_MEMBERSHIP_ROW = {
+  gym_id: "gym-1",
+  gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" },
+};
+
 function makeReadFake(rows: Record<string, unknown>[]): { client: SupabaseServer; rec: Recorder } {
   const rec: Recorder = {};
+  // `.eq("gym_id", …)` actually filters the seeded rows (mirrors catalog.test.ts's fake) —
+  // the multi-gym-staffer regression test relies on this to prove the scope.
+  let filtered = rows;
   const builder: Record<string, unknown> = {
     select: () => builder,
+    eq: (col: string, val: unknown) => {
+      rec.eq = { col, val };
+      filtered = filtered.filter((r) => r[col] === val);
+      return builder;
+    },
     order: (col: string, opts: unknown) => {
       rec.order = { col, opts };
-      return Promise.resolve({ data: rows, error: null });
+      return Promise.resolve({ data: filtered, error: null });
     },
   };
-  const client = { from: () => builder };
+  const client = {
+    auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
+    from: (table: string) => {
+      if (table === "gym_membership") {
+        return { select: () => ({ eq: () => ({ in: () => ({ order: async () => ({ data: [GYM_MEMBERSHIP_ROW], error: null }) }) }) }) };
+      }
+      return builder;
+    },
+  };
   return { client: client as unknown as SupabaseServer, rec };
 }
 
@@ -57,8 +79,8 @@ const ID = "11111111-1111-4111-8111-111111111111";
 describe("mensajes DAL — admin read + mark-read", () => {
   it("listMensajes maps rows (read_at → leido), newest first", async () => {
     const { client, rec } = makeReadFake([
-      { id: "a", nombre: "Ana", correo: "ana@x.mx", mensaje: "Hola", read_at: null, created_at: "2026-07-06T10:00:00Z" },
-      { id: "b", nombre: "Beto", correo: "beto@x.mx", mensaje: "Info", read_at: "2026-07-06T09:00:00Z", created_at: "2026-07-05T09:00:00Z" },
+      { id: "a", gym_id: "gym-1", nombre: "Ana", correo: "ana@x.mx", mensaje: "Hola", read_at: null, created_at: "2026-07-06T10:00:00Z" },
+      { id: "b", gym_id: "gym-1", nombre: "Beto", correo: "beto@x.mx", mensaje: "Info", read_at: "2026-07-06T09:00:00Z", created_at: "2026-07-05T09:00:00Z" },
     ]);
     const list = await listMensajes(client);
     expect(list).toEqual([
@@ -66,11 +88,23 @@ describe("mensajes DAL — admin read + mark-read", () => {
       { id: "b", nombre: "Beto", correo: "beto@x.mx", mensaje: "Info", leido: true, createdAt: "2026-07-05T09:00:00Z" },
     ]);
     expect(rec.order).toEqual({ col: "created_at", opts: { ascending: false } });
+    expect(rec.eq).toEqual({ col: "gym_id", val: "gym-1" });
   });
 
   it("listMensajes returns [] when the read yields no rows", async () => {
     const { client } = makeReadFake([]);
     expect(await listMensajes(client)).toEqual([]);
+  });
+
+  // Multi-gym staffer regression (RLS `is_staff_of` ORs across every gym the caller
+  // staffs — ADR-0013 — so an unscoped read would return every staffed gym's leads).
+  it("excludes a sibling staffed gym's messages (scoped to the operator's gym-in-effect)", async () => {
+    const { client } = makeReadFake([
+      { id: "a", gym_id: "gym-1", nombre: "Ana", correo: "ana@x.mx", mensaje: "Hola", read_at: null, created_at: "2026-07-06T10:00:00Z" },
+      { id: "sibling", gym_id: "gym-2", nombre: "Ajeno", correo: "x@x.mx", mensaje: "Otro gym", read_at: null, created_at: "2026-07-06T11:00:00Z" },
+    ]);
+    const list = await listMensajes(client);
+    expect(list.map((m) => m.id)).toEqual(["a"]);
   });
 
   it("marcarLeido parses the id and stamps read_at on that row", async () => {

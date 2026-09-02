@@ -37,13 +37,18 @@ function toAboutValueDTO(row: { id: string; title: string; description: string }
   return { id: row.id, title: row.title, description: row.description };
 }
 
-/** The gym's values, in display order. RLS scopes rows to the caller's gym (is_member_of). Memoized per request.
+/** The gym's values, in display order. RLS (`is_member_of`) is the hard boundary, but a
+ *  multi-gym staffer's `gym_membership` rows OR together (ADR-0013), so it alone would
+ *  return every staffed gym's values — `.eq("gym_id", …)` scopes to the operator's
+ *  gym-in-effect (spec 2026-07-13 §1.1). Memoized per request.
  *  @returns the value list · best-effort: returns [] on error (error is not destructured). */
 export const listAboutValues = cache(async (client?: SupabaseServer): Promise<AboutValueDTO[]> => {
   const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase);
   const { data } = await supabase
     .from("about_value")
     .select("id, title, description")
+    .eq("gym_id", gym.id)
     .order("sort_order");
   return (data ?? []).map(toAboutValueDTO);
 });
@@ -148,13 +153,18 @@ function toFacilityDTO(row: { id: string; name: string; description: string }): 
   return { id: row.id, name: row.name, description: row.description };
 }
 
-/** The gym's facilities, in display order. RLS scopes rows to the caller's gym (is_member_of). Memoized per request.
+/** The gym's facilities, in display order. RLS (`is_member_of`) is the hard boundary, but
+ *  a multi-gym staffer's `gym_membership` rows OR together (ADR-0013), so it alone would
+ *  return every staffed gym's facilities — `.eq("gym_id", …)` scopes to the operator's
+ *  gym-in-effect (spec 2026-07-13 §1.1). Memoized per request.
  *  @returns the facility list · best-effort: returns [] on error (error is not destructured). */
 export const listFacilities = cache(async (client?: SupabaseServer): Promise<FacilityDTO[]> => {
   const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase);
   const { data } = await supabase
     .from("facility")
     .select("id, name, description")
+    .eq("gym_id", gym.id)
     .order("sort_order");
   return (data ?? []).map(toFacilityDTO);
 });
@@ -262,11 +272,19 @@ function toFaqDTO(row: { id: string; question: string; answer: string }): FaqDTO
   return { id: row.id, question: row.question, answer: row.answer };
 }
 
-/** The gym's FAQs, in display order. RLS scopes rows to the caller's gym (is_member_of). Memoized per request.
+/** The gym's FAQs, in display order. RLS (`is_member_of`) is the hard boundary, but a
+ *  multi-gym staffer's `gym_membership` rows OR together (ADR-0013), so it alone would
+ *  return every staffed gym's FAQs — `.eq("gym_id", …)` scopes to the operator's
+ *  gym-in-effect (spec 2026-07-13 §1.1). Memoized per request.
  *  @returns the FAQ list · best-effort: returns [] on error (error is not destructured). */
 export const listFaqs = cache(async (client?: SupabaseServer): Promise<FaqDTO[]> => {
   const supabase = client ?? (await createClient());
-  const { data } = await supabase.from("faq").select("id, question, answer").order("sort_order");
+  const gym = await getOperatorGym(supabase);
+  const { data } = await supabase
+    .from("faq")
+    .select("id, question, answer")
+    .eq("gym_id", gym.id)
+    .order("sort_order");
   return (data ?? []).map(toFaqDTO);
 });
 
@@ -371,11 +389,19 @@ function toStatDTO(row: { id: string; label: string; value: string }): StatDTO {
   return { id: row.id, label: row.label, value: row.value };
 }
 
-/** The gym's stats, in display order. RLS scopes rows to the caller's gym (is_member_of). Memoized per request.
+/** The gym's stats, in display order. RLS (`is_member_of`) is the hard boundary, but a
+ *  multi-gym staffer's `gym_membership` rows OR together (ADR-0013), so it alone would
+ *  return every staffed gym's stats — `.eq("gym_id", …)` scopes to the operator's
+ *  gym-in-effect (spec 2026-07-13 §1.1). Memoized per request.
  *  @returns the stat list · best-effort: returns [] on error (error is not destructured). */
 export const listStats = cache(async (client?: SupabaseServer): Promise<StatDTO[]> => {
   const supabase = client ?? (await createClient());
-  const { data } = await supabase.from("stat").select("id, label, value").order("sort_order");
+  const gym = await getOperatorGym(supabase);
+  const { data } = await supabase
+    .from("stat")
+    .select("id, label, value")
+    .eq("gym_id", gym.id)
+    .order("sort_order");
   return (data ?? []).map(toStatDTO);
 });
 

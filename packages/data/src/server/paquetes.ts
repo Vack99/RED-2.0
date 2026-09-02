@@ -123,7 +123,12 @@ export const getPlanesEditor = cache(
         )
         .eq("gym_id", gym.id)
         .order("orden"),
-      supabase.from("plan_feature").select("plan_id, label, orden").order("orden"),
+      // Same multi-gym scope selector as the paquetes leg above (§1.1) — without it a
+      // staffer of two gyms would fetch BOTH gyms' plan_feature rows (RLS `is_staff_of`
+      // ORs across every staffed gym, ADR-0013). Harmless-by-plan-id-uniqueness in this
+      // read's OUTPUT (grouped by plan_id, and no foreign plan_id can match a row above),
+      // but scoped anyway for defense-in-depth and consistency with every other reader.
+      supabase.from("plan_feature").select("plan_id, label, orden").eq("gym_id", gym.id).order("orden"),
     ]);
 
     if (!rows) return [];

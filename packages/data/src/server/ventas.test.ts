@@ -43,6 +43,9 @@ interface FakeClient {
   /** Every table name passed to `.from(...)` — lets a test assert a table was
    *  (or was NOT) touched, e.g. a custom sale never reading `paquetes`. */
   fromCalls: string[];
+  /** Per-table `.eq(col, val)` calls — the gym-scope assertion target (§1.1: the
+   *  paquete/cliente display reads must carry `.eq("gym_id", …)` too). */
+  eqCalls: Record<string, [string, unknown][]>;
   client: SupabaseServer;
 }
 
@@ -71,11 +74,16 @@ function makeFake(
   const rpcData = opts.rpcData === undefined ? RPC_ROW : opts.rpcData;
   const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
   const fromCalls: string[] = [];
+  const eqCalls: Record<string, [string, unknown][]> = {};
 
-  const builder = (single: unknown, list: unknown[]) => {
+  const builder = (table: string, single: unknown, list: unknown[]) => {
+    eqCalls[table] ??= [];
     const b = {
       select: () => b,
-      eq: () => b,
+      eq: (col: string, val: unknown) => {
+        eqCalls[table].push([col, val]);
+        return b;
+      },
       is: () => b,
       in: () => b,
       order: () => b,
@@ -99,22 +107,22 @@ function makeFake(
         case "paquetes":
           // single (`.eq().single()`) = the package crearVenta is selling;
           // list (`.order()`, awaited by getPaquetes) = the catalog.
-          return builder(rows.paquetes ?? null, rows.paquetesList ?? []);
+          return builder(table, rows.paquetes ?? null, rows.paquetesList ?? []);
         case "clientes":
-          return builder(rows.clientes ?? null, []);
+          return builder(table, rows.clientes ?? null, []);
         case "perfil":
-          return builder(rows.perfil ?? null, []);
+          return builder(table, rows.perfil ?? null, []);
         case "cobro":
-          return builder(rows.cobro ?? null, []);
+          return builder(table, rows.cobro ?? null, []);
         case "plantillas":
-          return builder(null, rows.plantillas ?? []);
+          return builder(table, null, rows.plantillas ?? []);
         // Slice #25: getOperatorGyms' membership read, with the embedded `gym(...)` FK
         // join it now makes in ONE round trip — default to Forge's real zone, matching
         // the shared supabase-fake.test-helper. brand_name (#97) is the injected negocio
         // fallback — a distinct mixed-case value proves it passes through to
         // result.negocio when perfil is absent.
         case "gym_membership":
-          return builder(null, [
+          return builder(table, null, [
             {
               gym_id: "test-gym",
               role: "owner",
@@ -122,7 +130,7 @@ function makeFake(
             },
           ]);
         default:
-          return builder(null, []);
+          return builder(table, null, []);
       }
     },
     rpc: (name: string, args: Record<string, unknown>) => {
@@ -137,7 +145,7 @@ function makeFake(
     },
   };
 
-  return { rpcCalls, fromCalls, client: client as unknown as SupabaseServer };
+  return { rpcCalls, fromCalls, eqCalls, client: client as unknown as SupabaseServer };
 }
 
 // Package fixtures (DB shape: ilimitado → clases null; mes → vigencia_dias null).
@@ -201,6 +209,10 @@ describe("crearVenta — write orchestration (injected fake)", () => {
       ["p_gym_id", "p_idempotency_key", "p_metodo", "p_nombre", "p_paquete_id", "p_tel"].sort(),
     );
     expect(args.p_idempotency_key).toBe(KEY); // the caller's key, passed through
+
+    // §1.1 / multi-gym staffer regression: the display-only paquete read carries
+    // `.eq("gym_id", …)` too, not just `.eq("id", …)`.
+    expect(fake.eqCalls.paquetes).toContainEqual(["gym_id", "test-gym"]);
   });
 
   it("a blank tel sends NO p_tel at all, and still sends p_nombre (#190)", async () => {
@@ -238,6 +250,12 @@ describe("crearVenta — write orchestration (injected fake)", () => {
     // The RPC re-derives the stack in a locked txn — no saldo crosses the boundary.
     expect(args).not.toHaveProperty("p_clases_restantes");
     expect(args).not.toHaveProperty("p_vence");
+
+    // §1.1 / multi-gym staffer regression: the display-only paquete/cliente reads
+    // also carry `.eq("gym_id", …)` — RLS ORs across every staffed gym (ADR-0013),
+    // so without it a sibling gym's paqueteId/clienteId would resolve here too.
+    expect(fake.eqCalls.paquetes).toContainEqual(["gym_id", "test-gym"]);
+    expect(fake.eqCalls.clientes).toContainEqual(["gym_id", "test-gym"]);
   });
 
   it("sends a new finite client's identity + paquete_id only (empty-base derivation now lives in the RPC)", async () => {
