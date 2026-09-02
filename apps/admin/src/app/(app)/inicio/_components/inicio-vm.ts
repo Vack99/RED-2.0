@@ -1,6 +1,6 @@
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 import { enCurso, sesionMasCercana } from "@gym/domain/rules";
-import { horaEnZona } from "@gym/format";
+import { fmtNavegadorDia, horaEnZona } from "@gym/format";
 import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
 
 /**
@@ -18,9 +18,13 @@ import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
  *      re-derivation) — which may be one that JUST ENDED, because operators are still
  *      marking stragglers;
  *   3. else the day's NEXT upcoming class (the 18:00 class on a quiet noon).
- * No candidate at all — the day is over, has no classes, the agenda read failed, or
- * the gym runs Lista (whose caller passes an empty `sesiones` — the read is never
- * even issued, see `../reads.ts`) — is `null`: the standalone PASE DE LISTA arm.
+ * No candidate at all today — the day is over, or it has no classes — is `null`, but
+ * that is no longer automatically the standalone PASE DE LISTA arm (owner ruling
+ * 2026-09-01): the caller (`page.tsx`) then tries `derivarDiaSiguiente` against the
+ * next day(s) with a class, bounded by `../reads.ts`'s `leerProximoDia`. The
+ * standalone arm survives only once THAT also comes up empty, or the agenda read
+ * failed outright, or the gym runs Lista (whose caller passes an empty `sesiones` —
+ * the read is never even issued, see `../reads.ts`).
  *
  * Pure and clock-parameterized (`ahora` is an argument — the caller reads the clock)
  * so the whole derivation is testable; the page hands the result straight to the
@@ -30,7 +34,8 @@ import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
 /** The hero's tense — which eyebrow word and which count the card leads with. */
 export type TenseDia = "en_curso" | "terminada" | "proxima";
 
-/** The hero class: the one the Pasar lista CTA is attached to. */
+/** The hero class: the one the Pasar lista CTA is attached to (TODAY's hero only —
+ *  see `esHoy`). */
 export interface HeroDia {
   id: string;
   /** Gym-local "HH:MM". */
@@ -42,6 +47,15 @@ export interface HeroDia {
   /** The tense-matched count, preformatted: live "2/12 dentro" (CHECK-INS), just-ended
    *  "4/12 asistieron ✓" (check-ins), upcoming "9/12 reservas" (bookings). */
   cuenta: string;
+  /** Whether this hero's class is TODAY's (owner ruling 2026-09-01). `false` only for
+   *  a rolled-forward hero (`derivarDiaSiguiente`): PASAR LISTA never attaches to it —
+   *  `/asistencia` only ever reads TODAY's own agenda (`?sesion=` is validated against
+   *  it, never trusted raw) — so the screen renders a plain "Ver en agenda" link
+   *  instead, and the eyebrow leads with `etiquetaDia` instead of the tense word. */
+  esHoy: boolean;
+  /** The day-relative label for a rolled-forward hero — `fmtNavegadorDia`, uppercased
+   *  ("MAÑANA", "EN 3 DÍAS"). `null` when `esHoy` (the tense word leads instead). */
+  etiquetaDia: string | null;
 }
 
 /** One class still AHEAD of the hero, as a hairline row. */
@@ -129,11 +143,51 @@ export function derivarDia(
       coaches: hero.coaches.length ? hero.coaches.map((c) => c.nombre).join(", ") : null,
       tense,
       cuenta,
+      esHoy: true,
+      etiquetaDia: null,
     },
     clases: sesiones
       .filter(
         (s) => s.startsAt.getTime() > hero.startsAt.getTime() && s.startsAt.getTime() > ahora.getTime(),
       )
       .map((s) => filaDia(s, tz)),
+  };
+}
+
+/**
+ * The rolled-forward day card (owner ruling 2026-09-01): once TODAY has no hero left
+ * (`derivarDia` returned `null`), Cupo's hero must never sit empty while the gym has
+ * ANY upcoming class — `page.tsx` hands this the first later day `../reads.ts`'s
+ * `leerProximoDia` found with at least one session. Every session on THAT day is
+ * necessarily still ahead (it is a future day), so there is no live/±90-nearest
+ * ladder to run: the hero is simply that day's FIRST session, always in the
+ * `"proxima"` tense, and the rows below it are the rest of that day's own schedule —
+ * `sesiones` arrives in the DAL's startsAt order and both keep it.
+ *
+ * `esHoy: false` on the hero is the one flag the screen needs to withhold PASAR
+ * LISTA: the desk (`/asistencia`) only ever reads TODAY's own agenda, so a link to a
+ * future session's check-in would resolve to nothing there.
+ */
+export function derivarDiaSiguiente(
+  sesiones: readonly SesionAgendaDTO[],
+  tz: string,
+  fecha: Date,
+  hoy: Date,
+): DiaVM | null {
+  const [hero, ...resto] = sesiones;
+  if (!hero) return null;
+
+  return {
+    hero: {
+      id: hero.id,
+      hora: horaEnZona(hero.startsAt, tz),
+      titulo: etiquetaSesion(hero),
+      coaches: hero.coaches.length ? hero.coaches.map((c) => c.nombre).join(", ") : null,
+      tense: "proxima",
+      cuenta: `${hero.activos}/${hero.capacidad} reservas`,
+      esHoy: false,
+      etiquetaDia: fmtNavegadorDia(fecha, hoy).toUpperCase(),
+    },
+    clases: resto.map((s) => filaDia(s, tz)),
   };
 }

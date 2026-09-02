@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SupabaseServer } from "@gym/data/server/supabase";
 
-import { leerDia, leerResumenAsistencias } from "./reads";
+import { leerDia, leerProximoDia, leerResumenAsistencias } from "./reads";
 
 /**
  * #328 AC: "Lista: no agenda read is issued (assert at the data seam), ... the
@@ -55,6 +55,24 @@ describe("leerDia — the data seam Lista must never touch (#328)", () => {
     const lectura = await leerDia("cupo", HOY_ISO, client);
     expect(calls.length).toBeGreaterThan(0);
     expect(lectura).toEqual({ agenda: null, visitas: [] });
+  });
+});
+
+/**
+ * `leerProximoDia` (owner ruling 2026-09-01 — the Cupo hero rolls to the next day):
+ * only issued by `page.tsx` once TODAY's own agenda has no hero, so it must reach
+ * the client (never a no-op), and a failing round trip must abort the WHOLE bounded
+ * search rather than degrade day-by-day forever — the search is an enhancement over
+ * the standalone CTA, never a second precondition for it.
+ */
+describe("leerProximoDia — bounded, and a failed round trip aborts the whole search", () => {
+  const HOY_ISO = "2026-09-01";
+
+  it("reaches the client and degrades to null on a failed round trip", async () => {
+    const { client, calls } = fakeClienteQueCuenta();
+    const proximo = await leerProximoDia(HOY_ISO, client);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(proximo).toBeNull();
   });
 });
 

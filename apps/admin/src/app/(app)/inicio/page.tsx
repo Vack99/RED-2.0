@@ -3,11 +3,11 @@ import type { Route } from "next";
 import { getRosterResumen } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
 import { modo } from "@gym/domain/rules";
-import { fmtDiaAgenda, hoyEnZona, toIsoDay } from "@gym/format";
+import { fmtDiaAgenda, hoyEnZona, parseDay, toIsoDay } from "@gym/format";
 
 import { InicioScreen } from "./_components/inicio";
-import { derivarDia } from "./_components/inicio-vm";
-import { leerDia, leerResumenAsistencias } from "./reads";
+import { derivarDia, derivarDiaSiguiente } from "./_components/inicio-vm";
+import { leerDia, leerProximoDia, leerResumenAsistencias } from "./reads";
 
 /**
  * /inicio (#328, spec #326) — the home rebuild on main's current skin. The day-card's
@@ -17,6 +17,13 @@ import { leerDia, leerResumenAsistencias } from "./reads";
  * 2026-09-01). Every clock read lives HERE, on the server, against the gym's tz — never
  * the browser clock, and never in the client render (InicioScreen is a plain server
  * component; SSR and hydration are identical by construction).
+ *
+ * Cupo's hero rolls to the next day (owner ruling 2026-09-01): once TODAY's own agenda
+ * comes back with no hero (`derivarDia` → `null`) but the read itself succeeded —
+ * never on a failed read, and never on Lista, whose `agenda` is always `null` by
+ * construction (`leerDia`) — `leerProximoDia` looks ahead for the first later day with
+ * a class, and `derivarDiaSiguiente` builds the day card from it. The standalone PASE
+ * DE LISTA arm (`dia === null`) survives only once that ALSO comes up empty.
  */
 export default async function Page() {
   const gym = await getOperatorGym();
@@ -32,7 +39,18 @@ export default async function Page() {
 
   const ahora = new Date();
   const sesiones = lectura.agenda?.sesiones ?? [];
-  const dia = derivarDia(sesiones, lectura.visitas, gym.timezone, ahora);
+  let dia = derivarDia(sesiones, lectura.visitas, gym.timezone, ahora);
+
+  // Today's own read succeeded (agenda !== null) but left no hero: look ahead,
+  // bounded, before giving up to the standalone CTA. A failed read (agenda === null
+  // on Cupo) or Lista (agenda === null by construction) skip this — there is nothing
+  // to roll forward FROM.
+  if (dia === null && lectura.agenda !== null) {
+    const proximo = await leerProximoDia(hoyIso);
+    if (proximo) {
+      dia = derivarDiaSiguiente(proximo.sesiones, gym.timezone, parseDay(proximo.fecha), hoyLocal);
+    }
+  }
 
   // "Apartar lugar" lands on the NEXT upcoming class's own quick-glance sheet, open
   // on arrival (`/agenda?sesion=<id>`, resolved+opened by the Agenda screen itself,

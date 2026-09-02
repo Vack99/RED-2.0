@@ -121,8 +121,8 @@ export function InicioScreen({
       {dia ? (
         <Card style={{ marginTop: 16, padding: dia.clases.length ? "18px 20px 4px" : "18px 20px" }}>
           <div className="flex items-baseline justify-between">
-            <Eyebrow color={HERO_EYEBROW[dia.hero.tense].tono} style={{ fontSize: 10 }}>
-              {HERO_EYEBROW[dia.hero.tense].palabra} · {dia.hero.hora}
+            <Eyebrow color={dia.hero.esHoy ? HERO_EYEBROW[dia.hero.tense].tono : "var(--gold)"} style={{ fontSize: 10 }}>
+              {dia.hero.esHoy ? HERO_EYEBROW[dia.hero.tense].palabra : dia.hero.etiquetaDia} · {dia.hero.hora}
             </Eyebrow>
             <Tnum style={{ fontSize: 12, color: "var(--muted)" }}>{dia.hero.cuenta}</Tnum>
           </div>
@@ -135,21 +135,43 @@ export function InicioScreen({
           {/* → the desk with the HERO class preselected — `?sesion=` is resolved
               SERVER-side into /asistencia's initial context (never a client-side
               selection). Every tense deep-links: a just-ended hero is exactly the
-              stragglers-still-marking case the desk's own ±90 preselect serves. */}
-          <Link
-            href={`/asistencia?sesion=${dia.hero.id}` as Route}
-            className="forge-pressable flex items-center justify-center uppercase font-extrabold"
-            style={{
-              marginTop: 12,
-              padding: "13px 0",
-              background: "var(--yellow)",
-              color: "var(--ink)",
-              fontSize: 13.5,
-              letterSpacing: 1.2,
-            }}
-          >
-            Pasar lista →
-          </Link>
+              stragglers-still-marking case the desk's own ±90 preselect serves.
+              A rolled-forward hero (`!esHoy`, owner ruling 2026-09-01) gets NO
+              PASAR LISTA at all — `/asistencia` only ever reads TODAY's own
+              agenda, so a link to a future session's check-in would resolve to
+              nothing there — just a plain link into the Agenda, same styling as
+              the peek rows below. */}
+          {dia.hero.esHoy ? (
+            <Link
+              href={`/asistencia?sesion=${dia.hero.id}` as Route}
+              className="forge-pressable flex items-center justify-center uppercase font-extrabold"
+              style={{
+                marginTop: 12,
+                padding: "13px 0",
+                background: "var(--yellow)",
+                color: "var(--ink)",
+                fontSize: 13.5,
+                letterSpacing: 1.2,
+              }}
+            >
+              Pasar lista →
+            </Link>
+          ) : (
+            <Link
+              href={`/agenda?sesion=${dia.hero.id}` as Route}
+              className="forge-pressable flex items-center justify-center uppercase font-extrabold"
+              style={{
+                marginTop: 12,
+                padding: "13px 0",
+                border: "1px solid var(--fg)",
+                color: "var(--fg)",
+                fontSize: 13.5,
+                letterSpacing: 1.2,
+              }}
+            >
+              Ver en agenda →
+            </Link>
+          )}
           {/* The classes still AHEAD, tappable into the Agenda. Every row is upcoming
               by construction, so the right slot is always its reservas/cupo — no
               ✓/attendance row can exist below the hero. */}

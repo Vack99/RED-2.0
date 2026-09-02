@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 
-import { derivarDia, filaDia } from "./inicio-vm";
+import { derivarDia, derivarDiaSiguiente, filaDia } from "./inicio-vm";
 
 /**
  * /inicio's Cupo day card derivation (#328): ONE hero class — the class closest to
@@ -75,6 +75,8 @@ describe("derivarDia — the hero pick", () => {
       coaches: "Karla",
       tense: "en_curso",
       cuenta: "2/12 dentro",
+      esHoy: true,
+      etiquetaDia: null,
     });
   });
 
@@ -162,6 +164,54 @@ describe("derivarDia — the rows", () => {
     const dia = derivarDia(DIA, VISITAS, TZ, las0730)!;
     expect(dia.hero).toMatchObject({ id: "c1", coaches: null, tense: "en_curso", cuenta: "4/14 dentro" });
     expect(dia.clases.map((c) => c.id)).toEqual(["c2", "c3"]);
+  });
+});
+
+describe("derivarDiaSiguiente — the rolled-forward day card (owner ruling 2026-09-01)", () => {
+  const HOY = new Date(2026, 7, 8); // local midnight, 8 Aug 2026
+  const MANANA = new Date(2026, 7, 9);
+
+  it("the day's FIRST session is the hero, always in the proxima tense, labelled by day", () => {
+    const dia = derivarDiaSiguiente([C1, C2, C3], TZ, MANANA, HOY)!;
+    expect(dia.hero).toEqual({
+      id: "c1",
+      hora: "07:00",
+      titulo: "Functional",
+      coaches: null,
+      tense: "proxima",
+      cuenta: "14/14 reservas",
+      esHoy: false,
+      etiquetaDia: "MAÑANA",
+    });
+  });
+
+  it("the rows are the REST of that day's own schedule, in DAL order", () => {
+    const dia = derivarDiaSiguiente([C1, C2, C3], TZ, MANANA, HOY)!;
+    expect(dia.clases).toEqual([
+      { id: "c2", hora: "09:00", nombre: "Box", cuenta: "9/12" },
+      { id: "c3", hora: "11:00", nombre: "Functional", cuenta: "9/14" },
+    ]);
+  });
+
+  it("further out than tomorrow, the label follows fmtNavegadorDia ('EN N DÍAS')", () => {
+    const enTresDias = new Date(2026, 7, 11);
+    const dia = derivarDiaSiguiente([C1], TZ, enTresDias, HOY)!;
+    expect(dia.hero.etiquetaDia).toBe("EN 3 DÍAS");
+  });
+
+  it("an empty day is null — the caller falls back further, or to the standalone CTA", () => {
+    expect(derivarDiaSiguiente([], TZ, MANANA, HOY)).toBeNull();
+  });
+
+  it("the composed scenario page.tsx runs: today over at 23:55, classes tomorrow 07:00 → hero rolls to tomorrow with no PASAR LISTA", () => {
+    const las2355 = new Date("2026-08-08T22:55:00-06:00"); // 23:55 local, C1-3 all long finished
+    expect(derivarDia(DIA, VISITAS, TZ, las2355)).toBeNull(); // today itself has nothing left
+
+    const c1Manana = dto({ id: "m1", startsAt: new Date("2026-08-09T13:00:00Z") }); // 07:00 local, next day
+    const dia = derivarDiaSiguiente([c1Manana], TZ, MANANA, HOY)!;
+    expect(dia.hero.esHoy).toBe(false);
+    expect(dia.hero.etiquetaDia).toBe("MAÑANA");
+    expect(dia.hero.hora).toBe("07:00");
   });
 });
 

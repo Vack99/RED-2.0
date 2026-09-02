@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getAgendaDia, type AgendaDiaDTO } from "@gym/data/server/agenda";
+import { getAgendaDia, type AgendaDiaDTO, type SesionAgendaDTO } from "@gym/data/server/agenda";
 import {
   getAsistenciasResumenHoy,
   getVisitasDelDia,
@@ -9,6 +9,7 @@ import {
 } from "@gym/data/server/asistencia";
 import type { SupabaseServer } from "@gym/data/server/supabase";
 import type { Modo } from "@gym/domain/types";
+import { addDays, parseDay, toIsoDay } from "@gym/format";
 
 /**
  * /inicio's schedule-dependent reads (#328). Lives BESIDE `page.tsx`, not under
@@ -48,6 +49,46 @@ export async function leerDia(modo: Modo, hoyIso: string, client?: SupabaseServe
   ]);
 
   return { agenda, visitas };
+}
+
+/** How many days ahead `leerProximoDia` will look once today's own agenda has no
+ *  hero left (owner ruling 2026-09-01) — the hero must never sit empty while the
+ *  gym has any class within a reasonable horizon, but an unmaintained schedule
+ *  still has to fall back to the standalone PASE DE LISTA arm eventually. */
+export const HORIZONTE_PROXIMO_DIA = 7;
+
+export interface ProximoDia {
+  fecha: string; // ISO day, gym-local
+  sesiones: SesionAgendaDTO[];
+}
+
+/**
+ * The first day AFTER `hoyIso` that has at least one session, within
+ * `HORIZONTE_PROXIMO_DIA` days — issued ONLY when Cupo's own day is over (`page.tsx`
+ * calls this exactly once `derivarDia` has already come back `null`, never
+ * unconditionally, so a gym whose day still has a hero never pays for it).
+ *
+ * Sequential and short-circuiting on purpose: the common case — a class tomorrow —
+ * costs exactly one extra round trip, the same as `leerDia`'s own single-day read.
+ * A read failure on any day aborts the WHOLE search immediately and falls back to
+ * the standalone CTA (this is an enhancement over the no-hero arm, never a second
+ * precondition for it — the same rule `leerDia`'s legs follow).
+ */
+export async function leerProximoDia(hoyIso: string, client?: SupabaseServer): Promise<ProximoDia | null> {
+  let cursor = parseDay(hoyIso);
+  for (let i = 0; i < HORIZONTE_PROXIMO_DIA; i++) {
+    cursor = addDays(cursor, 1);
+    const fecha = toIsoDay(cursor);
+    let agenda: AgendaDiaDTO;
+    try {
+      agenda = await getAgendaDia(fecha, client);
+    } catch (err) {
+      console.error("[inicio] next-day schedule read failed — falling back to the PASE CTA", err);
+      return null;
+    }
+    if (agenda.sesiones.length > 0) return { fecha, sesiones: agenda.sesiones };
+  }
+  return null;
 }
 
 /**
