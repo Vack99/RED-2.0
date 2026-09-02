@@ -1,12 +1,10 @@
-import type { Route } from "next";
-
 import { getRosterResumen } from "@gym/data/server/clientes";
 import { getOperatorGym } from "@gym/data/server/gym";
 import { modo } from "@gym/domain/rules";
-import { fmtDiaAgenda, hoyEnZona, parseDay, toIsoDay } from "@gym/format";
+import { hoyEnZona, parseDay, toIsoDay } from "@gym/format";
 
 import { InicioScreen } from "./_components/inicio";
-import { derivarDia, derivarDiaSiguiente } from "./_components/inicio-vm";
+import { derivarDia, derivarDiaSiguiente, derivarFechaHeader } from "./_components/inicio-vm";
 import { leerDia, leerProximoDia, leerResumenAsistencias } from "./reads";
 
 /**
@@ -52,20 +50,16 @@ export default async function Page() {
     }
   }
 
-  // "Apartar lugar" lands on the NEXT upcoming class's own quick-glance sheet, open
-  // on arrival (`/agenda?sesion=<id>`, resolved+opened by the Agenda screen itself,
-  // #328) — the roster there is where a walk-in gets ADDED. With nothing left today
-  // it falls back to the plain agenda. Unused on Lista, which never renders the link.
-  const proxima = sesiones.find((s) => s.startsAt.getTime() > ahora.getTime());
+  const fechaHeader = derivarFechaHeader(hoyLocal);
 
   return (
     <InicioScreen
       modo={gymModo}
-      fecha={fmtDiaAgenda(hoyLocal)}
+      diaSemana={fechaHeader.diaSemana}
+      mesAnio={fechaHeader.mesAnio}
       gymNombre={gym.brandName}
       inicialCuenta={gym.brandName.trim().charAt(0).toUpperCase()}
       dia={dia}
-      apartarHref={(proxima ? `/agenda?sesion=${proxima.id}` : "/agenda") as Route}
       vigentes={roster.vigentes}
       total={roster.total}
       nuevosOnline={roster.nuevosOnline}

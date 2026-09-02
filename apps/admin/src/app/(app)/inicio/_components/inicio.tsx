@@ -12,19 +12,21 @@ import {
 } from "@gym/domain/lifecycle";
 import type { Modo } from "@gym/domain/types";
 import { Icon } from "@gym/ui/forge/icon";
-import { Card, Eyebrow, Tnum } from "@gym/ui/forge/ui";
+import { Card, Eyebrow, H1, Tnum } from "@gym/ui/forge/ui";
 
 import { AsistenciasHoyHero } from "./asistencias-hoy-hero";
 import type { DiaVM, TenseDia } from "./inicio-vm";
 
 /**
  * The /inicio screen (#328) — a SERVER component on purpose: every block is a number
- * or a link, all clock/tz work already happened in page.tsx (fecha, the day-card
- * derivation), so shipping zero client JS here is what makes the SSR and hydration
- * renders identical by construction (rule 5 — no clock work on the client).
+ * or a link, all clock/tz work already happened in page.tsx (derivarFechaHeader, the
+ * day-card derivation), so shipping zero client JS here is what makes the SSR and
+ * hydration renders identical by construction (rule 5 — no clock work on the client).
  *
- * Block order (spec #326 "Admin home"): header (date · gym name · account initial) →
- * day card (Cupo: ONE hero class carrying PASAR LISTA + the classes still ahead;
+ * Block order (spec #326 "Admin home"): header (gym name · account initial) → the
+ * date, in the pre-#328 greeting's own hero type scale (owner ruling 2026-09-02 —
+ * no greeting, but the date fills that same vertical weight) → day card (Cupo: ONE
+ * hero class carrying PASAR LISTA + the classes still ahead;
  * Lista: forced to the standalone PASE DE LISTA arm) → the 50/50 action pair (Cupo:
  * + Nuevo cliente / Apartar lugar; Lista: + Nuevo cliente alone, full width) →
  * MEMBRESÍAS (one merged renewal card, ONE combined-predicate link) → registros
@@ -42,8 +44,11 @@ const HERO_EYEBROW: Record<TenseDia, { palabra: string; tono: string }> = {
 
 interface InicioScreenProps {
   modo: Modo;
-  /** "SÁB 8 AGO" — fmtDiaAgenda, gym tz (server-formatted). */
-  fecha: string;
+  /** "MIÉRCOLES 2" — derivarFechaHeader, gym tz (server-formatted). Rendered in the
+   *  old pre-#328 greeting's H1 scale — the header's date, not a greeting. */
+  diaSemana: string;
+  /** "SEPTIEMBRE 2026" — derivarFechaHeader, gym tz (server-formatted). */
+  mesAnio: string;
   gymNombre: string;
   /** The gym's own initial, derived from the resolved gym — never a literal. */
   inicialCuenta: string;
@@ -51,9 +56,6 @@ interface InicioScreenProps {
    *  on Lista (the caller never even reads the schedule, ../reads.ts) and on Cupo
    *  whenever there is no hero left (day over, no classes, or a failed read). */
   dia: DiaVM | null;
-  /** `/agenda?sesion=<próxima>` or plain `/agenda` when nothing is left today —
-   *  unused on Lista, which never renders "Apartar lugar" at all. */
-  apartarHref: Route;
   vigentes: number;
   total: number;
   nuevosOnline: number;
@@ -67,11 +69,11 @@ interface InicioScreenProps {
 
 export function InicioScreen({
   modo,
-  fecha,
+  diaSemana,
+  mesAnio,
   gymNombre,
   inicialCuenta,
   dia,
-  apartarHref,
   vigentes,
   total,
   nuevosOnline,
@@ -81,15 +83,10 @@ export function InicioScreen({
 }: InicioScreenProps) {
   return (
     <div style={{ padding: "18px 22px 32px" }}>
-      {/* Header — date · gym name · account initial (spec #326). No lockup here: the
+      {/* Header — gym name · account initial (spec #326). No lockup here: the
           resolved gym's NAME is the identifying mark on this screen, not its logo. */}
       <div className="flex items-center justify-between">
-        <span className="flex items-baseline" style={{ gap: 9 }}>
-          <Tnum className="uppercase font-semibold" style={{ fontSize: 12, letterSpacing: 1, color: "var(--fg)" }}>
-            {fecha}
-          </Tnum>
-          <Eyebrow style={{ fontSize: 10 }}>{gymNombre}</Eyebrow>
-        </span>
+        <Eyebrow style={{ fontSize: 10 }}>{gymNombre}</Eyebrow>
         <Link
           href="/cuenta"
           aria-label="Cuenta"
@@ -98,6 +95,14 @@ export function InicioScreen({
         >
           {inicialCuenta}
         </Link>
+      </div>
+
+      {/* The date, in the pre-#328 greeting's own hero type scale (Eyebrow over
+          H1 size=40) — owner does NOT want a greeting back, so the DATE fills that
+          same vertical space instead: "SEPTIEMBRE 2026" small, "MIÉRCOLES 2" big. */}
+      <div style={{ marginTop: 10 }}>
+        <Eyebrow>{mesAnio}</Eyebrow>
+        <H1 size={40} style={{ marginTop: 8 }}>{diaSemana}</H1>
       </div>
 
       {/* ASISTENCIAS · HOY — Lista only (owner ruling 2026-09-01, restoring what #328
@@ -215,8 +220,10 @@ export function InicioScreen({
           >
             ＋ Nuevo cliente
           </Link>
+          {/* Plain /agenda — the owner picks the class there; a class is never
+              auto-opened from home (owner ruling 2026-09-02). */}
           <Link
-            href={apartarHref}
+            href="/agenda"
             className="forge-pressable flex flex-1 items-center justify-center border border-line bg-surface uppercase font-extrabold"
             style={{ padding: "13px 0", color: "var(--muted)", fontSize: 12.5, letterSpacing: 1 }}
           >

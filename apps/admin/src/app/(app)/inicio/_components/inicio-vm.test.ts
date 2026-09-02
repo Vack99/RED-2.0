@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 
-import { derivarDia, derivarDiaSiguiente, filaDia } from "./inicio-vm";
+import { derivarDia, derivarDiaSiguiente, derivarFechaHeader, filaDia } from "./inicio-vm";
 
 /**
  * /inicio's Cupo day card derivation (#328): ONE hero class — the class closest to
@@ -212,6 +212,22 @@ describe("derivarDiaSiguiente — the rolled-forward day card (owner ruling 2026
     expect(dia.hero.esHoy).toBe(false);
     expect(dia.hero.etiquetaDia).toBe("MAÑANA");
     expect(dia.hero.hora).toBe("07:00");
+  });
+});
+
+describe("derivarFechaHeader", () => {
+  it("builds the big weekday+day line and the small month+year line (owner 2026-09-02)", () => {
+    expect(derivarFechaHeader(new Date(2026, 8, 2))).toEqual({
+      diaSemana: "MIÉRCOLES 2",
+      mesAnio: "SEPTIEMBRE 2026",
+    });
+  });
+
+  it("uses the caller's already tz-resolved Date's local components, never a fresh clock read", () => {
+    expect(derivarFechaHeader(new Date(2026, 7, 8))).toEqual({
+      diaSemana: "SÁBADO 8",
+      mesAnio: "AGOSTO 2026",
+    });
   });
 });
 

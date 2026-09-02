@@ -1,6 +1,6 @@
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 import { enCurso, sesionMasCercana } from "@gym/domain/rules";
-import { fmtNavegadorDia, horaEnZona } from "@gym/format";
+import { fmtMesAnio, fmtNavegadorDia, horaEnZona, WEEKDAYS_FULL } from "@gym/format";
 import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
 
 /**
@@ -74,6 +74,27 @@ export interface DiaVM {
   hero: HeroDia;
   /** The classes strictly AFTER the hero, in the DAL's startsAt order. */
   clases: ClaseDelDia[];
+}
+
+/** The header's date block (owner ruling 2026-09-02 — replaces the pre-#328 greeting
+ *  with the day itself, in the SAME hero type scale): "MIÉRCOLES 2" (big, H1) over
+ *  "SEPTIEMBRE 2026" (small, Eyebrow). Built from the tz-resolved `hoy` the caller
+ *  already computed (`hoyEnZona`, page.tsx) — never a second clock read. `fmtMesAnio`
+ *  already emits the month line verbatim; the weekday+day line has no existing
+ *  formatter to reuse, so it composes `@gym/format`'s exported `WEEKDAYS_FULL`
+ *  directly rather than adding a new one. */
+export interface FechaHeaderVM {
+  /** "MIÉRCOLES 2" — uppercased full weekday + day number. */
+  diaSemana: string;
+  /** "SEPTIEMBRE 2026" — fmtMesAnio verbatim. */
+  mesAnio: string;
+}
+
+export function derivarFechaHeader(hoy: Date): FechaHeaderVM {
+  return {
+    diaSemana: `${WEEKDAYS_FULL[hoy.getDay()].toUpperCase()} ${hoy.getDate()}`,
+    mesAnio: fmtMesAnio(hoy),
+  };
 }
 
 /** One upcoming row: hora, agenda-parity name, reservas/cupo. */
