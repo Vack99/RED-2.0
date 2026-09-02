@@ -5,6 +5,8 @@ import type { Route } from "next";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { modo } from "@gym/domain/rules";
+
 import { footerCtaVista, navClasesVista } from "../../lib/reserva-vista";
 
 /** The typed-Route href next/link accepts (the `typedRoutes` union). Typing the table with this — not a
@@ -73,8 +75,9 @@ export function PublicHeader({
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const close = () => setOpen(false);
-  const clases = navClasesVista(reservasHabilitadas);
-  const cta = footerCtaVista(reservasHabilitadas);
+  const m = modo(reservasHabilitadas);
+  const clases = navClasesVista(m);
+  const cta = footerCtaVista(m);
 
   if (RUTAS_SIN_HEADER.has(pathname)) return null;
 

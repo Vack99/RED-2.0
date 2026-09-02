@@ -1,6 +1,6 @@
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 import { enCurso, sesionMasCercana } from "@gym/domain/rules";
-import { fmtNavegadorDia, horaEnZona, MONTHS_FULL, WEEKDAYS_FULL } from "@gym/format";
+import { fmtNavegadorDia, horaEnZona, MONTHS_FULL, toIsoDay, WEEKDAYS_FULL } from "@gym/format";
 import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
 
 /**
@@ -31,8 +31,12 @@ import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
  * server component.
  */
 
-/** The hero's tense — which eyebrow word and which count the card leads with. */
-export type TenseDia = "en_curso" | "terminada" | "proxima";
+/** The hero's tense — which eyebrow word and which count the card leads with.
+ *  `otro_dia` is the rolled-forward hero's own tense (`derivarDiaSiguiente`): it
+ *  folds what used to be a separate `esHoy` check into the SAME discriminant the
+ *  eyebrow tone/word already switch on, so the screen (`inicio.tsx`) branches once
+ *  (the CTA), not three times. */
+export type TenseDia = "en_curso" | "terminada" | "proxima" | "otro_dia";
 
 /** The hero class: the one the Pasar lista CTA is attached to (TODAY's hero only —
  *  see `esHoy`). */
@@ -56,6 +60,13 @@ export interface HeroDia {
   /** The day-relative label for a rolled-forward hero — `fmtNavegadorDia`, uppercased
    *  ("MAÑANA", "EN 3 DÍAS"). `null` when `esHoy` (the tense word leads instead). */
   etiquetaDia: string | null;
+  /** The hero's own ISO calendar day, gym-local. `null` when `esHoy` — the Agenda's
+   *  own `?d=` default ("today") already lands there, so the deep link omits it. A
+   *  rolled-forward hero (`derivarDiaSiguiente`) sets this: `/agenda?sesion=` alone
+   *  resolves against the CURRENT week only (`resolver-sesion.ts`), so a hero past a
+   *  week boundary needs `&d=<fecha>` to land the read on its own week — never the
+   *  week the visit happens to be viewed from. */
+  fecha: string | null;
 }
 
 /** One class still AHEAD of the hero, as a hairline row. */
@@ -179,6 +190,7 @@ export function derivarDia(
       cuenta,
       esHoy: true,
       etiquetaDia: null,
+      fecha: null,
     },
     clases: sesiones
       .filter(
@@ -195,12 +207,15 @@ export function derivarDia(
  * `leerProximoDia` found with at least one session. Every session on THAT day is
  * necessarily still ahead (it is a future day), so there is no live/±90-nearest
  * ladder to run: the hero is simply that day's FIRST session, always in the
- * `"proxima"` tense, and the rows below it are the rest of that day's own schedule —
+ * `"otro_dia"` tense, and the rows below it are the rest of that day's own schedule —
  * `sesiones` arrives in the DAL's startsAt order and both keep it.
  *
- * `esHoy: false` on the hero is the one flag the screen needs to withhold PASAR
- * LISTA: the desk (`/asistencia`) only ever reads TODAY's own agenda, so a link to a
- * future session's check-in would resolve to nothing there.
+ * `esHoy: false` on the hero is the flag that withholds PASAR LISTA: the desk
+ * (`/asistencia`) only ever reads TODAY's own agenda, so a link to a future
+ * session's check-in would resolve to nothing there. `fecha` (this hero's own ISO
+ * day) is what the "Ver en agenda" link carries as `&d=` instead, so the deep link
+ * lands on THIS day's week rather than whatever week `?d=` would otherwise default
+ * to (today's).
  */
 export function derivarDiaSiguiente(
   sesiones: readonly SesionAgendaDTO[],
@@ -217,10 +232,11 @@ export function derivarDiaSiguiente(
       hora: horaEnZona(hero.startsAt, tz),
       titulo: etiquetaSesion(hero),
       coaches: hero.coaches.length ? hero.coaches.map((c) => c.nombre).join(", ") : null,
-      tense: "proxima",
+      tense: "otro_dia",
       cuenta: `${hero.activos}/${hero.capacidad} reservas`,
       esHoy: false,
       etiquetaDia: fmtNavegadorDia(fecha, hoy).toUpperCase(),
+      fecha: toIsoDay(fecha),
     },
     clases: resto.map((s) => filaDia(s, tz)),
   };

@@ -77,6 +77,7 @@ describe("derivarDia — the hero pick", () => {
       cuenta: "2/12 dentro",
       esHoy: true,
       etiquetaDia: null,
+      fecha: null,
     });
   });
 
@@ -171,17 +172,18 @@ describe("derivarDiaSiguiente — the rolled-forward day card (owner ruling 2026
   const HOY = new Date(2026, 7, 8); // local midnight, 8 Aug 2026
   const MANANA = new Date(2026, 7, 9);
 
-  it("the day's FIRST session is the hero, always in the proxima tense, labelled by day", () => {
+  it("the day's FIRST session is the hero, always in the otro_dia tense, labelled by day", () => {
     const dia = derivarDiaSiguiente([C1, C2, C3], TZ, MANANA, HOY)!;
     expect(dia.hero).toEqual({
       id: "c1",
       hora: "07:00",
       titulo: "Functional",
       coaches: null,
-      tense: "proxima",
+      tense: "otro_dia",
       cuenta: "14/14 reservas",
       esHoy: false,
       etiquetaDia: "MAÑANA",
+      fecha: "2026-08-09",
     });
   });
 

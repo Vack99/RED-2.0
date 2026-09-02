@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import Link from "next/link";
 
+import { modo } from "@gym/domain/rules";
 import { getInstalacionesPublicas, getStatsPublicas, getValoresPublicos } from "@gym/data/server/gym-content";
 import {
   getCoachesPublicos,
@@ -69,8 +70,8 @@ export default async function NosotrosPage() {
   const tagline = gym?.aboutTagline ?? valores.map((v) => v.title).join(" · ");
   // Lista has no booking surface at all (#326/#332) — both CTAs on this page read `heroCtaVista`
   // instead of hardcoding "Empezar ahora" → /reservar, so no "Reservar" copy survives here either.
-  const reservasHabilitadas = gym?.bookingEnabled ?? true;
-  const cta = heroCtaVista(reservasHabilitadas);
+  const gymModo = modo(gym?.bookingEnabled ?? true);
+  const cta = heroCtaVista(gymModo);
 
   return (
     <main className="mx-auto w-full max-w-3xl px-5 py-10">
@@ -224,7 +225,7 @@ export default async function NosotrosPage() {
       <section className="mx-auto mt-14 max-w-2xl rounded-3xl border border-line bg-sunk p-8 text-center">
         <h3 className="text-2xl font-bold text-fg">Empieza hoy</h3>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-          {reservasHabilitadas
+          {gymModo === "cupo"
             ? "Tu primera clase no requiere permanencia. Crea tu cuenta y reserva desde el primer día."
             : "Sin permanencia, cancelas cuando quieras. Conoce nuestros planes."}
         </p>

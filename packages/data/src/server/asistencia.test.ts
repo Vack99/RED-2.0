@@ -342,7 +342,7 @@ describe("togglePase — typed outcome (injected fake)", () => {
  * identical — unable to prove hoy/ayer/semana are actually distinct per-day reads. This
  * mirrors `modo-reservas.test.ts`'s own hand-rolled count fake for the same reason.
  */
-describe("getAsistenciasResumenHoy — 7 concurrent COUNTs, never a row fetch (owner ruling 2026-09-01)", () => {
+describe("getAsistenciasResumenHoy — ONE ranged select, tallied in JS (owner ruling 2026-09-01)", () => {
   const GYM_ROW = {
     gym_id: "gym-1",
     gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge", booking_enabled: false },
@@ -350,27 +350,36 @@ describe("getAsistenciasResumenHoy — 7 concurrent COUNTs, never a row fetch (o
 
   function makeConteoFake(porFecha: Record<string, number>) {
     const eqCalls: [string, unknown][] = [];
+    const gteCalls: [string, unknown][] = [];
+    const lteCalls: [string, unknown][] = [];
     const isCalls: [string, unknown][] = [];
-    const selectCalls: [string, { count?: string; head?: boolean } | undefined][] = [];
+    const selectCalls: string[] = [];
 
     function asistenciasBuilder() {
-      let fecha: string | undefined;
+      const rows = Object.entries(porFecha).flatMap(([fecha, n]) => Array.from({ length: n }, () => ({ fecha })));
       const b = {
-        select: (columns: string, options?: { count?: string; head?: boolean }) => {
-          selectCalls.push([columns, options]);
+        select: (columns: string) => {
+          selectCalls.push(columns);
           return b;
         },
         eq: (col: string, val: unknown) => {
           eqCalls.push([col, val]);
-          if (col === "fecha") fecha = val as string;
+          return b;
+        },
+        gte: (col: string, val: unknown) => {
+          gteCalls.push([col, val]);
+          return b;
+        },
+        lte: (col: string, val: unknown) => {
+          lteCalls.push([col, val]);
           return b;
         },
         is: (col: string, val: unknown) => {
           isCalls.push([col, val]);
           return b;
         },
-        then: (resolve: (v: { data: null; count: number; error: null }) => unknown) =>
-          resolve({ data: null, count: fecha ? (porFecha[fecha] ?? 0) : 0, error: null }),
+        then: (resolve: (v: { data: { fecha: string }[]; error: null }) => unknown) =>
+          resolve({ data: rows, error: null }),
       };
       return b;
     }
@@ -396,20 +405,22 @@ describe("getAsistenciasResumenHoy — 7 concurrent COUNTs, never a row fetch (o
       },
     };
 
-    return { client: client as unknown as SupabaseServer, eqCalls, isCalls, selectCalls };
+    return { client: client as unknown as SupabaseServer, eqCalls, gteCalls, lteCalls, isCalls, selectCalls };
   }
 
-  it("issues 7 gym-scoped server-side COUNTs, excluding perdonada + soft-deleted rows — never a row list", async () => {
-    const { client, eqCalls, isCalls, selectCalls } = makeConteoFake({});
+  it("issues ONE gym-scoped `fecha`-only select over the 7-day range, excluding perdonada + soft-deleted rows", async () => {
+    const hoy = hoyEnZona("America/Chihuahua");
+    const { client, eqCalls, gteCalls, lteCalls, isCalls, selectCalls } = makeConteoFake({});
 
     await getAsistenciasResumenHoy(client);
 
-    // `{ count: "exact", head: true }` on every call — the PostgREST server-side count,
-    // not a row-length read (mirrors `contarReservasFuturas`'s own asserted shape).
-    expect(selectCalls).toEqual(Array.from({ length: 7 }, () => ["id", { count: "exact", head: true }]));
-    expect(eqCalls.filter(([c, v]) => c === "gym_id" && v === "gym-1")).toHaveLength(7);
-    expect(eqCalls.filter(([c, v]) => c === "perdonada" && v === false)).toHaveLength(7);
-    expect(isCalls.filter(([c, v]) => c === "deleted_at" && v === null)).toHaveLength(7);
+    // ONE `select("fecha")` — no per-day COUNT round trips.
+    expect(selectCalls).toEqual(["fecha"]);
+    expect(eqCalls).toContainEqual(["gym_id", "gym-1"]);
+    expect(eqCalls).toContainEqual(["perdonada", false]);
+    expect(gteCalls).toEqual([["fecha", toIsoDay(addDays(hoy, -6))]]);
+    expect(lteCalls).toEqual([["fecha", toIsoDay(hoy)]]);
+    expect(isCalls).toEqual([["deleted_at", null]]);
   });
 
   it("shapes hoy/ayer off the tail of a 7-day series ending TODAY (index 6 = hoy, 5 = ayer)", async () => {

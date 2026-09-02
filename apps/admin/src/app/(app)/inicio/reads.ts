@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getAgendaDia, type AgendaDiaDTO, type SesionAgendaDTO } from "@gym/data/server/agenda";
+import { getAgendaDia, getAgendaSemana, type AgendaDiaDTO, type SesionAgendaDTO } from "@gym/data/server/agenda";
 import {
   getAsistenciasResumenHoy,
   getVisitasDelDia,
@@ -68,27 +68,42 @@ export interface ProximoDia {
  * calls this exactly once `derivarDia` has already come back `null`, never
  * unconditionally, so a gym whose day still has a hero never pays for it).
  *
- * Sequential and short-circuiting on purpose: the common case — a class tomorrow —
- * costs exactly one extra round trip, the same as `leerDia`'s own single-day read.
- * A read failure on any day aborts the WHOLE search immediately and falls back to
- * the standalone CTA (this is an enhancement over the no-hero arm, never a second
- * precondition for it — the same rule `leerDia`'s legs follow).
+ * Week-read, not a day-by-day loop: `getAgendaSemana` already carries all six of a
+ * week's days in one round trip. The common case — a class later THIS week — costs
+ * exactly one extra round trip, the same as `leerDia`'s own single-day read: the
+ * second week is fetched only when the first has no candidate inside the window AND
+ * the window still reaches past that week's own Sábado. A read failure aborts the
+ * WHOLE search immediately and falls back to the standalone CTA (this is an
+ * enhancement over the no-hero arm, never a second precondition for it — the same
+ * rule `leerDia`'s legs follow).
  */
 export async function leerProximoDia(hoyIso: string, client?: SupabaseServer): Promise<ProximoDia | null> {
-  let cursor = parseDay(hoyIso);
-  for (let i = 0; i < HORIZONTE_PROXIMO_DIA; i++) {
-    cursor = addDays(cursor, 1);
-    const fecha = toIsoDay(cursor);
-    let agenda: AgendaDiaDTO;
-    try {
-      agenda = await getAgendaDia(fecha, client);
-    } catch (err) {
-      console.error("[inicio] next-day schedule read failed — falling back to the PASE CTA", err);
-      return null;
+  const hoy = parseDay(hoyIso);
+  const limite = addDays(hoy, HORIZONTE_PROXIMO_DIA);
+
+  const primerCandidato = (semana: Awaited<ReturnType<typeof getAgendaSemana>>) =>
+    semana.dias
+      .filter((d) => d.fecha.getTime() > hoy.getTime() && d.fecha.getTime() <= limite.getTime())
+      .sort((a, b) => a.fecha.getTime() - b.fecha.getTime())
+      .find((d) => d.sesiones.length > 0);
+
+  try {
+    const primera = await getAgendaSemana(hoyIso, client);
+    let candidato = primerCandidato(primera);
+
+    if (!candidato) {
+      const sabado = addDays(primera.lunes, 5);
+      if (sabado.getTime() < limite.getTime()) {
+        const segunda = await getAgendaSemana(toIsoDay(addDays(primera.lunes, 7)), client);
+        candidato = primerCandidato(segunda);
+      }
     }
-    if (agenda.sesiones.length > 0) return { fecha, sesiones: agenda.sesiones };
+
+    return candidato ? { fecha: toIsoDay(candidato.fecha), sesiones: candidato.sesiones } : null;
+  } catch (err) {
+    console.error("[inicio] next-day schedule read failed — falling back to the PASE CTA", err);
+    return null;
   }
-  return null;
 }
 
 /**

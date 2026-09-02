@@ -56,10 +56,13 @@ export default async function Page({
   const params = await searchParams;
   const dParam = params.d;
   const d = typeof dParam === "string" ? dParam : todayIso;
-  // `?sesion=<id>` (#328) — the /inicio hero/peek deep link. Never changes WHICH week
-  // is fetched (that stays `?d=`/today, above): inicio only ever links today's own
-  // sessions, so the week that read already loads is always the right one — this is
-  // resolved against it below, once semana is in hand, purely to pick the DAY within it.
+  // `?sesion=<id>` (#328) — the /inicio hero/peek deep link. For TODAY's own hero
+  // `?d=` is omitted, so the week fetched above is already today's own — the right
+  // one. For a rolled-forward hero (owner ruling 2026-09-01) inicio also sends
+  // `&d=<hero's own ISO day>`, so `d` above already resolves to THAT session's own
+  // week before this even runs — `sesionParam` is resolved against it below, once
+  // semana is in hand, purely to pick the DAY within it (a stale/foreign id still
+  // falls back to `?d=`/today, `resolverDiaSesion`'s own null case).
   const sesionParam = typeof params.sesion === "string" ? params.sesion : undefined;
 
   const [semana, coaches, tipos] = await Promise.all([getAgendaSemana(d), getCoaches(), getClassTypes()]);

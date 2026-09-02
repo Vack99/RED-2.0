@@ -251,8 +251,8 @@ export interface AsistenciasResumenHoy {
   ayer: number;
   /** 7-day daily series, oldest→newest, ending TODAY (index 6 = hoy, index 5 = ayer)
    *  — the SAME indexing `calcularResumenMes` derives its own asistenciasSemana with
-   *  (packages/domain/src/rules.ts), so a caller can drop `hoy`/`ayer` and re-derive
-   *  them off the array alone if it ever needs to. */
+   *  (packages/domain/src/rules.ts). `hoy`/`ayer` are this array's own tail, kept as
+   *  named fields because the hero only ever wants the headline pair. */
   semana: number[];
 }
 
@@ -261,11 +261,11 @@ export interface AsistenciasResumenHoy {
  * (#328 rebuild had dropped it; owner ruling 2026-09-01 restored it Lista-only).
  * Deliberately NOT the deleted `getAsistenciasHoy` shape — that fetched every one of
  * today's rows AND a second `clientes` join, with no `.limit()`, to build a name list
- * this hero never needed. This issues seven server-side COUNTs instead (PostgREST
- * `count: "exact", head: true`, the `contarReservasFuturas` idiom in
- * `modo-reservas.ts`), one per day, run CONCURRENTLY — not one row crosses the
- * boundary. `perdonada` rows are excluded, matching `getResumenMes`'s own filter
- * (#169): a pardoned row is the second record of ONE arrival, never a second visit.
+ * this hero never needed. This issues ONE gym-scoped `fecha`-only select over the whole
+ * 7-day range and tallies the per-day counts in JS — a single round trip instead of
+ * seven server-side COUNTs. `perdonada` rows are excluded, matching `getResumenMes`'s
+ * own filter (#169): a pardoned row is the second record of ONE arrival, never a
+ * second visit.
  *
  * @returns the day count array (see `semana`) plus its last two entries pulled out
  * as `hoy`/`ayer` for a caller that only wants the hero's headline numbers.
@@ -277,19 +277,19 @@ export async function getAsistenciasResumenHoy(client?: SupabaseServer): Promise
   const hoy = hoyEnZona(gym.timezone);
   const dias = Array.from({ length: 7 }, (_, i) => toIsoDay(addDays(hoy, i - 6)));
 
-  const semana = await Promise.all(
-    dias.map(async (fecha) => {
-      const { count, error } = await supabase
-        .from("asistencias")
-        .select("id", { count: "exact", head: true })
-        .eq("gym_id", gym.id)
-        .eq("fecha", fecha)
-        .eq("perdonada", false)
-        .is("deleted_at", null);
-      if (error) throw error;
-      return count ?? 0;
-    }),
-  );
+  const { data, error } = await supabase
+    .from("asistencias")
+    .select("fecha")
+    .eq("gym_id", gym.id)
+    .gte("fecha", dias[0])
+    .lte("fecha", dias[6])
+    .eq("perdonada", false)
+    .is("deleted_at", null);
+  if (error) throw error;
+
+  const porFecha = new Map<string, number>();
+  for (const row of data ?? []) porFecha.set(row.fecha, (porFecha.get(row.fecha) ?? 0) + 1);
+  const semana = dias.map((fecha) => porFecha.get(fecha) ?? 0);
 
   return { hoy: semana[6], ayer: semana[5], semana };
 }

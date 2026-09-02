@@ -775,6 +775,11 @@ export async function pasarListaSesion(
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    // Exception to 108b45a0 (every OTHER agenda write RPC below takes `p_gym_id`,
+    // guarding the staff_gym() multi-gym fallback): this one, `reservar_clase`, and
+    // `cancelar_reserva` carry NO gym param — each derives its own `v_gym` from
+    // `class_session.gym_id` off `p_session_id` (the session row already pins the
+    // gym), so there is no fallback ambiguity left for a param to resolve.
     const { data, error } = await supabase
       .rpc("pasar_lista_sesion", { p_session_id: input.sessionId, p_cliente_id: input.clienteId })
       .single();
@@ -810,6 +815,7 @@ export async function reservarClaseCliente(raw: unknown, client?: SupabaseServer
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    // No `p_gym_id` — session-scoped exception, see the comment on pasar_lista_sesion above.
     const { error } = await supabase.rpc("reservar_clase", {
       p_session_id: input.sessionId,
       p_cliente_id: input.clienteId,
@@ -831,6 +837,7 @@ export async function cancelarReservaCliente(raw: unknown, client?: SupabaseServ
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    // No `p_gym_id` — session-scoped exception, see the comment on pasar_lista_sesion above.
     const { error } = await supabase.rpc("cancelar_reserva", {
       p_session_id: input.sessionId,
       p_cliente_id: input.clienteId,

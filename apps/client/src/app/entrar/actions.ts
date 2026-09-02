@@ -7,6 +7,7 @@ import { resolverMiembroGym } from "@gym/data/server/inquilino";
 import { permitirReenvio } from "@gym/data/server/reenvio-limite";
 import { iniciarSesion, reenviarConfirmacion, solicitarReset } from "@gym/data/server/sesion";
 import { createClient } from "@gym/data/server/supabase";
+import { modo } from "@gym/domain/rules";
 
 import { destinoClases } from "../../lib/reserva-vista";
 
@@ -41,7 +42,7 @@ export async function entrarAction(
   // (apps/client/src/lib/reserva-vista.ts). No membership yet (e.g. a dropped claim) defaults
   // to Cupo's /reservar, which re-runs its own claim self-heal and falls back gracefully.
   const miembro = await resolverMiembroGym(supabase);
-  redirect(destinoClases(miembro?.reservasHabilitadas ?? true));
+  redirect(destinoClases(modo(miembro?.reservasHabilitadas ?? true)));
 }
 
 export type ResetActionState = { status: "idle" } | { status: "sent" };

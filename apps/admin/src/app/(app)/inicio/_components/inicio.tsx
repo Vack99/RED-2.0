@@ -38,10 +38,15 @@ import type { DiaVM, TenseDia } from "./inicio-vm";
  * primitives never cross (#328 kickoff handoff); only the STRUCTURE below is new.
  */
 
-const HERO_EYEBROW: Record<TenseDia, { palabra: string; tono: string }> = {
+// `palabra: null` for `otro_dia` — that eyebrow reads the hero's OWN `etiquetaDia`
+// ("MAÑANA", "EN 3 DÍAS") instead of a fixed word, so the render below falls back to
+// it with `??` rather than a separate `esHoy` branch (owner review — the tone/text
+// pair now switches on `tense` alone; only the CTA below still branches).
+const HERO_EYEBROW: Record<TenseDia, { palabra: string | null; tono: string }> = {
   en_curso: { palabra: "EN CURSO", tono: "var(--gold)" },
   terminada: { palabra: "TERMINÓ", tono: "var(--muted-soft)" },
   proxima: { palabra: "A CONTINUACIÓN", tono: "var(--gold)" },
+  otro_dia: { palabra: null, tono: "var(--gold)" },
 };
 
 interface InicioScreenProps {
@@ -160,8 +165,8 @@ export function InicioScreen({
       {dia ? (
         <Card glow style={{ marginTop: 16, padding: dia.clases.length ? "18px 20px 4px" : "18px 20px" }}>
           <div className="flex items-baseline justify-between">
-            <Eyebrow color={dia.hero.esHoy ? HERO_EYEBROW[dia.hero.tense].tono : "var(--gold)"} style={{ fontSize: 10 }}>
-              {dia.hero.esHoy ? HERO_EYEBROW[dia.hero.tense].palabra : dia.hero.etiquetaDia} · {dia.hero.hora}
+            <Eyebrow color={HERO_EYEBROW[dia.hero.tense].tono} style={{ fontSize: 10 }}>
+              {HERO_EYEBROW[dia.hero.tense].palabra ?? dia.hero.etiquetaDia} · {dia.hero.hora}
             </Eyebrow>
             <Tnum style={{ fontSize: 12, color: "var(--muted)" }}>{dia.hero.cuenta}</Tnum>
           </div>
@@ -175,12 +180,30 @@ export function InicioScreen({
               SERVER-side into /asistencia's initial context (never a client-side
               selection). Every tense deep-links: a just-ended hero is exactly the
               stragglers-still-marking case the desk's own ±90 preselect serves.
-              A rolled-forward hero (`!esHoy`, owner ruling 2026-09-01) gets NO
-              PASAR LISTA at all — `/asistencia` only ever reads TODAY's own
+              A rolled-forward hero (`tense === "otro_dia"`, owner ruling 2026-09-01)
+              gets NO PASAR LISTA at all — `/asistencia` only ever reads TODAY's own
               agenda, so a link to a future session's check-in would resolve to
-              nothing there — just a plain link into the Agenda, same styling as
-              the peek rows below. */}
-          {dia.hero.esHoy ? (
+              nothing there — just a plain link into the Agenda, carrying `&d=` (its
+              own ISO day, `dia.hero.fecha`) so a week boundary between now and that
+              day can't strand the link on the WRONG week (`resolver-sesion.ts`
+              resolves `?sesion=` only within the week `?d=`/today loads) — same
+              styling as the peek rows below, which share this hero's day and `&d=`. */}
+          {dia.hero.tense === "otro_dia" ? (
+            <Link
+              href={`/agenda?sesion=${dia.hero.id}&d=${dia.hero.fecha}` as Route}
+              className="forge-pressable flex items-center justify-center uppercase font-extrabold"
+              style={{
+                marginTop: 12,
+                padding: "13px 0",
+                border: "1px solid var(--fg)",
+                color: "var(--fg)",
+                fontSize: 13.5,
+                letterSpacing: 1.2,
+              }}
+            >
+              Ver en agenda →
+            </Link>
+          ) : (
             <Link
               href={`/asistencia?sesion=${dia.hero.id}` as Route}
               className="forge-pressable flex items-center justify-center uppercase font-extrabold"
@@ -195,31 +218,17 @@ export function InicioScreen({
             >
               Pasar lista →
             </Link>
-          ) : (
-            <Link
-              href={`/agenda?sesion=${dia.hero.id}` as Route}
-              className="forge-pressable flex items-center justify-center uppercase font-extrabold"
-              style={{
-                marginTop: 12,
-                padding: "13px 0",
-                border: "1px solid var(--fg)",
-                color: "var(--fg)",
-                fontSize: 13.5,
-                letterSpacing: 1.2,
-              }}
-            >
-              Ver en agenda →
-            </Link>
           )}
           {/* The classes still AHEAD, tappable into the Agenda. Every row is upcoming
               by construction, so the right slot is always its reservas/cupo — no
-              ✓/attendance row can exist below the hero. */}
+              ✓/attendance row can exist below the hero. They share the hero's own
+              day, so the same `&d=` (present only on a rolled-forward `dia`) applies. */}
           {dia.clases.length > 0 && (
             <div style={{ marginTop: 14 }}>
               {dia.clases.map((r) => (
                 <Link
                   key={r.id}
-                  href={`/agenda?sesion=${r.id}` as Route}
+                  href={(dia.hero.fecha ? `/agenda?sesion=${r.id}&d=${dia.hero.fecha}` : `/agenda?sesion=${r.id}`) as Route}
                   className="forge-pressable flex items-baseline justify-between"
                   style={{ padding: "10px 0", borderTop: "1px solid var(--line)", color: "var(--fg)" }}
                 >

@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import Link from "next/link";
 
 import { esPaseSuelto } from "@gym/domain/lifecycle";
+import { modo } from "@gym/domain/rules";
+import type { Modo } from "@gym/domain/types";
 import { pesos } from "@gym/format";
 import { getFaqsPublicas, getValoresPublicos } from "@gym/data/server/gym-content";
 import {
@@ -12,7 +14,6 @@ import {
   getPlanesPublicos,
   type PlanPublicoDTO,
 } from "@gym/data/server/marketing";
-import { destinoClases } from "../../lib/reserva-vista";
 
 import { FaqAccordion } from "./_components/faq-accordion";
 
@@ -34,17 +35,16 @@ interface PlanCta {
  *
  *  Lista has no booking surface at all (#326/#332), so a plan is never "reserved" — every card points
  *  at WhatsApp (joining/upgrading happens at the front desk) when the gym has a number, else at the
- *  member's own saldo (`destinoClases`, the same target the drawer's booking-funnel CTA uses). */
-function ctaVista(plan: PlanPublicoDTO, reservasHabilitadas: boolean, whatsapp: string | null): PlanCta {
-  if (reservasHabilitadas) {
+ *  member's own saldo (`/saldo`, the same target the drawer's booking-funnel CTA — `destinoClases`,
+ *  reserva-vista.ts — resolves to on Lista). */
+function ctaVista(plan: PlanPublicoDTO, gymModo: Modo, whatsapp: string | null): PlanCta {
+  if (gymModo === "cupo") {
     return {
       href: "/reservar",
       label: plan.popular ? "Empezar ahora" : esPaseSuelto(plan.clases) ? "Reservar clase" : "Elegir este plan",
     };
   }
-  return whatsapp
-    ? { href: `https://wa.me/${whatsapp}`, label: "Escríbenos" }
-    : { href: destinoClases(false), label: "Mi saldo" };
+  return whatsapp ? { href: `https://wa.me/${whatsapp}`, label: "Escríbenos" } : { href: "/saldo", label: "Mi saldo" };
 }
 
 function Check() {
@@ -68,14 +68,14 @@ function Check() {
 
 function PlanCard({
   plan,
-  reservasHabilitadas,
+  gymModo,
   whatsapp,
 }: {
   plan: PlanPublicoDTO;
-  reservasHabilitadas: boolean;
+  gymModo: Modo;
   whatsapp: string | null;
 }) {
-  const cta = ctaVista(plan, reservasHabilitadas, whatsapp);
+  const cta = ctaVista(plan, gymModo, whatsapp);
   const ctaClassName = `mt-6 inline-flex justify-center rounded-full px-5 py-3 text-sm font-semibold ${
     plan.popular
       ? "bg-accent text-accent-fg hover:opacity-90"
@@ -146,7 +146,7 @@ export default async function PreciosPage() {
   // Same fallback as Nosotros: until an operator authors about_tagline, stitch the value titles so the
   // line always renders (the mock's "Fuerza · Disciplina · Resultado" IS the three values).
   const tagline = gym?.aboutTagline ?? valores.map((v) => v.title).join(" · ");
-  const reservasHabilitadas = gym?.bookingEnabled ?? true;
+  const gymModo = modo(gym?.bookingEnabled ?? true);
   const whatsapp = contacto?.whatsapp ?? null;
 
   // "Todos los planes incluyen" — the mock's coaches/horario rows come from the gym's REAL data (roster
@@ -173,7 +173,7 @@ export default async function PreciosPage() {
     { k: "Equipo y material", v: "Sin costo extra" },
     // Lista has no booking surface at all (#326/#332) — a "Reserva digital" claim would be
     // false for that arm, so it only lists on Cupo.
-    ...(reservasHabilitadas ? [{ k: "Reserva digital", v: "Desde la app" }] : []),
+    ...(gymModo === "cupo" ? [{ k: "Reserva digital", v: "Desde la app" }] : []),
     { k: "Permanencia", v: "Ninguna" },
   ];
 
@@ -202,7 +202,7 @@ export default async function PreciosPage() {
             <PlanCard
               key={plan.id}
               plan={plan}
-              reservasHabilitadas={reservasHabilitadas}
+              gymModo={gymModo}
               whatsapp={whatsapp}
             />
           ))}
@@ -241,12 +241,12 @@ export default async function PreciosPage() {
       <section className="mx-auto mt-12 max-w-2xl rounded-3xl border border-line bg-sunk p-8 text-center">
         <h3 className="text-2xl font-bold text-fg">Empieza hoy</h3>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted">
-          {reservasHabilitadas
+          {gymModo === "cupo"
             ? "Reserva tu lugar y entrena desde el primer día. Sin permanencia, cancelas cuando quieras."
             : "Entrena desde el primer día. Sin permanencia, cancelas cuando quieras."}
         </p>
         <div className="mt-5 flex flex-col items-center gap-3">
-          {reservasHabilitadas ? (
+          {gymModo === "cupo" ? (
             <>
               <Link
                 href="/reservar"
@@ -274,7 +274,7 @@ export default async function PreciosPage() {
                 </a>
               ) : (
                 <Link
-                  href={destinoClases(false) as Route}
+                  href={"/saldo" as Route}
                   className="inline-flex justify-center rounded-full bg-accent px-6 py-3 text-sm font-semibold text-accent-fg hover:opacity-90"
                 >
                   Mi saldo
