@@ -273,54 +273,73 @@ export function AgendaScreen(props: AgendaScreenProps) {
   }, []);
 
   // Every roster write shares one shape: busy-gate the cliente, run the RPC, surface its
-  // Spanish raise through the toast, then refresh the agenda so the occupancy bump lands on the
+  // Spanish raise through the toast, then reload the roster (the RPC is authoritative — never
+  // optimistically guess membership) and refresh the agenda so the occupancy bump lands on the
   // card counts, CUPO, the lugares-libres line and the day header's reservas total.
-  //
-  // By default it reloads the roster from the server afterward (the RPC is authoritative —
-  // never optimistically guess MEMBERSHIP: who's on the list, walk-ins, candidates). `optimista`
-  // is the LISTA checkbox's opt-in fast path (owner report: the check mark "took time" to move,
-  // because this used to be TWO serial Vercel→Supabase trips — the RPC, then the refetch —
-  // before the row flipped at all): `aplicar` flips the row on the tap itself, `reconciliar`
-  // settles it from the RPC's own result once that resolves, and a failure reverts to the
-  // roster as it stood before the tap. Only safe when the write does NOT change membership,
-  // which is why only the present-toggle on an EXISTING row uses it (runPase).
-  const runRoster = async <T extends object = object>(
+  const runRoster = async (
     clienteId: string,
-    accion: (sessionId: string) => Promise<AgendaResultado<T>>,
+    accion: (sessionId: string) => Promise<AgendaResultado>,
     errorTitle: string,
     // #235 story 10: the RPC's own sentence, handed to the caller that asked for it. Additive —
     // the toast fires either way; this is only how the add flow learns WHY it was refused.
     onFail?: (error: string) => void,
-    optimista?: {
-      aplicar: (roster: RosterRow[]) => RosterRow[];
-      reconciliar: (roster: RosterRow[], data: T) => RosterRow[];
-    },
   ) => {
     const card = glance.card;
     if (!card || rosterBusy.has(clienteId)) return;
     const sessionId = card.id;
-    const rosterPreTap = glance.roster;
     setRosterBusy((prev) => new Set(prev).add(clienteId));
-    if (optimista) {
-      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: optimista.aplicar(g.roster) } : g));
-    }
     try {
       const res = await accion(sessionId);
       if (!res.ok) {
-        if (optimista) {
-          setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: rosterPreTap } : g));
-        }
         forgeToast({ tone: "warning", title: errorTitle, body: res.error });
         onFail?.(res.error);
         return;
       }
-      if (optimista) {
-        setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: optimista.reconciliar(g.roster, res) } : g));
-      } else {
-        const fresh = await rosterSesionAction(sessionId);
-        setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: fresh.roster, candidates: fresh.candidates } : g));
-      }
+      const fresh = await rosterSesionAction(sessionId);
+      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: fresh.roster, candidates: fresh.candidates } : g));
       router.refresh();
+    } finally {
+      setRosterBusy((prev) => {
+        const next = new Set(prev);
+        next.delete(clienteId);
+        return next;
+      });
+    }
+  };
+
+  // The LISTA checkbox's fast path (owner report: the check mark "took time" to move — this
+  // was TWO serial Vercel→Supabase trips, the RPC then a full roster refetch, before the row
+  // flipped at all). Skips `runRoster`'s reload in favor of a synchronous flip plus a reconcile
+  // off the RPC's own `present`, because nothing about MEMBERSHIP changes here: the row was
+  // already on the roster and stays on it either way. Only safe for such a row — never a
+  // walk-in add (a brand-new row, dropped from candidates) nor a walk-in UNTOGGLE (their
+  // reservation is cancelled outright, so the row disappears server-side) — `runPase` below
+  // gates on both before calling this.
+  //
+  // Reverts are per ROW, never a whole-roster snapshot: `rosterBusy` gates per cliente, so two
+  // taps on different members (A, B) can both be in flight at once, and resetting to a
+  // snapshot taken before A's tap would erase B's already-landed flip if A then fails. A
+  // thrown/rejected call (network, a deploy mid-flight) reverts the same way through the catch,
+  // so a dropped call never leaves the optimistic flip on screen with no explanation.
+  const runPaseOptimista = async (clienteId: string, presenteAntes: boolean, onFail?: (error: string) => void) => {
+    const card = glance.card;
+    if (!card || rosterBusy.has(clienteId)) return;
+    const sessionId = card.id;
+    setRosterBusy((prev) => new Set(prev).add(clienteId));
+    setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: marcarPresente(g.roster, clienteId, !presenteAntes) } : g));
+    try {
+      const res = await pasarListaSesionAction({ sessionId, clienteId });
+      if (!res.ok) {
+        setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: marcarPresente(g.roster, clienteId, presenteAntes) } : g));
+        forgeToast({ tone: "warning", title: "No se pudo pasar lista", body: res.error });
+        onFail?.(res.error);
+        return;
+      }
+      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: marcarPresente(g.roster, clienteId, res.present) } : g));
+      router.refresh();
+    } catch {
+      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: marcarPresente(g.roster, clienteId, presenteAntes) } : g));
+      forgeToast({ tone: "warning", title: "No se pudo pasar lista", body: "Revisa tu conexión e inténtalo de nuevo." });
     } finally {
       setRosterBusy((prev) => {
         const next = new Set(prev);
@@ -335,27 +354,18 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // `onFail` is the add flow's alone: the roster's present-toggle calls this with one argument
   // (SessionRosterProps.onToggle takes only a clienteId), so a blocked re-toggle never offers a sale.
   //
-  // The RPC is the same either way; only the OPTIMISM differs, gated on whether `clienteId` is
-  // already a roster row. An existing row is a pure present-flip — nothing about membership
-  // changes — so it takes the fast path (marcarPresente) straight off `runRoster`'s `optimista`.
-  // A candidate walk-in (runAgregar's "pase" branch) ADDS a row and drops a candidate — that IS
-  // a membership change, so it keeps the full refetch.
+  // The RPC is the same either way; only the write's blast radius decides which path runs it.
+  // An EXISTING, non-walk-in row is a pure present-flip — nothing about membership changes —
+  // so it takes `runPaseOptimista`. Everything else goes through the ordinary `runRoster`
+  // refetch: a candidate walk-in (runAgregar's "pase" branch) ADDS a row and drops a candidate,
+  // and un-toggling a walk-in CANCELS its reservation outright — the row disappears server-side
+  // and the member returns to candidates. Both are membership changes.
   const runPase = (clienteId: string, onFail?: (error: string) => void) => {
     const existente = glance.roster.find((r) => r.clienteId === clienteId);
-    if (!existente) {
-      return runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista", onFail);
+    if (existente && !existente.isWalkIn) {
+      return runPaseOptimista(clienteId, existente.present, onFail);
     }
-    const presenteAntes = existente.present;
-    return runRoster(
-      clienteId,
-      (sessionId) => pasarListaSesionAction({ sessionId, clienteId }),
-      "No se pudo pasar lista",
-      onFail,
-      {
-        aplicar: (roster) => marcarPresente(roster, clienteId, !presenteAntes),
-        reconciliar: (roster, data) => marcarPresente(roster, clienteId, data.present),
-      },
-    );
+    return runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista", onFail);
   };
 
   // THE tense branch (#238), and it lives HERE, in the handler, against a clock read at THIS
@@ -585,6 +595,13 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // roster still offers a cancel. Both are COSMETIC — the tap handler re-reads the clock and
   // the RPC is the enforcer either way — so nothing refreshes them (#231 owns the tick).
   const ahora = new Date();
+  // The card the quick-glance sheet actually renders. `glance.card` is only the identity/
+  // open-state anchor (its id, and what the effect/`runRoster` key off); `cardVigente` looks
+  // up the CURRENT week's own card with that id, so a roster write's `router.refresh()`
+  // updates CUPO/lugares-libres the same tick it updates LISTA, instead of waiting for the
+  // sheet to close and reopen. `null` while no card is open; falls back to the snapshot once
+  // the id has left the loaded week (week navigation, deletion) — cardVigente's own fallback.
+  const cardActual = glance.card && cardVigente(dias, glance.card);
 
   return (
     <div>
@@ -733,40 +750,33 @@ export function AgendaScreen(props: AgendaScreenProps) {
         </div>
       )}
 
-      {/* Quick-glance (card tap) — portals to the viewport via Sheet. `glance.card` is only
-          the identity/open-state anchor (its id, and what the effect/`runRoster` key off);
-          every RENDERED value comes from `cardVigente`, the current week's own card with that
-          id, so a roster write's `router.refresh()` updates CUPO/lugares-libres the same tick
-          it updates LISTA instead of waiting for the sheet to close and reopen. */}
-      {glance.card && (() => {
-        const card = cardVigente(dias, glance.card);
-        return (
-          <QuickGlanceSheet
-            open={glance.open}
-            onClose={closeGlance}
-            time={card.time}
-            tipo={card.tipo}
-            coaches={card.coaches}
-            mins={card.mins}
-            booked={card.booked}
-            cap={card.cap}
-            estado={card.estado}
-            isSpecial={card.esEspecial}
-            specialName={card.specialName}
-            onEdit={() => openEdit(card)}
-            roster={glance.roster}
-            candidates={glance.candidates}
-            rosterLoading={glance.loading}
-            rosterBusy={rosterBusy}
-            antesDeVentana={accionAgregar(card.startsAtIso, ahora) === "reservar"}
-            claseIniciada={new Date(card.startsAtIso).getTime() <= ahora.getTime()}
-            ventaSugerida={ventaSugerida ?? undefined}
-            onTogglePresent={runPase}
-            onAddWalkIn={runAgregar}
-            onCancelReserva={runCancelarReserva}
-          />
-        );
-      })()}
+      {/* Quick-glance (card tap) — portals to the viewport via Sheet. */}
+      {cardActual && (
+        <QuickGlanceSheet
+          open={glance.open}
+          onClose={closeGlance}
+          time={cardActual.time}
+          tipo={cardActual.tipo}
+          coaches={cardActual.coaches}
+          mins={cardActual.mins}
+          booked={cardActual.booked}
+          cap={cardActual.cap}
+          estado={cardActual.estado}
+          isSpecial={cardActual.esEspecial}
+          specialName={cardActual.specialName}
+          onEdit={() => cardActual && openEdit(cardActual)}
+          roster={glance.roster}
+          candidates={glance.candidates}
+          rosterLoading={glance.loading}
+          rosterBusy={rosterBusy}
+          antesDeVentana={accionAgregar(cardActual.startsAtIso, ahora) === "reservar"}
+          claseIniciada={new Date(cardActual.startsAtIso).getTime() <= ahora.getTime()}
+          ventaSugerida={ventaSugerida ?? undefined}
+          onTogglePresent={runPase}
+          onAddWalkIn={runAgregar}
+          onCancelReserva={runCancelarReserva}
+        />
+      )}
 
       {/* Editor — a right-sliding full panel; portaled into a viewport frame so the
           template.tsx enter-transform never becomes its containing block. */}

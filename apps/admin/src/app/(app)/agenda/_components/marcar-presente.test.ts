@@ -5,10 +5,9 @@ import type { RosterRow } from "@gym/ui/forge/agenda/session-roster";
 import { marcarPresente } from "./marcar-presente";
 
 /**
- * The LISTA checkbox's optimistic patch. The RPC round trip is what makes this state
- * authoritative (`runPase` reconciles from its `{ present, hora }` result, or reverts on
- * failure) — this pure function is only the in-between flip that moves the check mark
- * on the tap itself, before either of those Vercel→Supabase trips has resolved.
+ * `marcarPresente`'s own row-level behavior: which row moves, which don't, and the
+ * `noAsistio` clear — covered here directly since `runPaseOptimista` (agenda.tsx) has no
+ * test surface of its own.
  */
 
 function row(over: Partial<RosterRow> = {}): RosterRow {
