@@ -301,12 +301,12 @@ export const HORIZONTE_SEMANAS = 26;
  *  real hole). Out of range: this returns without calling the RPC at all, and the read below
  *  still runs — an unmaterialized week just comes back with whatever sessions already exist
  *  (none, for a week nobody ever staffed; the true historical rows, for one that was). */
-async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, tz: string): Promise<void> {
+async function ensureSemanaMaterializada(supabase: SupabaseServer, lunes: Date, tz: string, gymId: string): Promise<void> {
   const lunesActual = inicioSemana(hoyEnZona(tz));
   const horizonte = addDays(lunesActual, HORIZONTE_SEMANAS * 7);
   const garantizada = addDays(lunesActual, 5 * 7);
   if (lunes.getTime() <= garantizada.getTime() || lunes.getTime() > horizonte.getTime()) return;
-  await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes) });
+  await supabase.rpc("ensure_week_materialized", { p_week_start: toIsoDay(lunes), p_gym_id: gymId });
 }
 
 /** A day's sessions (gym tz), joined to class_type + coaches, with derived
@@ -320,7 +320,7 @@ export const getAgendaDia = cache(
 
     const dia = parseDay(fechaIso);
     const lunes = inicioSemana(dia);
-    await ensureSemanaMaterializada(supabase, lunes, tz);
+    await ensureSemanaMaterializada(supabase, lunes, tz, gymId);
 
     const low = instanteEnZona(dia, "00:00", tz);
     const high = instanteEnZona(addDays(dia, 1), "00:00", tz);
@@ -345,7 +345,7 @@ export const getAgendaSemana = cache(
 
     const dia = parseDay(fechaIso);
     const lunes = inicioSemana(dia);
-    await ensureSemanaMaterializada(supabase, lunes, tz);
+    await ensureSemanaMaterializada(supabase, lunes, tz, gymId);
 
     const low = instanteEnZona(lunes, "00:00", tz);
     const high = instanteEnZona(addDays(lunes, 6), "00:00", tz);
@@ -500,8 +500,8 @@ export async function crearSesion(
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
-    const { timezone: tz } = await getOperatorGym(supabase);
-    const startsAt = instanteEnZona(parseDay(input.fecha), input.hora, tz);
+    const gym = await getOperatorGym(supabase);
+    const startsAt = instanteEnZona(parseDay(input.fecha), input.hora, gym.timezone);
     const especialName = input.esEspecial ? input.nombreEspecial?.trim() || "Especial" : null;
 
     const { data, error } = await supabase.rpc("create_class_session", {
@@ -513,6 +513,7 @@ export async function crearSesion(
       p_is_special: input.esEspecial,
       ...(especialName !== null && { p_special_name: especialName }),
       ...(input.roomId !== undefined && { p_room_id: input.roomId }),
+      p_gym_id: gym.id,
     });
     if (error || !data) throw new Error(error?.message || "No se pudo crear la clase");
     return { sesionId: data };
@@ -544,6 +545,7 @@ export async function crearHorarioRecurrente(
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    const gym = await getOperatorGym(supabase);
 
     const { data, error } = await supabase.rpc("create_recurring_schedule", {
       p_class_type_id: input.classTypeId,
@@ -553,6 +555,7 @@ export async function crearHorarioRecurrente(
       p_capacity: input.cupo,
       p_coach_ids: input.coachIds,
       ...(input.horizonWeeks !== undefined && { p_horizon_weeks: input.horizonWeeks }),
+      p_gym_id: gym.id,
     });
     if (error || !data) throw new Error(error?.message || "No se pudo crear el horario recurrente");
     return { templateIds: data };
@@ -599,6 +602,7 @@ export async function actualizarHorarioRecurrente(
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    const gym = await getOperatorGym(supabase);
 
     const { data, error } = await supabase.rpc("update_recurring_schedule", {
       p_template_id: input.templateId,
@@ -609,6 +613,7 @@ export async function actualizarHorarioRecurrente(
       ...(input.weekday !== undefined && { p_weekday: input.weekday }),
       ...(input.coachIds !== undefined && { p_coach_ids: input.coachIds }),
       ...(input.todosLosDias && { p_all_days: true }),
+      p_gym_id: gym.id,
     });
     // `!data` is safe HERE (unlike the bare-int retire below): the RPC's OUT params come
     // back as one object, so only a genuine failure is falsy — `{ moved: 0, kept: 0 }` is
@@ -642,10 +647,12 @@ export async function retirarHorarioRecurrente(
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
+    const gym = await getOperatorGym(supabase);
 
     const { data, error } = await supabase.rpc("retire_recurring_schedule", {
       p_template_id: input.templateId,
       ...(input.todosLosDias && { p_all_days: true }),
+      p_gym_id: gym.id,
     });
     // NOT `!data`: 0 future classes cancelled is a legitimate success (see above).
     if (error || data === null) throw new Error(error?.message || "No se pudo retirar el horario recurrente");
@@ -678,8 +685,8 @@ export async function editarSesion(raw: unknown, client?: SupabaseServer): Promi
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
-    const { timezone: tz } = await getOperatorGym(supabase);
-    const startsAt = instanteEnZona(parseDay(input.fecha), input.hora, tz);
+    const gym = await getOperatorGym(supabase);
+    const startsAt = instanteEnZona(parseDay(input.fecha), input.hora, gym.timezone);
     const especialName = input.esEspecial ? input.nombreEspecial?.trim() || "Especial" : null;
 
     const { error } = await supabase.rpc("edit_class_session", {
@@ -692,6 +699,7 @@ export async function editarSesion(raw: unknown, client?: SupabaseServer): Promi
       p_is_special: input.esEspecial,
       ...(especialName !== null && { p_special_name: especialName }),
       ...(input.roomId !== undefined && { p_room_id: input.roomId }),
+      p_gym_id: gym.id,
     });
     if (error) throw new Error(error.message || "No se pudo editar la sesión");
     return {};
@@ -710,7 +718,11 @@ export async function cancelarSesion(raw: unknown, client?: SupabaseServer): Pro
   return ejecutar(async () => {
     const supabase = client ?? (await createClient());
     await requireOperator(supabase);
-    const { error } = await supabase.rpc("cancel_class_session", { p_session_id: parsed.data.sesionId });
+    const gym = await getOperatorGym(supabase);
+    const { error } = await supabase.rpc("cancel_class_session", {
+      p_session_id: parsed.data.sesionId,
+      p_gym_id: gym.id,
+    });
     if (error) throw new Error(error.message || "No se pudo cancelar la sesión");
     return {};
   });

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { createClient, type SupabaseServer } from "./supabase";
 
 import { requireOperator } from "./_auth";
+import { getOperatorGym } from "./gym";
 
 /** A stored WhatsApp template (freeform, named). */
 export interface PlantillaDTO {
@@ -67,7 +68,8 @@ export async function eliminarPlantilla(raw: unknown, client?: SupabaseServer): 
 export async function sembrarPlantillasDefault(client?: SupabaseServer): Promise<void> {
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
-  // sembrar_plantillas_default takes no args (Args: never) — call without a payload.
-  const { error } = await supabase.rpc("sembrar_plantillas_default");
+  const gym = await getOperatorGym(supabase);
+  // Host-resolved tenant, not staff_gym()'s null-arm — same fix as agenda.ts/ventas.ts.
+  const { error } = await supabase.rpc("sembrar_plantillas_default", { p_gym_id: gym.id });
   if (error) throw new Error("No se pudieron crear las plantillas predeterminadas");
 }

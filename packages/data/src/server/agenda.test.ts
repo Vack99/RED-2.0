@@ -437,7 +437,7 @@ describe("getAgendaDia", () => {
     const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
     await getAgendaDia(toIsoDay(semana6), client);
     expect(rpcCalls).toEqual([
-      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(semana6) } },
+      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(semana6), p_gym_id: "gym-1" } },
     ]);
   });
 
@@ -466,7 +466,7 @@ describe("getAgendaDia", () => {
     const { client, rpcCalls } = makeFake({ class_session: [], class_type: [], class_session_coach: [], coach: [] });
     await getAgendaDia(toIsoDay(enElLimite), client);
     expect(rpcCalls).toEqual([
-      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(enElLimite) } },
+      { name: "ensure_week_materialized", args: { p_week_start: toIsoDay(enElLimite), p_gym_id: "gym-1" } },
     ]);
   });
 
@@ -606,6 +606,7 @@ describe("crearSesion — one-off write orchestration (injected fake)", () => {
       p_capacity: 24,
       p_coach_ids: [ID("2")],
       p_is_special: false,
+      p_gym_id: "gym-1",
     });
     expect("p_special_name" in rpcCalls[0].args).toBe(false);
     expect("p_room_id" in rpcCalls[0].args).toBe(false);
@@ -687,6 +688,7 @@ describe("crearHorarioRecurrente — 'Se repite' write orchestration (injected f
       p_duration_min: 45,
       p_capacity: 24,
       p_coach_ids: [ID("2")],
+      p_gym_id: "gym-1",
     });
     expect("p_horizon_weeks" in rpcCalls[0].args).toBe(false);
   });
@@ -738,6 +740,7 @@ describe("actualizarHorarioRecurrente — 'esta y las siguientes' write orchestr
       p_start_time: "20:00",
       p_duration_min: 60,
       p_capacity: 30,
+      p_gym_id: "gym-1",
     });
     expect("p_weekday" in rpcCalls[0].args).toBe(false);
     expect("p_coach_ids" in rpcCalls[0].args).toBe(false);
@@ -812,7 +815,7 @@ describe("retirarHorarioRecurrente — 'terminar el horario' write orchestration
     const result = await retirarHorarioRecurrente(valid(), client);
     expect(result).toEqual({ ok: true, clasesCanceladas: 6 });
     expect(rpcCalls).toEqual([
-      { name: "retire_recurring_schedule", args: { p_template_id: ID("1") } },
+      { name: "retire_recurring_schedule", args: { p_template_id: ID("1"), p_gym_id: "gym-1" } },
     ]);
   });
 
@@ -826,7 +829,7 @@ describe("retirarHorarioRecurrente — 'terminar el horario' write orchestration
     const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: 9, error: null }) });
     await retirarHorarioRecurrente({ ...valid(), todosLosDias: true }, client);
     expect(rpcCalls).toEqual([
-      { name: "retire_recurring_schedule", args: { p_template_id: ID("1"), p_all_days: true } },
+      { name: "retire_recurring_schedule", args: { p_template_id: ID("1"), p_all_days: true, p_gym_id: "gym-1" } },
     ]);
 
     const { client: client2, rpcCalls: calls2 } = makeFake({}, { rpc: () => ({ data: 6, error: null }) });
@@ -881,6 +884,7 @@ describe("editarSesion — write orchestration (injected fake)", () => {
       p_capacity: 30,
       p_coach_ids: [],
       p_is_special: false,
+      p_gym_id: "gym-1",
     });
     expect("p_special_name" in rpcCalls[0].args).toBe(false);
   });
@@ -904,7 +908,9 @@ describe("cancelarSesion — write orchestration (injected fake)", () => {
     const { client, rpcCalls } = makeFake({}, { rpc: () => ({ data: null, error: null }) });
     const result = await cancelarSesion({ sesionId: ID("9") }, client);
     expect(result).toEqual({ ok: true });
-    expect(rpcCalls).toEqual([{ name: "cancel_class_session", args: { p_session_id: ID("9") } }]);
+    expect(rpcCalls).toEqual([
+      { name: "cancel_class_session", args: { p_session_id: ID("9"), p_gym_id: "gym-1" } },
+    ]);
   });
 
   it("surfaces an already-cancelled RPC error as a typed result", async () => {

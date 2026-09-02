@@ -24,13 +24,19 @@ function makeFake(opts: { sub?: string | null; rows?: unknown[] } = {}): FakeCli
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
   const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
   const rows = opts.rows ?? [];
+  // gym_membership rows: getOperatorGym's own embed, same fixture shape agenda.test.ts uses —
+  // sembrarPlantillasDefault resolves the operator gym too (p_gym_id).
+  const membership = [{ gym_id: "gym-1", role: "owner", user_id: sub, gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }];
   const client = {
     auth: { getClaims: async () => ({ data: sub ? { claims: { sub } } : null }) },
-    from: () => {
+    from: (table: string) => {
       const b = {
         select: () => b,
+        eq: () => b,
+        in: () => b,
         order: () => b,
-        then: (resolve: (v: { data: unknown[]; error: null }) => unknown) => resolve({ data: rows, error: null }),
+        then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+          resolve({ data: table === "gym_membership" ? membership : rows, error: null }),
       };
       return b;
     },
@@ -73,11 +79,10 @@ describe("plantillas DAL — write orchestration (injected fake)", () => {
     expect(fake.rpcCalls[0]).toEqual({ name: "eliminar_plantilla", args: { p_id: "11111111-1111-4111-8111-111111111111" } });
   });
 
-  it("sembrarPlantillasDefault calls the seed RPC", async () => {
+  it("sembrarPlantillasDefault calls the seed RPC with the operator gym (#220-class: staff_gym()'s null-arm picks the wrong gym for a multi-gym operator)", async () => {
     const fake = makeFake();
     await sembrarPlantillasDefault(fake.client);
-    expect(fake.rpcCalls).toHaveLength(1);
-    expect(fake.rpcCalls[0].name).toBe("sembrar_plantillas_default");
+    expect(fake.rpcCalls).toEqual([{ name: "sembrar_plantillas_default", args: { p_gym_id: "gym-1" } }]);
   });
 
   it("rejects an empty nombre (zod) before any write", async () => {

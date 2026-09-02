@@ -1727,7 +1727,7 @@ export type Database = {
           iniciales: string
         }[]
       }
-      sembrar_plantillas_default: { Args: never; Returns: undefined }
+      sembrar_plantillas_default: { Args: { p_gym_id?: string }; Returns: undefined }
       set_plan_features: {
         Args: { p_labels: string[]; p_plan_id: string }
         Returns: undefined
