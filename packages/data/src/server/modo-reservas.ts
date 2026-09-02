@@ -24,14 +24,17 @@ export async function contarReservasFuturas(client?: SupabaseServer): Promise<nu
   const supabase = client ?? (await createClient());
   await requireOperator(supabase);
   const gym = await getOperatorGym(supabase);
-  const { data, error } = await supabase
+  // count: "exact", head: true — a server-side COUNT, not a row fetch: PostgREST's default
+  // page cap (max_rows, 1000) truncates a row list long before that, silently under-reporting
+  // this gym's true future-booking count once it crosses the cap.
+  const { count, error } = await supabase
     .from("reservation")
-    .select("id, class_session!inner(starts_at)")
+    .select("id, class_session!inner(starts_at)", { count: "exact", head: true })
     .eq("gym_id", gym.id)
     .eq("status", "reservada")
     .gt("class_session.starts_at", new Date().toISOString());
   if (error) throw error;
-  return (data ?? []).length;
+  return count ?? 0;
 }
 
 /**

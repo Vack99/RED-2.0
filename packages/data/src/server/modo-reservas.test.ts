@@ -29,6 +29,7 @@ function makeFake(opts: FakeOpts = {}) {
   const rpcCalls: { name: string; args: Record<string, unknown> }[] = [];
   const eqCalls: [string, unknown][] = [];
   const gtCalls: [string, unknown][] = [];
+  const selectCalls: [string, { count?: string; head?: boolean } | undefined][] = [];
 
   function reservationBuilder() {
     let filtered = [...(opts.reservas ?? [])];
@@ -40,7 +41,13 @@ function makeFake(opts: FakeOpts = {}) {
         ? (r[col.split(".")[0]] as Record<string, unknown> | null)?.[col.split(".")[1]]
         : r[col];
     const b = {
-      select: () => b,
+      // `{ count: "exact", head: true }` is what production must send — asserted below — and
+      // mirrors PostgREST's head response: `data` is null, the row count rides `count`
+      // instead, so a fix that reverts to a row-length read fails loudly.
+      select: (columns: string, options?: { count?: string; head?: boolean }) => {
+        selectCalls.push([columns, options]);
+        return b;
+      },
       eq: (col: string, val: unknown) => {
         eqCalls.push([col, val]);
         filtered = filtered.filter((r) => leer(r as unknown as Record<string, unknown>, col) === val);
@@ -53,8 +60,8 @@ function makeFake(opts: FakeOpts = {}) {
         );
         return b;
       },
-      then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
-        resolve({ data: filtered, error: null }),
+      then: (resolve: (v: { data: null; count: number; error: null }) => unknown) =>
+        resolve({ data: null, count: filtered.length, error: null }),
     };
     return b;
   }
@@ -88,12 +95,12 @@ function makeFake(opts: FakeOpts = {}) {
     },
   };
 
-  return { client: client as unknown as SupabaseServer, rpcCalls, eqCalls, gtCalls };
+  return { client: client as unknown as SupabaseServer, rpcCalls, eqCalls, gtCalls, selectCalls };
 }
 
 describe("contarReservasFuturas", () => {
   it("counts only this gym's still-reservada bookings whose class is still ahead", async () => {
-    const { client, eqCalls, gtCalls } = makeFake({
+    const { client, eqCalls, gtCalls, selectCalls } = makeFake({
       reservas: [
         // Counted: gym-1, reservada, future.
         { id: "r1", gym_id: "gym-1", status: "reservada", class_session: { starts_at: "2099-01-01T00:00:00Z" } },
@@ -111,6 +118,9 @@ describe("contarReservasFuturas", () => {
     expect(eqCalls).toContainEqual(["gym_id", "gym-1"]);
     expect(eqCalls).toContainEqual(["status", "reservada"]);
     expect(gtCalls.some(([col]) => col === "class_session.starts_at")).toBe(true);
+    // The PostgREST server-side count, not a row-length read: a row list truncates at
+    // max_rows (1000) long before a busy gym's future-booking count does.
+    expect(selectCalls).toEqual([["id, class_session!inner(starts_at)", { count: "exact", head: true }]]);
   });
 
   it("returns 0, not an error, when the gym has no future reservations", async () => {
