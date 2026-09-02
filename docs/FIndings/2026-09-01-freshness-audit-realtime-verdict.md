@@ -147,3 +147,59 @@ Checked directly, not via agents:
 | Broadcast counts 1 + one per subscriber; over-rate = `tenant_events` disconnect with auto-reconnect | confirmed | docs/guides/platform/manage-your-usage/realtime-messages, quotas |
 
 **Revision to the verdict for a 1,000-concurrent-user shield:** the agents' "signal → whole-route refresh" fans out 17 reads per subscriber per write. Fine per gym, wrong as the platform rule. Replace with: one message per gym per transaction (statement trigger deduped by a transaction-local GUC), topics split `gym:<id>:staff`, `gym:<id>:agenda` (payload carries session_id + both occupancy counts, patched locally, zero reads), `gym:<id>:cliente:<cid>` (saldo, targeted refresh). Reconcile on channel rejoin and on `visibilitychange`. Cost at 1,000 concurrent: Pro $25 + $5 connections; messages a rounding error.
+
+## Built 2026-09-01 (branch senal-gym, local only)
+
+Commits `1044257..a377cdd`. Steps 1–3 of "Recommended build, in order" were built as the
+`senal-gym` branch — free floor and signal rail together, admin and member. Spec:
+`docs/superpowers/plans/2026-09-01-senal-gym-freshness-spec.md`. Plan:
+`docs/superpowers/plans/2026-09-01-senal-gym-freshness-plan.md`.
+
+**What landed:**
+
+- Migration `20260901120000_senal_gym.sql` — the `senal_gym()` trigger function, 15
+  statement-level triggers (3 events × 5 tables: `reservation`, `class_session`, `clientes`,
+  `ventas`, `asistencias`), the `senal_gym_select` policy on `realtime.messages`, and the safe
+  `senal_topic_gym()` topic cast.
+- Suite `supabase/tests/senal_gym.sql` — 7 vectors, including a delete vector, a gym-move
+  (UPDATE across `gym_id`) vector, an anonymous-role vector, and the membership-gate vector.
+- `@gym/data/client-senal` — the browser hook and busy-aware trailing debounce (`crearRegulador`,
+  `useSenalGym`).
+- Admin mount on the `(app)` layout, the door poll's visibility gate, and busy holds around the
+  agenda glance sheet/editor and the asistencia in-flight taps.
+- Client `reservar/` and `clase/` layouts hosting the same hook, plus a busy hold around the
+  confirmation sheet.
+
+**Status:** gates run locally; live apply pending owner consent (Task 5 gate). Not pushed.
+
+**Owner HITL still open:** the Realtime dashboard toggle — turn off "Allow public access to
+channels" — is a step the owner performs by hand, not something a migration can set.
+
+**Follow-ups filed, not built:**
+
+1. A version check on `edit_class_session` (below) — the rail makes its lost-update window
+   continuous instead of occasional.
+2. A fourth Chromium check in `apps/client/e2e/session.spec.ts` for the `/reservar`⇄`/clase`
+   remount, so the two sibling layouts' subscribe/teardown is covered by the browser-level shield,
+   not just by unit tests.
+3. Agenda local count patching from the message payload, and split topics
+   (`gym:<id>:staff`/`:agenda`/`:cliente:<cid>`) — both deferred to Phase 2, gated on Pro and on
+   the audit's own exit trigger (>80 msg/s over any 5-minute window on Free).
+
+## Follow-up: `edit_class_session` has no version check (weakness 4)
+
+Still open, deliberately out of scope of the rail. `supabase/functions-canonical/edit_class_session.sql:63-73`
+writes every column blind — no lock, no `updated_at`/`xmin` comparison — so two staff devices
+editing one session overwrite each other silently.
+
+**The rail makes this worse, not better, and that is the reason to file it now.** Before, the
+window was "two operators happened to open the same session"; now a `router.refresh()` can land
+under an open editor at any moment, so the window is continuous. The agenda's `ocuparSenal`
+("agenda-hoja") hold is the mitigation that ships with the rail: while the editor is open the
+route is not refreshed, so an operator's own draft is never repainted out from under them. It does
+nothing about the OTHER device.
+
+The fix is its own migration: pass the card's `updated_at` into `edit_class_session` and refuse a
+stale draft with a named message, in the same idiom as the existing `agenda_slot_guards` refusals —
+plus a vector in `supabase/tests/recurring_series_edit.sql` asserting the refusal and that the
+row did not move.

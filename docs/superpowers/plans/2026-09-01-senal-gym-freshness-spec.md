@@ -58,6 +58,10 @@ The message carries no data (`{"t":"<tabla>"}`) — the refresh re-reads through
    - else `perform set_config(<key>, '1', true)` (transaction-local) and
      `perform realtime.send(jsonb_build_object('t', tg_table_name), 'cambio', 'gym:' || gym_id::text, true)`.
    - `return null` — an AFTER STATEMENT trigger's return value is ignored.
+   - `realtime.send` itself stamps its own `id` key into the row's `payload` (a `gen_random_uuid()`
+     it generates, not one this migration sets), so the browser's `.on('broadcast', …)` handler and
+     the R2 suite both see exactly two keys, `{"t", "id"}` — the suite asserts the payload minus
+     `t` minus `id` is empty, not just that `t` is present.
 2. `alter function public.senal_gym() owner to postgres;` — the insert into `realtime.messages`
    only lands because the definer is a `rolbypassrls` role. It is a no-op on the apply path
    (already `postgres`) and an assertion for every other path.
@@ -174,7 +178,7 @@ export type MotivoSenal = "senal" | "visible" | "rejoin";
 export const senalBusy: Set<string>;
 export function ocuparSenal(key: string): void;
 export function liberarSenal(key: string): void;
-export interface Regulador { pedir(m: MotivoSenal): void; vaciar(): void; destruir(): void }
+export interface Regulador { pedir(m: MotivoSenal): void; destruir(): void }
 export function crearRegulador(onSenal: (m: MotivoSenal) => void, debounceMs: number): Regulador;
 export function useSenalGym(opts: {
   gymId: string | null | undefined;
@@ -189,8 +193,12 @@ Behaviour:
   — that is what makes R3 testable at all in a repo with no jsdom. `pedir` records the motive and
   (re)arms a trailing `setTimeout`. On fire: if `senalBusy.size > 0` the motive stays pending and
   nothing runs; else it fires `onSenal(motivo)`. `liberarSenal(key)` deletes the key and, when the
-  set is empty, calls `vaciar()` on every live regulador, which fires its pending motive
-  immediately. `destruir` clears the timer, drops the pending motive, and unregisters.
+  set is empty, calls an internal `vaciar()` on every live regulador — **not** on the exported
+  `Regulador`, since nothing outside this module has a reason to call it — which re-requests any
+  pending motive through the SAME trailing debounce via `pedir`, rather than flushing it
+  synchronously: a burst of releases (twenty door taps closing in quick succession) must still
+  collapse into one refresh, `debounceMs` after the LAST release, exactly like a burst of `pedir()`
+  calls does. `destruir` clears the timer, drops the pending motive, and unregisters.
 - `useSenalGym` no-ops when `gymId` is falsy. Inside one effect keyed on `[gymId, debounceMs]`:
   `await supabase.auth.getSession()` first, and **return without subscribing when there is no
   session** — an unauthenticated visitor must not open a socket; then
