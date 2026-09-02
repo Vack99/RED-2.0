@@ -1,7 +1,12 @@
 import "server-only";
 
 import { getAgendaDia, type AgendaDiaDTO } from "@gym/data/server/agenda";
-import { getVisitasDelDia, type Visita } from "@gym/data/server/asistencia";
+import {
+  getAsistenciasResumenHoy,
+  getVisitasDelDia,
+  type AsistenciasResumenHoy,
+  type Visita,
+} from "@gym/data/server/asistencia";
 import type { SupabaseServer } from "@gym/data/server/supabase";
 import type { Modo } from "@gym/domain/types";
 
@@ -43,4 +48,26 @@ export async function leerDia(modo: Modo, hoyIso: string, client?: SupabaseServe
   ]);
 
   return { agenda, visitas };
+}
+
+/**
+ * The ASISTENCIAS · HOY hero's counts — issued ONLY on Lista (owner ruling
+ * 2026-09-01, restoring what #328 dropped), the exact mirror of `leerDia` above:
+ * Cupo already leads with its own class hero and must never cost this round trip,
+ * so on `modo === "cupo"` the read is skipped ENTIRELY, not merely awaited and
+ * discarded — `data-seam.test.ts` asserts this at the Supabase client boundary.
+ *
+ * Best-effort like `leerDia`'s legs: a failed read degrades to `null` (the hero
+ * simply doesn't render) instead of 500-ing the door screen.
+ */
+export async function leerResumenAsistencias(
+  modo: Modo,
+  client?: SupabaseServer,
+): Promise<AsistenciasResumenHoy | null> {
+  if (modo === "cupo") return null;
+
+  return getAsistenciasResumenHoy(client).catch((err) => {
+    console.error("[inicio] attendance summary read failed — hero hidden", err);
+    return null;
+  });
 }

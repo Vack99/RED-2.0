@@ -246,6 +246,54 @@ export async function getVisitasDelDia(fecha: string, client?: SupabaseServer): 
   return visitasDelDia(supabase, gym.id, dia);
 }
 
+export interface AsistenciasResumenHoy {
+  hoy: number;
+  ayer: number;
+  /** 7-day daily series, oldest→newest, ending TODAY (index 6 = hoy, index 5 = ayer)
+   *  — the SAME indexing `calcularResumenMes` derives its own asistenciasSemana with
+   *  (packages/domain/src/rules.ts), so a caller can drop `hoy`/`ayer` and re-derive
+   *  them off the array alone if it ever needs to. */
+  semana: number[];
+}
+
+/**
+ * Today/yesterday/7-day attendance COUNTS for the Lista home's ASISTENCIAS · HOY hero
+ * (#328 rebuild had dropped it; owner ruling 2026-09-01 restored it Lista-only).
+ * Deliberately NOT the deleted `getAsistenciasHoy` shape — that fetched every one of
+ * today's rows AND a second `clientes` join, with no `.limit()`, to build a name list
+ * this hero never needed. This issues seven server-side COUNTs instead (PostgREST
+ * `count: "exact", head: true`, the `contarReservasFuturas` idiom in
+ * `modo-reservas.ts`), one per day, run CONCURRENTLY — not one row crosses the
+ * boundary. `perdonada` rows are excluded, matching `getResumenMes`'s own filter
+ * (#169): a pardoned row is the second record of ONE arrival, never a second visit.
+ *
+ * @returns the day count array (see `semana`) plus its last two entries pulled out
+ * as `hoy`/`ayer` for a caller that only wants the hero's headline numbers.
+ */
+export async function getAsistenciasResumenHoy(client?: SupabaseServer): Promise<AsistenciasResumenHoy> {
+  const supabase = client ?? (await createClient());
+  const gym = await getOperatorGym(supabase); // gym-scoped read (spec §1.1)
+
+  const hoy = hoyEnZona(gym.timezone);
+  const dias = Array.from({ length: 7 }, (_, i) => toIsoDay(addDays(hoy, i - 6)));
+
+  const semana = await Promise.all(
+    dias.map(async (fecha) => {
+      const { count, error } = await supabase
+        .from("asistencias")
+        .select("id", { count: "exact", head: true })
+        .eq("gym_id", gym.id)
+        .eq("fecha", fecha)
+        .eq("perdonada", false)
+        .is("deleted_at", null);
+      if (error) throw error;
+      return count ?? 0;
+    }),
+  );
+
+  return { hoy: semana[6], ayer: semana[5], semana };
+}
+
 export const togglePaseSchema = z.object({
   clienteId: z.string().min(1),
   fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),

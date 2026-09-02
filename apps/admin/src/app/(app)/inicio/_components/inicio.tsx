@@ -1,6 +1,7 @@
 import type { Route } from "next";
 import Link from "next/link";
 
+import type { AsistenciasResumenHoy } from "@gym/data/server/asistencia";
 import {
   CUBO_LABEL,
   CUBO_ORDEN,
@@ -13,6 +14,7 @@ import type { Modo } from "@gym/domain/types";
 import { Icon } from "@gym/ui/forge/icon";
 import { Card, Eyebrow, Tnum } from "@gym/ui/forge/ui";
 
+import { AsistenciasHoyHero } from "./asistencias-hoy-hero";
 import type { DiaVM, TenseDia } from "./inicio-vm";
 
 /**
@@ -57,6 +59,10 @@ interface InicioScreenProps {
   nuevosOnline: number;
   porRenovar: { total: number; cubos: Record<CuboRenovar, number> };
   aunATiempo: { total: number };
+  /** ASISTENCIAS · HOY hero counts (owner ruling 2026-09-01) — issued ONLY on Lista
+   *  (`../reads.ts`'s `leerResumenAsistencias`, the mirror of `dia`'s Cupo-only read).
+   *  Always `null` on Cupo, whose own class hero leads the day card instead. */
+  asistenciasResumen: AsistenciasResumenHoy | null;
 }
 
 export function InicioScreen({
@@ -71,6 +77,7 @@ export function InicioScreen({
   nuevosOnline,
   porRenovar,
   aunATiempo,
+  asistenciasResumen,
 }: InicioScreenProps) {
   return (
     <div style={{ padding: "18px 22px 32px" }}>
@@ -92,6 +99,18 @@ export function InicioScreen({
           {inicialCuenta}
         </Link>
       </div>
+
+      {/* ASISTENCIAS · HOY — Lista only (owner ruling 2026-09-01, restoring what #328
+          dropped). Sits at the TOP of the day card area, directly above the standalone
+          PASE DE LISTA CTA below it. Cupo never renders this — its own class hero
+          already leads the day card. */}
+      {modo === "lista" && asistenciasResumen && (
+        <AsistenciasHoyHero
+          hoy={asistenciasResumen.hoy}
+          ayer={asistenciasResumen.ayer}
+          semana={asistenciasResumen.semana}
+        />
+      )}
 
       {/* Day card. Cupo with a hero: ONE class — live → ±90-nearest → next-upcoming —
           leads the card in its own tense, with the tense-matched count and the

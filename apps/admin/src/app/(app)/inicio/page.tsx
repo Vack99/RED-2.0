@@ -7,15 +7,16 @@ import { fmtDiaAgenda, hoyEnZona, toIsoDay } from "@gym/format";
 
 import { InicioScreen } from "./_components/inicio";
 import { derivarDia } from "./_components/inicio-vm";
-import { leerDia } from "./reads";
+import { leerDia, leerResumenAsistencias } from "./reads";
 
 /**
  * /inicio (#328, spec #326) — the home rebuild on main's current skin. The day-card's
  * schedule read is issued ONLY on Cupo (`leerDia`, ../reads.ts — Lista never touches
- * the client at all, `data-seam.test.ts`). Every clock read lives HERE, on the
- * server, against the gym's tz — never the browser clock, and never in the client
- * render (InicioScreen is a plain server component; SSR and hydration are identical
- * by construction).
+ * the client at all, `data-seam.test.ts`), mirrored by the ASISTENCIAS · HOY hero's
+ * attendance-count read (`leerResumenAsistencias`), issued ONLY on Lista (owner ruling
+ * 2026-09-01). Every clock read lives HERE, on the server, against the gym's tz — never
+ * the browser clock, and never in the client render (InicioScreen is a plain server
+ * component; SSR and hydration are identical by construction).
  */
 export default async function Page() {
   const gym = await getOperatorGym();
@@ -23,7 +24,11 @@ export default async function Page() {
   const hoyLocal = hoyEnZona(gym.timezone);
   const hoyIso = toIsoDay(hoyLocal);
 
-  const [roster, lectura] = await Promise.all([getRosterResumen(), leerDia(gymModo, hoyIso)]);
+  const [roster, lectura, asistenciasResumen] = await Promise.all([
+    getRosterResumen(),
+    leerDia(gymModo, hoyIso),
+    leerResumenAsistencias(gymModo),
+  ]);
 
   const ahora = new Date();
   const sesiones = lectura.agenda?.sesiones ?? [];
@@ -48,6 +53,7 @@ export default async function Page() {
       nuevosOnline={roster.nuevosOnline}
       porRenovar={roster.porRenovar}
       aunATiempo={roster.aunATiempo}
+      asistenciasResumen={asistenciasResumen}
     />
   );
 }

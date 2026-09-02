@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SupabaseServer } from "@gym/data/server/supabase";
 
-import { leerDia } from "./reads";
+import { leerDia, leerResumenAsistencias } from "./reads";
 
 /**
  * #328 AC: "Lista: no agenda read is issued (assert at the data seam), ... the
@@ -55,5 +55,27 @@ describe("leerDia — the data seam Lista must never touch (#328)", () => {
     const lectura = await leerDia("cupo", HOY_ISO, client);
     expect(calls.length).toBeGreaterThan(0);
     expect(lectura).toEqual({ agenda: null, visitas: [] });
+  });
+});
+
+/**
+ * The inverse AC (owner ruling 2026-09-01, ASISTENCIAS · HOY hero restored Lista-
+ * only): the attendance-count read is issued ONLY on Lista — Cupo already leads with
+ * its own class hero and must never cost this round trip either. Same seam-level
+ * assertion as `leerDia` above ("did it record a call", not "did it throw").
+ */
+describe("leerResumenAsistencias — the data seam Cupo must never touch (owner ruling 2026-09-01)", () => {
+  it("Lista: the Supabase client IS reached — a failed round trip degrades to null (hero hidden)", async () => {
+    const { client, calls } = fakeClienteQueCuenta();
+    const resumen = await leerResumenAsistencias("lista", client);
+    expect(calls.length).toBeGreaterThan(0);
+    expect(resumen).toBeNull();
+  });
+
+  it("Cupo: the Supabase client is NEVER called — the read is skipped, not discarded", async () => {
+    const { client, calls } = fakeClienteQueCuenta();
+    const resumen = await leerResumenAsistencias("cupo", client);
+    expect(calls).toEqual([]);
+    expect(resumen).toBeNull();
   });
 });

@@ -4,12 +4,14 @@ import { addDays, hoyEnZona, toIsoDay } from "@gym/format";
 
 import {
   DIAS_TIRA_INICIAL,
+  getAsistenciasResumenHoy,
   getMarcadas,
   getMarcadasDeMes,
   getReservasDelDia,
   getVisitasDelDia,
   togglePase,
 } from "./asistencia";
+import type { SupabaseServer } from "./supabase";
 import { makeFake } from "./supabase-fake.test-helper";
 
 /** First-of-month "YYYY-MM-DD" for a Date — the window-boundary shape getMarcadas sends. */
@@ -329,5 +331,109 @@ describe("togglePase — typed outcome (injected fake)", () => {
 
     await expect(togglePase({ ...input, sessionId: "not-a-uuid" }, client)).rejects.toThrow();
     expect(rpcCalls).toEqual([]);
+  });
+});
+
+/**
+ * The Lista home's ASISTENCIAS · HOY hero (owner ruling 2026-09-01, restoring what #328
+ * dropped) — a hand-rolled fake, not `./supabase-fake.test-helper`'s shared one, because
+ * the shared fake's `.eq()`/`.is()` RECORD filters without narrowing the seeded list
+ * (its own doc comment), which would make every one of the 7 daily counts read back
+ * identical — unable to prove hoy/ayer/semana are actually distinct per-day reads. This
+ * mirrors `modo-reservas.test.ts`'s own hand-rolled count fake for the same reason.
+ */
+describe("getAsistenciasResumenHoy — 7 concurrent COUNTs, never a row fetch (owner ruling 2026-09-01)", () => {
+  const GYM_ROW = {
+    gym_id: "gym-1",
+    gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge", booking_enabled: false },
+  };
+
+  function makeConteoFake(porFecha: Record<string, number>) {
+    const eqCalls: [string, unknown][] = [];
+    const isCalls: [string, unknown][] = [];
+    const selectCalls: [string, { count?: string; head?: boolean } | undefined][] = [];
+
+    function asistenciasBuilder() {
+      let fecha: string | undefined;
+      const b = {
+        select: (columns: string, options?: { count?: string; head?: boolean }) => {
+          selectCalls.push([columns, options]);
+          return b;
+        },
+        eq: (col: string, val: unknown) => {
+          eqCalls.push([col, val]);
+          if (col === "fecha") fecha = val as string;
+          return b;
+        },
+        is: (col: string, val: unknown) => {
+          isCalls.push([col, val]);
+          return b;
+        },
+        then: (resolve: (v: { data: null; count: number; error: null }) => unknown) =>
+          resolve({ data: null, count: fecha ? (porFecha[fecha] ?? 0) : 0, error: null }),
+      };
+      return b;
+    }
+
+    const client = {
+      auth: { getClaims: async () => ({ data: { claims: { sub: "op-1" } } }) },
+      from: (table: string) => {
+        if (table === "asistencias") return asistenciasBuilder();
+        if (table === "gym_membership")
+          return {
+            select: () => ({
+              in: () => ({
+                order: () => ({
+                  then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+                    resolve({ data: [GYM_ROW], error: null }),
+                }),
+              }),
+            }),
+          };
+        throw new Error(`getAsistenciasResumenHoy fake: unexpected table "${table}"`);
+      },
+    };
+
+    return { client: client as unknown as SupabaseServer, eqCalls, isCalls, selectCalls };
+  }
+
+  it("issues 7 gym-scoped server-side COUNTs, excluding perdonada + soft-deleted rows — never a row list", async () => {
+    const { client, eqCalls, isCalls, selectCalls } = makeConteoFake({});
+
+    await getAsistenciasResumenHoy(client);
+
+    // `{ count: "exact", head: true }` on every call — the PostgREST server-side count,
+    // not a row-length read (mirrors `contarReservasFuturas`'s own asserted shape).
+    expect(selectCalls).toEqual(Array.from({ length: 7 }, () => ["id", { count: "exact", head: true }]));
+    expect(eqCalls.filter(([c, v]) => c === "gym_id" && v === "gym-1")).toHaveLength(7);
+    expect(eqCalls.filter(([c, v]) => c === "perdonada" && v === false)).toHaveLength(7);
+    expect(isCalls.filter(([c, v]) => c === "deleted_at" && v === null)).toHaveLength(7);
+  });
+
+  it("shapes hoy/ayer off the tail of a 7-day series ending TODAY (index 6 = hoy, 5 = ayer)", async () => {
+    const hoy = hoyEnZona("America/Chihuahua");
+    const iso = (offset: number) => toIsoDay(addDays(hoy, offset));
+    const { client } = makeConteoFake({
+      [iso(-6)]: 1,
+      [iso(-5)]: 2,
+      [iso(-4)]: 3,
+      [iso(-3)]: 4,
+      [iso(-2)]: 5,
+      [iso(-1)]: 6,
+      [iso(0)]: 7,
+    });
+
+    const resumen = await getAsistenciasResumenHoy(client);
+
+    expect(resumen).toEqual({ hoy: 7, ayer: 6, semana: [1, 2, 3, 4, 5, 6, 7] });
+  });
+
+  it("defaults every uncounted day to 0", async () => {
+    const { client } = makeConteoFake({});
+    await expect(getAsistenciasResumenHoy(client)).resolves.toEqual({
+      hoy: 0,
+      ayer: 0,
+      semana: [0, 0, 0, 0, 0, 0, 0],
+    });
   });
 });
