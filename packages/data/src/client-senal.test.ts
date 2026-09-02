@@ -127,7 +127,11 @@ describe("crearRegulador", () => {
     const onSenal = vi.fn();
     const reg = crear(onSenal, 600);
 
-    for (let i = 0; i < 3; i++) {
+    // Twenty, not a token three: the test's name is the scenario, and a pasar-lista of twenty
+    // members is exactly the burst the trailing debounce exists to collapse. Each cycle re-arms
+    // the timer twice (pedir, then vaciar's re-request on release), so a regression that fired
+    // per release would show up here as 20 calls instead of the 3 a short loop would report.
+    for (let i = 0; i < 20; i++) {
       ocuparSenal("hoja");
       reg.pedir("senal");
       vi.advanceTimersByTime(100);

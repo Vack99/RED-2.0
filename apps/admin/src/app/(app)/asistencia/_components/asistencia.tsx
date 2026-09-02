@@ -365,9 +365,6 @@ export function AsistenciaScreen({
       const key = `${selIso}:${c.id}`;
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
-      // The signal rail must not refresh the route out from under an optimistic flip that has not
-      // been reconciled yet: same guard as `inFlight`, one key space, published across components.
-      ocuparSenal(key);
       // This tap supersedes any earlier sale bridge — clear it now so a banner for a
       // PREVIOUS member never survives onto this one, win or lose.
       setVentaSugerida(null);
@@ -385,6 +382,13 @@ export function AsistenciaScreen({
       aplicar(ctxSel, willBePresent, null);
 
       try {
+        // The signal rail must not refresh the route out from under an optimistic flip that has not
+        // been reconciled yet: same guard as `inFlight`, one key space, published across components.
+        // Taken as the FIRST statement inside the try, paired with the `liberarSenal` in `finally`:
+        // taken above it, anything that threw before the write would leave the key in the
+        // module-global `senalBusy` forever, and `senalBusy` is never empty again — which silences
+        // the freshness rail for the whole tab, in every component, until a reload.
+        ocuparSenal(key);
         const res = await togglePaseAction({
           clienteId: c.id,
           fecha: selIso,

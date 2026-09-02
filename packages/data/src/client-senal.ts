@@ -46,6 +46,26 @@ interface ReguladorInterno extends Regulador {
 
 const reguladores = new Set<ReguladorInterno>();
 
+/**
+ * The in-flight `removeChannel()` of the LAST unmount, or null when none is pending. Module-level
+ * because the two mounts that race are different components (`/reservar`'s layout and
+ * `/clase/[id]`'s), and the leave they race over belongs to neither of them: it belongs to the
+ * per-tab supabase singleton, whose channel registry is keyed by topic and shared by both.
+ *
+ * Why it has to exist: navigating between those two routes unmounts one `useSenalGym` and mounts
+ * another on the SAME topic. `removeChannel` is async — it awaits `channel.unsubscribe()`, phoenix
+ * marks the channel `leaving`, and the channel is dropped from `client.channels` only in its
+ * `_onClose` hook (RealtimeChannel.js:102-104 → RealtimeClient.js:437-439), i.e. when the server's
+ * leave reply lands. A mount in that window calls `supabase.channel('gym:<id>')`, which returns the
+ * EXISTING leaving channel rather than making a new one (RealtimeClient.js:343-355, "If a channel
+ * with the same topic already exists it will be returned instead"), and `.subscribe()` on it is a
+ * silent no-op: its whole body is behind `if (this.channelAdapter.isClosed())`
+ * (RealtimeChannel.js:116-121), and `isClosed()` is `state === 'closed'`, not `'leaving'`
+ * (phoenix/channelAdapter.js:74-76). The destination route would then have no subscription, no
+ * error, and no warning — the status callback that logs CHANNEL_ERROR is never even registered.
+ */
+let saliendo: Promise<unknown> | null = null;
+
 export function ocuparSenal(key: string): void {
   senalBusy.add(key);
 }
@@ -178,6 +198,12 @@ export function useSenalGym({
       await supabase.realtime.setAuth();
       if (!vivo) return;
 
+      // Wait out the previous mount's leave before asking for the topic, or `channel()` hands back
+      // that leaving channel and `subscribe()` does nothing (see `saliendo` above). Re-check `vivo`
+      // after: this await is a second suspension point, and the caller may have unmounted across it.
+      if (saliendo) await saliendo;
+      if (!vivo) return;
+
       let suscritoAntes = false;
       canal = supabase
         .channel(`gym:${gymId}`, { config: { private: true } })
@@ -203,7 +229,19 @@ export function useSenalGym({
       vivo = false;
       document.removeEventListener("visibilitychange", alCambiarVisibilidad);
       reg.destruir();
-      if (canal) void supabase.removeChannel(canal);
+      if (!canal) return;
+      // Publish the leave so the NEXT mount can await it. `.catch` because an unresolved rejection
+      // here would be an unhandled one, and because a failed leave must still let the next mount
+      // proceed rather than hang it forever. The identity check in `.finally` matters when two
+      // unmounts overlap (A → B → C): without it, the FIRST leave settling would clear the SECOND
+      // one's promise and the third mount would race exactly the channel this fixes.
+      const p: Promise<unknown> = supabase
+        .removeChannel(canal)
+        .catch(() => undefined)
+        .finally(() => {
+          if (saliendo === p) saliendo = null;
+        });
+      saliendo = p;
     };
   }, [gymId, debounceMs]);
 }

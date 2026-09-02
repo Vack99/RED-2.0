@@ -310,6 +310,27 @@ begin
 end $$;
 reset role;
 
+-- ── …and an anonymous visitor reads nothing at all ───────────────────────────────
+-- The policy is `for select to authenticated`, so `anon` matches NO policy on a row-security
+-- enabled table and reads zero before `is_member_of` is ever consulted. That deserves its own
+-- vector rather than being assumed from the role list: anon DOES hold `select` on
+-- realtime.messages and `usage` on schema realtime by Supabase default (has_table_privilege and
+-- has_schema_privilege both true here), so the policy's role list is the ONLY thing standing
+-- between an unauthenticated socket and every tenant's signal traffic. The two messages the gym
+-- move left in the table — one for gym A, one for gym B — are what this would read if it were not.
+select set_config('realtime.topic', 'gym:' || current_setting('t.gym_a', true), true);
+select set_config('request.jwt.claims', json_build_object('role', 'anon')::text, true);
+set local role anon;
+do $$
+declare
+  v_n int;
+begin
+  select count(*) into v_n from realtime.messages
+    where topic = 'gym:' || current_setting('t.gym_a', true);
+  if v_n <> 0 then raise exception 'RULE FAIL(policy denies anon): an anonymous visitor read % row(s) on gym A''s topic', v_n; end if;
+end $$;
+reset role;
+
 -- ── A malformed topic DENIES; it must not raise 22P02 inside the policy ──────────
 select set_config('realtime.topic', 'gym:no-soy-uuid', true);
 select set_config('request.jwt.claims',
@@ -323,6 +344,51 @@ begin
   if v_n <> 0 then raise exception 'RULE FAIL(bad topic): a non-uuid topic read % row(s)', v_n; end if;
 exception when invalid_text_representation then
   raise exception 'RULE FAIL(bad topic): the policy RAISED 22P02 instead of denying — senal_topic_gym is not guarding the cast';
+end $$;
+reset role;
+
+-- ── The gate is MEMBERSHIP, not merely a valid token ─────────────────────────────
+-- The grants vector proves gym A's member reads gym A's topic, but on its own it cannot say WHY:
+-- a policy that only checked `to authenticated` would pass it identically — while handing every
+-- logged-in user of every tenant every other tenant's traffic. Deleting exactly one
+-- `gym_membership` row and changing nothing else is what isolates `is_member_of` as the thing
+-- doing the work: same user, same claims, same topic, same rows in the table, opposite answer.
+-- Runs LAST, after the bad-topic vector, precisely because it revokes m_a's access to gym A —
+-- above, it would make that vector's zero true for a second reason and stop measuring the cast.
+do $$
+declare
+  m_a   uuid := current_setting('t.m_a', true)::uuid;
+  gym_a uuid := current_setting('t.gym_a', true)::uuid;
+  v_n int;
+begin
+  -- No `senal_*` trigger sits on gym_membership (the five signalling tables are reservation,
+  -- class_session, clientes, ventas, asistencias), so this delete adds no message of its own.
+  delete from public.gym_membership where user_id = m_a and gym_id = gym_a;
+  if exists (select 1 from public.gym_membership where user_id = m_a and gym_id = gym_a) then
+    raise exception 'SETUP FAIL(membership gate): m_a''s gym A membership survived the delete';
+  end if;
+
+  -- Without this the read below could return 0 because there is nothing to read, which would
+  -- prove nothing about the gate. The gym move left exactly one message on gym A's topic.
+  select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_n <> 1 then
+    raise exception 'SETUP FAIL(membership gate): % message(s) on gym A''s topic before the read (expected the 1 the grants vector read) — a 0 below would be vacuous', v_n;
+  end if;
+end $$;
+
+select set_config('realtime.topic', 'gym:' || current_setting('t.gym_a', true), true);
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare
+  v_n int;
+begin
+  select count(*) into v_n from realtime.messages
+    where topic = 'gym:' || current_setting('t.gym_a', true);
+  if v_n <> 0 then
+    raise exception 'RULE FAIL(membership gate): a user whose gym A membership was revoked still read % row(s) on gym A''s topic — is_member_of is not the gate', v_n;
+  end if;
 end $$;
 reset role;
 
