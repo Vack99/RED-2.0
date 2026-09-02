@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
+import { liberarSenal, ocuparSenal } from "@gym/data/client-senal";
 import type { AgendaResultado } from "@gym/data/server/agenda";
 import { DateStrip } from "@gym/ui/forge/agenda/date-strip";
 import { EditorSheet, type CoachOption, type EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
@@ -208,6 +209,23 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // first tap's `setBusy(true)` — two concurrent server actions, and on the create path, two
   // rows. A ref closes that gap synchronously; `busy` stays, driving the sheet's disabled/dim UI.
   const editorInFlight = React.useRef(false);
+
+  // The signal rail is held while either sheet is open (audit 2026-09-01, weakness 5). The glance
+  // sheet holds a lazily-loaded roster and the editor holds an unsaved draft; a `router.refresh()`
+  // under either one throws away work the operator can see. Closing BOTH releases the hold, and
+  // `liberarSenal` flushes whatever was pending — so the refresh they "missed" lands on close
+  // instead of waiting for the next write anybody happens to make.
+  //
+  // The dep is the COLLAPSED boolean, never `[glance.open, editor.open]`: EDITAR hands off from
+  // the glance sheet to the editor, and a two-value dep re-runs the effect on that handoff —
+  // release, then re-acquire — which flushes a pending refresh straight into the editor that is
+  // opening. One boolean stays true across the handoff, so nothing is released mid-flight.
+  const reteniendoHoja = glance.open || editor.open;
+  React.useEffect(() => {
+    if (!reteniendoHoja) return;
+    ocuparSenal("agenda-hoja");
+    return () => liberarSenal("agenda-hoja");
+  }, [reteniendoHoja]);
 
   const selectedDay = dias[selectedIndex] ?? dias[0];
   const selectedIso = stripDays[selectedIndex]?.iso ?? stripDays[0].iso;

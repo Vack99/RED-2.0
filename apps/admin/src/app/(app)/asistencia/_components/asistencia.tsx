@@ -10,6 +10,7 @@ import { forgeToast } from "@gym/ui/forge/toaster";
 import { Avatar, Eyebrow, H1, Input, Tnum } from "@gym/ui/forge/ui";
 import { useRevealedWindow } from "@gym/ui/forge/use-revealed-window";
 import type { PaseClienteDTO } from "@gym/data/server/clientes";
+import { liberarSenal, ocuparSenal } from "@gym/data/client-senal";
 import { addDays, DOW, firstName, fmtFull, foldDiacritics, isoDay, MON, parseDay, sameDay } from "@gym/format";
 import { scrollBehavior } from "@gym/ui/motion";
 import type { MarcadasInicial, Presencia, ReservaDelDia } from "@gym/data/server/asistencia";
@@ -145,6 +146,11 @@ export function AsistenciaScreen({
   // agenda.tsx's `runAgregar` says it defers to.
   React.useEffect(() => {
     const id = setInterval(() => {
+      // A hidden tab is nobody looking at a screen: the tick used to fire anyway, so a kiosk left
+      // on a dark phone paid a full RSC round trip every 5 minutes for nothing, and STILL showed
+      // up to 5 minutes of stale reservas the moment it woke (audit 2026-09-01, weakness 3). The
+      // wake-up is now handled by the signal rail's `visible` motive instead, which is immediate.
+      if (document.visibilityState !== "visible") return;
       if (inFlight.current.size === 0) router.refresh();
     }, REFRESCO_MS);
     return () => clearInterval(id);
@@ -359,6 +365,9 @@ export function AsistenciaScreen({
       const key = `${selIso}:${c.id}`;
       if (inFlight.current.has(key)) return;
       inFlight.current.add(key);
+      // The signal rail must not refresh the route out from under an optimistic flip that has not
+      // been reconciled yet: same guard as `inFlight`, one key space, published across components.
+      ocuparSenal(key);
       // This tap supersedes any earlier sale bridge — clear it now so a banner for a
       // PREVIOUS member never survives onto this one, win or lose.
       setVentaSugerida(null);
@@ -433,6 +442,7 @@ export function AsistenciaScreen({
         forgeToast({ tone: "warning", title: "No se pudo registrar", body: "Intenta de nuevo." });
       } finally {
         inFlight.current.delete(key);
+        liberarSenal(key);
       }
     },
     [selIso, ctxSel, sesiones],

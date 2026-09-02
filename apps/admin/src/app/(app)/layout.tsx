@@ -8,6 +8,7 @@ import { TabBar } from "@gym/ui/forge/tab-bar";
 import { tabsPara } from "../../lib/tabs";
 import { auditTenantInEffect } from "../../lib/tenant";
 import { SinGimnasio } from "./_components/sin-gimnasio";
+import { SenalGym } from "./_components/senal-gym";
 import { VariosGimnasios } from "./_components/varios-gimnasios";
 
 // The admin app owns its nav table (brand-specific routes + labels); @gym/ui's
@@ -73,6 +74,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-canvas sm:max-w-[440px] sm:shadow-2xl">
         <main className="forge-scroll relative flex-1 overflow-y-auto">{contenido}</main>
         {mostrarTabBar && <TabBar items={tabsPara(modoActivo)} />}
+        {/* The freshness rail (audit 2026-09-01), keyed on the TENANT IN EFFECT — the gym this
+            host renders under — never on the membership set: a two-gym operator on RED's host
+            must not be refreshed by Forge's writes. Only the "render" arm has one, so the
+            chooser/redirect/none arms mount no socket at all. */}
+        {gymEnEfecto && <SenalGym gymId={gymEnEfecto.id} />}
       </div>
     </div>
   );
