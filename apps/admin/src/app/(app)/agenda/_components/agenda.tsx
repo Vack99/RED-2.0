@@ -28,6 +28,7 @@ import {
   retirarHorarioRecurrenteAction,
   rosterSesionAction,
 } from "../actions";
+import { cardVigente } from "./card-vigente";
 import { pasoAgenda } from "./paso-agenda";
 import {
   accionAgregar,
@@ -687,33 +688,40 @@ export function AgendaScreen(props: AgendaScreenProps) {
         </div>
       )}
 
-      {/* Quick-glance (card tap) — portals to the viewport via Sheet. */}
-      {glance.card && (
-        <QuickGlanceSheet
-          open={glance.open}
-          onClose={closeGlance}
-          time={glance.card.time}
-          tipo={glance.card.tipo}
-          coaches={glance.card.coaches}
-          mins={glance.card.mins}
-          booked={glance.card.booked}
-          cap={glance.card.cap}
-          estado={glance.card.estado}
-          isSpecial={glance.card.esEspecial}
-          specialName={glance.card.specialName}
-          onEdit={() => glance.card && openEdit(glance.card)}
-          roster={glance.roster}
-          candidates={glance.candidates}
-          rosterLoading={glance.loading}
-          rosterBusy={rosterBusy}
-          antesDeVentana={accionAgregar(glance.card.startsAtIso, ahora) === "reservar"}
-          claseIniciada={new Date(glance.card.startsAtIso).getTime() <= ahora.getTime()}
-          ventaSugerida={ventaSugerida ?? undefined}
-          onTogglePresent={runPase}
-          onAddWalkIn={runAgregar}
-          onCancelReserva={runCancelarReserva}
-        />
-      )}
+      {/* Quick-glance (card tap) — portals to the viewport via Sheet. `glance.card` is only
+          the identity/open-state anchor (its id, and what the effect/`runRoster` key off);
+          every RENDERED value comes from `cardVigente`, the current week's own card with that
+          id, so a roster write's `router.refresh()` updates CUPO/lugares-libres the same tick
+          it updates LISTA instead of waiting for the sheet to close and reopen. */}
+      {glance.card && (() => {
+        const card = cardVigente(dias, glance.card);
+        return (
+          <QuickGlanceSheet
+            open={glance.open}
+            onClose={closeGlance}
+            time={card.time}
+            tipo={card.tipo}
+            coaches={card.coaches}
+            mins={card.mins}
+            booked={card.booked}
+            cap={card.cap}
+            estado={card.estado}
+            isSpecial={card.esEspecial}
+            specialName={card.specialName}
+            onEdit={() => openEdit(card)}
+            roster={glance.roster}
+            candidates={glance.candidates}
+            rosterLoading={glance.loading}
+            rosterBusy={rosterBusy}
+            antesDeVentana={accionAgregar(card.startsAtIso, ahora) === "reservar"}
+            claseIniciada={new Date(card.startsAtIso).getTime() <= ahora.getTime()}
+            ventaSugerida={ventaSugerida ?? undefined}
+            onTogglePresent={runPase}
+            onAddWalkIn={runAgregar}
+            onCancelReserva={runCancelarReserva}
+          />
+        );
+      })()}
 
       {/* Editor — a right-sliding full panel; portaled into a viewport frame so the
           template.tsx enter-transform never becomes its containing block. */}
