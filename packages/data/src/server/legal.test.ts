@@ -275,10 +275,12 @@ function fakeIdentidadRead(opts: {
       if (table !== "gym_membership") throw new Error(`unexpected table ${table}`);
       return {
         select: () => ({
-          in: () => ({
-            order: async () => ({
-              data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
-              error: null,
+          eq: () => ({
+            in: () => ({
+              order: async () => ({
+                data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+                error: null,
+              }),
             }),
           }),
         }),
@@ -368,10 +370,12 @@ function fakeActualizarIdentidad(opts: {
       if (table === "gym_membership") {
         return {
           select: () => ({
-            in: () => ({
-              order: async () => ({
-                data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
-                error: null,
+            eq: () => ({
+              in: () => ({
+                order: async () => ({
+                  data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
+                  error: null,
+                }),
               }),
             }),
           }),

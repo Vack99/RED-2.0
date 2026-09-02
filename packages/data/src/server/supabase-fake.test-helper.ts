@@ -156,7 +156,7 @@ export function makeFake(
       // getOperatorGyms reads gym_membership with an embedded `gym(...)` FK join (one
       // round trip), so the fake pre-joins the gym row onto the membership row.
       if (table === "gym_membership")
-        return builder(table, [{ gym_id: "test-gym", role: "owner", gym: gymRow }]);
+        return builder(table, [{ gym_id: "test-gym", role: "owner", user_id: "test-operator", gym: gymRow }]);
       if (table === "gym") return builder(table, [gymRow]);
       return builder(table, (rows as Record<string, unknown[]>)[table] ?? []);
     },

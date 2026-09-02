@@ -422,7 +422,7 @@ const FIXTURE_CLIENTES = [
 const OPERATOR_ROWS: Rows = {
   clientes: FIXTURE_CLIENTES,
   gym_membership: [
-    { gym_id: "g-1", role: "operator", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } },
+    { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } },
   ],
   rpc: {
     // Self-registered cli-online, never charged: 0 ventas → primeraCompra true (#77).
@@ -620,7 +620,7 @@ describe("getRosterResumen — vigentes/total from the shared lifecycle-engine p
       clientes: RESUMEN_CLIENTES,
       paquetes: PAQUETES_CATALOG,
       gym_membership: [
-        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+        { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
       ],
     });
 
@@ -757,7 +757,7 @@ describe("getRosterResumen — porRenovar buckets sum to the headline (#228)", (
       clientes: PORRENOVAR_CLIENTES,
       paquetes: PAQUETES_CATALOG,
       gym_membership: [
-        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+        { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
       ],
     });
 
@@ -846,7 +846,7 @@ describe("getClientesRoster — #229: tile + ausencia on the row's own veredicto
   ];
 
   const GYM_MEMBERSHIP = [
-    { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+    { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
   ];
 
   it("stamps AÚN A TIEMPO tile membership, excluding the app-account holder", async () => {
@@ -963,7 +963,7 @@ describe("getRosterResumen — #229: aunATiempo from the SAME asistencias_ultima
   ];
 
   const GYM_MEMBERSHIP = [
-    { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+    { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
   ];
 
   it("counts aunATiempo via the ONE new aggregate, excluding the account holder and the long-dead", async () => {
@@ -1061,7 +1061,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
       clientes: [FICHA_CLIENTE],
       // #97: brand_name is the injected negocio fallback, now pre-joined onto the membership.
       gym_membership: [
-        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+        { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
       ],
       asistencias,
       ventas: [venta],
@@ -1317,7 +1317,7 @@ describe("getClienteFicha — clases gauge anchors at the venta instant (C14)", 
     const rows: Record<string, Record<string, unknown>[]> = {
       clientes: [FICHA_CLIENTE],
       gym_membership: [
-        { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+        { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
       ],
       asistencias: [],
       ventas: [FICHA_VENTA],

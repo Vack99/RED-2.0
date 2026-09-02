@@ -382,10 +382,12 @@ describe("getAsistenciasResumenHoy — 7 concurrent COUNTs, never a row fetch (o
         if (table === "gym_membership")
           return {
             select: () => ({
-              in: () => ({
-                order: () => ({
-                  then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
-                    resolve({ data: [GYM_ROW], error: null }),
+              eq: () => ({
+                in: () => ({
+                  order: () => ({
+                    then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+                      resolve({ data: [GYM_ROW], error: null }),
+                  }),
                 }),
               }),
             }),

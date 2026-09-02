@@ -59,8 +59,11 @@ function makeFake(opts: {
     brand_name: opts.gymBrandName ?? "Forge",
     booking_enabled: opts.gymBookingEnabled ?? false,
   };
+  // `user_id` defaults to the caller's own sub — every existing fixture row IS the
+  // caller's own membership unless a test overrides it (the co-staff duplicate case below).
   const membership = (opts.membership ?? [{ gym_id: "gym-1", role: "owner" }]).map((m) => ({
     gym: gymPorDefecto,
+    user_id: sub,
     ...m,
   }));
   const inCalls: [string, unknown[]][] = [];
@@ -219,6 +222,25 @@ describe("getOperatorGyms", () => {
   it("drops a membership whose embedded gym did not come back", async () => {
     const { client } = makeFake({ membership: [{ gym_id: "gym-1", role: "owner", gym: null }] });
     expect(await getOperatorGyms(client)).toEqual([]);
+  });
+
+  // `gym_membership_staff_select` (RLS) lets any staff member of a gym read every OTHER
+  // staff member's row for that gym too — permissive policies OR together. Without the
+  // `.eq("user_id", …)` filter this query would hand back BOTH owner/operator rows for
+  // gym-1, embedding the same gym twice: a duplicate slug, and `decideTenant` reading
+  // `misGyms.length` as 2 instead of 1 (the `choose` chooser instead of `redirect`).
+  it("filters to the caller's OWN membership row, even when RLS would also surface a co-staff's row for the same gym", async () => {
+    const { client, eqCalls } = makeFake({
+      sub: "op-1",
+      membership: [
+        { gym_id: "gym-1", role: "owner", user_id: "op-1" },
+        { gym_id: "gym-1", role: "operator", user_id: "op-99" },
+      ],
+    });
+    const gyms = await getOperatorGyms(client);
+    expect(gyms).toHaveLength(1);
+    expect(gyms[0]).toMatchObject({ id: "gym-1", userId: "op-1" });
+    expect(eqCalls).toEqual([["user_id", "op-1"]]);
   });
 });
 

@@ -41,10 +41,14 @@ function makeFake(
     if (name === "gym_membership") {
       return {
         select: () => ({
-          in: () => ({
-            order: async () => ({
-              data: [{ gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } }],
-              error: null,
+          eq: () => ({
+            in: () => ({
+              order: async () => ({
+                data: [
+                  { gym_id: "gym-1", gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" } },
+                ],
+                error: null,
+              }),
             }),
           }),
         }),

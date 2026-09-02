@@ -114,6 +114,7 @@ function makeFake(
           {
             gym_id: "gym-1",
             role: "owner",
+            user_id: sub,
             gym: { timezone: rows.gymTimezone ?? TZ, slug: "forge", brand_name: "Forge" },
           },
         ]);

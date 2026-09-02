@@ -75,6 +75,7 @@ function makeFake(
         return builder(table, [
           {
             gym_id: "gym-1",
+            user_id: sub,
             gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge" },
           },
         ]);

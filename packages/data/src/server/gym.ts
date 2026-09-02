@@ -29,10 +29,16 @@ export interface OperatorGym {
  * primitive because the tenant reconciliation (#212) and the 2+-gym chooser (#208) both
  * need all of them; `getOperatorGym` is the pick made on top of it.
  *
- * `gym_membership`'s RLS self-read policy already scopes the read to the caller
- * (ADR-0013 §4), so no explicit `user_id` filter is added here. `requireOperator` gives
- * a clean "No autenticado" instead of a confusing "Sin gym asignado" for an anonymous
- * caller.
+ * `gym_membership` carries a SECOND permissive select policy alongside the self-read one —
+ * `gym_membership_staff_select`, `using (is_staff_of(gym_membership.gym_id))` — so a staff
+ * member of a gym can read every OTHER staff member's row for that same gym, not just their
+ * own (RLS ORs permissive policies together). Without an explicit `.eq("user_id", userId)`
+ * here, a gym with 2+ owner/operator rows hands this query BOTH, embedding the SAME gym
+ * twice: `getOperatorGyms` returns a duplicate slug, `decideTenant` sees `misGyms.length`
+ * inflated past the caller's real membership count, and a single-gym operator lands in the
+ * `choose` chooser instead of the `redirect` arm. The `.eq()` narrows back down to the rows
+ * that are actually the caller's OWN. `requireOperator` gives a clean "No autenticado"
+ * instead of a confusing "Sin gym asignado" for an anonymous caller.
  *
  * The staff-role filter (`owner`|`operator`) and the `gym_id` order live IN THE QUERY
  * (spec §1.3): they are what make the pick deterministic, so a `member` row (a socio who
@@ -56,6 +62,7 @@ const resolveOperatorGyms = cache(
     const { data: memberships } = await supabase
       .from("gym_membership")
       .select("gym_id, gym(timezone, slug, brand_name, booking_enabled)")
+      .eq("user_id", userId)
       .in("role", ["owner", "operator"])
       .order("gym_id");
 

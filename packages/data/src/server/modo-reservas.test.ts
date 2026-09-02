@@ -75,10 +75,12 @@ function makeFake(opts: FakeOpts = {}) {
       if (table === "gym_membership") {
         return {
           select: () => ({
-            in: () => ({
-              order: () => ({
-                then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
-                  resolve({ data: [GYM_ROW], error: null }),
+            eq: () => ({
+              in: () => ({
+                order: () => ({
+                  then: (resolve: (v: { data: unknown[]; error: null }) => unknown) =>
+                    resolve({ data: [GYM_ROW], error: null }),
+                }),
               }),
             }),
           }),

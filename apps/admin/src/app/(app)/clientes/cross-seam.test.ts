@@ -141,7 +141,7 @@ describe("cross-seam equality — getRosterResumen agrees with getClientesRoster
       from: (table: string) => {
         if (table === "gym_membership") {
           return builder(table, [
-            { gym_id: "g-1", role: "operator", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
+            { gym_id: "g-1", role: "operator", user_id: "op-1", gym: { timezone: TZ, slug: "forge", brand_name: "Forge" } },
           ]);
         }
         if (table === "clientes") return builder(table, clientes);
