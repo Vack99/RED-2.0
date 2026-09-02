@@ -74,9 +74,14 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // A new suite closes the list after registros_atorados: senal_gym (audit 2026-09-01) — the ONLY
 // file here whose subject is `realtime.messages` rather than a public table. It proves the
 // freshness rail's two invisible halves: one broadcast per gym per transaction, and a SELECT
-// policy that lets that gym's members subscribe and refuses everybody else's. It needs a
-// SUPERUSER database (it creates today's realtime.messages partition), so it runs on the local
-// docker stack, not on a cloud scratch project.
+// policy that lets that gym's members subscribe and refuses everybody else's. Its one environment
+// requirement is that TODAY'S `realtime.messages` partition already exists: that table is
+// RANGE-partitioned on `inserted_at`, and the Realtime SERVICE — not SQL, and not this suite —
+// creates the daily partitions (yesterday..today+3) when a tenant connection provisions. No role
+// available here may create one. The local docker stack has them standing; on a fresh cloud
+// scratch, open one Realtime subscription against the project before running it. Without today's
+// partition the suite does NOT pass quietly on zero rows — it stops at its first block with
+// SETUP FAIL.
 export const SUITE = [
   'rls_cross_tenant_denial.sql',
   'gym_tenant_anon_read.sql',

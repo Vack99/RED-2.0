@@ -131,6 +131,7 @@ declare
   gym_a uuid := current_setting('t.gym_a', true)::uuid;
   c_a   uuid := current_setting('t.c_a', true)::uuid;
   v_n int; v_res int; v_saldo int; v_event text; v_priv boolean; v_t text;
+  v_resto jsonb; v_id_propio boolean;
 begin
   -- The two written tables, proved on the WRITTEN ROWS rather than on the RPC's return value
   -- (#78/#80) — otherwise "one message" could be true because only one table was written.
@@ -143,11 +144,31 @@ begin
   select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
   if v_n <> 1 then raise exception 'RULE FAIL(emits once): % message(s) for ONE call that wrote reservation AND clientes (expected exactly 1)', v_n; end if;
 
-  select event, private, payload ->> 't' into v_event, v_priv, v_t
+  select event, private, payload ->> 't', payload - 't' - 'id', (payload ->> 'id') = id::text
+    into v_event, v_priv, v_t, v_resto, v_id_propio
     from realtime.messages where topic = 'gym:' || gym_a::text;
   if v_event is distinct from 'cambio' then raise exception 'RULE FAIL(emits once): event % (expected cambio)', v_event; end if;
   if v_priv is distinct from true then raise exception 'RULE FAIL(emits once): message is not private'; end if;
-  if v_t is null then raise exception 'RULE FAIL(emits once): payload carries no table name'; end if;
+
+  -- The payload is a SIGNAL, not data, and this is where that claim is actually held to account.
+  -- `t` must name one of the two tables THIS call wrote — which of them wins the dedupe is an
+  -- ordering detail inside reservar_clase, so both are legal and anything else is not.
+  if v_t is null or v_t not in ('reservation', 'clientes') then
+    raise exception 'RULE FAIL(emits once): payload names table % — expected one of the two tables this call wrote (reservation, clientes)', coalesce(v_t, '<null>');
+  end if;
+  -- `realtime.send` stamps an `id` of its own before inserting (its body jsonb_set()s the message's
+  -- primary key in whenever the caller omits one), so that key is subtracted below. Pin it to the
+  -- row's actual id FIRST, so the subtraction can only ever remove send's own bookkeeping and never
+  -- launder a real `id` the trigger leaked into the payload.
+  if v_id_propio is distinct from true then
+    raise exception 'RULE FAIL(emits once): the payload id is not realtime.send''s own message id — something is putting an id in the payload';
+  end if;
+  -- Everything else must be gone. A payload that grew a member name, a gym_id or a row id would
+  -- cross a tenant line the moment two gyms share a channel; the whole design rests on it carrying
+  -- nothing but which table moved.
+  if v_resto is distinct from '{}'::jsonb then
+    raise exception 'RULE FAIL(emits once): payload carries % beyond the table name — the signal must carry NO data', v_resto::text;
+  end if;
 
   -- Nothing was ever written for gym B, so its topic must be silent — the trigger keys on the
   -- ROW's gym_id, never on the caller.
@@ -177,6 +198,87 @@ begin
 
   select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
   if v_n <> 1 then raise exception 'RULE FAIL(dedupe): % message(s) after a second call wrote two more tables (expected the original 1)', v_n; end if;
+end $$;
+
+-- ── The DELETE arm: a row LEAVING the gym signals it too ─────────────────────────
+-- A freed seat is exactly as visible to the next member as a taken one, so the DELETE trigger is
+-- not symmetry for its own sake. It is also the only arm that must read the OLD transition table:
+-- there is no `n` to fall back on, so an arm wired to `n` would emit NOTHING here and the gap would
+-- never show up in the INSERT/UPDATE vectors above. Fresh GUC state, so this measures ONE statement.
+do $$
+declare
+  gym_a uuid := current_setting('t.gym_a', true)::uuid;
+  v_res uuid; v_n int; v_t text;
+begin
+  delete from realtime.messages where topic like 'gym:%';
+  perform set_config('senal.g_' || replace(gym_a::text, '-', ''), '', true);
+
+  select id into v_res from public.reservation
+    where member_id = current_setting('t.c_a', true)::uuid
+      and class_session_id = current_setting('t.s_uno', true)::uuid;
+  if v_res is null then raise exception 'SETUP FAIL(delete arm): the seeded booking is gone before the delete'; end if;
+
+  delete from public.reservation where id = v_res;
+  if exists (select 1 from public.reservation where id = v_res) then
+    raise exception 'SETUP FAIL(delete arm): the booking row survived the delete'; end if;
+
+  select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_n <> 1 then raise exception 'RULE FAIL(delete arm): % message(s) for one DELETE (expected exactly 1)', v_n; end if;
+
+  select payload ->> 't' into v_t from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_t is distinct from 'reservation' then
+    raise exception 'RULE FAIL(delete arm): payload names table % (expected reservation)', coalesce(v_t, '<null>');
+  end if;
+
+  select count(*) into v_n from realtime.messages
+    where topic like 'gym:%' and topic <> 'gym:' || gym_a::text;
+  if v_n <> 0 then raise exception 'RULE FAIL(delete arm): % message(s) on some other gym''s topic', v_n; end if;
+end $$;
+
+-- ── A re-keyed row signals BOTH gyms: the one it left and the one it joined ──────
+-- This is the whole reason the UPDATE trigger takes both transition tables. Reading `n` alone would
+-- tell gym B its roster grew and leave gym A stale FOREVER — not merely slow: no later write to
+-- that row ever mentions gym A again, so nothing would ever come along to correct it.
+do $$
+declare
+  gym_a uuid := current_setting('t.gym_a', true)::uuid;
+  gym_b uuid := current_setting('t.gym_b', true)::uuid;
+  c_a   uuid := current_setting('t.c_a', true)::uuid;
+  v_n int; v_t text;
+begin
+  delete from realtime.messages where topic like 'gym:%';
+  perform set_config('senal.g_' || replace(gym_a::text, '-', ''), '', true);
+  perform set_config('senal.g_' || replace(gym_b::text, '-', ''), '', true);
+
+  update public.clientes set gym_id = gym_b where id = c_a;
+  if (select gym_id from public.clientes where id = c_a) is distinct from gym_b then
+    raise exception 'SETUP FAIL(gym move): the cliente did not actually move';
+  end if;
+
+  select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_n <> 1 then
+    raise exception 'RULE FAIL(gym move): % message(s) for the gym the row LEFT (expected exactly 1) — the UPDATE arm is not reading the OLD transition table', v_n;
+  end if;
+  select payload ->> 't' into v_t from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_t is distinct from 'clientes' then
+    raise exception 'RULE FAIL(gym move): the gym it LEFT was told about table % (expected clientes)', coalesce(v_t, '<null>');
+  end if;
+
+  select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_b::text;
+  if v_n <> 1 then
+    raise exception 'RULE FAIL(gym move): % message(s) for the gym the row JOINED (expected exactly 1)', v_n;
+  end if;
+  select payload ->> 't' into v_t from realtime.messages where topic = 'gym:' || gym_b::text;
+  if v_t is distinct from 'clientes' then
+    raise exception 'RULE FAIL(gym move): the gym it JOINED was told about table % (expected clientes)', coalesce(v_t, '<null>');
+  end if;
+
+  select count(*) into v_n from realtime.messages where topic like 'gym:%';
+  if v_n <> 2 then
+    raise exception 'RULE FAIL(gym move): % message(s) in total (expected exactly 2 — one per gym, each deduped to one)', v_n;
+  end if;
+  -- Leaves gym A holding exactly ONE message, which is the state the policy vectors below measure,
+  -- and a SECOND tenant's message sitting beside it in the same table while they measure it.
 end $$;
 
 -- ── The SELECT policy: gym A's member, subscribed to gym A's topic, reads it ─────
