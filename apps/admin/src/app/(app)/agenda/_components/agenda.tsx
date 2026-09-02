@@ -29,6 +29,7 @@ import {
   rosterSesionAction,
 } from "../actions";
 import { cardVigente } from "./card-vigente";
+import { marcarPresente } from "./marcar-presente";
 import { pasoAgenda } from "./paso-agenda";
 import {
   accionAgregar,
@@ -272,30 +273,53 @@ export function AgendaScreen(props: AgendaScreenProps) {
   }, []);
 
   // Every roster write shares one shape: busy-gate the cliente, run the RPC, surface its
-  // Spanish raise through the toast, then reload the roster (the RPC is authoritative — never
-  // optimistically guess membership) and refresh the agenda so the occupancy bump lands on the
+  // Spanish raise through the toast, then refresh the agenda so the occupancy bump lands on the
   // card counts, CUPO, the lugares-libres line and the day header's reservas total.
-  const runRoster = async (
+  //
+  // By default it reloads the roster from the server afterward (the RPC is authoritative —
+  // never optimistically guess MEMBERSHIP: who's on the list, walk-ins, candidates). `optimista`
+  // is the LISTA checkbox's opt-in fast path (owner report: the check mark "took time" to move,
+  // because this used to be TWO serial Vercel→Supabase trips — the RPC, then the refetch —
+  // before the row flipped at all): `aplicar` flips the row on the tap itself, `reconciliar`
+  // settles it from the RPC's own result once that resolves, and a failure reverts to the
+  // roster as it stood before the tap. Only safe when the write does NOT change membership,
+  // which is why only the present-toggle on an EXISTING row uses it (runPase).
+  const runRoster = async <T extends object = object>(
     clienteId: string,
-    accion: (sessionId: string) => Promise<AgendaResultado>,
+    accion: (sessionId: string) => Promise<AgendaResultado<T>>,
     errorTitle: string,
     // #235 story 10: the RPC's own sentence, handed to the caller that asked for it. Additive —
     // the toast fires either way; this is only how the add flow learns WHY it was refused.
     onFail?: (error: string) => void,
+    optimista?: {
+      aplicar: (roster: RosterRow[]) => RosterRow[];
+      reconciliar: (roster: RosterRow[], data: T) => RosterRow[];
+    },
   ) => {
     const card = glance.card;
     if (!card || rosterBusy.has(clienteId)) return;
     const sessionId = card.id;
+    const rosterPreTap = glance.roster;
     setRosterBusy((prev) => new Set(prev).add(clienteId));
+    if (optimista) {
+      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: optimista.aplicar(g.roster) } : g));
+    }
     try {
       const res = await accion(sessionId);
       if (!res.ok) {
+        if (optimista) {
+          setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: rosterPreTap } : g));
+        }
         forgeToast({ tone: "warning", title: errorTitle, body: res.error });
         onFail?.(res.error);
         return;
       }
-      const fresh = await rosterSesionAction(sessionId);
-      setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: fresh.roster, candidates: fresh.candidates } : g));
+      if (optimista) {
+        setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: optimista.reconciliar(g.roster, res) } : g));
+      } else {
+        const fresh = await rosterSesionAction(sessionId);
+        setGlance((g) => (g.card?.id === sessionId ? { ...g, roster: fresh.roster, candidates: fresh.candidates } : g));
+      }
       router.refresh();
     } finally {
       setRosterBusy((prev) => {
@@ -310,8 +334,29 @@ export function AgendaScreen(props: AgendaScreenProps) {
   // walk-in → is_walk_in reservation + consume; untoggle reverses).
   // `onFail` is the add flow's alone: the roster's present-toggle calls this with one argument
   // (SessionRosterProps.onToggle takes only a clienteId), so a blocked re-toggle never offers a sale.
-  const runPase = (clienteId: string, onFail?: (error: string) => void) =>
-    runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista", onFail);
+  //
+  // The RPC is the same either way; only the OPTIMISM differs, gated on whether `clienteId` is
+  // already a roster row. An existing row is a pure present-flip — nothing about membership
+  // changes — so it takes the fast path (marcarPresente) straight off `runRoster`'s `optimista`.
+  // A candidate walk-in (runAgregar's "pase" branch) ADDS a row and drops a candidate — that IS
+  // a membership change, so it keeps the full refetch.
+  const runPase = (clienteId: string, onFail?: (error: string) => void) => {
+    const existente = glance.roster.find((r) => r.clienteId === clienteId);
+    if (!existente) {
+      return runRoster(clienteId, (sessionId) => pasarListaSesionAction({ sessionId, clienteId }), "No se pudo pasar lista", onFail);
+    }
+    const presenteAntes = existente.present;
+    return runRoster(
+      clienteId,
+      (sessionId) => pasarListaSesionAction({ sessionId, clienteId }),
+      "No se pudo pasar lista",
+      onFail,
+      {
+        aplicar: (roster) => marcarPresente(roster, clienteId, !presenteAntes),
+        reconciliar: (roster, data) => marcarPresente(roster, clienteId, data.present),
+      },
+    );
+  };
 
   // THE tense branch (#238), and it lives HERE, in the handler, against a clock read at THIS
   // instant — never one captured at render (the #235 amendment). A sheet left open across the
