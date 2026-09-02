@@ -1,6 +1,6 @@
 import type { SesionAgendaDTO } from "@gym/data/server/agenda";
 import { enCurso, sesionMasCercana } from "@gym/domain/rules";
-import { fmtMesAnio, fmtNavegadorDia, horaEnZona, WEEKDAYS_FULL } from "@gym/format";
+import { fmtNavegadorDia, horaEnZona, MONTHS_FULL, WEEKDAYS_FULL } from "@gym/format";
 import { etiquetaSesion } from "@gym/ui/forge/agenda/session-card";
 
 /**
@@ -76,24 +76,37 @@ export interface DiaVM {
   clases: ClaseDelDia[];
 }
 
-/** The header's date block (owner ruling 2026-09-02 — replaces the pre-#328 greeting
- *  with the day itself, in the SAME hero type scale): "MIÉRCOLES 2" (big, H1) over
- *  "SEPTIEMBRE 2026" (small, Eyebrow). Built from the tz-resolved `hoy` the caller
- *  already computed (`hoyEnZona`, page.tsx) — never a second clock read. `fmtMesAnio`
- *  already emits the month line verbatim; the weekday+day line has no existing
- *  formatter to reuse, so it composes `@gym/format`'s exported `WEEKDAYS_FULL`
- *  directly rather than adding a new one. */
+/** The header's date block (owner ruling 2026-09-02) — the pre-#328 hero greeting's
+ *  chrome with the DATE in place of the greeting: an eyebrow, then a two-line display
+ *  where line 1 is the weekday in ink and line 2 is the day + month in the brand
+ *  accent, closed with a period ("BUENOS DÍAS," / "COACH." → "MIÉRCOLES" /
+ *  "2 DE SEPTIEMBRE."). Built from the tz-resolved `hoy` the caller already computed
+ *  (`hoyEnZona`, page.tsx) — never a second clock read.
+ *
+ *  The eyebrow carries the YEAR, not the gym name: the gym's `brand_name` is literally
+ *  "RED"/"Forge" (the tenant spine's seeds), the same word the marca lockup two lines
+ *  above already draws, so a gym-name eyebrow would just say the logo again — and the
+ *  account square already carries the gym's initial. The year is the one piece of the
+ *  date the display line deliberately drops, which is exactly what the pre-#328
+ *  eyebrow carried too ("MIÉ · 2 SEP 2026").
+ *
+ *  `@gym/format` has no formatter for either line (`fmtFull` is lowercase and joins
+ *  both), so this composes the package's exported `WEEKDAYS_FULL`/`MONTHS_FULL`
+ *  directly rather than adding one. */
 export interface FechaHeaderVM {
-  /** "MIÉRCOLES 2" — uppercased full weekday + day number. */
+  /** "MIÉRCOLES" — display line 1, in `--fg`. */
   diaSemana: string;
-  /** "SEPTIEMBRE 2026" — fmtMesAnio verbatim. */
-  mesAnio: string;
+  /** "2 DE SEPTIEMBRE." — display line 2, in the brand accent. */
+  diaMes: string;
+  /** "2026" — the eyebrow above the display. */
+  anio: string;
 }
 
 export function derivarFechaHeader(hoy: Date): FechaHeaderVM {
   return {
-    diaSemana: `${WEEKDAYS_FULL[hoy.getDay()].toUpperCase()} ${hoy.getDate()}`,
-    mesAnio: fmtMesAnio(hoy),
+    diaSemana: WEEKDAYS_FULL[hoy.getDay()].toUpperCase(),
+    diaMes: `${hoy.getDate()} DE ${MONTHS_FULL[hoy.getMonth()].toUpperCase()}.`,
+    anio: String(hoy.getFullYear()),
   };
 }
 

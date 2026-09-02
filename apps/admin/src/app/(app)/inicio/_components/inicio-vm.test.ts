@@ -216,17 +216,19 @@ describe("derivarDiaSiguiente — the rolled-forward day card (owner ruling 2026
 });
 
 describe("derivarFechaHeader", () => {
-  it("builds the big weekday+day line and the small month+year line (owner 2026-09-02)", () => {
+  it("splits the date into the old hero's two display lines + a year eyebrow (owner 2026-09-02)", () => {
     expect(derivarFechaHeader(new Date(2026, 8, 2))).toEqual({
-      diaSemana: "MIÉRCOLES 2",
-      mesAnio: "SEPTIEMBRE 2026",
+      diaSemana: "MIÉRCOLES",
+      diaMes: "2 DE SEPTIEMBRE.",
+      anio: "2026",
     });
   });
 
   it("uses the caller's already tz-resolved Date's local components, never a fresh clock read", () => {
     expect(derivarFechaHeader(new Date(2026, 7, 8))).toEqual({
-      diaSemana: "SÁBADO 8",
-      mesAnio: "AGOSTO 2026",
+      diaSemana: "SÁBADO",
+      diaMes: "8 DE AGOSTO.",
+      anio: "2026",
     });
   });
 });

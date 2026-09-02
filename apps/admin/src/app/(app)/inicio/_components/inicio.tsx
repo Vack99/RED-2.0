@@ -1,5 +1,6 @@
 import type { Route } from "next";
 import Link from "next/link";
+import type { ReactNode } from "react";
 
 import type { AsistenciasResumenHoy } from "@gym/data/server/asistencia";
 import {
@@ -23,9 +24,10 @@ import type { DiaVM, TenseDia } from "./inicio-vm";
  * day-card derivation), so shipping zero client JS here is what makes the SSR and
  * hydration renders identical by construction (rule 5 — no clock work on the client).
  *
- * Block order (spec #326 "Admin home"): header (gym name · account initial) → the
- * date, in the pre-#328 greeting's own hero type scale (owner ruling 2026-09-02 —
- * no greeting, but the date fills that same vertical weight) → day card (Cupo: ONE
+ * Block order (spec #326 "Admin home"): header (the marca's lockup · account initial)
+ * → the date on the pre-#328 hero's own chrome (owner ruling 2026-09-02 — no
+ * greeting, but the DATE fills that same two-line display: weekday in ink over day +
+ * month in the brand accent) → day card (Cupo: ONE
  * hero class carrying PASAR LISTA + the classes still ahead;
  * Lista: forced to the standalone PASE DE LISTA arm) → the 50/50 action pair (Cupo:
  * + Nuevo cliente / Apartar lugar; Lista: + Nuevo cliente alone, full width) →
@@ -44,12 +46,15 @@ const HERO_EYEBROW: Record<TenseDia, { palabra: string; tono: string }> = {
 
 interface InicioScreenProps {
   modo: Modo;
-  /** "MIÉRCOLES 2" — derivarFechaHeader, gym tz (server-formatted). Rendered in the
-   *  old pre-#328 greeting's H1 scale — the header's date, not a greeting. */
+  /** The resolved marca's lockup, rendered server-side by page.tsx (grill lock (g)) —
+   *  a server logo element can't be constructed from a prop type here. */
+  lockup: ReactNode;
+  /** "MIÉRCOLES" — derivarFechaHeader, gym tz (server-formatted). Display line 1. */
   diaSemana: string;
-  /** "SEPTIEMBRE 2026" — derivarFechaHeader, gym tz (server-formatted). */
-  mesAnio: string;
-  gymNombre: string;
+  /** "2 DE SEPTIEMBRE." — derivarFechaHeader, gym tz. Display line 2, brand accent. */
+  diaMes: string;
+  /** "2026" — derivarFechaHeader. The eyebrow above the display. */
+  anio: string;
   /** The gym's own initial, derived from the resolved gym — never a literal. */
   inicialCuenta: string;
   /** The Cupo day card (see inicio-vm): hero + the classes still ahead. Always `null`
@@ -69,9 +74,10 @@ interface InicioScreenProps {
 
 export function InicioScreen({
   modo,
+  lockup,
   diaSemana,
-  mesAnio,
-  gymNombre,
+  diaMes,
+  anio,
   inicialCuenta,
   dia,
   vigentes,
@@ -81,35 +87,63 @@ export function InicioScreen({
   aunATiempo,
   asistenciasResumen,
 }: InicioScreenProps) {
+  // Whether a glowing card already LEADS the day area. Lista's ASISTENCIAS · HOY hero
+  // is one (`Card glow`, ./asistencias-hoy-hero); Cupo's day card below is the other.
+  const lideraTarjeta = modo === "lista" && asistenciasResumen !== null;
+
+  // The standalone PASE DE LISTA CTA, shared by both of the fallback's shapes below
+  // so the button itself can never drift between them.
+  const paseDeLista = (
+    <Link
+      href="/asistencia"
+      className="forge-pressable flex items-center justify-center uppercase font-extrabold"
+      style={{ padding: 17, background: "var(--yellow)", color: "var(--ink)", fontSize: 15, letterSpacing: 1.3 }}
+    >
+      Pase de lista →
+    </Link>
+  );
+
   return (
     <div style={{ padding: "18px 22px 32px" }}>
-      {/* Header — gym name · account initial (spec #326). No lockup here: the
-          resolved gym's NAME is the identifying mark on this screen, not its logo. */}
+      {/* Brand row — the marca's own lockup left, the gym's initial square right, the
+          pre-#328 chrome the owner kept (27d8fff). The gym's `brand_name` is not
+          spelled out beside it: the seeds make it the same word the lockup already
+          draws ("RED"/"Forge"), and this square carries its initial. */}
       <div className="flex items-center justify-between">
-        <Eyebrow style={{ fontSize: 10 }}>{gymNombre}</Eyebrow>
+        {lockup}
         <Link
           href="/cuenta"
           aria-label="Cuenta"
           className="forge-hit forge-pressable flex items-center justify-center border border-line bg-surface font-extrabold"
-          style={{ width: 34, height: 34, color: "var(--fg)", fontSize: 11, letterSpacing: 0.6 }}
+          style={{ width: 36, height: 36, color: "var(--silver)", fontSize: 11, letterSpacing: 0.6 }}
         >
           {inicialCuenta}
         </Link>
       </div>
 
-      {/* The date, in the pre-#328 greeting's own hero type scale (Eyebrow over
-          H1 size=40) — owner does NOT want a greeting back, so the DATE fills that
-          same vertical space instead: "SEPTIEMBRE 2026" small, "MIÉRCOLES 2" big. */}
-      <div style={{ marginTop: 10 }}>
-        <Eyebrow>{mesAnio}</Eyebrow>
-        <H1 size={40} style={{ marginTop: 8 }}>{diaSemana}</H1>
+      {/* The date on the pre-#328 hero's chrome: eyebrow, then the two-line display
+          where line 2 lands in the brand accent with a period ("BUENOS DÍAS," /
+          "COACH." → "MIÉRCOLES" / "2 DE SEPTIEMBRE."). `--yellow` is the accent, not
+          `--gold`: on RED both schemes are the neon one, where `--gold` (#7e0d10) sits
+          at 1.3:1 on the canvas — invisible — while `--yellow` is the brand's own
+          crimson; on Forge dark the two keys are the same value anyway (#d4a72c), so
+          this IS the reference look. Fluid size: the pre-#328 hero's 40px is the
+          ceiling, but "22 DE SEPTIEMBRE." is half again as wide as "BUENOS DÍAS," and
+          would wrap to three lines on a 375px phone at that size. */}
+      <div style={{ marginTop: 14 }}>
+        <Eyebrow>{anio}</Eyebrow>
+        <H1 style={{ marginTop: 8, fontSize: "clamp(28px, 9vw, 40px)" }}>
+          {diaSemana}
+          <br />
+          <span style={{ color: "var(--yellow)" }}>{diaMes}</span>
+        </H1>
       </div>
 
       {/* ASISTENCIAS · HOY — Lista only (owner ruling 2026-09-01, restoring what #328
           dropped). Sits at the TOP of the day card area, directly above the standalone
           PASE DE LISTA CTA below it. Cupo never renders this — its own class hero
           already leads the day card. */}
-      {modo === "lista" && asistenciasResumen && (
+      {lideraTarjeta && asistenciasResumen && (
         <AsistenciasHoyHero
           hoy={asistenciasResumen.hoy}
           ayer={asistenciasResumen.ayer}
@@ -124,7 +158,7 @@ export function InicioScreen({
           no classes / a failed schedule read — falls to the standalone PASE DE LISTA
           CTA below. */}
       {dia ? (
-        <Card style={{ marginTop: 16, padding: dia.clases.length ? "18px 20px 4px" : "18px 20px" }}>
+        <Card glow style={{ marginTop: 16, padding: dia.clases.length ? "18px 20px 4px" : "18px 20px" }}>
           <div className="flex items-baseline justify-between">
             <Eyebrow color={dia.hero.esHoy ? HERO_EYEBROW[dia.hero.tense].tono : "var(--gold)"} style={{ fontSize: 10 }}>
               {dia.hero.esHoy ? HERO_EYEBROW[dia.hero.tense].palabra : dia.hero.etiquetaDia} · {dia.hero.hora}
@@ -199,14 +233,18 @@ export function InicioScreen({
             </div>
           )}
         </Card>
+      ) : lideraTarjeta ? (
+        // Lista: the ASISTENCIAS · HOY card above already carries the glow, so the CTA
+        // stays the bare full-width slab it is in the pre-#328 reference — a second
+        // glowing frame 16px under the first would only halve both.
+        <div style={{ marginTop: 16 }}>{paseDeLista}</div>
       ) : (
-        <Link
-          href="/asistencia"
-          className="forge-pressable flex items-center justify-center uppercase font-extrabold"
-          style={{ marginTop: 16, padding: 17, background: "var(--yellow)", color: "var(--ink)", fontSize: 15, letterSpacing: 1.3 }}
-        >
-          Pase de lista →
-        </Link>
+        // Cupo with nothing to lead on (day over / no classes / failed read): nothing
+        // above this glows, so the CTA gets the same plinth the day card would have
+        // had — one glowing card always heads the day area (owner 2026-09-02).
+        <Card glow style={{ marginTop: 16, padding: 14 }}>
+          {paseDeLista}
+        </Card>
       )}
 
       {/* 50/50 action pair — Cupo only; Lista collapses to + Nuevo cliente, full width,

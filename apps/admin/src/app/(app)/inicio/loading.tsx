@@ -2,7 +2,8 @@ import { Skeleton } from "@gym/ui/forge/skeleton";
 import { Card, Eyebrow } from "@gym/ui/forge/ui";
 
 /**
- * Route loading fallback mirroring inicio.tsx (#328): header → day card → 50/50
+ * Route loading fallback mirroring inicio.tsx (#328): header (lockup + initial) →
+ * date display → day card → 50/50
  * action pair → MEMBRESÍAS merged card → online strip. Renders the Cupo shape (the
  * richer of the two skeletons) since the resolved mode isn't known until the real
  * page's `getOperatorGym()` read lands.
@@ -10,17 +11,21 @@ import { Card, Eyebrow } from "@gym/ui/forge/ui";
 export default function Loading() {
   return (
     <div style={{ padding: "18px 22px 32px" }}>
-      {/* Header — date + gym name + account initial */}
+      {/* Header — the marca's lockup + the account initial square */}
       <div className="flex items-center justify-between">
-        <div className="flex items-baseline" style={{ gap: 9 }}>
-          <Skeleton width={72} height={12} />
-          <Skeleton width={54} height={10} />
-        </div>
-        <Skeleton width={34} height={34} />
+        <Skeleton width={104} height={26} />
+        <Skeleton width={36} height={36} />
+      </div>
+
+      {/* The date display — year eyebrow over the two-line hero */}
+      <div style={{ marginTop: 14 }}>
+        <Skeleton width={38} height={10.5} />
+        <Skeleton width="58%" height={32} style={{ marginTop: 10 }} />
+        <Skeleton width="80%" height={32} style={{ marginTop: 6 }} />
       </div>
 
       {/* Day card */}
-      <Card style={{ marginTop: 16, padding: "18px 20px" }}>
+      <Card glow style={{ marginTop: 16, padding: "18px 20px" }}>
         <div className="flex items-baseline justify-between">
           <Skeleton width={110} height={10} />
           <Skeleton width={60} height={12} />

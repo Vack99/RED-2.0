@@ -3,6 +3,7 @@ import { getOperatorGym } from "@gym/data/server/gym";
 import { modo } from "@gym/domain/rules";
 import { hoyEnZona, parseDay, toIsoDay } from "@gym/format";
 
+import { resolveBrand } from "../../../lib/brand";
 import { InicioScreen } from "./_components/inicio";
 import { derivarDia, derivarDiaSiguiente, derivarFechaHeader } from "./_components/inicio-vm";
 import { leerDia, leerProximoDia, leerResumenAsistencias } from "./reads";
@@ -29,11 +30,15 @@ export default async function Page() {
   const hoyLocal = hoyEnZona(gym.timezone);
   const hoyIso = toIsoDay(hoyLocal);
 
-  const [roster, lectura, asistenciasResumen] = await Promise.all([
+  const [roster, lectura, asistenciasResumen, brand] = await Promise.all([
     getRosterResumen(),
     leerDia(gymModo, hoyIso),
     leerResumenAsistencias(gymModo),
+    resolveBrand(),
   ]);
+  // The header lockup is the resolved marca's own logo (grill lock (g)), rendered
+  // here on the server so the screen just slots the element.
+  const Lockup = brand.logo;
 
   const ahora = new Date();
   const sesiones = lectura.agenda?.sesiones ?? [];
@@ -55,9 +60,10 @@ export default async function Page() {
   return (
     <InicioScreen
       modo={gymModo}
+      lockup={<Lockup size={12} />}
       diaSemana={fechaHeader.diaSemana}
-      mesAnio={fechaHeader.mesAnio}
-      gymNombre={gym.brandName}
+      diaMes={fechaHeader.diaMes}
+      anio={fechaHeader.anio}
       inicialCuenta={gym.brandName.trim().charAt(0).toUpperCase()}
       dia={dia}
       vigentes={roster.vigentes}
