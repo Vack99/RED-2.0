@@ -10,6 +10,7 @@ import type {
   SaldoMiembroDTO,
   SesionMiembroDTO,
 } from "@gym/data/server/agenda-miembro";
+import { liberarSenal, ocuparSenal } from "@gym/data/client-senal";
 import { derivarReservabilidad, type VeredictoReserva } from "@gym/domain/reserva";
 
 import { ConfirmSheet } from "../../_components/confirm-sheet";
@@ -489,6 +490,22 @@ export function ReservarSemana({
       return () => cancelAnimationFrame(id);
     }
   }, [sheet]);
+
+  // The sheet holds a SNAPSHOT: `sheet.sesion` is captured state, so a refresh underneath it
+  // would leave "3 lugares" on the sheet while the list behind it reads LLENO (audit 2026-09-01,
+  // weakness 5). Hold the signal rail while it is open; closing releases the hold and flushes
+  // whatever was pending, so the week repaints the moment the sheet is gone.
+  //
+  // The dep is OPEN-OR-NOT, never the `sheet` object: `book()` replaces it with
+  // `{ sesion, mode: "confirmed" }` (:528) while the sheet is still on screen, and depending on
+  // the object identity would tear the hold down and re-acquire it right there — releasing a
+  // pending refresh into the confirmation the member is reading. The boolean does not change.
+  const sheetAbierto = sheet !== null;
+  useEffect(() => {
+    if (!sheetAbierto) return;
+    ocuparSenal("reservar-hoja");
+    return () => liberarSenal("reservar-hoja");
+  }, [sheetAbierto]);
 
   function openSheet(sesion: SesionMiembroDTO) {
     setError(null);
