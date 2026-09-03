@@ -12,8 +12,8 @@ import { confirmarCodigoDeCorreo } from "@gym/data/server/sesion";
  * still gets in by hand.
  *
  * On success we land on `/reservar` rather than re-running the claim here: that page
- * already re-runs `intentarReclamoPorEmail` for a session with no membership yet, so the
- * self-heal has exactly one home.
+ * already re-runs the idempotent claim (`lib/reclamo.ts`) for a session with no membership
+ * in the gym in effect, so the self-heal has exactly one home.
  *
  * Every refusal is ONE message. A code that is wrong, expired, already spent, or belongs
  * to an address with no account must be indistinguishable — otherwise this door becomes

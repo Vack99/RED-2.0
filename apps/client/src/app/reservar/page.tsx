@@ -39,11 +39,11 @@ function iniciales(nombre: string): string {
  * member's own gym/row. Paint is token-driven, so RED hosts render RED and Forge
  * hosts render Forge with no brand import here.
  *
- * A signed-in caller with no `gym_membership` row yet (audit #10/#15: a swallowed
- * claim on registro/actions.ts or auth/confirm/route.ts, or a password-reset-first
- * session that never ran the claim at all) no longer crashes here: the idempotent
- * `intentarReclamoPorEmail` re-runs once, and only if membership is STILL missing does the
- * page render the graceful SinMembresia state instead of the week.
+ * A signed-in caller with no `gym_membership` row IN THIS GYM no longer crashes here: the
+ * idempotent claim (`lib/reclamo.ts`) re-runs once, and only if membership is STILL missing
+ * does the page render the graceful SinMembresia state instead of the week. Since the
+ * membership read is gym-scoped (design A1), this retry finally fires for a member who
+ * already belongs to a DIFFERENT gym — it used to read "member" and skip.
  */
 export default async function ReservarPage({
   searchParams,
