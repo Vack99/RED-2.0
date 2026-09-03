@@ -128,13 +128,12 @@ export interface HechosReserva {
    *  gym-local day (#89 W3). Only ever moves the `aviso`, never `reservable`:
    *  a second same-day class is allowed, it just costs a second class. */
   otraEseDia: boolean;
-  /** The instant this session's bookings CLOSE (`cierre_reservas`) — an absolute
-   *  instant, already resolved gym-local by the read path, so no tz math enters here.
-   *  `null` = this gym runs no cutoff (`gym.corte_reservas` off), the default. */
-  cierreReservas: Date | string | null;
-  /** The clock the cutoff is judged against. Passed in, never read here — this module
-   *  stays pure, exactly as `estado` and `saldo.vencido` arrive pre-derived. */
-  ahora: Date;
+  /** The gym's booking cutoff (`cierre_reservas`) has already passed for THIS session.
+   *  Arrives pre-derived against the SERVER clock, exactly as `estado` and `saldo.vencido`
+   *  do — a member's device clock must never decide whether the corte binds, and a boolean
+   *  crosses the server→client boundary without a hydration mismatch. `false` also covers
+   *  the gym that runs no corte at all (`gym.corte_reservas` off), the default. */
+  reservasCerradas: boolean;
 }
 
 /** The WHOLE booking verdict for one session + one member. JSON-serializable by
@@ -152,13 +151,6 @@ export type VeredictoReserva =
  *  passes the gate untouched. */
 function sinClases(saldo: SaldoSocio): boolean {
   return !saldo.ilimitado && (saldo.clasesRestantes ?? 0) <= 0;
-}
-
-/** Whether the gym's booking cutoff has passed for this session. No cutoff (null) never
- *  binds; the instant ITSELF is closed (`>=`), mirroring the RPC's `now() >= cierre`. */
-function cerrada(hechos: HechosReserva): boolean {
-  if (hechos.cierreReservas == null) return false;
-  return hechos.ahora.getTime() >= new Date(hechos.cierreReservas).getTime();
 }
 
 function derivarAviso(hechos: HechosReserva): AvisoReserva {
@@ -182,7 +174,7 @@ export function derivarReservabilidad(hechos: HechosReserva): VeredictoReserva {
         ? "reservada"
         : !hechos.saldo.reservasHabilitadas
           ? "deshabilitada"
-          : cerrada(hechos)
+          : hechos.reservasCerradas
             ? "cerrada"
             : hechos.saldo.vencido
               ? "vencido"

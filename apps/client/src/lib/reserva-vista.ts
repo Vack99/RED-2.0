@@ -63,7 +63,7 @@ export function presentarEstadoReserva(
       // The gym's booking cutoff passed for THIS class (gym.corte_reservas): the card still
       // shows the class — a member reads the schedule to know when to turn up — but never
       // offers a spot the RPC would answer with 'Reservas cerradas para esta clase'.
-      return { ...bloqueado, unidad: "cerradas", cta: "Cerradas" };
+      return { ...bloqueado, unidad: "cerrada", cta: "Cerradas" };
     case "vencido":
       // Lapsed membership (#118 E4): the whole week reads locked, not a green "Reservar"
       // the sheet only retracts one tap later.

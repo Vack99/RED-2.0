@@ -91,11 +91,12 @@ export interface ClaseDetalleDTO {
   favorita: boolean;
   /** Real attendee initials (active reservations), display-minimum, order-stable. */
   roster: string[];
-  /** The instant this session's bookings CLOSE (`class_session.cierre_reservas`), absolute
-   *  UTC; null when the gym runs no cutoff (`gym.corte_reservas` off — the default). Feeds
-   *  `derivarReservabilidad`'s `cerrada` gate. */
-  cierreReservas: string | null;
-  /** The same instant as gym-local prose ("lunes a las 22:00") for the blocked-CTA line —
+  /** The gym's booking cutoff (`class_session.cierre_reservas`) has already passed for this
+   *  session — DERIVED HERE, against the server clock, like `estado`. The page's CTA is an
+   *  SSR'd client component, so shipping the instant instead would hand the verdict to the
+   *  member's device clock and risk a hydration mismatch. False when the gym runs no cutoff. */
+  reservasCerradas: boolean;
+  /** WHEN they closed, as gym-local prose ("lunes a las 22:00") for the blocked-CTA line —
    *  formatted here like every other display field, so the client island keeps no tz math. */
   cierreLabel: string | null;
 }
@@ -299,7 +300,8 @@ export const getClaseDetalleMiembro = cache(
       esHoy: sameDay(local, hoyEnZona(tz)),
       favorita: favoritoId === tipo.id,
       roster: (roster.data ?? []).map((r) => r.iniciales),
-      cierreReservas: sesion.cierre_reservas,
+      reservasCerradas:
+        sesion.cierre_reservas != null && Date.now() >= Date.parse(sesion.cierre_reservas),
       cierreLabel: sesion.cierre_reservas ? etiquetaCierre(sesion.cierre_reservas, tz) : null,
     };
   },

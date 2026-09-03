@@ -79,11 +79,13 @@ export interface SesionMiembroDTO {
   miReserva: boolean;
   /** True when this session's class type is the member's favorite (the "Tu favorita" tag). */
   favorita: boolean;
-  /** The instant this session's bookings CLOSE (`class_session.cierre_reservas`), absolute
-   *  UTC; null when the gym runs no cutoff (`gym.corte_reservas` off — the default). Feeds
-   *  `derivarReservabilidad`'s `cerrada` gate. */
-  cierreReservas: string | null;
-  /** The same instant as gym-local prose ("lunes a las 22:00") for the blocked-CTA line —
+  /** The gym's booking cutoff (`class_session.cierre_reservas`) has already passed for this
+   *  session — DERIVED HERE, against the server clock, like `estado` and `saldo.vencido`. The
+   *  island is an SSR'd client component, so shipping the instant instead would hand the
+   *  verdict to the member's device clock and risk a hydration mismatch. False when the gym
+   *  runs no cutoff (`gym.corte_reservas` off — the default). */
+  reservasCerradas: boolean;
+  /** WHEN they closed, as gym-local prose ("lunes a las 22:00") for the blocked-CTA line —
    *  formatted here like every other display field, so the client island keeps no tz math. */
   cierreLabel: string | null;
 }
@@ -321,7 +323,7 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
     descripcion: s.descripcion,
     miReserva: s.miReserva,
     favorita: s.favorita,
-    cierreReservas: s.cierreReservas,
+    reservasCerradas: s.cierreReservas != null && Date.now() >= Date.parse(s.cierreReservas),
     cierreLabel: s.cierreReservas ? etiquetaCierre(s.cierreReservas, tz) : null,
   };
 }

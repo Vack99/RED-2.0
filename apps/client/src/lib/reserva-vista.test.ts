@@ -29,11 +29,8 @@ const CON_CLASES: SaldoSocio = {
   reservasHabilitadas: true,
 };
 
-/** The gym's booking cutoff for these fixtures, plus a clock past it. */
-const CIERRE = "2026-09-01T22:00:00.000Z";
-const ANTES = new Date("2026-09-01T21:00:00.000Z");
-const DESPUES = new Date("2026-09-01T23:00:00.000Z");
-const CERRADA: Partial<HechosReserva> = { cierreReservas: CIERRE, ahora: DESPUES };
+/** The gym's booking cutoff has already passed for this session (derived server-side). */
+const CERRADA: Partial<HechosReserva> = { reservasCerradas: true };
 
 function vista(p: Partial<HechosReserva>, disponibles: number) {
   return presentarEstadoReserva(
@@ -42,8 +39,7 @@ function vista(p: Partial<HechosReserva>, disponibles: number) {
       miReserva: false,
       saldo: CON_CLASES,
       otraEseDia: false,
-      cierreReservas: null,
-      ahora: ANTES,
+      reservasCerradas: false,
       ...p,
     }),
     disponibles,
@@ -178,8 +174,7 @@ describe("badgeDeReserva", () => {
       miReserva: false,
       saldo: CON_CLASES,
       otraEseDia: false,
-      cierreReservas: null,
-      ahora: ANTES,
+      reservasCerradas: false,
       ...p,
     };
     return badgeDeReserva(derivarReservabilidad(h), h.estado);

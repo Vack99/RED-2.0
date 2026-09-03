@@ -159,8 +159,7 @@ export function ClaseDetalle({
     miReserva: detalle.miReserva,
     saldo,
     otraEseDia: detalle.otraReservaEseDia,
-    cierreReservas: detalle.cierreReservas,
-    ahora: new Date(),
+    reservasCerradas: detalle.reservasCerradas,
   });
   const badge = badgeDeReserva(veredicto, detalle.estado);
   /** Non-null exactly when the CTA is live — the verdict's own union guarantees it. */

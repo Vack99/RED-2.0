@@ -464,8 +464,7 @@ function veredictoDeSesion(
     miReserva: sesion.miReserva,
     saldo,
     otraEseDia: dia.sesiones.some((s) => s.miReserva && s.id !== sesion.id),
-    cierreReservas: sesion.cierreReservas,
-    ahora: new Date(),
+    reservasCerradas: sesion.reservasCerradas,
   });
 }
 

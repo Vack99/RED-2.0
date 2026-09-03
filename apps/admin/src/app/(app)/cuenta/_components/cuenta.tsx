@@ -280,7 +280,12 @@ export function CuentaScreen({
           {
             icon: "clock" as IconName,
             label: "CIERRE DE RESERVAS",
-            sub: "Los socios ya no pueden reservar 3 h antes de la clase. Clases antes de las 9:00 cierran a las 10 pm del día anterior.",
+            // Conditional like the row above it: an indicative statement of the rule would
+            // contradict a DESACTIVADO trailing — the sub says what is true NOW, not what the
+            // switch would do. 24h times throughout, matching the member-facing copy.
+            sub: corteReservas
+              ? "Los socios ya no pueden reservar 3 h antes de la clase. Clases antes de las 9:00 cierran a las 22:00 del día anterior."
+              : "Los socios pueden reservar hasta que empiece la clase.",
             // No chevron: this row IS the switch, it opens nothing. Its trailing text is
             // the gym's current position, in the same lexicon as the row above it.
             trailing: cortePending ? "UN MOMENTO…" : corteReservas ? "ACTIVADO" : "DESACTIVADO",
