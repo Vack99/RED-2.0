@@ -246,7 +246,7 @@ export function RegistroForm({
           Entra con tu contraseña.
         </p>
         <Link
-          href="/entrar"
+          href={email ? { pathname: "/entrar", query: { correo: email } } : "/entrar"}
           className="mt-2 block bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition hover:brightness-105"
         >
           Iniciar sesión
