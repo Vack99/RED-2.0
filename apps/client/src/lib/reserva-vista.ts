@@ -59,6 +59,11 @@ export function presentarEstadoReserva(
       // The gym takes no bookings at all: the card still shows the class (a member reads the
       // schedule to know when to turn up) but never offers a spot the server would refuse.
       return { ...bloqueado, unidad: "sin reserva", cta: "Sin reserva" };
+    case "cerrada":
+      // The gym's booking cutoff passed for THIS class (gym.corte_reservas): the card still
+      // shows the class — a member reads the schedule to know when to turn up — but never
+      // offers a spot the RPC would answer with 'Reservas cerradas para esta clase'.
+      return { ...bloqueado, unidad: "cerradas", cta: "Cerradas" };
     case "vencido":
       // Lapsed membership (#118 E4): the whole week reads locked, not a green "Reservar"
       // the sheet only retracts one tap later.
@@ -104,6 +109,10 @@ export function badgeDeReserva(
       return { texto: "Reservada", clase: "border-accent/40 bg-accent-soft text-accent" };
     case "llena":
       return { texto: "Llena", clase: "border-warning/40 bg-warning-soft text-warning" };
+    case "cerrada":
+      // A fact about THIS class (the gym's cutoff passed), not about the member — so unlike
+      // vencido / sin_clases it does rename the chip.
+      return { texto: "Reservas cerradas", clase: "border-line bg-sunk text-muted" };
     default:
       return estado === "casi_lleno"
         ? { texto: "Pocos lugares", clase: "border-warning/40 bg-warning-soft text-warning" }
@@ -118,10 +127,21 @@ export function badgeDeReserva(
 export const LINEA_BLOQUEO: Record<Exclude<MotivoReserva, "libre" | "reservada">, string> = {
   terminada: "Esta clase ya pasó.",
   deshabilitada: "Tu gimnasio no toma reservas en la app. Preséntate a tu clase como siempre.",
+  cerrada: "Las reservas para esta clase ya cerraron. Si aún quieres entrar, escríbele al gym.",
   vencido: "Tu paquete venció. Renueva en tu gimnasio para reservar.",
   llena: "Clase llena. No hay lugares disponibles.",
   sin_clases: "No te quedan clases en tu plan. Compra un paquete en tu gimnasio para reservar.",
 };
+
+/** The `cerrada` line, NAMING the moment bookings closed so the member learns the gym's rule
+ *  instead of just being refused. `cierreLabel` is the gym-local "lunes a las 22:00" the read
+ *  path already formatted (no tz math on the client — the DTO convention); the un-timed
+ *  `LINEA_BLOQUEO.cerrada` is the fallback for a session that somehow carries no label. */
+export function lineaCerrada(cierreLabel: string | null): string {
+  return cierreLabel
+    ? `Las reservas para esta clase cerraron el ${cierreLabel}. Si aún quieres entrar, escríbele al gym.`
+    : LINEA_BLOQUEO.cerrada;
+}
 
 export interface AvisoVista {
   texto: string;

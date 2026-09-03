@@ -17,6 +17,11 @@ export interface OperatorGym {
    *  'cupo'` (spec #326). Carried raw here (not pre-derived) so every caller applies the
    *  same one derivation instead of each admin surface re-deciding the mode. */
   bookingEnabled: boolean;
+  /** `gym.corte_reservas` — the booking CUTOFF switch, independent of `bookingEnabled`
+   *  above: bookings stay on, but a member can no longer take one within 3 h of the class
+   *  (classes before 09:00 close at 22:00 the previous day). Carried raw, same as the flag
+   *  above, so the Cuenta row renders the gym's real position instead of guessing it. */
+  corteReservas: boolean;
   /** The resolving session's `auth.uid()` — the claim `sub` `requireOperator` already
    *  returned. Carried so the tenant-crossing log line (#204) can name WHO crossed
    *  without a second `getClaims()` round trip. */
@@ -61,7 +66,7 @@ const resolveOperatorGyms = cache(
     // single object per row, never an array (the shape `resolverMiembroGym` reads).
     const { data: memberships } = await supabase
       .from("gym_membership")
-      .select("gym_id, gym(timezone, slug, brand_name, booking_enabled)")
+      .select("gym_id, gym(timezone, slug, brand_name, booking_enabled, corte_reservas)")
       .eq("user_id", userId)
       .in("role", ["owner", "operator"])
       .order("gym_id");
@@ -75,6 +80,7 @@ const resolveOperatorGyms = cache(
               slug: m.gym.slug,
               brandName: m.gym.brand_name,
               bookingEnabled: m.gym.booking_enabled,
+              corteReservas: m.gym.corte_reservas,
               userId,
             },
           ]

@@ -57,3 +57,24 @@ export async function cambiarModoReservas(habilitar: boolean, client?: SupabaseS
   if (error) throw new Error(error.message);
   return data ?? 0;
 }
+
+/**
+ * Flip the gym's booking CUTOFF (`gym.corte_reservas`) — a second, independent switch beside
+ * the mode above: bookings stay on, but a member can no longer take one within 3 h of the
+ * class (classes before 09:00 close at 22:00 the previous day). Nothing cascades — no
+ * existing reservation is touched — so there is no count to return and no confirm sheet
+ * above it. Throws the RPC's own refusal message on error (`No autorizado` for a non-staff
+ * caller), same as `cambiarModoReservas`.
+ */
+export async function cambiarCorteReservas(activar: boolean, client?: SupabaseServer): Promise<void> {
+  const supabase = client ?? (await createClient());
+  await requireOperator(supabase);
+  const gym = await getOperatorGym(supabase);
+  const { error } = await supabase.rpc("cambiar_corte_reservas", {
+    p_activar: activar,
+    // Same host-resolved tenant pin as above: staff_gym()'s null-arm picks the caller's
+    // FIRST staffed gym, which is the wrong one for an operator on a second gym's host.
+    p_gym_id: gym.id,
+  });
+  if (error) throw new Error(error.message);
+}

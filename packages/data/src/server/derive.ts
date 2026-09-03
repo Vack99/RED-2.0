@@ -10,7 +10,7 @@
 import { derivarVeredicto, type ContextoVeredicto, type HechosCliente, type VeredictoCliente } from "@gym/domain/lifecycle";
 import { diasRestantes, ventanaArribo } from "@gym/domain/rules";
 import type { PlantillaContext } from "@gym/domain/types";
-import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, MONTHS_FULL, parseDay, pesos, toIsoDay } from "@gym/format";
+import { DOW, fechaEnZona, firstName, fmtShort, horaEnZona, iniciales, MONTHS_FULL, parseDay, pesos, toIsoDay, WEEKDAYS_FULL } from "@gym/format";
 
 import { fmtClases, fmtDias, renderMensajes } from "./plantilla-ctx";
 import type { MensajeDTO, PlantillaDTO } from "./plantillas";
@@ -260,6 +260,16 @@ export function momentoEnZona(isoTimestamp: string, tz: string): { dia: string; 
       hourCycle: "h23",
     }).format(new Date(isoTimestamp)),
   };
+}
+
+/** The gym-local prose for a booking-cutoff instant (`cierre_reservas`) — "lunes a las 22:00".
+ *  Formatted in the DAL like every other member display field, so the client islands keep no
+ *  tz math, and kept in ONE place so the week sheet and the class page name the same moment
+ *  the same way. Weekday-only on purpose: a corte is always the class's own gym-local day or
+ *  the evening before it, both inside the week the member is already looking at. */
+export function etiquetaCierre(isoTimestamp: string, tz: string): string {
+  const local = fechaEnZona(isoTimestamp, tz);
+  return `${WEEKDAYS_FULL[local.getDay()]} a las ${horaEnZona(new Date(isoTimestamp), tz)}`;
 }
 
 /** A venta reduced to its attribution key — the gym-local moment it was WRITTEN

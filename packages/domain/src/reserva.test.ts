@@ -15,12 +15,20 @@ const CON_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: 
 const SIN_CLASES: SaldoSocio = { ilimitado: false, clasesRestantes: 0, vencido: false, ...RESERVAS };
 const VENCIDO: SaldoSocio = { ilimitado: false, clasesRestantes: 5, vencido: true, ...RESERVAS };
 
+/** The gym's booking cutoff for the fixture session, and a clock either side of it. */
+const CIERRE = "2026-09-01T22:00:00.000Z";
+const ANTES = new Date("2026-09-01T21:59:59.999Z");
+const JUSTO = new Date(CIERRE);
+const DESPUES = new Date("2026-09-01T22:00:00.001Z");
+
 function hechos(p: Partial<HechosReserva> = {}): HechosReserva {
   return {
     estado: "normal",
     miReserva: false,
     saldo: CON_CLASES,
     otraEseDia: false,
+    cierreReservas: null,
+    ahora: ANTES,
     ...p,
   };
 }
@@ -87,6 +95,66 @@ describe("derivarReservabilidad — el motivo vinculante", () => {
     ).toBe("deshabilitada");
   });
 
+  // gym.corte_reservas — `reservar_clase` raises 'Reservas cerradas para esta clase' past
+  // the per-session cutoff, so a bookable-looking card past it would be a lie.
+  it("past the gym's cutoff the class is 'cerrada'", () => {
+    const v = derivarReservabilidad(hechos({ cierreReservas: CIERRE, ahora: DESPUES }));
+    expect(v.motivo).toBe("cerrada");
+    expect(v.reservable).toBe(false);
+  });
+
+  it("the cutoff instant ITSELF is closed (the RPC's `now() >= cierre`)", () => {
+    expect(derivarReservabilidad(hechos({ cierreReservas: CIERRE, ahora: JUSTO })).motivo).toBe(
+      "cerrada",
+    );
+  });
+
+  it("before the cutoff nothing binds", () => {
+    expect(derivarReservabilidad(hechos({ cierreReservas: CIERRE, ahora: ANTES })).motivo).toBe(
+      "libre",
+    );
+  });
+
+  it("no cutoff (null — the gym default) never reads cerrada", () => {
+    expect(derivarReservabilidad(hechos({ cierreReservas: null, ahora: DESPUES })).motivo).toBe(
+      "libre",
+    );
+  });
+
+  it("a Date cierre is read the same as its ISO string", () => {
+    expect(
+      derivarReservabilidad(hechos({ cierreReservas: new Date(CIERRE), ahora: DESPUES })).motivo,
+    ).toBe("cerrada");
+  });
+
+  it("reservada outranks cerrada — a booking made before the cutoff still cancels", () => {
+    expect(
+      derivarReservabilidad(hechos({ miReserva: true, cierreReservas: CIERRE, ahora: DESPUES }))
+        .motivo,
+    ).toBe("reservada");
+  });
+
+  it("deshabilitada outranks cerrada — the gym takes no bookings at all", () => {
+    expect(
+      derivarReservabilidad(
+        hechos({ saldo: SIN_RESERVAS, cierreReservas: CIERRE, ahora: DESPUES }),
+      ).motivo,
+    ).toBe("deshabilitada");
+  });
+
+  it("cerrada outranks vencido / llena / sin_clases — the gym's answer, not the member's", () => {
+    expect(
+      derivarReservabilidad(
+        hechos({
+          estado: "lleno",
+          saldo: { ...CON_CLASES, clasesRestantes: 0, vencido: true },
+          cierreReservas: CIERRE,
+          ahora: DESPUES,
+        }),
+      ).motivo,
+    ).toBe("cerrada");
+  });
+
   it("a full class is 'llena'", () => {
     expect(derivarReservabilidad(hechos({ estado: "lleno" })).motivo).toBe("llena");
   });
@@ -142,6 +210,7 @@ describe("derivarReservabilidad — el aviso", () => {
       hechos({ saldo: VENCIDO }),
       hechos({ estado: "lleno" }),
       hechos({ saldo: SIN_CLASES }),
+      hechos({ cierreReservas: CIERRE, ahora: DESPUES }),
     ]) {
       expect(derivarReservabilidad(h).aviso).toBeNull();
     }

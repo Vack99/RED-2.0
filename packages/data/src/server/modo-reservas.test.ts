@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cambiarModoReservas, contarReservasFuturas } from "./modo-reservas";
+import { cambiarCorteReservas, cambiarModoReservas, contarReservasFuturas } from "./modo-reservas";
 import type { SupabaseServer } from "./supabase";
 
 /**
@@ -21,7 +21,13 @@ interface FakeOpts {
 
 const GYM_ROW = {
   gym_id: "gym-1",
-  gym: { timezone: "America/Chihuahua", slug: "forge", brand_name: "Forge", booking_enabled: true },
+  gym: {
+    timezone: "America/Chihuahua",
+    slug: "forge",
+    brand_name: "Forge",
+    booking_enabled: true,
+    corte_reservas: false,
+  },
 };
 
 function makeFake(opts: FakeOpts = {}) {
@@ -148,5 +154,20 @@ describe("cambiarModoReservas", () => {
   it("surfaces the RPC's own refusal message on error (e.g. a non-staff caller)", async () => {
     const { client } = makeFake({ rpcError: { message: "No autorizado" } });
     await expect(cambiarModoReservas(false, client)).rejects.toThrow("No autorizado");
+  });
+});
+
+describe("cambiarCorteReservas", () => {
+  it("sends p_activar and the resolved gym's p_gym_id", async () => {
+    const { client, rpcCalls } = makeFake();
+    await expect(cambiarCorteReservas(true, client)).resolves.toBeUndefined();
+    expect(rpcCalls).toEqual([
+      { name: "cambiar_corte_reservas", args: { p_activar: true, p_gym_id: "gym-1" } },
+    ]);
+  });
+
+  it("surfaces the RPC's own refusal message on error (e.g. a non-staff caller)", async () => {
+    const { client } = makeFake({ rpcError: { message: "No autorizado" } });
+    await expect(cambiarCorteReservas(false, client)).rejects.toThrow("No autorizado");
   });
 });

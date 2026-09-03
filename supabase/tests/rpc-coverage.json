@@ -15,6 +15,7 @@
     "actualizar_paquete_marketing": { "suites": ["paquete_marketing_rules.sql"] },
     "actualizar_plantilla": { "suites": ["plantillas_rules.sql"] },
     "cancel_class_session": { "suites": ["cancel_class_session_release.sql", "scheduling_rls_denial.sql", "agenda_slot_guards.sql"] },
+    "cambiar_corte_reservas": { "suites": ["cambiar_corte_reservas_rules.sql"] },
     "cambiar_modo_reservas": { "suites": ["cambiar_modo_reservas_rules.sql"] },
     "cancelar_reserva": { "suites": ["cancelar_reserva_rules.sql", "reservation_rls_denial.sql", "cancel_class_session_release.sql"] },
     "crear_plantilla": { "suites": ["rls_cross_tenant_denial.sql", "plantillas_rules.sql"] },

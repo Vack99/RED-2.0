@@ -48,7 +48,7 @@ import {
   sembrarPlantillasDefault,
 } from "@gym/data/server/plantillas";
 import { marcarLeido } from "@gym/data/server/mensajes";
-import { cambiarModoReservas } from "@gym/data/server/modo-reservas";
+import { cambiarCorteReservas, cambiarModoReservas } from "@gym/data/server/modo-reservas";
 
 /** Thin write seams over the DAL. (app) reads are dynamic (cookie-bound), so the client
  *  router.refresh()es after a successful write — no cache invalidation needed (matches togglePaseAction). */
@@ -136,6 +136,12 @@ export async function marcarMensajeLeidoAction(raw: unknown): Promise<void> {
  *  (not `void`), so the confirm sheet can name it in the success toast. */
 export async function cambiarModoReservasAction(habilitar: boolean): Promise<number> {
   return cambiarModoReservas(habilitar);
+}
+
+/** The "Cierre de reservas" switch — nothing cascades, so it returns `void` and the row
+ *  flips it without a confirm sheet. */
+export async function cambiarCorteReservasAction(activar: boolean): Promise<void> {
+  return cambiarCorteReservas(activar);
 }
 
 export async function actualizarIdentidadLegalAction(raw: unknown): Promise<void> {

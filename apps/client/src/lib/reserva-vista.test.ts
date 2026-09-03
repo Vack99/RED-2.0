@@ -8,6 +8,7 @@ import {
   heroCtaVista,
   landingVista,
   LINEA_BLOQUEO,
+  lineaCerrada,
   navClasesVista,
   presentarAvisoReserva,
   presentarEstadoReserva,
@@ -28,6 +29,12 @@ const CON_CLASES: SaldoSocio = {
   reservasHabilitadas: true,
 };
 
+/** The gym's booking cutoff for these fixtures, plus a clock past it. */
+const CIERRE = "2026-09-01T22:00:00.000Z";
+const ANTES = new Date("2026-09-01T21:00:00.000Z");
+const DESPUES = new Date("2026-09-01T23:00:00.000Z");
+const CERRADA: Partial<HechosReserva> = { cierreReservas: CIERRE, ahora: DESPUES };
+
 function vista(p: Partial<HechosReserva>, disponibles: number) {
   return presentarEstadoReserva(
     derivarReservabilidad({
@@ -35,6 +42,8 @@ function vista(p: Partial<HechosReserva>, disponibles: number) {
       miReserva: false,
       saldo: CON_CLASES,
       otraEseDia: false,
+      cierreReservas: null,
+      ahora: ANTES,
       ...p,
     }),
     disponibles,
@@ -146,6 +155,14 @@ describe("presentarEstadoReserva", () => {
     expect(v.numero).toBe("5");
   });
 
+  it("cerrada → a dimmed, un-bookable card (the gym's cutoff passed for this class)", () => {
+    const v = vista(CERRADA, 8);
+    expect(v.tono).toBe("finished");
+    expect(v.cta).toBe("Cerradas");
+    expect(v.reservable).toBe(false);
+    expect(v.atenuada).toBe(true);
+  });
+
   it("casi_lleno stays bookable (the occupancy bar carries the near-full signal)", () => {
     const v = vista({ estado: "casi_lleno" }, 2);
     expect(v.tono).toBe("open");
@@ -161,6 +178,8 @@ describe("badgeDeReserva", () => {
       miReserva: false,
       saldo: CON_CLASES,
       otraEseDia: false,
+      cierreReservas: null,
+      ahora: ANTES,
       ...p,
     };
     return badgeDeReserva(derivarReservabilidad(h), h.estado);
@@ -177,6 +196,11 @@ describe("badgeDeReserva", () => {
   // where the week's sheet read "Pocos lugares" for the same session.
   it("casi_lleno → 'Pocos lugares' (both surfaces, one home)", () => {
     expect(badge({ estado: "casi_lleno" }).texto).toBe("Pocos lugares");
+  });
+
+  // Unlike vencido / sin_clases, the cutoff IS a fact about the class, so it renames the chip.
+  it("cerrada → 'Reservas cerradas'", () => {
+    expect(badge(CERRADA).texto).toBe("Reservas cerradas");
   });
 
   it("a member-side lock never renames the class — a seat is still 'Disponible'", () => {
@@ -303,5 +327,17 @@ describe("landingVista", () => {
       lista: false,
       cta: { label: "Reservar clase", href: "/reservar" },
     });
+  });
+});
+
+describe("lineaCerrada", () => {
+  it("names the moment bookings closed, so the member learns the gym's rule", () => {
+    expect(lineaCerrada("lunes a las 22:00")).toBe(
+      "Las reservas para esta clase cerraron el lunes a las 22:00. Si aún quieres entrar, escríbele al gym.",
+    );
+  });
+
+  it("falls back to the un-timed line when no label rode along", () => {
+    expect(lineaCerrada(null)).toBe(LINEA_BLOQUEO.cerrada);
   });
 });

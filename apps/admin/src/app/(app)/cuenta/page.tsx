@@ -25,7 +25,13 @@ export default async function Page() {
   // per-BRAND-MODULE literal shared by every gym on that module — review finding 1: passing the
   // latter into a legal document naming the responsable rendered the same commercial name for
   // every gym sharing a brand).
-  const { id: gymId, timezone: tz, brandName: gymBrandName, bookingEnabled } = await getOperatorGym();
+  const {
+    id: gymId,
+    timezone: tz,
+    brandName: gymBrandName,
+    bookingEnabled,
+    corteReservas,
+  } = await getOperatorGym();
   // Lista has no coaches, class types or WhatsApp templates to configure (spec #326): on
   // Lista these three reads are not even issued, not just hidden — `CuentaScreen` gets `[]`
   // for each and doesn't mount the sheets that would open them.
@@ -102,6 +108,7 @@ export default async function Page() {
       urlAvisoIntegral={clientHost ? urlAvisoIntegralDesde(`https://${clientHost}`) : null}
       horarioTexto={contacto?.horarioTexto ?? null}
       reservasFuturas={reservasFuturas}
+      corteReservas={corteReservas}
     />
   );
 }

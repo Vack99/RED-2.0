@@ -13,6 +13,7 @@ import { CtaVerPlanes } from "../../../_components/cta-ver-planes";
 import {
   badgeDeReserva,
   LINEA_BLOQUEO,
+  lineaCerrada,
   presentarAvisoReserva,
 } from "../../../../lib/reserva-vista";
 import {
@@ -158,6 +159,8 @@ export function ClaseDetalle({
     miReserva: detalle.miReserva,
     saldo,
     otraEseDia: detalle.otraReservaEseDia,
+    cierreReservas: detalle.cierreReservas,
+    ahora: new Date(),
   });
   const badge = badgeDeReserva(veredicto, detalle.estado);
   /** Non-null exactly when the CTA is live — the verdict's own union guarantees it. */
@@ -347,6 +350,15 @@ export function ClaseDetalle({
           // The gym takes no bookings (gym.booking_enabled = false): the page still shows the
           // class, never a button the RPC would answer with 'Reservas deshabilitadas'.
           <p className="text-center text-[11px] text-muted">{LINEA_BLOQUEO.deshabilitada}</p>
+        ) : veredicto.motivo === "cerrada" ? (
+          // The gym's booking cutoff (gym.corte_reservas) passed for THIS class: the page still
+          // shows it, and the line NAMES the moment bookings closed so the member learns the rule.
+          <>
+            <p className="mb-2.5 text-center text-[11px] text-muted">{lineaCerrada(detalle.cierreLabel)}</p>
+            <button type="button" disabled className="w-full cursor-default rounded-xl bg-sunk py-4 text-xs font-bold uppercase tracking-wider text-muted">
+              Reservas cerradas
+            </button>
+          </>
         ) : veredicto.motivo === "vencido" || veredicto.motivo === "sin_clases" ? (
           // Lapsed vigencia (#118 E4) or a depleted finite plan (audit #9): no online payment
           // (paga en tu gym) — route to precios, never a button that only dead-ends in the RPC.

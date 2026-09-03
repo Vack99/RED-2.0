@@ -23,7 +23,7 @@ import {
   toIsoDay,
 } from "@gym/format";
 
-import { derivarMembresia, type MembresiaDerivada } from "./derive";
+import { derivarMembresia, etiquetaCierre, type MembresiaDerivada } from "./derive";
 import { resolverMiembroGym } from "./inquilino";
 import { getPlanesPublicos } from "./marketing";
 
@@ -79,6 +79,13 @@ export interface SesionMiembroDTO {
   miReserva: boolean;
   /** True when this session's class type is the member's favorite (the "Tu favorita" tag). */
   favorita: boolean;
+  /** The instant this session's bookings CLOSE (`class_session.cierre_reservas`), absolute
+   *  UTC; null when the gym runs no cutoff (`gym.corte_reservas` off — the default). Feeds
+   *  `derivarReservabilidad`'s `cerrada` gate. */
+  cierreReservas: string | null;
+  /** The same instant as gym-local prose ("lunes a las 22:00") for the blocked-CTA line —
+   *  formatted here like every other display field, so the client island keeps no tz math. */
+  cierreLabel: string | null;
 }
 
 export interface DiaMiembroDTO {
@@ -127,6 +134,8 @@ interface SesionMiembroRaw {
   miReserva: boolean;
   favorita: boolean;
   coaches: string[];
+  /** `class_session.cierre_reservas` — absolute UTC, null when the gym runs no corte. */
+  cierreReservas: string | null;
 }
 
 /**
@@ -156,7 +165,7 @@ async function fetchSesionesMiembro(
 ): Promise<SesionMiembroRaw[]> {
   const { data: sesiones, error } = await supabase
     .from("class_session")
-    .select("id, class_type_id, starts_at, duration_min, capacity")
+    .select("id, class_type_id, starts_at, duration_min, capacity, cierre_reservas")
     .eq("gym_id", gymId)
     .is("cancelled_at", null)
     .gte("starts_at", low.toISOString())
@@ -226,6 +235,7 @@ async function fetchSesionesMiembro(
       miReserva: misReservas.has(r.id),
       favorita: r.class_type_id === favoritoId,
       coaches: coachesBySession.get(r.id) ?? [],
+      cierreReservas: r.cierre_reservas,
     };
   });
 }
@@ -311,6 +321,8 @@ function toDTO(s: SesionMiembroRaw, estado: EstadoSesion, tz: string): SesionMie
     descripcion: s.descripcion,
     miReserva: s.miReserva,
     favorita: s.favorita,
+    cierreReservas: s.cierreReservas,
+    cierreLabel: s.cierreReservas ? etiquetaCierre(s.cierreReservas, tz) : null,
   };
 }
 

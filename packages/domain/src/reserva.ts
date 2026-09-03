@@ -36,6 +36,11 @@
 //    hold (the RPC agrees — `cancelar_reserva` has no such gate), but it
 //    outranks every refusal below, because "this gym does not take
 //    reservations" is a truer sentence than "renew your package".
+//  · CERRADA sits next, between the gym's switch and the member's own gates, and
+//    for the same reason: the per-gym booking cutoff (`gym.corte_reservas`) is the
+//    GYM's answer about THIS class — the RPC raises 'Reservas cerradas para esta
+//    clase' before it looks at the member's paquete — but it still ranks below
+//    `reservada`, so a member who booked before the corte can still cancel.
 //  · VENCIDO before LLENA before SIN CLASES. The RPC checks 'Paquete vencido'
 //    first (both arms of it), and refuses finite AND ilimitado alike (#118 E4).
 //    It then checks 'Sin clases disponibles' BEFORE 'Clase llena'; the preview
@@ -67,6 +72,9 @@ export type MotivoReserva =
   | "reservada"
   /** 'Reservas deshabilitadas' — the GYM takes no bookings at all (`gym.booking_enabled`). */
   | "deshabilitada"
+  /** 'Reservas cerradas para esta clase' — the gym's booking cutoff (`gym.corte_reservas`)
+   *  has passed for THIS session. */
+  | "cerrada"
   /** 'Paquete vencido' — finite AND ilimitado (#118 E4). */
   | "vencido"
   /** 'Clase llena'. */
@@ -120,6 +128,13 @@ export interface HechosReserva {
    *  gym-local day (#89 W3). Only ever moves the `aviso`, never `reservable`:
    *  a second same-day class is allowed, it just costs a second class. */
   otraEseDia: boolean;
+  /** The instant this session's bookings CLOSE (`cierre_reservas`) — an absolute
+   *  instant, already resolved gym-local by the read path, so no tz math enters here.
+   *  `null` = this gym runs no cutoff (`gym.corte_reservas` off), the default. */
+  cierreReservas: Date | string | null;
+  /** The clock the cutoff is judged against. Passed in, never read here — this module
+   *  stays pure, exactly as `estado` and `saldo.vencido` arrive pre-derived. */
+  ahora: Date;
 }
 
 /** The WHOLE booking verdict for one session + one member. JSON-serializable by
@@ -137,6 +152,13 @@ export type VeredictoReserva =
  *  passes the gate untouched. */
 function sinClases(saldo: SaldoSocio): boolean {
   return !saldo.ilimitado && (saldo.clasesRestantes ?? 0) <= 0;
+}
+
+/** Whether the gym's booking cutoff has passed for this session. No cutoff (null) never
+ *  binds; the instant ITSELF is closed (`>=`), mirroring the RPC's `now() >= cierre`. */
+function cerrada(hechos: HechosReserva): boolean {
+  if (hechos.cierreReservas == null) return false;
+  return hechos.ahora.getTime() >= new Date(hechos.cierreReservas).getTime();
 }
 
 function derivarAviso(hechos: HechosReserva): AvisoReserva {
@@ -160,13 +182,15 @@ export function derivarReservabilidad(hechos: HechosReserva): VeredictoReserva {
         ? "reservada"
         : !hechos.saldo.reservasHabilitadas
           ? "deshabilitada"
-          : hechos.saldo.vencido
-            ? "vencido"
-            : hechos.estado === "lleno"
-              ? "llena"
-              : sinClases(hechos.saldo)
-                ? "sin_clases"
-                : "libre";
+          : cerrada(hechos)
+            ? "cerrada"
+            : hechos.saldo.vencido
+              ? "vencido"
+              : hechos.estado === "lleno"
+                ? "llena"
+                : sinClases(hechos.saldo)
+                  ? "sin_clases"
+                  : "libre";
 
   return motivo === "libre"
     ? { motivo, reservable: true, aviso: derivarAviso(hechos) }

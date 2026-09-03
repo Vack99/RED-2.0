@@ -50,6 +50,7 @@ function makeFake(opts: {
   gymSlug?: string;
   gymBrandName?: string;
   gymBookingEnabled?: boolean;
+  gymCorteReservas?: boolean;
   dominios?: Record<string, unknown>[];
 }) {
   const sub = opts.sub === undefined ? "op-1" : opts.sub;
@@ -58,6 +59,7 @@ function makeFake(opts: {
     slug: opts.gymSlug ?? "forge",
     brand_name: opts.gymBrandName ?? "Forge",
     booking_enabled: opts.gymBookingEnabled ?? false,
+    corte_reservas: opts.gymCorteReservas ?? false,
   };
   // `user_id` defaults to the caller's own sub — every existing fixture row IS the
   // caller's own membership unless a test overrides it (the co-staff duplicate case below).
@@ -123,6 +125,7 @@ describe("getOperatorGym", () => {
       slug: "forge",
       brandName: "Forge",
       bookingEnabled: false,
+      corteReservas: false,
       userId: "op-1",
     });
   });
@@ -135,6 +138,7 @@ describe("getOperatorGym", () => {
       slug: "forge",
       brandName: "Forge",
       bookingEnabled: false,
+      corteReservas: false,
       userId: "op-1",
     });
   });
@@ -156,6 +160,17 @@ describe("getOperatorGym", () => {
       gymBookingEnabled: true,
     });
     expect((await getOperatorGym(client)).bookingEnabled).toBe(true);
+  });
+
+  // The booking CUTOFF is a SECOND, independent gym flag — a gym can take bookings and still
+  // close them 3 h out — so it rides the same read untouched instead of being inferred from
+  // `bookingEnabled`.
+  it("passes gym.corte_reservas through as the raw corteReservas flag", async () => {
+    const { client } = makeFake({
+      membership: [{ gym_id: "gym-1", role: "owner" }],
+      gymCorteReservas: true,
+    });
+    expect((await getOperatorGym(client)).corteReservas).toBe(true);
   });
 
   // The crossing log (#204) names WHO crossed. It reads the sub off this DTO rather

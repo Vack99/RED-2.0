@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Icon, type IconName } from "@gym/ui/forge/icon";
 import { ThemeToggle } from "@gym/ui/forge/theme-toggle";
 import { forgeToast } from "@gym/ui/forge/toaster";
@@ -28,6 +29,7 @@ import type { PlantillaDTO } from "@gym/data/server/plantillas";
 import type { MesRespaldo } from "@gym/data/server/respaldo";
 import { pesos } from "@gym/format";
 
+import { cambiarCorteReservasAction } from "../actions";
 import { LogoutButton } from "../../_components/logout-button";
 import { ClassTypesSheet } from "./class-types-sheet";
 import { CoachesSheet } from "./coaches-sheet";
@@ -84,6 +86,21 @@ interface CuentaScreenProps {
   /** Future `reservada` bookings of this gym (#331) — the OFF-direction confirm sheet's `N`.
    *  0 on Lista (turning ON ignores the count) or when there is simply nothing ahead. */
   reservasFuturas: number;
+  /** `gym.corte_reservas` — the booking cutoff's current position. A SECOND switch beside
+   *  "Reservas en línea": bookings stay on, they just close 3 h before the class. */
+  corteReservas: boolean;
+}
+
+interface AjusteRow {
+  icon: IconName;
+  label: string;
+  sub: string;
+  /** Replaces the drill-in chevron for rows that write in place instead of opening a sheet
+   *  — the switch's own state label, so the row never promises a screen it does not have. */
+  trailing?: string;
+  /** Tints `trailing` gold while the switch is on (the file's active accent). */
+  activo?: boolean;
+  onClick: () => void;
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -150,6 +167,7 @@ export function CuentaScreen({
   urlAvisoIntegral,
   horarioTexto,
   reservasFuturas,
+  corteReservas,
 }: CuentaScreenProps) {
   const [plantillasOpen, setPlantillasOpen] = React.useState(false);
   const [paquetesOpen, setPaquetesOpen] = React.useState(false);
@@ -159,6 +177,10 @@ export function CuentaScreen({
   const [mensajesOpen, setMensajesOpen] = React.useState(false);
   const [legalOpen, setLegalOpen] = React.useState(false);
   const [reservasEnLineaOpen, setReservasEnLineaOpen] = React.useState(false);
+  // The cutoff row writes straight through — nothing cascades, so there is no confirm sheet
+  // to own the pending ceremony the way ReservasEnLineaSheet does; the row owns it itself.
+  const [cortePending, setCortePending] = React.useState(false);
+  const router = useRouter();
   const sinLeer = mensajes.filter((m) => !m.leido).length;
 
   // perfil.coach/negocio are already resolved (resolverIdentidad); the ?? is only
@@ -195,10 +217,30 @@ export function CuentaScreen({
 
   const esCupo = modo === "cupo";
 
+  const cambiarCorte = async () => {
+    if (cortePending) return;
+    setCortePending(true);
+    try {
+      await cambiarCorteReservasAction(!corteReservas);
+      forgeToast({
+        tone: "success",
+        title: corteReservas ? "Cierre desactivado" : "Cierre activado",
+        body: corteReservas
+          ? "Tus socios pueden reservar hasta que empiece la clase."
+          : "Tus socios ya no pueden reservar 3 h antes de la clase.",
+      });
+      router.refresh();
+    } catch {
+      forgeToast({ tone: "warning", title: "No se pudo cambiar", body: "Intenta de nuevo." });
+    } finally {
+      setCortePending(false);
+    }
+  };
+
   // Cupo-only rows (schedule staffing + booking-triggered messaging) — omitted from the
   // array entirely on Lista, not just hidden, so there's no click handler left to reach
   // them by any deep link or search param either (spec #326, ticket #327 AC4).
-  const ajustesCupo: { icon: IconName; label: string; sub: string; onClick: () => void }[] = esCupo
+  const ajustesCupo: AjusteRow[] = esCupo
     ? [
         {
           icon: "users",
@@ -223,13 +265,30 @@ export function CuentaScreen({
 
   // Both modes get this row (#331): the door itself is the same switch, whichever direction
   // it currently points — tapping proposes the OPPOSITE of `modo`.
-  const ajustes: { icon: IconName; label: string; sub: string; onClick: () => void }[] = [
+  const ajustes: AjusteRow[] = [
     {
       icon: "cal",
       label: "RESERVAS EN LÍNEA",
       sub: esCupo ? "Activadas" : "Desactivadas",
       onClick: () => setReservasEnLineaOpen(true),
     },
+    // The cutoff only means anything while the gym takes bookings at all, so it rides
+    // directly under that row on Cupo and is absent on Lista — same containment rule as
+    // `ajustesCupo` below (spec #326).
+    ...(esCupo
+      ? [
+          {
+            icon: "clock" as IconName,
+            label: "CIERRE DE RESERVAS",
+            sub: "Los socios ya no pueden reservar 3 h antes de la clase. Clases antes de las 9:00 cierran a las 10 pm del día anterior.",
+            // No chevron: this row IS the switch, it opens nothing. Its trailing text is
+            // the gym's current position, in the same lexicon as the row above it.
+            trailing: cortePending ? "UN MOMENTO…" : corteReservas ? "ACTIVADO" : "DESACTIVADO",
+            activo: corteReservas,
+            onClick: cambiarCorte,
+          },
+        ]
+      : []),
     ...ajustesCupo,
     {
       icon: "flame",
@@ -475,7 +534,20 @@ export function CuentaScreen({
               <div className="font-bold" style={{ fontSize: 12.5, letterSpacing: 0.6 }}>{row.label}</div>
               <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{row.sub}</div>
             </div>
-            <Icon name="chev" size={14} color="var(--muted)" />
+            {row.trailing ? (
+              <div
+                className="shrink-0 uppercase font-extrabold"
+                style={{
+                  fontSize: 10.5,
+                  letterSpacing: 1.2,
+                  color: row.activo ? "var(--gold)" : "var(--muted)",
+                }}
+              >
+                {row.trailing}
+              </div>
+            ) : (
+              <Icon name="chev" size={14} color="var(--muted)" />
+            )}
           </button>
         ))}
       </div>

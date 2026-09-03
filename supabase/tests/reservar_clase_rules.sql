@@ -38,6 +38,12 @@
 --                                  class ran is a consumed credit for a seat nobody can occupy. The
 --                                  fixture is seeded one minute in the past — the boundary is
 --                                  `starts_at <= now()`, an absolute instant, never a gym-local date.
+--   * CORTE DE RESERVAS (2026-09-02) — the per-gym booking cutoff: with `gym.corte_reservas` on, a
+--                                  MEMBER is refused ('Reservas cerradas para esta clase') once now() has
+--                                  reached `corte_reserva(starts, tz)` — 3h before the class, or 22:00 the
+--                                  previous gym-local evening for a class starting before 09:00, whichever
+--                                  is EARLIER. Staff-on-behalf is exempt. Its own section at the tail of
+--                                  this file explains how those vectors are made clock-independent.
 --   * book-beyond-entitlement (#244 guard 1) — vence vs the SESSION's date, not just today's: a
 --                                  member whose package is still valid TODAY but expires before the
 --                                  class's own gym-local date is refused ('Paquete vencido'), same as
@@ -964,6 +970,386 @@ begin
   if v_walk is distinct from false then raise exception 'RULE FAIL(switch back on): a phone booking was flagged is_walk_in'; end if;
   select clases_restantes into v_clases from public.clientes where id = t_deny;
   if v_clases <> 4 then raise exception 'RULE FAIL(switch back on): balance % (expected the single consume to 4)', v_clases; end if;
+end $$;
+
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- CORTE DE RESERVAS — the per-gym booking cutoff (20260902120000)
+-- ══════════════════════════════════════════════════════════════════════════════════════════════
+-- The rule: a MEMBER cannot book once the class is within 3 hours of starting, and a class that
+-- starts before 09:00 gym-local closes even earlier, at 22:00 the previous gym-local evening —
+-- `public.corte_reserva(starts, tz)` returns the LEAST of the two. Gym-level boolean, default off.
+--
+-- DETERMINISM IS THE WHOLE DIFFICULTY HERE. Every other vector in this file is clock-independent
+-- because its rule is; this one is a race between `now()` and a GYM-LOCAL wall clock, so a fixture
+-- written as "a class two hours out" means something different at 07:00 than at 15:00, and a suite
+-- built that way would pass or fail by the hour it ran. Two answers, both used below:
+--
+--   (1) THE FUNCTION, with no clock in it at all — corte_reserva() called on FIXED local starts and
+--       compared against an independently constructed expected instant (`(date + time) at time
+--       zone tz`, never a re-derivation of the body's own arithmetic). Five vectors, exact forever.
+--
+--   (2) THE RPC, on fixture gyms whose TIMEZONE is chosen at run time so that the gym-local clock
+--       reads a known hour. A fixed-offset zone (`Etc/GMT±N`, DST-free by construction) is picked
+--       so gym "noon" sees local 12:xx and gym "late" sees local 23:xx, whatever the suite's own
+--       UTC hour is. That is what makes "two hours out" mean "14:xx local" rather than a coin
+--       flip, and — on the late gym — lets a class NINE hours away be legitimately blocked, which
+--       is the only way to exercise the previous-evening arm through the real RPC. Both gyms
+--       assert their local hour at seed time (SETUP FAIL) before any vector runs.
+--
+-- Vectors: member blocked 2h out; member allowed 4h out; member allowed for tomorrow-08:00 seen
+-- from midday (the 22:00 door has not shut yet); STAFF-ON-BEHALF allowed on the very session the
+-- member was refused (the desk is exempt — the sharpest counter-vector available: same session,
+-- same instant, different caller); the FLAG OFF on that same session with that same member, which
+-- now books (so the refusal was the switch, not the session); on the late gym, tomorrow-08:00
+-- REFUSED at 23:xx local though the class is ~9h away, with tomorrow-12:00 allowed beside it as the
+-- counter-vector; and the PostgREST computed column `class_session.cierre_reservas` agreeing with
+-- the function when the flag is on and answering NULL when it is off.
+
+-- ── (c) THE FUNCTION, clock-free ──────────────────────────────────────────────────────────────
+do $$
+declare
+  v_tz  text := 'America/Mexico_City';
+  d     date := date '2026-03-10';
+  v_got timestamptz;
+begin
+  -- 15:00 local — the plain 3-hour arm, same day.
+  v_got := public.corte_reserva(((d + time '15:00') at time zone v_tz), v_tz);
+  if v_got is distinct from ((d + time '12:00') at time zone v_tz) then
+    raise exception 'RULE FAIL(corte fn 15:00): got %, expected same-day 12:00 local', v_got;
+  end if;
+
+  -- 09:00 local — the BOUNDARY of the early arm (`< 9`, so 09:00 is NOT early): 06:00 the same day,
+  -- not 22:00 the night before. A body written `<= 9` fails exactly here.
+  v_got := public.corte_reserva(((d + time '09:00') at time zone v_tz), v_tz);
+  if v_got is distinct from ((d + time '06:00') at time zone v_tz) then
+    raise exception 'RULE FAIL(corte fn 09:00): got %, expected same-day 06:00 local', v_got;
+  end if;
+
+  -- 08:59 local — one minute the other side of that boundary: the previous evening's 22:00.
+  v_got := public.corte_reserva(((d + time '08:59') at time zone v_tz), v_tz);
+  if v_got is distinct from (((d - 1) + time '22:00') at time zone v_tz) then
+    raise exception 'RULE FAIL(corte fn 08:59): got %, expected previous-day 22:00 local', v_got;
+  end if;
+
+  -- 08:00 local — the named case: previous day 22:00 (ten hours before, not three).
+  v_got := public.corte_reserva(((d + time '08:00') at time zone v_tz), v_tz);
+  if v_got is distinct from (((d - 1) + time '22:00') at time zone v_tz) then
+    raise exception 'RULE FAIL(corte fn 08:00): got %, expected previous-day 22:00 local', v_got;
+  end if;
+
+  -- 00:30 local — early, but the 3-hour arm is EARLIER than 22:00 the night before (21:30 vs
+  -- 22:00), so `least` must pick it. This is the vector an unconditional previous-22:00 fails: it
+  -- would hand a half-past-midnight class a cutoff 30 minutes AFTER the real 3-hour door.
+  v_got := public.corte_reserva(((d + time '00:30') at time zone v_tz), v_tz);
+  if v_got is distinct from (((d - 1) + time '21:30') at time zone v_tz) then
+    raise exception 'RULE FAIL(corte fn 00:30): got %, expected previous-day 21:30 local', v_got;
+  end if;
+end $$;
+
+-- ── Fixture: two gyms with a chosen local clock ───────────────────────────────────────────────
+do $$
+declare
+  h_utc int := extract(hour from (now() at time zone 'UTC'))::int;
+  off_n int;
+  off_l int;
+  tz_n  text;
+  tz_l  text;
+  g_n   uuid := gen_random_uuid();   -- local now = 12:xx
+  g_l   uuid := gen_random_uuid();   -- local now = 23:xx
+  d_n   date;
+  d_l   date;
+  ct_n  uuid;
+  ct_l  uuid;
+  m_a   uuid := gen_random_uuid();   -- refused 2h out, then allowed with the flag off
+  m_b   uuid := gen_random_uuid();   -- allowed 4h out
+  m_c   uuid := gen_random_uuid();   -- allowed for tomorrow 08:00, seen from midday
+  op_n  uuid := gen_random_uuid();   -- operator of the noon gym — the staff bypass
+  m_l   uuid := gen_random_uuid();   -- refused for tomorrow 08:00, seen from 23:xx
+  m_l2  uuid := gen_random_uuid();   -- allowed for tomorrow 12:00, same instant, same gym
+  c_a uuid; c_b uuid; c_c uuid; c_l uuid; c_l2 uuid; t_n uuid;
+  s_2h uuid; s_4h uuid; s_early uuid; s_l_early uuid; s_l_noon uuid;
+begin
+  -- `Etc/GMT-N` is UTC+N and `Etc/GMT+N` is UTC−N (the POSIX sign inversion). Both are DST-free,
+  -- which is what makes the local hour below exact rather than approximately right twice a year.
+  off_n := 12 - h_utc;
+  if off_n > 14 then off_n := off_n - 24; end if;
+  if off_n < -12 then off_n := off_n + 24; end if;
+  off_l := 23 - h_utc;
+  if off_l > 14 then off_l := off_l - 24; end if;
+  if off_l < -12 then off_l := off_l + 24; end if;
+  tz_n := case when off_n = 0 then 'UTC' when off_n > 0 then 'Etc/GMT-' || off_n else 'Etc/GMT+' || (-off_n) end;
+  tz_l := case when off_l = 0 then 'UTC' when off_l > 0 then 'Etc/GMT-' || off_l else 'Etc/GMT+' || (-off_l) end;
+
+  if extract(hour from (now() at time zone tz_n))::int <> 12 then
+    raise exception 'SETUP FAIL: tz % puts local now at %h, expected 12', tz_n, extract(hour from (now() at time zone tz_n));
+  end if;
+  if extract(hour from (now() at time zone tz_l))::int <> 23 then
+    raise exception 'SETUP FAIL: tz % puts local now at %h, expected 23', tz_l, extract(hour from (now() at time zone tz_l));
+  end if;
+
+  insert into public.gym (id, slug, brand_name, timezone, brand_module_id, corte_reservas) values
+    (g_n, 'rc-corte-noon', 'RC Corte Noon', tz_n, 'base', true),
+    (g_l, 'rc-corte-late', 'RC Corte Late', tz_l, 'base', true);
+
+  d_n := (now() at time zone tz_n)::date;
+  d_l := (now() at time zone tz_l)::date;
+
+  insert into auth.users (instance_id, id, aud, role, email) values
+    ('00000000-0000-0000-0000-000000000000', m_a,  'authenticated', 'authenticated', 'rc-corte-a@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_b,  'authenticated', 'authenticated', 'rc-corte-b@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_c,  'authenticated', 'authenticated', 'rc-corte-c@test.local'),
+    ('00000000-0000-0000-0000-000000000000', op_n, 'authenticated', 'authenticated', 'rc-corte-op@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_l,  'authenticated', 'authenticated', 'rc-corte-l@test.local'),
+    ('00000000-0000-0000-0000-000000000000', m_l2, 'authenticated', 'authenticated', 'rc-corte-l2@test.local');
+
+  insert into public.gym_membership (user_id, gym_id, role) values
+    (m_a, g_n, 'member'), (m_b, g_n, 'member'), (m_c, g_n, 'member'),
+    (op_n, g_n, 'operator'),
+    (m_l, g_l, 'member'), (m_l2, g_l, 'member');
+
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC corte A', '0000000401', 5, d_n + 20, '8 clases', g_n, m_a) returning id into c_a;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC corte B', '0000000402', 5, d_n + 20, '8 clases', g_n, m_b) returning id into c_b;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC corte C', '0000000403', 5, d_n + 20, '8 clases', g_n, m_c) returning id into c_c;
+  -- The staff target carries NO auth_user_id, like every other #237 target: the phone-booking member.
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id)
+    values ('RC corte target', '0000000404', 5, d_n + 20, '8 clases', g_n) returning id into t_n;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC corte L', '0000000405', 5, d_l + 20, '8 clases', g_l, m_l) returning id into c_l;
+  insert into public.clientes (nombre, tel, clases_restantes, vence, paquete_nombre, gym_id, auth_user_id)
+    values ('RC corte L2', '0000000406', 5, d_l + 20, '8 clases', g_l, m_l2) returning id into c_l2;
+
+  insert into public.class_type (gym_id, name) values (g_n, 'RC Corte Noon') returning id into ct_n;
+  insert into public.class_type (gym_id, name) values (g_l, 'RC Corte Late') returning id into ct_l;
+
+  -- Noon gym (local 12:xx): 2h out is 14:xx local, 4h out is 16:xx — both past 09:00, so both are
+  -- governed by the plain 3-hour arm and neither is contaminated by the previous-evening rule.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (g_n, ct_n, now() + interval '2 hours', 60, 20) returning id into s_2h;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (g_n, ct_n, now() + interval '4 hours', 60, 20) returning id into s_4h;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (g_n, ct_n, ((d_n + 1) + time '08:00') at time zone tz_n, 60, 20) returning id into s_early;
+
+  -- Late gym (local 23:xx): tomorrow 08:00 is ~9 hours away and MUST still be refused — its door
+  -- shut an hour ago, at 22:00 tonight. Tomorrow 12:00 beside it must not be.
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (g_l, ct_l, ((d_l + 1) + time '08:00') at time zone tz_l, 60, 20) returning id into s_l_early;
+  insert into public.class_session (gym_id, class_type_id, starts_at, duration_min, capacity)
+    values (g_l, ct_l, ((d_l + 1) + time '12:00') at time zone tz_l, 60, 20) returning id into s_l_noon;
+
+  perform set_config('t.g_n', g_n::text, true);
+  perform set_config('t.m_a', m_a::text, true);
+  perform set_config('t.m_b', m_b::text, true);
+  perform set_config('t.m_c', m_c::text, true);
+  perform set_config('t.op_n', op_n::text, true);
+  perform set_config('t.m_l', m_l::text, true);
+  perform set_config('t.m_l2', m_l2::text, true);
+  perform set_config('t.c_a', c_a::text, true);
+  perform set_config('t.c_b', c_b::text, true);
+  perform set_config('t.c_c', c_c::text, true);
+  perform set_config('t.t_n', t_n::text, true);
+  perform set_config('t.c_l', c_l::text, true);
+  perform set_config('t.c_l2', c_l2::text, true);
+  perform set_config('t.s_2h', s_2h::text, true);
+  perform set_config('t.s_4h', s_4h::text, true);
+  perform set_config('t.s_early', s_early::text, true);
+  perform set_config('t.s_l_early', s_l_early::text, true);
+  perform set_config('t.s_l_noon', s_l_noon::text, true);
+end $$;
+
+-- ── (a) MEMBER, 2 HOURS OUT → REFUSED ─────────────────────────────────────────────────────────
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_raised boolean := false;
+begin
+  begin
+    perform public.reservar_clase(current_setting('t.s_2h', true)::uuid);
+  exception when others then
+    v_raised := true;
+    if sqlerrm is distinct from 'Reservas cerradas para esta clase' then
+      raise exception 'RULE FAIL(corte a): wrong raise 2h out: %', sqlerrm;
+    end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(corte a): a member booked a class 2h before it starts'; end if;
+end $$;
+reset role;
+
+do $$
+declare v_n int; v_c int;
+begin
+  select count(*) into v_n from public.reservation where class_session_id = current_setting('t.s_2h', true)::uuid;
+  if v_n <> 0 then raise exception 'RULE FAIL(corte a): % reservation row(s) landed on a closed class', v_n; end if;
+  select clases_restantes into v_c from public.clientes where id = current_setting('t.c_a', true)::uuid;
+  if v_c is distinct from 5 then raise exception 'RULE FAIL(corte a): the refused member''s balance moved to % (expected an untouched 5)', v_c; end if;
+end $$;
+
+-- ── (b) MEMBER, 4 HOURS OUT → ALLOWED ─────────────────────────────────────────────────────────
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_b', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.s_4h', true)::uuid); end $$;
+reset role;
+
+do $$
+declare v_status text; v_c int;
+begin
+  select status into v_status from public.reservation
+   where class_session_id = current_setting('t.s_4h', true)::uuid
+     and member_id = current_setting('t.c_b', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'RULE FAIL(corte b): status % 4h out (expected reservada)', v_status; end if;
+  select clases_restantes into v_c from public.clientes where id = current_setting('t.c_b', true)::uuid;
+  if v_c is distinct from 4 then raise exception 'RULE FAIL(corte b): balance % (expected the single consume to 4)', v_c; end if;
+end $$;
+
+-- ── (c2) MEMBER, TOMORROW 08:00 SEEN FROM MIDDAY → ALLOWED ────────────────────────────────────
+-- The previous-evening arm applies (local hour 8 < 9) and puts the door at 22:00 TONIGHT — which is
+-- still ten hours away. The counter-vector to (f) below: same rule, same class hour, opposite
+-- verdict, and the only thing that differs is what time it is at the gym.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_c', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.s_early', true)::uuid); end $$;
+reset role;
+
+do $$
+declare v_status text;
+begin
+  select status into v_status from public.reservation
+   where class_session_id = current_setting('t.s_early', true)::uuid
+     and member_id = current_setting('t.c_c', true)::uuid;
+  if v_status is distinct from 'reservada' then
+    raise exception 'RULE FAIL(corte c2): tomorrow-08:00 refused at midday (status %) — the 22:00 door had not shut', v_status;
+  end if;
+end $$;
+
+-- ── (e) STAFF ON BEHALF, THE SAME CLOSED SESSION → ALLOWED ────────────────────────────────────
+-- Same session and same instant the member was refused on in (a): the ONLY difference is who is
+-- calling. The desk is not subject to the member's closing time.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.op_n', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+begin
+  perform public.reservar_clase(current_setting('t.s_2h', true)::uuid, current_setting('t.t_n', true)::uuid);
+end $$;
+reset role;
+
+do $$
+declare v_status text; v_consumio boolean; v_walk boolean; v_c int;
+begin
+  select status, consumio, is_walk_in into v_status, v_consumio, v_walk from public.reservation
+   where class_session_id = current_setting('t.s_2h', true)::uuid
+     and member_id = current_setting('t.t_n', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'RULE FAIL(corte e): staff-on-behalf status % on a closed class (expected reservada)', v_status; end if;
+  if v_consumio is distinct from true then raise exception 'RULE FAIL(corte e): consumio % (expected true)', v_consumio; end if;
+  if v_walk is distinct from false then raise exception 'RULE FAIL(corte e): a phone booking was flagged is_walk_in'; end if;
+  select clases_restantes into v_c from public.clientes where id = current_setting('t.t_n', true)::uuid;
+  if v_c is distinct from 4 then raise exception 'RULE FAIL(corte e): target balance % (expected the single consume to 4)', v_c; end if;
+end $$;
+
+-- ── (d) FLAG OFF, THE SAME SESSION AND THE SAME MEMBER → ALLOWED ──────────────────────────────
+-- (a) refused this exact pair. Flip `corte_reservas` off and nothing else, and it books — which is
+-- what proves (a) was the cutoff and not some second property of a class two hours out.
+do $$
+begin
+  update public.gym set corte_reservas = false where id = current_setting('t.g_n', true)::uuid;
+end $$;
+
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_a', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.s_2h', true)::uuid); end $$;
+reset role;
+
+do $$
+declare v_status text; v_c int;
+begin
+  select status into v_status from public.reservation
+   where class_session_id = current_setting('t.s_2h', true)::uuid
+     and member_id = current_setting('t.c_a', true)::uuid;
+  if v_status is distinct from 'reservada' then raise exception 'RULE FAIL(corte d): status % with the flag OFF (expected reservada)', v_status; end if;
+  select clases_restantes into v_c from public.clientes where id = current_setting('t.c_a', true)::uuid;
+  if v_c is distinct from 4 then raise exception 'RULE FAIL(corte d): balance % (expected the single consume to 4)', v_c; end if;
+end $$;
+
+-- ── (h) THE READ SURFACE — class_session.cierre_reservas ──────────────────────────────────────
+-- The computed column the member agenda selects. With the flag OFF (where (d) left it) it must be
+-- NULL — "this gym runs no cutoff" — and with it back ON it must equal the function the RPC gate
+-- calls, on the same row. One rule, one answer, both sides.
+do $$
+declare v_got timestamptz; v_expect timestamptz;
+begin
+  select public.cierre_reservas(cs) into v_got
+    from public.class_session cs where cs.id = current_setting('t.s_4h', true)::uuid;
+  if v_got is not null then raise exception 'RULE FAIL(corte h): cierre_reservas is % with the gym flag off (expected NULL)', v_got; end if;
+
+  update public.gym set corte_reservas = true where id = current_setting('t.g_n', true)::uuid;
+
+  select public.cierre_reservas(cs), public.corte_reserva(cs.starts_at, g.timezone) into v_got, v_expect
+    from public.class_session cs join public.gym g on g.id = cs.gym_id
+   where cs.id = current_setting('t.s_4h', true)::uuid;
+  if v_got is distinct from v_expect then
+    raise exception 'RULE FAIL(corte h): cierre_reservas % disagrees with corte_reserva %', v_got, v_expect;
+  end if;
+end $$;
+
+-- ── (f) THE PREVIOUS-EVENING ARM THROUGH THE RPC → REFUSED NINE HOURS OUT ─────────────────────
+-- The late gym reads 23:xx local. Tomorrow's 08:00 class is ~9 hours away — nowhere near the
+-- 3-hour window — and must STILL be refused, because its door was 22:00 tonight. A build that
+-- implemented only the 3-hour rule passes every other vector in this section and fails this one.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_l', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$
+declare v_raised boolean := false;
+begin
+  begin
+    perform public.reservar_clase(current_setting('t.s_l_early', true)::uuid);
+  exception when others then
+    v_raised := true;
+    if sqlerrm is distinct from 'Reservas cerradas para esta clase' then
+      raise exception 'RULE FAIL(corte f): wrong raise for tomorrow 08:00 at 23:00 local: %', sqlerrm;
+    end if;
+  end;
+  if not v_raised then raise exception 'RULE FAIL(corte f): the 22:00 door did not shut — tomorrow''s 08:00 class booked at 23:00'; end if;
+end $$;
+reset role;
+
+do $$
+declare v_n int; v_c int;
+begin
+  select count(*) into v_n from public.reservation where class_session_id = current_setting('t.s_l_early', true)::uuid;
+  if v_n <> 0 then raise exception 'RULE FAIL(corte f): % reservation row(s) landed past the 22:00 door', v_n; end if;
+  select clases_restantes into v_c from public.clientes where id = current_setting('t.c_l', true)::uuid;
+  if v_c is distinct from 5 then raise exception 'RULE FAIL(corte f): the refused member''s balance moved to % (expected an untouched 5)', v_c; end if;
+end $$;
+
+-- ── (g) COUNTER-VECTOR: SAME GYM, SAME INSTANT, A CLASS AT TOMORROW 12:00 → ALLOWED ───────────
+-- 12:00 is past 09:00, so the previous-evening arm does not apply at all and the door is 09:00
+-- tomorrow — still ten hours away. Without this, (f) would also pass a body that simply refused
+-- everything on that gym.
+select set_config('request.jwt.claims',
+  json_build_object('sub', current_setting('t.m_l2', true), 'role', 'authenticated')::text, true);
+set local role authenticated;
+do $$ begin perform public.reservar_clase(current_setting('t.s_l_noon', true)::uuid); end $$;
+reset role;
+
+do $$
+declare v_status text; v_c int;
+begin
+  select status into v_status from public.reservation
+   where class_session_id = current_setting('t.s_l_noon', true)::uuid
+     and member_id = current_setting('t.c_l2', true)::uuid;
+  if v_status is distinct from 'reservada' then
+    raise exception 'RULE FAIL(corte g): tomorrow-12:00 refused (status %) — the previous-evening arm must not reach a 12:00 class', v_status;
+  end if;
+  select clases_restantes into v_c from public.clientes where id = current_setting('t.c_l2', true)::uuid;
+  if v_c is distinct from 4 then raise exception 'RULE FAIL(corte g): balance % (expected the single consume to 4)', v_c; end if;
 end $$;
 
 select 'reservar_clase rules: OK' as result;

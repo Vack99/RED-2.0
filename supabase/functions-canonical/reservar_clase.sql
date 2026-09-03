@@ -9,6 +9,7 @@ declare
   v_vence     date;
   v_tz        text;
   v_reservas  boolean;              
+  v_corte     boolean;              
   v_hoy       date;
   v_sesion_fecha date;              
   v_active    int;
@@ -69,13 +70,21 @@ begin
   
   
   
-  
-  select timezone, booking_enabled into v_tz, v_reservas from public.gym where id = v_gym for share;
+  select timezone, booking_enabled, corte_reservas into v_tz, v_reservas, v_corte
+    from public.gym where id = v_gym for share;
 
   
   
   if not v_reservas then
     raise exception 'Reservas deshabilitadas';
+  end if;
+
+  
+  
+  
+  
+  if p_cliente_id is null and v_corte and now() >= public.corte_reserva(v_starts, v_tz) then
+    raise exception 'Reservas cerradas para esta clase';
   end if;
 
   

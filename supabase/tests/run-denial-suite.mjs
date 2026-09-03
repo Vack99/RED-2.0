@@ -142,6 +142,11 @@ export const SUITE = [
   // belongs after every booking/attendance suite above that already pins cancelar_reserva's
   // own refund contract.
   'cambiar_modo_reservas_rules.sql',
+  // cambiar_corte_reservas (2026-09-02) runs immediately after its sibling: the same Cuenta
+  // switch shape, same staff resolution, same two refusal messages — MINUS the cancel cascade,
+  // which is the one thing it must be read against. Reading the pair back to back is what makes
+  // the missing loop legible as a ruling rather than an omission.
+  'cambiar_corte_reservas_rules.sql',
   'senal_gym.sql',
 ];
 

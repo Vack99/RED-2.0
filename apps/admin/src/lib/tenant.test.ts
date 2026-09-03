@@ -21,6 +21,7 @@ const gym = (over: Partial<OperatorGym> = {}): OperatorGym => ({
   slug: "forge",
   brandName: "Forge",
   bookingEnabled: false,
+  corteReservas: false,
   userId: "op-1",
   ...over,
 });

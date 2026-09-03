@@ -174,6 +174,7 @@ export type Database = {
         Row: {
           cancelled_at: string | null
           capacity: number
+          cierre_reservas: string | null
           class_type_id: string
           created_at: string
           duration_min: number
@@ -706,6 +707,7 @@ export type Database = {
           booking_enabled: boolean
           brand_module_id: string
           brand_name: string
+          corte_reservas: boolean
           created_at: string
           id: string
           legal_name: string | null
@@ -721,6 +723,7 @@ export type Database = {
           booking_enabled?: boolean
           brand_module_id: string
           brand_name: string
+          corte_reservas?: boolean
           created_at?: string
           id?: string
           legal_name?: string | null
@@ -736,6 +739,7 @@ export type Database = {
           booking_enabled?: boolean
           brand_module_id?: string
           brand_name?: string
+          corte_reservas?: boolean
           created_at?: string
           id?: string
           legal_name?: string | null
@@ -1486,6 +1490,10 @@ export type Database = {
           ultima_visita: string | null
           ultima_visita_consumida: string | null
         }[]
+      }
+      cambiar_corte_reservas: {
+        Args: { p_activar: boolean; p_gym_id?: string }
+        Returns: undefined
       }
       cambiar_modo_reservas: {
         Args: { p_gym_id?: string; p_habilitar: boolean }
