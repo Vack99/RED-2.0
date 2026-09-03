@@ -95,12 +95,81 @@ interface AjusteRow {
   icon: IconName;
   label: string;
   sub: string;
-  /** Replaces the drill-in chevron for rows that write in place instead of opening a sheet
-   *  — the switch's own state label, so the row never promises a screen it does not have. */
-  trailing?: string;
-  /** Tints `trailing` gold while the switch is on (the file's active accent). */
-  activo?: boolean;
+  /** Present on rows that WRITE IN PLACE instead of opening a sheet: the row renders a real
+   *  switch instead of the drill-in chevron, and the whole row becomes that switch's label —
+   *  so the setting reads as a thing you flip, not a screen you open. */
+  interruptor?: { encendido: boolean; pendiente: boolean };
   onClick: () => void;
+}
+
+const SW_ANCHO = 46;
+const SW_ALTO = 26;
+const SW_PERILLA = 20;
+
+/**
+ * The AJUSTES switch: a real `<input type="checkbox" role="switch">` — focusable,
+ * keyboard-operable and state-announced — with an iOS-style track and knob drawn around it
+ * in tokens only (`--yellow` is the FILL accent, `--yellow-fg` its contrast-checked
+ * foreground, so the knob stays legible on every brand module). The input itself is the
+ * full-size invisible hit target; the visible chrome is `aria-hidden`.
+ */
+function Interruptor({
+  encendido,
+  pendiente,
+  etiqueta,
+  onChange,
+}: {
+  encendido: boolean;
+  pendiente: boolean;
+  etiqueta: string;
+  onChange: () => void;
+}) {
+  return (
+    <span
+      className="relative inline-flex shrink-0 items-center"
+      style={{ width: SW_ANCHO, height: SW_ALTO, opacity: pendiente ? 0.45 : 1 }}
+    >
+      {/* A focus ring can't be expressed inline (:focus-visible) — one tiny local rule,
+          same idiom as LogoutButton. */}
+      <style>{`
+        .forge-switch:focus-visible + .forge-switch-riel {
+          outline: 2px solid var(--gold);
+          outline-offset: 3px;
+        }
+      `}</style>
+      <input
+        type="checkbox"
+        role="switch"
+        className="forge-switch absolute inset-0 h-full w-full opacity-0"
+        style={{ margin: 0, cursor: pendiente ? "default" : "pointer" }}
+        checked={encendido}
+        disabled={pendiente}
+        onChange={onChange}
+        aria-label={etiqueta}
+      />
+      <span
+        aria-hidden
+        className="forge-switch-riel pointer-events-none absolute inset-0 flex items-center"
+        style={{
+          borderRadius: 999,
+          background: encendido ? "var(--yellow)" : "var(--sunk)",
+          border: `1px solid ${encendido ? "var(--yellow)" : "var(--line)"}`,
+          transition: "background-color 160ms ease, border-color 160ms ease",
+        }}
+      >
+        <span
+          style={{
+            width: SW_PERILLA,
+            height: SW_PERILLA,
+            borderRadius: 999,
+            background: encendido ? "var(--yellow-fg)" : "var(--muted)",
+            transform: `translateX(${encendido ? SW_ANCHO - SW_PERILLA - 4 : 2}px)`,
+            transition: "transform 160ms ease, background-color 160ms ease",
+          }}
+        />
+      </span>
+    </span>
+  );
 }
 
 // Sub-editors (Paquetes editor, Plantillas, Cobro, Perfil) stay read-only this
@@ -179,7 +248,11 @@ export function CuentaScreen({
   const [reservasEnLineaOpen, setReservasEnLineaOpen] = React.useState(false);
   // The cutoff row writes straight through — nothing cascades, so there is no confirm sheet
   // to own the pending ceremony the way ReservasEnLineaSheet does; the row owns it itself.
+  // Its switch is driven by local state so the knob moves on the tap and rolls back if the
+  // write fails (the asistencia desk's optimistic-flip pattern), with `router.refresh()`
+  // landing the server's own value underneath.
   const [cortePending, setCortePending] = React.useState(false);
+  const [corteOn, setCorteOn] = React.useState(corteReservas);
   const router = useRouter();
   const sinLeer = mensajes.filter((m) => !m.leido).length;
 
@@ -219,18 +292,21 @@ export function CuentaScreen({
 
   const cambiarCorte = async () => {
     if (cortePending) return;
+    const siguiente = !corteOn;
+    setCorteOn(siguiente);
     setCortePending(true);
     try {
-      await cambiarCorteReservasAction(!corteReservas);
+      await cambiarCorteReservasAction(siguiente);
       forgeToast({
         tone: "success",
-        title: corteReservas ? "Cierre desactivado" : "Cierre activado",
-        body: corteReservas
-          ? "Tus socios pueden reservar hasta que empiece la clase."
-          : "Tus socios ya no pueden reservar 3 h antes de la clase.",
+        title: siguiente ? "Cierre activado" : "Cierre desactivado",
+        body: siguiente
+          ? "Las reservas se cierran 3 horas antes de cada clase."
+          : "Las reservas están abiertas hasta que empieza la clase.",
       });
       router.refresh();
     } catch {
+      setCorteOn(!siguiente);
       forgeToast({ tone: "warning", title: "No se pudo cambiar", body: "Intenta de nuevo." });
     } finally {
       setCortePending(false);
@@ -269,7 +345,11 @@ export function CuentaScreen({
     {
       icon: "cal",
       label: "RESERVAS EN LÍNEA",
-      sub: esCupo ? "Activadas" : "Desactivadas",
+      // Says what is true NOW, in the same plain voice as the cutoff row below it — the row
+      // opens a confirm sheet (turning it off cancels bookings), so it keeps its chevron.
+      sub: esCupo
+        ? "Tus socios apartan su lugar desde la app."
+        : "Tus socios no pueden apartar lugar desde la app.",
       onClick: () => setReservasEnLineaOpen(true),
     },
     // The cutoff only means anything while the gym takes bookings at all, so it rides
@@ -280,16 +360,15 @@ export function CuentaScreen({
           {
             icon: "clock" as IconName,
             label: "CIERRE DE RESERVAS",
-            // Conditional like the row above it: an indicative statement of the rule would
-            // contradict a DESACTIVADO trailing — the sub says what is true NOW, not what the
-            // switch would do. 24h times throughout, matching the member-facing copy.
-            sub: corteReservas
-              ? "Los socios ya no pueden reservar 3 h antes de la clase. Clases antes de las 9:00 cierran a las 22:00 del día anterior."
-              : "Los socios pueden reservar hasta que empiece la clase.",
-            // No chevron: this row IS the switch, it opens nothing. Its trailing text is
-            // the gym's current position, in the same lexicon as the row above it.
-            trailing: cortePending ? "UN MOMENTO…" : corteReservas ? "ACTIVADO" : "DESACTIVADO",
-            activo: corteReservas,
+            // Reads off the SWITCH, not the server prop, so the sentence flips with the knob
+            // on the same tap. It states what is true NOW, never what the switch would do —
+            // the rule paragraph under an off switch was the confusion (owner, 2026-09-02).
+            // 24h times throughout, matching the member-facing copy.
+            sub: corteOn
+              ? "Las reservas se cierran 3 horas antes de cada clase. Si la clase es antes de las 9:00, se cierran a las 22:00 del día anterior."
+              : "Las reservas están abiertas hasta que empieza la clase.",
+            // No chevron: this row IS the switch, it opens nothing.
+            interruptor: { encendido: corteOn, pendiente: cortePending },
             onClick: cambiarCorte,
           },
         ]
@@ -518,43 +597,53 @@ export function CuentaScreen({
       {/* Ajustes */}
       <SectionHeader>AJUSTES</SectionHeader>
       <div style={{ margin: "0 16px" }}>
-        {ajustes.map((row, i) => (
-          <button
-            key={row.label}
-            onClick={row.onClick}
-            className="forge-pressable flex w-full items-center border border-line bg-surface text-left"
-            style={{
-              gap: 14,
-              padding: "14px 16px",
-              borderBottom: i === ajustes.length - 1 ? "1px solid var(--line)" : "none",
-              marginTop: i === 0 ? 0 : -1,
-              cursor: "pointer",
-              color: "var(--fg)",
-            }}
-          >
-            <div className="flex shrink-0 items-center justify-center border border-line" style={{ width: 32, height: 32, background: "var(--canvas)" }}>
-              <Icon name={row.icon} size={15} color="var(--gold)" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="font-bold" style={{ fontSize: 12.5, letterSpacing: 0.6 }}>{row.label}</div>
-              <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{row.sub}</div>
-            </div>
-            {row.trailing ? (
-              <div
-                className="shrink-0 uppercase font-extrabold"
-                style={{
-                  fontSize: 10.5,
-                  letterSpacing: 1.2,
-                  color: row.activo ? "var(--gold)" : "var(--muted)",
-                }}
-              >
-                {row.trailing}
+        {ajustes.map((row, i) => {
+          const clase = "forge-pressable flex w-full items-center border border-line bg-surface text-left";
+          const estilo: React.CSSProperties = {
+            gap: 14,
+            padding: "14px 16px",
+            borderBottom: i === ajustes.length - 1 ? "1px solid var(--line)" : "none",
+            marginTop: i === 0 ? 0 : -1,
+            cursor: "pointer",
+            color: "var(--fg)",
+          };
+          const contenido = (
+            <>
+              <div className="flex shrink-0 items-center justify-center border border-line" style={{ width: 32, height: 32, background: "var(--canvas)" }}>
+                <Icon name={row.icon} size={15} color="var(--gold)" />
               </div>
-            ) : (
-              <Icon name="chev" size={14} color="var(--muted)" />
-            )}
-          </button>
-        ))}
+              <div className="min-w-0 flex-1">
+                <div className="font-bold" style={{ fontSize: 12.5, letterSpacing: 0.6 }}>{row.label}</div>
+                <div style={{ fontSize: 11, color: "var(--muted)", marginTop: 2 }}>{row.sub}</div>
+              </div>
+              {row.interruptor ? (
+                <Interruptor
+                  encendido={row.interruptor.encendido}
+                  pendiente={row.interruptor.pendiente}
+                  etiqueta={row.label}
+                  onChange={row.onClick}
+                />
+              ) : (
+                <Icon name="chev" size={14} color="var(--muted)" />
+              )}
+            </>
+          );
+          // A switch row is the switch's own <label> — the whole row is its hit area, and
+          // nesting a control inside a <button> would be invalid anyway.
+          return row.interruptor ? (
+            <label
+              key={row.label}
+              className={clase}
+              style={{ ...estilo, cursor: row.interruptor.pendiente ? "default" : "pointer" }}
+            >
+              {contenido}
+            </label>
+          ) : (
+            <button key={row.label} onClick={row.onClick} className={clase} style={estilo}>
+              {contenido}
+            </button>
+          );
+        })}
       </div>
 
       <div

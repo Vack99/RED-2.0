@@ -452,24 +452,36 @@ describe("diaSemanaDe", () => {
  * reads the clock INSIDE the tap handler, never at render.
  */
 describe("accionAgregar", () => {
-  const INICIO = "2026-06-17T14:00:00.000Z"; // window opens 12:30Z
+  const INICIO = "2026-06-17T14:00:00.000Z";
 
-  it("books while the arrival window is still shut — the phone call for tomorrow's class", () => {
+  it("books while the class has not started — the phone call for tomorrow's class", () => {
     expect(accionAgregar(INICIO, new Date("2026-06-16T20:00:00.000Z"))).toBe("reservar");
-    expect(accionAgregar(INICIO, new Date("2026-06-17T12:29:59.999Z"))).toBe("reservar");
+    expect(accionAgregar(INICIO, new Date("2026-06-17T12:00:00.000Z"))).toBe("reservar");
   });
 
-  it("checks in from the opening instant on — a member standing there an hour early is a visita", () => {
-    expect(accionAgregar(INICIO, new Date("2026-06-17T12:30:00.000Z"))).toBe("pase");
-    expect(accionAgregar(INICIO, new Date("2026-06-17T13:00:00.000Z"))).toBe("pase");
+  it("still books inside the ±90-min arrival window (owner ruling 2026-09-02)", () => {
+    // The old rule flipped to "pase" at 12:30Z. An early arrival is now booked, then marked
+    // present — the arrival window keeps owning the pasa-lista preselect, not this button.
+    expect(accionAgregar(INICIO, new Date("2026-06-17T12:30:00.000Z"))).toBe("reservar");
+    expect(accionAgregar(INICIO, new Date("2026-06-17T13:00:00.000Z"))).toBe("reservar");
   });
 
-  it("a tap AFTER the edge under a stale RESERVA label still checks in — never a false booking", () => {
-    // The sheet was rendered at 12:29 (label: AGREGAR RESERVA) and tapped at 12:31.
-    expect(accionAgregar(INICIO, new Date("2026-06-17T12:31:00.000Z"))).toBe("pase");
+  it("books up to the last instant before the class starts", () => {
+    expect(accionAgregar(INICIO, new Date("2026-06-17T13:59:00.000Z"))).toBe("reservar");
+    expect(accionAgregar(INICIO, new Date("2026-06-17T13:59:59.999Z"))).toBe("reservar");
   });
 
-  it("stays on the check-in side past the window's close — the branch never wraps back", () => {
+  it("records a visita from the START instant on — the RPC's own 'La clase ya comenzó' edge", () => {
+    expect(accionAgregar(INICIO, new Date("2026-06-17T14:00:00.000Z"))).toBe("pase");
+    expect(accionAgregar(INICIO, new Date("2026-06-17T14:00:00.001Z"))).toBe("pase");
+  });
+
+  it("a tap AFTER the start under a stale RESERVA label still checks in — never a false booking", () => {
+    // The sheet was rendered at 13:59 (label: AGREGAR RESERVA) and tapped at 14:01.
+    expect(accionAgregar(INICIO, new Date("2026-06-17T14:01:00.000Z"))).toBe("pase");
+  });
+
+  it("stays on the check-in side long past the class — the branch never wraps back", () => {
     expect(accionAgregar(INICIO, new Date("2026-06-18T09:00:00.000Z"))).toBe("pase");
   });
 });

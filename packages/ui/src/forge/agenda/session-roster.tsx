@@ -17,11 +17,11 @@ import { Avatar, Eyebrow, Input, Tnum } from "../ui";
  * state — dimmed, with a "NO ASISTIÓ" caption. It is derived at read, never stored, so
  * the same single tap that marks anyone else supersedes it (ruling 2026-07-29).
  *
- * ONE add affordance, whose verb follows the TENSE (#238): AGREGAR RESERVA while the class
- * is still far off, AGREGAR VISITA once its arrival window is open. The component only
- * renders that tense — the write path behind the tap is the parent's, decided against a
- * clock read at tap time. A booked-not-present row also gets the operator's cancel, because
- * a phone booking charges the member the instant it is made.
+ * ONE add affordance, whose verb follows the TENSE (#238, boundary moved by the owner ruling
+ * of 2026-09-02): AGREGAR RESERVA until the class starts, AGREGAR VISITA from its start on.
+ * The component only renders that tense — the write path behind the tap is the parent's,
+ * decided against a clock read at tap time. A booked-not-present row also gets the operator's
+ * cancel, because a phone booking charges the member the instant it is made.
  *
  * When that add is refused for a reason a SALE fixes, the parent hands back `ventaSugerida` and
  * the picker grows a persistent line to Vender for that member (#235 story 10) — the caller is
@@ -61,13 +61,14 @@ export function rosterResumen(rows: Pick<RosterRow, "present">[]): { presentes: 
 
 /**
  * The add-button verb and the empty-state line, both derived from the SAME tense so the two
- * can never contradict each other (#238): before the session's arrival window opens the tap
- * books a reserva, once it is open the tap records an arrival. The label may lag a window
- * that opened while the sheet sat there — deliberately: the WRITE re-reads the clock at tap
- * time (the parent's handler), so a stale label is cosmetic and a stale write is impossible.
+ * can never contradict each other (#238): the tap books a reserva until the class STARTS, and
+ * records an arrival from then on (owner ruling 2026-09-02 — an early arrival is booked, then
+ * marked present, rather than being un-bookable for the last 90 minutes). The label may lag a
+ * class that started while the sheet sat there — deliberately: the WRITE re-reads the clock at
+ * tap time (the parent's handler), so a stale label is cosmetic and a stale write is impossible.
  */
-export function copiaAgregar(antesDeVentana: boolean): { boton: string; vacio: string } {
-  const que = antesDeVentana ? "reserva" : "visita";
+export function copiaAgregar(antesDeInicio: boolean): { boton: string; vacio: string } {
+  const que = antesDeInicio ? "reserva" : "visita";
   return { boton: `Agregar ${que}`, vacio: `Nadie reservó todavía · agrega una ${que}` };
 }
 
@@ -93,9 +94,9 @@ export interface SessionRosterProps {
   loading: boolean;
   /** clienteIds with a mark/add in flight — their row shows a pending affordance. */
   busy: Set<string>;
-  /** Tense (#238): is now EARLIER than the session's arrival window opens? Copy only — the
-   *  parent re-derives it against a fresh clock inside `onAddWalkIn` to choose the write. */
-  antesDeVentana: boolean;
+  /** Tense (#238): has the class not started yet (`now < startsAt`)? Copy only — the parent
+   *  re-derives it against a fresh clock inside `onAddWalkIn` to choose the write. */
+  antesDeInicio: boolean;
   /** `now >= startsAt` — the cancel RPC's own gate, so the × is not offered past it. */
   claseIniciada: boolean;
   /** The last add the RPC refused over balance/vigencia (#235 story 10). Omit for no line. */
@@ -111,7 +112,7 @@ export function SessionRoster({
   candidates,
   loading,
   busy,
-  antesDeVentana,
+  antesDeInicio,
   claseIniciada,
   ventaSugerida,
   onToggle,
@@ -122,7 +123,7 @@ export function SessionRoster({
   const [query, setQuery] = React.useState("");
 
   const { presentes, total } = rosterResumen(rows);
-  const copia = copiaAgregar(antesDeVentana);
+  const copia = copiaAgregar(antesDeInicio);
   const q = query.trim().toLowerCase();
   const matches = q ? candidates.filter((c) => c.nombre.toLowerCase().includes(q)) : candidates;
 

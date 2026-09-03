@@ -370,9 +370,9 @@ export function AgendaScreen(props: AgendaScreenProps) {
 
   // THE tense branch (#238), and it lives HERE, in the handler, against a clock read at THIS
   // instant — never one captured at render (the #235 amendment). A sheet left open across the
-  // window's opening edge still shows the stale AGREGAR RESERVA label, and that is fine: the
-  // tap below re-reads the clock and checks the member in. A stale label is cosmetic; a stale
-  // write is a false record. There is deliberately no interval here — #231 owns the tick.
+  // class's start still shows the stale AGREGAR RESERVA label, and that is fine: the tap below
+  // re-reads the clock and checks the member in. A stale label is cosmetic; a stale write is a
+  // false record. There is deliberately no interval here — #231 owns the tick.
   const runAgregar = (clienteId: string) => {
     const card = glance.card;
     if (!card) return;
@@ -769,7 +769,7 @@ export function AgendaScreen(props: AgendaScreenProps) {
           candidates={glance.candidates}
           rosterLoading={glance.loading}
           rosterBusy={rosterBusy}
-          antesDeVentana={accionAgregar(cardActual.startsAtIso, ahora) === "reservar"}
+          antesDeInicio={accionAgregar(cardActual.startsAtIso, ahora) === "reservar"}
           claseIniciada={new Date(cardActual.startsAtIso).getTime() <= ahora.getTime()}
           ventaSugerida={ventaSugerida ?? undefined}
           onTogglePresent={runPase}

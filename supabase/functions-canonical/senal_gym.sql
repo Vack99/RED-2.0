@@ -3,7 +3,12 @@ declare
   v_gym  uuid;
   v_guc  text;
 begin
-  if tg_op = 'INSERT' then
+  if tg_table_name = 'gym' then
+    
+    
+    
+    v_gyms := array[new.id];
+  elsif tg_op = 'INSERT' then
     select array_agg(distinct gym_id) into v_gyms from n where gym_id is not null;
   elsif tg_op = 'UPDATE' then
     select array_agg(distinct z.gym_id) into v_gyms

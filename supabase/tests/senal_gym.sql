@@ -235,6 +235,64 @@ begin
   if v_n <> 0 then raise exception 'RULE FAIL(delete arm): % message(s) on some other gym''s topic', v_n; end if;
 end $$;
 
+-- ── The operator's switches signal; brand churn does NOT ────────────────────────
+-- `gym` is the one signalling table whose tenant key is `id`, not `gym_id` (20260902160000), so a
+-- trigger wired like the other five would emit NOTHING here and the gap would be invisible: the
+-- operator flips corte_reservas and every open phone keeps offering a booking the server will now
+-- refuse. The second half is the other half of the contract — the trigger is narrowed to
+-- `update of corte_reservas, booking_enabled` precisely so that renaming a brand does not wake
+-- every phone in the gym, and a widened column list would silently undo that. Fresh GUC state on
+-- both halves, so each measures ONE statement.
+do $$
+declare
+  gym_a uuid := current_setting('t.gym_a', true)::uuid;
+  v_guc text := 'senal.g_' || replace(current_setting('t.gym_a', true), '-', '');
+  v_n int; v_t text; v_corte boolean;
+begin
+  delete from realtime.messages where topic like 'gym:%';
+  perform set_config(v_guc, '', true);
+
+  update public.gym set corte_reservas = true where id = gym_a;
+  select corte_reservas into v_corte from public.gym where id = gym_a;
+  if v_corte is distinct from true then
+    raise exception 'SETUP FAIL(gym switch): corte_reservas did not actually flip'; end if;
+
+  select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_n <> 1 then
+    raise exception 'RULE FAIL(gym switch): % message(s) for one corte_reservas flip (expected exactly 1) — the gym trigger is missing, or it is reading gym_id on a table whose key is id', v_n;
+  end if;
+  select payload ->> 't' into v_t from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_t is distinct from 'gym' then
+    raise exception 'RULE FAIL(gym switch): payload names table % (expected gym)', coalesce(v_t, '<null>'); end if;
+
+  select count(*) into v_n from realtime.messages
+    where topic like 'gym:%' and topic <> 'gym:' || gym_a::text;
+  if v_n <> 0 then
+    raise exception 'RULE FAIL(gym switch): % message(s) on some other gym''s topic', v_n; end if;
+
+  -- booking_enabled is the same switch class and rides the same column list.
+  delete from realtime.messages where topic like 'gym:%';
+  perform set_config(v_guc, '', true);
+  update public.gym set booking_enabled = false where id = gym_a;
+  select count(*) into v_n from realtime.messages where topic = 'gym:' || gym_a::text;
+  if v_n <> 1 then
+    raise exception 'RULE FAIL(gym switch): % message(s) for one booking_enabled flip (expected exactly 1)', v_n; end if;
+
+  -- …and a column that changes nothing a member may do stays silent.
+  delete from realtime.messages where topic like 'gym:%';
+  perform set_config(v_guc, '', true);
+  update public.gym set brand_name = 'Senal Gym A renombrado' where id = gym_a;
+  if (select brand_name from public.gym where id = gym_a) is distinct from 'Senal Gym A renombrado' then
+    raise exception 'SETUP FAIL(gym switch): brand_name did not actually change — the silence below would be vacuous'; end if;
+  select count(*) into v_n from realtime.messages where topic like 'gym:%';
+  if v_n <> 0 then
+    raise exception 'RULE FAIL(gym switch): a brand rename emitted % message(s) — the trigger is not narrowed to the switch columns', v_n;
+  end if;
+
+  -- Leave the switches as the rest of this file found them: gym A takes bookings again.
+  update public.gym set corte_reservas = false, booking_enabled = true where id = gym_a;
+end $$;
+
 -- ── A re-keyed row signals BOTH gyms: the one it left and the one it joined ──────
 -- This is the whole reason the UPDATE trigger takes both transition tables. Reading `n` alone would
 -- tell gym B its roster grew and leave gym A stale FOREVER — not merely slow: no later write to

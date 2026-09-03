@@ -24,14 +24,14 @@ describe("rosterResumen", () => {
  * the same action, always, because they are cut from the same word.
  */
 describe("copiaAgregar", () => {
-  it("reads RESERVA before the arrival window opens — the tap will book a future class", () => {
+  it("reads RESERVA until the class starts — the tap will book (owner ruling 2026-09-02)", () => {
     expect(copiaAgregar(true)).toEqual({
       boton: "Agregar reserva",
       vacio: "Nadie reservó todavía · agrega una reserva",
     });
   });
 
-  it("reads VISITA once the window is open — the tap records an arrival, as it always did", () => {
+  it("reads VISITA from the start instant on — the tap records an arrival", () => {
     expect(copiaAgregar(false)).toEqual({
       boton: "Agregar visita",
       vacio: "Nadie reservó todavía · agrega una visita",

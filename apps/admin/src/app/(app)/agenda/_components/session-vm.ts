@@ -1,4 +1,4 @@
-import { antesDeVentanaArribo, BLOQUEOS_VENDIBLES } from "@gym/domain/rules";
+import { BLOQUEOS_VENDIBLES } from "@gym/domain/rules";
 import { parseDay } from "@gym/format";
 import type { PlantillaDTO, SesionAgendaDTO } from "@gym/data/server/agenda";
 import type { EditorAlcance, EditorDraft } from "@gym/ui/forge/agenda/editor-sheet";
@@ -260,11 +260,19 @@ export function canceladasLinea(clasesCanceladas: number): string {
  * Which write path the operator's pick takes (#238) — the whole feature in one line, and the
  * one place a correct rule wired to the wrong callback would slip through. `ahora` is a
  * PARAMETER because the caller must read the clock inside the tap handler: the label may be
- * stale from an earlier render, the branch never is (the #235 amendment). Past the arrival
- * window's opening edge — including long past its close — this is always "pase".
+ * stale from an earlier render, the branch never is (the #235 amendment).
+ *
+ * The boundary is the class's START (owner ruling 2026-09-02, superseding the 90-min arm of
+ * #235 ruling 3 for THIS button only): a pick books a reserva until the class begins, and
+ * records a visita from that instant on. It is deliberately NOT `antesDeVentanaArribo` — that
+ * predicate still owns the ±90-min pasa-lista preselect and `ventana_arribo`, but here it made
+ * the last 90 minutes before a class un-bookable, so an early arrival could not be booked at
+ * all. Now they are two taps: book, then mark the row present. `ahora < startsAt` is also the
+ * RPC's OWN gate (`reservar_clase` raises 'La clase ya comenzó' at exactly this edge), so the
+ * button never offers a write the database will refuse.
  */
 export function accionAgregar(startsAtIso: string, ahora: Date): "reservar" | "pase" {
-  return antesDeVentanaArribo(new Date(startsAtIso), ahora) ? "reservar" : "pase";
+  return ahora.getTime() < new Date(startsAtIso).getTime() ? "reservar" : "pase";
 }
 
 /** Agenda's own gate on `@gym/domain`'s sale-fixable refusal list (agenda.ts `ejecutar`'s `error`
