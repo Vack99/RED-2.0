@@ -14,14 +14,11 @@ import { GET } from "./route";
  * scope here — they need a live session; the failure exits are what regressed.
  */
 vi.mock("@gym/data/server/supabase", () => ({ createClient: async () => ({}) }));
-vi.mock("@gym/data/server/marketing", () => ({ getMarketingGym: async () => null }));
-vi.mock("@gym/data/server/resolve-tenant", () => ({ resolveTenant: async () => null }));
-vi.mock("@gym/data/server/registro", () => ({
-  parseCodigoInvitacion: () => null,
-  intentarReclamoConFirma: async () => ({ ok: true }),
-  intentarReclamoPorEmail: async () => ({ ok: true }),
+
+const reclamarEnHost = vi.fn();
+vi.mock("../../../lib/reclamo", () => ({
+  reclamarEnHost: (...args: unknown[]) => reclamarEnHost(...args),
 }));
-vi.mock("../../../lib/aviso-legal", () => ({ avisoVersionParaGym: async () => null }));
 
 const confirmarCodigo = vi.fn();
 const confirmarTokenHash = vi.fn();
@@ -41,6 +38,7 @@ beforeEach(() => {
   });
   confirmarCodigo.mockResolvedValue(RECHAZO);
   confirmarTokenHash.mockResolvedValue(RECHAZO);
+  reclamarEnHost.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -101,5 +99,42 @@ describe("/auth/confirm — one motivo per failure exit", () => {
     await llamar("?token_hash=hash-1&type=magiclink");
 
     expect(confirmarTokenHash).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * M3, closed. The claim used to be skipped whenever a `next` rode the URL (`else if (!next)`),
+ * so a member who reset their password first — or landed on any `next`-bearing link — minted a
+ * session that bound nothing, forever. The claim is link-only now (R1), so running it on a
+ * recovery cannot conjure a membership; skipping it is what stranded people.
+ */
+describe("/auth/confirm — the claim runs on EVERY session mint", () => {
+  async function destino(query: string): Promise<string> {
+    const res = await GET(new NextRequest(`https://red.example/auth/confirm${query}`));
+    return new URL(res.headers.get("location") ?? "", "https://red.example").pathname;
+  }
+
+  it("claims on a plain signup confirmation and lands on the panel", async () => {
+    confirmarTokenHash.mockResolvedValue({ ok: true });
+    expect(await destino("?token_hash=h&type=email")).toBe("/reservar");
+    expect(reclamarEnHost).toHaveBeenCalledWith({}, { conAviso: true });
+  });
+
+  it("claims on a RECOVERY mint too, then still honors ?next (M3)", async () => {
+    confirmarTokenHash.mockResolvedValue({ ok: true });
+    expect(await destino("?token_hash=h&type=recovery&next=/restablecer")).toBe("/restablecer");
+    expect(reclamarEnHost).toHaveBeenCalledTimes(1);
+  });
+
+  it("claims on the PKCE arm as well", async () => {
+    confirmarCodigo.mockResolvedValue({ ok: true });
+    expect(await destino("?code=pkce-1")).toBe("/reservar");
+    expect(reclamarEnHost).toHaveBeenCalledTimes(1);
+  });
+
+  it("a refused claim still lands the verified member (fail-soft)", async () => {
+    confirmarCodigo.mockResolvedValue({ ok: true });
+    reclamarEnHost.mockResolvedValue(false);
+    expect(await destino("?code=pkce-1")).toBe("/reservar");
   });
 });

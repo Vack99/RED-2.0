@@ -4,11 +4,11 @@ import { redirect } from "next/navigation";
 
 import { getEsMiembro, getPerfilResumenMiembro } from "@gym/data/server/agenda-miembro";
 import { resolverMiembroGym } from "@gym/data/server/inquilino";
-import { getContacto } from "@gym/data/server/marketing";
-import { intentarReclamoPorEmail } from "@gym/data/server/registro";
+import { getContacto, getMarketingGym } from "@gym/data/server/marketing";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { createClient } from "@gym/data/server/supabase";
 
+import { reclamarEnHost } from "../../lib/reclamo";
 import { SinMembresia } from "../reservar/_components/sin-membresia";
 import { SaldoVista } from "./_components/saldo-vista";
 
@@ -33,16 +33,18 @@ export default async function SaldoPage() {
   const { data } = await supabase.auth.getClaims();
   if (!data?.claims?.sub) redirect("/entrar");
 
-  let esMiembro = await getEsMiembro(supabase);
+  // Same gym-scoped read + retry /reservar performs (design A1) — no aviso rendered here, so
+  // the version is stamped null rather than one the member never saw.
+  const tenant = await resolveTenant((await headers()).get("host"), null);
+  let esMiembro = await getEsMiembro(supabase, tenant?.id);
   if (!esMiembro) {
-    const tenant = await resolveTenant((await headers()).get("host"), null);
-    // Same defense-in-depth retry /reservar performs for a dropped claim — no aviso rendered,
-    // so the version is stamped null rather than one the member never saw.
-    if (tenant && (await intentarReclamoPorEmail(tenant.id, null, supabase)).ok) {
-      esMiembro = await getEsMiembro(supabase);
-    }
+    await reclamarEnHost(supabase);
+    esMiembro = await getEsMiembro(supabase, tenant?.id);
   }
-  if (!esMiembro) return <SinMembresia />;
+  if (!esMiembro) {
+    const gym = tenant ? await getMarketingGym(tenant.slug) : null;
+    return <SinMembresia correo={data.claims.email ?? null} gym={gym?.brandName ?? null} />;
+  }
 
   const [miembro, perfil] = await Promise.all([
     resolverMiembroGym(supabase),

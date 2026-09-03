@@ -9,6 +9,7 @@ import { iniciarSesion, reenviarConfirmacion, solicitarReset } from "@gym/data/s
 import { createClient } from "@gym/data/server/supabase";
 import { modo } from "@gym/domain/rules";
 
+import { reclamarEnHost } from "../../lib/reclamo";
 import { destinoClases } from "../../lib/reserva-vista";
 
 /**
@@ -37,6 +38,13 @@ export async function entrarAction(
   if (!result.ok) {
     return { status: "error", error: result.error, noConfirmado: result.noConfirmado === true };
   }
+  // Claim on mint (design 2026-09-03 A1/M1): a password login is inbox proof, so bind this
+  // gym's unclaimed roster row NOW rather than delegating to a page-level self-heal the
+  // member may never reach. Link-only (R1) and fail-soft — a refusal just means there is
+  // nothing of theirs here, and the sin-membresía screen says so. Runs BEFORE the membership
+  // read below, which is the whole point: a member bound on this very request must route as
+  // a member, not as a stranger.
+  await reclamarEnHost(supabase);
   // Modos Lista/Cupo (#332): login lands on /saldo for a Lista gym, /reservar for Cupo — the
   // SAME branch every other routing surface reads off `reservasHabilitadas`
   // (apps/client/src/lib/reserva-vista.ts). No membership yet (e.g. a dropped claim) defaults

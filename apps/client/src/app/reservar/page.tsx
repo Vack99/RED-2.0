@@ -8,10 +8,11 @@ import {
   getPerfilResumenMiembro,
   getSaldoMiembro,
 } from "@gym/data/server/agenda-miembro";
-import { intentarReclamoPorEmail } from "@gym/data/server/registro";
+import { getMarketingGym } from "@gym/data/server/marketing";
 import { resolveTenant } from "@gym/data/server/resolve-tenant";
 import { createClient } from "@gym/data/server/supabase";
 
+import { reclamarEnHost } from "../../lib/reclamo";
 import { ReservarSemana } from "./_components/reservar-semana";
 import { SinMembresia } from "./_components/sin-membresia";
 
@@ -55,18 +56,21 @@ export default async function ReservarPage({
   const claims = data?.claims;
   if (!claims?.sub) redirect("/entrar");
 
-  let esMiembro = await getEsMiembro(supabase);
+  // The membership read is scoped to the gym in effect (design A1): gym-blind, a member of
+  // ANOTHER gym answered true here and this retry — the only one the product has — never ran.
+  const tenant = await resolveTenant((await headers()).get("host"), null);
+  let esMiembro = await getEsMiembro(supabase, tenant?.id);
   if (!esMiembro) {
-    const tenant = await resolveTenant((await headers()).get("host"), null);
-    // Final review round, Important 1: no aviso is rendered on this page — this is a silent
-    // defense-in-depth retry for a dropped claim, not a consent screen — so this stamps null
-    // rather than a version the member never saw. A refusal (nothing to claim in this gym)
-    // is a value, not a throw: fall through to the graceful state below.
-    if (tenant && (await intentarReclamoPorEmail(tenant.id, null, supabase)).ok) {
-      esMiembro = await getEsMiembro(supabase);
-    }
+    // No aviso is rendered on this page — a silent defense-in-depth retry for a dropped
+    // claim, not a consent screen — so `reclamarEnHost` stamps null. A refusal (nothing of
+    // theirs in this gym) is a value, not a throw: fall through to the graceful state.
+    await reclamarEnHost(supabase);
+    esMiembro = await getEsMiembro(supabase, tenant?.id);
   }
-  if (!esMiembro) return <SinMembresia />;
+  if (!esMiembro) {
+    const gym = tenant ? await getMarketingGym(tenant.slug) : null;
+    return <SinMembresia correo={claims.email ?? null} gym={gym?.brandName ?? null} />;
+  }
 
   // Host reconciliation (audit #17 / spec §5.5) happens INSIDE the DAL: each reader resolves
   // the request's own tenant (`slugDelHost`), so a member in several gyms reads THIS gym's

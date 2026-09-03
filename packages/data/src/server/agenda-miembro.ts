@@ -141,15 +141,26 @@ interface SesionMiembroRaw {
 }
 
 /**
- * Whether the signed-in caller currently holds a `gym_membership` row (the same
+ * Whether the signed-in caller currently holds a `gym_membership` row IN `gymId` (the same
  * RLS self-read `resolverMiembroGym` gates on). Deliberately NOT `cache()`-wrapped:
  * the booking home (`/reservar`) re-checks this AFTER re-running the idempotent
  * claim within the same request (audit #10/#15's self-heal), so a stale
  * per-request-memoized `false` would defeat the retry.
+ *
+ * `gymId` is the caller's HOST-resolved tenant. Without it this read was gym-BLIND —
+ * RLS scopes it to the caller's own rows across EVERY gym, so a member of gym A read
+ * `true` on gym B's host and the self-heal (the only retry the product has) never ran
+ * there (design 2026-09-03 §1.3). Omitted / null keeps the old any-gym answer, which is
+ * the honest one on an unmapped host (previews, `.vercel.app`, plain dev) where no
+ * tenant resolves at all.
  */
-export async function getEsMiembro(client?: SupabaseServer): Promise<boolean> {
+export async function getEsMiembro(
+  client?: SupabaseServer,
+  gymId?: string | null,
+): Promise<boolean> {
   const supabase = client ?? (await createClient());
-  const { data } = await supabase.from("gym_membership").select("gym_id").limit(1).maybeSingle();
+  const base = supabase.from("gym_membership").select("gym_id");
+  const { data } = await (gymId ? base.eq("gym_id", gymId) : base).limit(1).maybeSingle();
   return data != null;
 }
 

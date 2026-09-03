@@ -441,6 +441,17 @@ describe("getEsMiembro", () => {
   it("is false when the caller holds no gym_membership row (signed in, not yet a member)", async () => {
     expect(await getEsMiembro(makeFake({ gym_membership: [] }))).toBe(false);
   });
+
+  // The gym-blind read is what killed the self-heal for a second gym: a member with a
+  // membership ANYWHERE answered `true`, so /reservar and /saldo never re-ran the claim
+  // in the gym the host actually names (design 2026-09-03 §1.3, A1).
+  it("is false when the caller's only membership belongs to ANOTHER gym", async () => {
+    expect(await getEsMiembro(makeFake({ gym_membership: [{ gym_id: "gym-1" }] }), "gym-2")).toBe(false);
+  });
+
+  it("is true when the caller holds a membership in the gym asked about", async () => {
+    expect(await getEsMiembro(makeFake({ gym_membership: [{ gym_id: "gym-1" }] }), "gym-1")).toBe(true);
+  });
 });
 
 describe("getSaldoMiembro", () => {
