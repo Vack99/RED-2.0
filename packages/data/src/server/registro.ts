@@ -16,18 +16,19 @@ import { createClient, type SupabaseServer } from "./supabase";
  * `/auth/confirm` flow: `registrarSocio` signs the person up (email+password) and
  * stashes their OWN name + phone in the auth user's metadata; the atomic definer
  * RPC `reclamar_o_crear_cliente` (invoked post-verification by `reclamarCliente`)
- * matches their VERIFIED email to an unclaimed `cliente` in the host-resolved gym
- * — else mints a fresh one — and writes the `gym_membership(member)` row in one
- * transaction. The gym is NEVER a field here: it is re-resolved server-side from
+ * LINKS their VERIFIED email to an unclaimed `cliente` in the host-resolved gym and
+ * writes the `gym_membership(member)` row in one transaction. Since R1 (2026-09-03)
+ * it can do nothing else: no match is a refusal, never a fresh row. The gym is NEVER a field here: it is re-resolved server-side from
  * the host and passed to the RPC (ADR-0008/0009 server-authoritative gym).
  */
 
 // One required checkbox stamps BOTH terms + privacy acceptance (ADR-0009); the DB
 // rules it mirrors: nombre NOT NULL, and a tel of 10 digits when one is given
-// (clientes_tel_10_digits_ck). The phone requirement below is THIS door's, not the
-// column's — the column is optional since #190, but reclamar_o_crear_cliente still
-// raises 'Teléfono requerido' here: this number is verified auth metadata from a
-// self-signup, not something an operator types at the desk.
+// (clientes_tel_10_digits_ck). The phone requirement below is THIS door's alone — the
+// column is optional since #190 and the claim RPC no longer raises 'Teléfono requerido'
+// (R1: it guarded a create branch that no longer exists). Kept here because a signup
+// form is where a reachable number is worth asking for, not because anything downstream
+// depends on one.
 export const registroSchema = z.object({
   nombre: z.string().trim().min(3, "El nombre es demasiado corto"),
   email: z.string().trim().email("Correo inválido"),
@@ -197,11 +198,13 @@ function firmaTenant(userId: string, gymId: string): string {
 }
 
 /**
- * Post-verification claim-or-create. `gymId` is the caller's host-resolved tenant,
+ * Post-verification claim. `gymId` is the caller's host-resolved tenant,
  * passed by the confirm route — NEVER a client field (ADR-0009), and since D2 it is
  * accompanied by the server-only tenant firma the RPC verifies. The RPC re-checks
- * `email_confirmed_at` (defense-in-depth), matches on VERIFIED email only (phone
- * never claims; ambiguous → create), and commits the member membership atomically.
+ * `email_confirmed_at` (defense-in-depth), matches on VERIFIED email only (phone never
+ * claims), and commits the member membership atomically. LINK-ONLY since R1: a gym that
+ * holds no unclaimed row for this address gets no cliente and no membership out of the
+ * call — it raises, and the `intentar*` ceremony turns that into a value.
  *
  * `avisoVersion` (#257) is the aviso de privacidad version the caller ACTUALLY rendered
  * to the member (the caller must pass `AVISO_PRIVACIDAD_VERSION` from `@gym/domain/legal`
