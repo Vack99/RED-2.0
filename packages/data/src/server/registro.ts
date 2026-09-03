@@ -267,9 +267,10 @@ export function firmaCodigo(codigo: string): string {
  * Invite-token claim (ADR-0015 primary rail). Binds the caller's verified login to
  * the EXACT paid `clientes` row the code names — the code resolves the row, the row
  * resolves the gym, so no `gymId` (or host) is passed: gym is not an authz input.
- * `firma` is the server-minted `firmaCodigo` (audit §3): server-gated callers mint it
- * inline; the `/auth/confirm` route forwards the URL's firma so a firma-less codigo
- * refuses at the RPC. The definer RPC re-checks the verified email, overwrites the row
+ * `firma` is the server-minted `firmaCodigo` (audit §3), minted inline by the server-gated
+ * callers that remain (`/activar`'s vincular short-circuit, the set-password step). The
+ * URL-borne-firma door is gone with the magic-link rail (R2), so an unverified firma from
+ * an untrusted query param no longer reaches this RPC at all. The definer RPC re-checks the verified email, overwrites the row
  * email, clears the code, and upserts membership; it THROWS on a bad firma / dead code /
  * already-owned row, so the caller (confirm route) swallows to keep a verified account
  * from stranding.
@@ -280,8 +281,7 @@ export function firmaCodigo(codigo: string): string {
  * — stamped onto `clientes.privacy_aviso_version` alongside `privacy_accepted_at`.
  * No terms-of-service version exists (Gate 0.1 scope cut): `terms_accepted_at` stays bare.
  *
- * PRIVATE: the throwing primitive. Doors go through `intentarReclamoPorCodigo` /
- * `intentarReclamoConFirma` below.
+ * PRIVATE: the throwing primitive. Doors go through `intentarReclamoPorCodigo` below.
  */
 async function reclamarPorCodigo(
   codigo: string,
@@ -303,7 +303,7 @@ async function reclamarPorCodigo(
  * El reclamo del socio — the claim ceremony, one home.
  *
  * The SQL is already centralized (`reclamar_o_crear_cliente`, `reclamar_por_codigo`); what
- * was re-decided at five doors is the ceremony AROUND it: which rail, what to pass, and —
+ * was re-decided at every door is the ceremony AROUND it: which rail, what to pass, and —
  * every single time — the same verdict on a refusal. `ReclamoResultado` makes that verdict a
  * VALUE: `ok:false` carries the RPC's own refusal message instead of a throw, so a door that
  * wants to act on a refusal can, without writing another bare `catch {}`.
@@ -314,7 +314,7 @@ export type ReclamoResultado = { ok: true } | { ok: false; motivo: string };
  * Run a claim best-effort. Every expected refusal is a value here, never a throw: a
  * dead/already-used code, a row the caller already owns in this gym, a bad or absent firma,
  * an unverified email, a missing `TENANT_ASSERTION_KEY`. That is the rule all five doors
- * already applied by hand (`/auth/confirm`'s two rails, `/activar`'s vincular short-circuit,
+ * already applied by hand (`/auth/confirm`, `/activar`'s vincular short-circuit,
  * `completarActivacion`'s set-password step, `/reservar`'s defense-in-depth retry): a claim
  * only ever runs for an ALREADY-authenticated caller, so a refused claim must never strand
  * them — they reach the app either way and an operator reconciles. Both RPCs are idempotent
@@ -347,28 +347,13 @@ export function intentarReclamoPorCodigo(
 }
 
 /**
- * The same rail with a firma the door RECEIVED rather than minted — `/auth/confirm`, which
- * forwards the URL's `?firma=` UNVERIFIED for the RPC to check (audit 2026-07-22 §3 H2: an
- * attacker-appended `&codigo=` on a recovery link carries no matching firma, so the RPC
- * refuses and writes nothing). Deliberately NOT folded into `intentarReclamoPorCodigo`: the
- * firma's provenance is the entire security difference between these doors, so it stays
- * visible at the call site.
- */
-export function intentarReclamoConFirma(
-  codigo: string,
-  firma: string,
-  avisoVersion: string | null,
-  client?: SupabaseServer,
-): Promise<ReclamoResultado> {
-  return intentarReclamo(() => reclamarPorCodigo(codigo, firma, avisoVersion, client));
-}
-
-/**
  * Verified-EMAIL claim in the host-resolved gym (ADR-0009 fallback rail). `gymId` is the
  * door's ALREADY-resolved tenant: the gym is a host fact each door resolves for itself
  * (`resolveTenant`, never a client field — ADR-0008/0009), and `/auth/confirm` needs the
- * resolved slug for its aviso lookup anyway, so resolution stays at the door. Used by
- * `/auth/confirm`'s plain-signup arm and `/reservar`'s defense-in-depth retry.
+ * resolved slug for its aviso lookup anyway, so resolution stays at the door. Since R2 the
+ * client app funnels every caller through ONE door-side helper (`lib/reclamo.ts`), which runs
+ * this at every session mint: login, `/auth/confirm` (recovery included), and the two
+ * self-heal pages.
  */
 export function intentarReclamoPorEmail(
   gymId: string,

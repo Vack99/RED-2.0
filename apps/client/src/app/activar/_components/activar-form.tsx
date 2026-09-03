@@ -127,40 +127,30 @@ export function ActivarForm({
     );
   }
 
+  // R2: no second mail. This screen used to promise one, spend the address's 60 s GoTrue
+  // budget on it, and — when that budget was already gone, which is exactly what happens
+  // when the member registered minutes earlier — render "No salió el correo" with a reload
+  // button that walked straight back into the same window. Signing in is the shorter path
+  // and it always works: login runs the claim, so the package binds itself on the way in.
   if (state.status === "cuentaExistente") {
     return (
       <div className="flex w-full flex-col text-center" style={{ maxWidth: 340, gap: 16 }}>
-        <h1 className="text-[22px] font-light uppercase tracking-[5px] text-fg">Revisa tu correo</h1>
+        <h1 className="text-[22px] font-light uppercase tracking-[5px] text-fg">Ya tienes cuenta</h1>
         <p role="status" className="text-[13px] text-muted">
-          Ya tienes una cuenta con este correo. Te enviamos un enlace para iniciar sesión y vincular tu
-          membresía. Ábrelo desde este dispositivo para entrar directo a tu app.
+          Ya existe una cuenta con <span className="font-semibold text-fg">{state.correo}</span>. Entra
+          con tu contraseña — al entrar, tu paquete se vincula solo.
         </p>
-        <Link href="/entrar" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
-          Iniciar sesión
-        </Link>
-      </div>
-    );
-  }
-
-  if (state.status === "cuentaExistenteFallo") {
-    return (
-      <div className="flex w-full flex-col text-center" style={{ maxWidth: 340, gap: 16 }}>
-        <h1 className="text-[22px] font-light uppercase tracking-[5px] text-fg">No salió el correo</h1>
-        <p role="alert" className="text-[13px] text-muted">
-          No pudimos enviarte el enlace ahora mismo. Intenta de nuevo.
-        </p>
-        {/* A full reload, not a state reset: the Turnstile token this attempt spent is
-            single-use, so the retry needs a freshly rendered widget to be submittable. */}
-        <button
-          type="button"
-          onClick={() => window.location.reload()}
+        <Link
+          href={{ pathname: "/entrar", query: { correo: state.correo } }}
           className="mt-1 flex w-full items-center justify-center bg-accent py-4 text-[13px] font-extrabold uppercase tracking-[1.6px] text-accent-fg transition hover:brightness-105"
         >
-          Intentar de nuevo
-        </button>
-        <Link href="/entrar" className="text-[11px] font-semibold uppercase tracking-[1px] text-muted hover:text-fg">
           Iniciar sesión
         </Link>
+        <p className="text-[11.5px] text-muted">
+          ¿Nunca confirmaste tu correo? Abre el mensaje{" "}
+          <strong className="font-semibold text-fg">Confirma tu cuenta</strong> más reciente. ¿No
+          recuerdas tu contraseña? Puedes pedir una nueva en esa misma pantalla.
+        </p>
       </div>
     );
   }

@@ -68,7 +68,15 @@ const INPUT =
  * Both that banner and an unconfirmed-email login failure raise the rescue block: resend
  * the confirmation mail, or type the 6-digit code the mail prints beside the link.
  */
-export function EntrarForm({ motivoEnlace = null }: { readonly motivoEnlace?: string | null }) {
+export function EntrarForm({
+  motivoEnlace = null,
+  correo = null,
+}: {
+  readonly motivoEnlace?: string | null;
+  /** `?correo=` — the address `/activar` hands over when the account already exists (R2).
+   *  Seeded, not locked: this is a login form, and a member may well own a second address. */
+  readonly correo?: string | null;
+}) {
   const [mode, setMode] = useState<"login" | "reset">("login");
   const [loginState, dispatchLogin, loginPending] = useActionState(entrarAction, LOGIN_INICIAL);
   const [resetState, dispatchReset, resetPending] = useActionState(resetAction, RESET_INICIAL);
@@ -84,7 +92,7 @@ export function EntrarForm({ motivoEnlace = null }: { readonly motivoEnlace?: st
   const rescate =
     avisoEnlace !== null || (loginState.status === "error" && loginState.noConfirmado === true);
 
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(correo ?? "");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [errCorreo, setErrCorreo] = useState<string | null>(null);

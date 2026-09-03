@@ -4,7 +4,6 @@ import {
   actualizarPassword,
   confirmarCodigoDeCorreo,
   confirmarTokenHash,
-  enviarMagicLink,
   iniciarSesion,
   reenviarConfirmacion,
 } from "./sesion";
@@ -276,59 +275,6 @@ describe("reenviarConfirmacion — resend args + honest result", () => {
       code: "over_email_send_rate_limit",
       status: 429,
     });
-    expect(linea).not.toContain("ana@correo.mx");
-    warn.mockRestore();
-  });
-});
-
-/**
- * `enviarMagicLink` is the activation `cuenta_existente` rail (audit §4): a passwordless
- * sign-in to an EXISTING account only. We inject a fake `auth.signInWithOtp` and assert the
- * exact args it forwards (shouldCreateUser:false is load-bearing — never provision here)
- * and that a failed send is now REPORTED: it used to discard the result and promise "Revisa
- * tu correo" for mail that never left (FC-16), and nothing leaks by saying so — the caller
- * only reaches this rail once the activation edge function answered `cuenta_existente`.
- */
-describe("enviarMagicLink — signInWithOtp args", () => {
-  it("forwards the trimmed email + shouldCreateUser:false + emailRedirectTo, resolves ok", async () => {
-    const signInWithOtp = vi.fn().mockResolvedValue({ error: null });
-    const client = { auth: { signInWithOtp } } as unknown as SupabaseServer;
-
-    const res = await enviarMagicLink("  ana@correo.mx ", "https://red.example/auth/confirm?codigo=ABCD2345&firma=ff&next=/reservar", client);
-
-    expect(res).toEqual({ ok: true });
-    expect(signInWithOtp).toHaveBeenCalledWith({
-      email: "ana@correo.mx",
-      options: {
-        shouldCreateUser: false,
-        emailRedirectTo: "https://red.example/auth/confirm?codigo=ABCD2345&firma=ff&next=/reservar",
-      },
-    });
-  });
-
-  it("reports a failed send instead of promising 'Revisa tu correo', and logs code/status", async () => {
-    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const signInWithOtp = vi
-      .fn()
-      .mockResolvedValue({ error: { message: "rate limited", code: "over_email_send_rate_limit", status: 429 } });
-    const client = { auth: { signInWithOtp } } as unknown as SupabaseServer;
-
-    const res = await enviarMagicLink(
-      "ana@correo.mx",
-      "https://red.example/auth/confirm?codigo=ABCD2345&firma=ff&next=/reservar",
-      client,
-    );
-
-    expect(res).toEqual({ ok: false, error: "rate limited" });
-    expect(warn).toHaveBeenCalledTimes(1);
-    const linea = String(warn.mock.calls[0]?.[0]);
-    expect(JSON.parse(linea)).toMatchObject({
-      event: "magic-link-send-error",
-      code: "over_email_send_rate_limit",
-      status: 429,
-    });
-    // The redirect carries the invite code AND its firma — neither belongs in a log line.
-    expect(linea).not.toContain("ABCD2345");
     expect(linea).not.toContain("ana@correo.mx");
     warn.mockRestore();
   });

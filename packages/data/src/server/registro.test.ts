@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   firmaCodigo,
-  intentarReclamoConFirma,
   intentarReclamoPorCodigo,
   intentarReclamoPorEmail,
   invitacionInfo,
@@ -496,43 +495,7 @@ describe("intentarReclamoPorCodigo — server-minted firma (/activar vincular, c
   });
 });
 
-describe("intentarReclamoConFirma — firma forwarded from the URL (/auth/confirm magic-link rail)", () => {
-  it("forwards the RECEIVED firma verbatim — never mints one (audit §3 H2)", async () => {
-    // No TENANT_ASSERTION_KEY stubbed: this rail must not need one, because the firma
-    // came in on the URL and only the RPC verifies it.
-    let seen: { name: string; args: unknown } | null = null;
-    const client = fakeRpc({ data: { gym_slug: "forge" }, error: null }, (name, args) => {
-      seen = { name, args };
-    });
-    expect(await intentarReclamoConFirma("ABCD2345", "firma-x", "0.1-borrador", client)).toEqual({
-      ok: true,
-    });
-    expect(seen).toEqual({
-      name: "reclamar_por_codigo",
-      args: { p_codigo: "ABCD2345", p_firma: "firma-x", p_aviso_version: "0.1-borrador" },
-    });
-  });
-
-  it("sends an EMPTY firma through for the RPC to reject (an appended &codigo= with no firma)", async () => {
-    let seen: { name: string; args: unknown } | null = null;
-    const client = fakeRpc(
-      { data: null, error: { message: "Firma de activación inválida" } },
-      (name, args) => {
-        seen = { name, args };
-      },
-    );
-    expect(await intentarReclamoConFirma("ABCD2345", "", null, client)).toEqual({
-      ok: false,
-      motivo: "Firma de activación inválida",
-    });
-    expect(seen).toEqual({
-      name: "reclamar_por_codigo",
-      args: { p_codigo: "ABCD2345", p_firma: "", p_aviso_version: undefined },
-    });
-  });
-});
-
-describe("intentarReclamoPorEmail — verified-email rail (/auth/confirm plain signup, /reservar retry)", () => {
+describe("intentarReclamoPorEmail — verified-email rail (every session mint, via lib/reclamo)", () => {
   const FIRMA_PINNED = "106a15a15e7bcdb10b36ce36812ba202abec2fa8342f15000cd42cc749a15dfd";
 
   function fakeClaimRpc(

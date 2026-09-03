@@ -4,12 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { iniciarActivacion } from "@gym/data/server/activacion";
-import {
-  firmaCodigo,
-  intentarReclamoPorCodigo,
-  parseCodigoInvitacion,
-} from "@gym/data/server/registro";
-import { enviarMagicLink } from "@gym/data/server/sesion";
+import { intentarReclamoPorCodigo, parseCodigoInvitacion } from "@gym/data/server/registro";
 
 import { verificarTurnstile } from "../../lib/turnstile";
 
@@ -23,12 +18,15 @@ import { verificarTurnstile } from "../../lib/turnstile";
  * The claim is NOT run here — it happens only after the password is set (#126), so an
  * abandoned activation leaves the emailed link re-usable.
  *
- * `cuenta_existente` (the email already has an account) is the one path that gets NO
- * server-consumable token — provisioning a session for a pre-existing account with no
- * inbox proof would let a hostile operator take it over. Instead we send that account a
- * passwordless SIGN-IN link (audit 2026-07-22 §4 — never a password reset); clicking it
- * proves the inbox, binds this gym's membership (codigo+firma) at `/auth/confirm`, and
- * lands on `/reservar`, password untouched.
+ * `cuenta_existente` (the email already has an account) still gets NO server-consumable
+ * token — provisioning a session for a pre-existing account with no inbox proof would let a
+ * hostile operator take it over. It now sends NOTHING AT ALL and says "inicia sesión"
+ * (owner ruling R2, 2026-09-03). The magic link it used to send was a second mail into the
+ * same GoTrue per-address bucket the member had usually just spent at `/registro`, so the
+ * rescue rail's own 60 s throttle answered 429 and the screen said "NO SALIÓ EL CORREO" —
+ * two members hit exactly that on 09-01. Nothing is lost by deleting it: login now runs the
+ * claim itself (`lib/reclamo.ts`), so signing in with the same address binds this gym's row
+ * on that very request.
  *
  * `vincularAction` is the logged-in short-circuit (§4 Step 1): a member already signed in
  * on this device claims the invite in one click — no email, no password.
@@ -36,8 +34,7 @@ import { verificarTurnstile } from "../../lib/turnstile";
 export type ActivarActionState =
   | { status: "idle" }
   | { status: "yaReclamado" }
-  | { status: "cuentaExistente" }
-  | { status: "cuentaExistenteFallo" }
+  | { status: "cuentaExistente"; correo: string }
   | { status: "error"; mensaje: string; login?: boolean };
 
 const GENERICO = "No pudimos activar tu cuenta. Intenta de nuevo.";
@@ -77,22 +74,11 @@ export async function activarAction(
       };
     case "ya_reclamado":
       return { status: "yaReclamado" };
-    case "cuenta_existente": {
-      // No token was minted (inbox proof required). Send a passwordless SIGN-IN link
-      // (audit §4) — never a password reset — pointed at /auth/confirm, which binds this
-      // gym's membership (codigo+firma) on the verified session and lands on /reservar.
-      // The firma is minted here and rides the link so the firma-gated claim accepts it
-      // (TENANT_ASSERTION_KEY is present — iniciarActivacion just used it to reach here).
-      const origin = `${h.get("x-forwarded-proto") ?? "http"}://${h.get("host")}`;
-      const enviado = await enviarMagicLink(
-        email,
-        `${origin}/auth/confirm?codigo=${codigo}&firma=${firmaCodigo(codigo)}&next=/reservar`,
-      );
-      // A throttled or refused send used to render "Revisa tu correo" for mail that never
-      // left (FC-16) — the rescue rail failing in total silence. Saying so leaks nothing
-      // here: `cuenta_existente` is the premise of this branch, not a disclosure.
-      return enviado.ok ? { status: "cuentaExistente" } : { status: "cuentaExistenteFallo" };
-    }
+    case "cuenta_existente":
+      // Sends nothing. Naming the address leaks nothing here — `cuenta_existente` is the
+      // premise of this branch, not a disclosure — and it is what lets the screen hand the
+      // member a prefilled login instead of a second inbox errand.
+      return { status: "cuentaExistente", correo: email };
     case "codigo_invalido":
       return {
         status: "error",

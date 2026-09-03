@@ -163,46 +163,6 @@ export async function reenviarConfirmacion(
 }
 
 /**
- * Send a passwordless sign-in (magic link) to an EXISTING account only
- * (`shouldCreateUser:false` — never provisions here). The activation door's
- * `cuenta_existente` rail (audit §4): a pre-existing account gets inbox proof via a
- * magic link instead of a password-reset mail, so the member signs straight in with no
- * gratuitous password change. `emailRedirectTo` is the `/auth/confirm` landing that
- * binds this gym's membership (codigo+firma) on the verified session.
- *
- * Reports the real outcome. It used to discard `signInWithOtp`'s result entirely and
- * promise "Revisa tu correo" for a mail that was never sent (FC-16) — and this is the ONE
- * rail where honesty leaks nothing: the only caller reached this branch because the
- * activation edge function already answered `cuenta_existente`, so the account's existence
- * is a premise of the screen, not a disclosure.
- */
-export async function enviarMagicLink(
-  email: string,
-  emailRedirectTo: string,
-  client?: SupabaseServer,
-): Promise<SesionResultado> {
-  const supabase = client ?? (await createClient());
-  const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim(),
-    options: { shouldCreateUser: false, emailRedirectTo },
-  });
-  if (error) {
-    // The redirect carries the invite `codigo` + its `firma`, so the URL stays out of the
-    // log — code and message are what diagnose a throttle or a bad address.
-    console.warn(
-      JSON.stringify({
-        event: "magic-link-send-error",
-        code: error.code,
-        status: error.status,
-        error: error.message,
-      }),
-    );
-    return { ok: false, error: error.message };
-  }
-  return { ok: true };
-}
-
-/**
  * Exchange a PKCE `code` (from the confirmation / recovery email link) for a
  * session, establishing it on `client`. `@supabase/ssr` uses the PKCE flow with
  * the DEFAULT Supabase sender (ADR-0014 — no custom SMTP/template in dev/test),

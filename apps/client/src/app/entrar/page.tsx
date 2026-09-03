@@ -20,6 +20,10 @@ import { EntrarForm } from "./_components/entrar-form";
  * Without it, a member whose session was healthy and auto-refreshing still saw a password
  * prompt every time any link (the drawer's own CTAs included) landed them here.
  *
+ * `?correo=` prefills the address (R2): `/activar` sends an existing account here instead of
+ * a second mail, and arriving with the field already filled is the whole difference between
+ * "inicia sesión" as an instruction and as a door.
+ *
  * `?error=` is `/auth/confirm`'s failure landing, now one code per motivo (`sin-token`,
  * `tipo-no-soportado`, `code-rechazado`, `token-rechazado` — plus the pre-08-30
  * `confirmacion` catch-all, still in flight in old links, and `sin-codigo`, which `/codigo`
@@ -29,7 +33,7 @@ import { EntrarForm } from "./_components/entrar-form";
 export default async function EntrarPage({
   searchParams,
 }: {
-  readonly searchParams: Promise<{ error?: string }>;
+  readonly searchParams: Promise<{ error?: string; correo?: string }>;
 }) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
@@ -42,7 +46,7 @@ export default async function EntrarPage({
 
   const [brand, sp] = await Promise.all([resolveBrand(), searchParams]);
   const LoginHero = brand.loginAnimation;
-  const form = <EntrarForm motivoEnlace={sp.error ?? null} />;
+  const form = <EntrarForm motivoEnlace={sp.error ?? null} correo={sp.correo?.trim() ?? null} />;
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>{form}</LoginHero>
