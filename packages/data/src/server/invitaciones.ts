@@ -100,12 +100,13 @@ export function resendTransport(): MailTransport {
 
 /**
  * The gym→client invite URL rule (the single home for the gym→client-host mapping). `ruta` is the door the
- * link lands on — `/activar` for the invitation email (PRD #130) and the cross-tenant shield's canonical
- * redirect (the sole invite door since H2v2 option b). Primary: the gym's OWN client host from the domain
- * map — `https://{gym_domain app='client'}{ruta}?codigo=X`. Unmapped gym (no client row): the platform
- * default host + `?gym={slug}` so every gym's funnel works from day one — `https://{PLATFORM_CLIENT_
- * FALLBACK_HOST}{ruta}?gym={slug}&codigo=X`. No host and no fallback env → `null` (the caller reports a
- * clean failure; nothing is sent). `client` is injectable for tests (ADR-0001).
+ * link lands on — `/registro` for the invitation email (R2, 2026-09-03: the desk invite now opens the
+ * signup form with the address prefilled) and `/activar` for the cross-tenant shield's canonical redirect
+ * of links already in inboxes. `params` is whatever that door needs (`correo` / `codigo`); this function
+ * owns the HOST, never the payload. Primary: the gym's OWN client host from the domain map —
+ * `https://{gym_domain app='client'}{ruta}?{params}`. Unmapped gym (no client row): the platform default
+ * host + `?gym={slug}` so every gym's funnel works from day one. No host and no fallback env → `null` (the
+ * caller reports a clean failure; nothing is sent). `client` is injectable for tests (ADR-0001).
  *
  * WHICH host, when a gym maps several: PRINCIPAL FIRST — the gym's declared canonical host
  * (`gym_domain.es_principal`, at most one per `(gym_id, app)` by partial unique index
@@ -116,7 +117,17 @@ export function resendTransport(): MailTransport {
  * one.
  */
 export async function construirUrlInvitacion(
-  { gymId, gymSlug, codigo, ruta }: { gymId: string; gymSlug: string; codigo: string; ruta: "/activar" },
+  {
+    gymId,
+    gymSlug,
+    ruta,
+    params,
+  }: {
+    gymId: string;
+    gymSlug: string;
+    ruta: "/activar" | "/registro";
+    params: Record<string, string>;
+  },
   client: SupabaseServer,
 ): Promise<string | null> {
   // A gym may map several client hosts (dev mirror + live, or a platform subdomain + its own
@@ -137,16 +148,21 @@ export async function construirUrlInvitacion(
     .maybeSingle();
 
   if (data?.hostname) {
-    return `https://${data.hostname}${ruta}?codigo=${codigo}`;
+    return `https://${data.hostname}${ruta}?${new URLSearchParams(params)}`;
   }
 
   const fallback = process.env.PLATFORM_CLIENT_FALLBACK_HOST;
   if (!fallback) return null;
-  return `https://${fallback}${ruta}?gym=${gymSlug}&codigo=${codigo}`;
+  return `https://${fallback}${ruta}?${new URLSearchParams({ gym: gymSlug, ...params })}`;
 }
 
 /** es-MX, platform-voiced invite copy. The gym's NAME (never a per-gym sender) rides the subject + body
- *  per ADR-0014; the claim URL is both a button and a plain link. Simple inline styles + a text fallback. */
+ *  per ADR-0014; the URL is both a button and a plain link. Simple inline styles + a text fallback.
+ *
+ *  The body NAMES THE ADDRESS (R2, 2026-09-03). The whole one-door design reduces to one instruction —
+ *  "crea tu cuenta con ESTE correo" — because the verified email is the only key that binds the member to
+ *  their paid row. Members who register first with a different address are not an edge case: 17 of RED's
+ *  44 claimed members (39%) created their account BEFORE the desk invite arrived. */
 export function mensajeInvitacion({
   nombre,
   gymNombre,
@@ -158,27 +174,30 @@ export function mensajeInvitacion({
   email: string;
   url: string;
 }): MailMessage {
-  const subject = `Tu gimnasio ${gymNombre} te invita a su app`;
+  const subject = `Crea tu cuenta en la app de ${gymNombre}`;
   const saludo = firstName(nombre) || "Hola";
 
   const html = `<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;color:#1c1917;background:#ffffff">
   <p style="font-size:16px;margin:0 0 16px">Hola ${saludo}:</p>
-  <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Tu gimnasio <strong>${gymNombre}</strong> te invita a activar tu cuenta en su app, donde puedes reservar tus clases y ver tu paquete.</p>
+  <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Tu gimnasio <strong>${gymNombre}</strong> te invita a su app, donde puedes reservar tus clases y ver tu paquete.</p>
+  <p style="font-size:15px;line-height:1.55;margin:0 0 20px">Crea tu cuenta con <strong>ESTE correo</strong>: <strong>${email}</strong>. Es el que tu gimnasio tiene registrado, y es lo que conecta tu cuenta con tu paquete.</p>
   <p style="margin:0 0 24px">
-    <a href="${url}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:14px 28px;font-weight:700;letter-spacing:0.4px;font-size:14px">ACTIVAR MI CUENTA</a>
+    <a href="${url}" style="display:inline-block;background:#1c1917;color:#ffffff;text-decoration:none;padding:14px 28px;font-weight:700;letter-spacing:0.4px;font-size:14px">CREAR MI CUENTA</a>
   </p>
   <p style="font-size:13px;line-height:1.5;color:#78716c;margin:0 0 20px">O abre este enlace:<br><a href="${url}" style="color:#78716c">${url}</a></p>
-  <p style="font-size:12px;line-height:1.5;color:#a8a29e;margin:0">Este enlace es personal: al usarlo, tu cuenta queda ligada a tu registro en ${gymNombre}.</p>
+  <p style="font-size:12px;line-height:1.5;color:#a8a29e;margin:0">¿Ya tienes una cuenta con ${email}? Solo inicia sesión: tu paquete se vincula solo.</p>
 </div>`;
 
   const text = `Hola ${saludo}:
 
-Tu gimnasio ${gymNombre} te invita a activar tu cuenta en su app, donde puedes reservar tus clases y ver tu paquete.
+Tu gimnasio ${gymNombre} te invita a su app, donde puedes reservar tus clases y ver tu paquete.
 
-Activa tu cuenta aquí:
+Crea tu cuenta con ESTE correo: ${email}
+Es el que tu gimnasio tiene registrado, y es lo que conecta tu cuenta con tu paquete.
+
 ${url}
 
-Este enlace es personal: al usarlo, tu cuenta queda ligada a tu registro en ${gymNombre}.`;
+¿Ya tienes una cuenta con ${email}? Solo inicia sesión: tu paquete se vincula solo.`;
 
   return { to: email, subject, html, text };
 }
@@ -228,17 +247,18 @@ export async function enviarInvitacion(
     const { codigo, email, nombre, gym_slug, gym_nombre, gym_id } = data;
     if (!email) return { ok: false, motivo: "sin-email" };
 
+    // R2: the invite opens /registro with the address prefilled + locked, and carries NO claim
+    // code. The `&correo=` param was cut in 2026-08-30's fix 10 because a claim code plus a
+    // plaintext address in ONE URL outlives the code's own bearer-token exposure — that reasoning
+    // was about the pairing, and the pairing is gone: this URL holds no bearer token at all, so a
+    // leaked link grants nothing beyond a prefilled form field. The code is still armed by
+    // `preparar_invitacion` above, which keeps every /activar link already sitting in an inbox
+    // working exactly as before.
     const url = await construirUrlInvitacion(
-      { gymId: gym_id, gymSlug: gym_slug, codigo, ruta: "/activar" },
+      { gymId: gym_id, gymSlug: gym_slug, ruta: "/registro", params: { correo: email } },
       supabase,
     );
     if (!url) return { ok: false, motivo: "sin-host" };
-
-    // The pre-fill DISPLAY param (owner decision 2026-07-15) was cut (fix 10, 2026-08-30): a claim
-    // code plus a plaintext email in one URL survives in browser history, referrer headers, and mail
-    // server logs longer than the code's own bearer-token exposure justifies. /activar degrades to
-    // its typed-input mode without it — the edge fn was always the real gate, matching whatever the
-    // form submits against the roster row.
     const mensaje = mensajeInvitacion({ nombre, gymNombre: gym_nombre, email, url });
     mensaje.from = remitenteConNombre(gym_nombre, process.env.RESEND_FROM);
     const envio = await transport.send(mensaje);

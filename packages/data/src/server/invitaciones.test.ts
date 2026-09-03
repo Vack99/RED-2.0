@@ -109,14 +109,18 @@ describe("enviarInvitacion — send orchestration (injected fake + transport dou
     // The message carries the mapped-host claim URL + the gym name (ADR-0014).
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe("socio@correo.mx");
-    expect(sent[0].subject).toBe("Tu gimnasio Forge te invita a su app");
-    // The invitation now lands on the activation door (PRD #130), not the old /registro form.
-    expect(sent[0].html).toContain("https://app.forge.mx/activar?codigo=ABC23456");
-    expect(sent[0].text).toContain("https://app.forge.mx/activar?codigo=ABC23456");
-    // Fix 10 (2026-08-30): the email never rides the URL as a query param — a claim code plus a
-    // plaintext address in one link outlives the code's own bearer-token exposure in logs/history.
-    expect(sent[0].html).not.toContain("correo=");
-    expect(sent[0].text).not.toContain("correo=");
+    expect(sent[0].subject).toBe("Crea tu cuenta en la app de Forge");
+    // R2 (2026-09-03): the invite opens /registro with the address prefilled, and carries NO claim
+    // code. Fix 10's reasoning was about the PAIRING — a bearer token plus a plaintext address in
+    // one link — and the pairing is gone: this URL grants nothing but a filled-in form field.
+    expect(sent[0].html).toContain("https://app.forge.mx/registro?correo=socio%40correo.mx");
+    expect(sent[0].text).toContain("https://app.forge.mx/registro?correo=socio%40correo.mx");
+    expect(sent[0].html).not.toContain("codigo=");
+    expect(sent[0].text).not.toContain("codigo=");
+    // The one instruction the whole design reduces to — 39% of RED's members registered with some
+    // other address BEFORE the invite arrived, and that is what strands a paid row.
+    expect(sent[0].html).toContain("socio@correo.mx");
+    expect(sent[0].text).toContain("Crea tu cuenta con ESTE correo: socio@correo.mx");
     expect(sent[0].html).toContain("Forge");
     // The one-email-promise line was cut on owner request (2026-07-15) — the button + link say it all.
     expect(sent[0].html).not.toContain("el único correo que necesitas");
@@ -219,7 +223,7 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
   it("mapped gym → the gym's own client host (?codigo only)", async () => {
     const fake = makeFake({ domainHost: "red.example.mx" });
     const url = await construirUrlInvitacion(
-      { gymId: "gym-1", gymSlug: "red", codigo: "ZZZ23456", ruta: "/activar" },
+      { gymId: "gym-1", gymSlug: "red", ruta: "/activar", params: { codigo: "ZZZ23456" } },
       fake.client,
     );
     expect(url).toBe("https://red.example.mx/activar?codigo=ZZZ23456");
@@ -229,7 +233,7 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     process.env.PLATFORM_CLIENT_FALLBACK_HOST = "app.plataforma.mx";
     const fake = makeFake({ domainHost: null });
     const url = await construirUrlInvitacion(
-      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456", ruta: "/activar" },
+      { gymId: "gym-9", gymSlug: "red-demo", ruta: "/activar", params: { codigo: "ZZZ23456" } },
       fake.client,
     );
     expect(url).toBe("https://app.plataforma.mx/activar?gym=red-demo&codigo=ZZZ23456");
@@ -253,7 +257,7 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     };
     const client = { from: () => b } as unknown as SupabaseServer;
     const url = await construirUrlInvitacion(
-      { gymId: "gym-9", gymSlug: "red-demo", codigo: "NV9HD6IB", ruta: "/activar" },
+      { gymId: "gym-9", gymSlug: "red-demo", ruta: "/activar", params: { codigo: "NV9HD6IB" } },
       client,
     );
     expect(url).toBe("https://red-demo.ibookit.lat/activar?codigo=NV9HD6IB");
@@ -303,7 +307,7 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     };
     const client = { from: () => b } as unknown as SupabaseServer;
     const url = await construirUrlInvitacion(
-      { gymId: "gym-1", gymSlug: "red", codigo: "NV9HD6IB", ruta: "/activar" },
+      { gymId: "gym-1", gymSlug: "red", ruta: "/activar", params: { codigo: "NV9HD6IB" } },
       client,
     );
     expect(url).toBe("https://www.redfunctionaltraining.com/activar?codigo=NV9HD6IB");
@@ -313,7 +317,7 @@ describe("construirUrlInvitacion — the gym→client-host rule (both arms)", ()
     delete process.env.PLATFORM_CLIENT_FALLBACK_HOST;
     const fake = makeFake({ domainHost: null });
     const url = await construirUrlInvitacion(
-      { gymId: "gym-9", gymSlug: "red-demo", codigo: "ZZZ23456", ruta: "/activar" },
+      { gymId: "gym-9", gymSlug: "red-demo", ruta: "/activar", params: { codigo: "ZZZ23456" } },
       fake.client,
     );
     expect(url).toBeNull();
@@ -383,7 +387,7 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     // The page turns invitacion_info's gym_slug into the gym id, then builds the canonical URL.
     const destino = await resolveTenant(null, "red", db());
     const url = await construirUrlInvitacion(
-      { gymId: destino!.id, gymSlug: "red", codigo: "CODE2345", ruta: "/activar" },
+      { gymId: destino!.id, gymSlug: "red", ruta: "/activar", params: { codigo: "CODE2345" } },
       db(),
     );
     expect(url).toBe("https://red.mx/activar?codigo=CODE2345");
@@ -400,7 +404,7 @@ describe("wrong-host redirect — canonical URL round-trips to the code's gym (l
     const db = () => fakeDb([{ id: "g-demo", slug: "red-demo", brand_module_id: "red" }], []);
     const destino = await resolveTenant(null, "red-demo", db());
     const url = await construirUrlInvitacion(
-      { gymId: destino!.id, gymSlug: "red-demo", codigo: "CODE2345", ruta: "/activar" },
+      { gymId: destino!.id, gymSlug: "red-demo", ruta: "/activar", params: { codigo: "CODE2345" } },
       db(),
     );
     expect(url).toBe("https://app.plataforma.mx/activar?gym=red-demo&codigo=CODE2345");

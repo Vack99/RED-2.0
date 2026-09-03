@@ -305,7 +305,6 @@ describe("registrarSocio", () => {
     });
 
     it.each([
-      ["over_email_send_rate_limit", "Ya enviamos varios correos"],
       ["email_address_invalid", "Ese correo no es válido"],
       ["weak_password", "Esa contraseña es muy débil"],
       ["signup_disabled", "El registro está cerrado"],
@@ -317,11 +316,12 @@ describe("registrarSocio", () => {
       });
     });
 
-    it("maps a code-less 429 to the throttle message", async () => {
+    it("maps a code-less 429 to the throttle wait, seconds and all", async () => {
       const client = conError({ status: 429, message: "Too many requests" });
       expect(await registrarSocio(alta(correo()), OPTS, client)).toEqual({
         ok: false,
-        error: expect.stringContaining("Ya enviamos varios correos"),
+        error: expect.stringContaining("Ya te enviamos un correo"),
+        esperaS: 60,
       });
     });
 
@@ -492,6 +492,57 @@ describe("intentarReclamoPorCodigo — server-minted firma (/activar vincular, c
       args: { p_codigo: "ABCD2345", p_firma: FIRMA_PINNED, p_aviso_version: undefined },
     });
     vi.unstubAllEnvs();
+  });
+});
+
+/**
+ * The 429 (`over_email_send_rate_limit`) is GoTrue's per-address 60 s window, and it is the exact
+ * wall Marce hit on 09-01: she registered, tapped the desk invite 32 s later, and the screen said
+ * the mail had not gone out. It had — the window just had 28 s left on it. "Espera unos minutos"
+ * is both wrong (it is seconds) and unactionable; the seconds GoTrue names in its own message are
+ * the only honest thing to show.
+ */
+describe("registrarSocio — the 429 becomes a countable wait, not 'unos minutos'", () => {
+  const ALTA = {
+    nombre: "Ana Socia",
+    email: "throttled@correo.mx",
+    password: "sup3rsecreta",
+    telefono: "614 111 2233",
+    acepta: true,
+  };
+  function fakeSignUp(error: { message: string; code?: string; status?: number }): SupabaseServer {
+    return { auth: { signUp: async () => ({ data: { user: null, session: null }, error }) } } as unknown as SupabaseServer;
+  }
+
+  it("reads the remaining seconds out of GoTrue's own message", async () => {
+    const res = await registrarSocio(
+      { ...ALTA, email: "espera1@x.mx" },
+      { emailRedirectTo: "https://red.example/auth/confirm" },
+      fakeSignUp({
+        message: "For security purposes, you can only request this after 46 seconds.",
+        code: "over_email_send_rate_limit",
+        status: 429,
+      }),
+    );
+    expect(res).toMatchObject({ ok: false, esperaS: 46 });
+  });
+
+  it("falls back to the 60 s window when the message names no number", async () => {
+    const res = await registrarSocio(
+      { ...ALTA, email: "espera2@x.mx" },
+      { emailRedirectTo: "https://red.example/auth/confirm" },
+      fakeSignUp({ message: "email rate limit exceeded", code: "over_email_send_rate_limit", status: 429 }),
+    );
+    expect(res).toMatchObject({ ok: false, esperaS: 60 });
+  });
+
+  it("a NON-throttle failure carries no wait — it is not a matter of waiting", async () => {
+    const res = await registrarSocio(
+      { ...ALTA, email: "debil@x.mx" },
+      { emailRedirectTo: "https://red.example/auth/confirm" },
+      fakeSignUp({ message: "Password is too weak", code: "weak_password", status: 422 }),
+    );
+    expect(res).toEqual({ ok: false, error: expect.stringContaining("contraseña") });
   });
 });
 

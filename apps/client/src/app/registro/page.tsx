@@ -23,17 +23,26 @@ import { RegistroForm } from "./_components/registro-form";
  * Phase-3 registration + claim-by-match flow, now with the Turnstile captcha.
  * The invite door lives at /activar (ADR-0015 amended); /registro is plain signup.
  *
- * A LIVE session never reaches the form (same gate as /entrar): this page takes no query
- * params — the invite/`?codigo=` rail belongs to /activar — so there is nothing an
+ * `?correo=` is the desk invite landing (R2, 2026-09-03): the invite mail now opens THIS door
+ * with the registered address prefilled and locked, replacing the /activar invite link. It is a
+ * DISPLAY param — the server binds on the VERIFIED inbox at confirm time, never on this string
+ * — so a tampered value buys nothing but a form field that will not match anything.
+ *
+ * A LIVE session never reaches the form (same gate as /entrar): there is nothing an
  * already-signed-in member could be here to do except re-register themselves. The
  * `getClaims()` check (never `getSession()` — ADR-0001) sends them to the panel instead.
  */
-export default async function RegistroPage() {
+export default async function RegistroPage({
+  searchParams,
+}: {
+  readonly searchParams: Promise<{ correo?: string }>;
+}) {
   const supabase = await createClient();
   const { data } = await supabase.auth.getClaims();
   if (data?.claims?.sub) redirect("/reservar");
 
   const hostGym = (await headers()).get("x-gym");
+  const correo = (await searchParams).correo?.trim().toLowerCase() || null;
 
   if (!hostGym) {
     return (
@@ -56,7 +65,9 @@ export default async function RegistroPage() {
   }
 
   const LoginHero = brand.loginAnimation;
-  const form = <RegistroForm brandName={brand.copy.name} avisoSimplificado={avisoSimplificado} />;
+  const form = (
+    <RegistroForm brandName={brand.copy.name} avisoSimplificado={avisoSimplificado} correo={correo} />
+  );
 
   return LoginHero ? (
     <LoginHero name={brand.copy.name}>{form}</LoginHero>

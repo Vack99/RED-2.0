@@ -91,6 +91,42 @@ function ReenviarCorreo({ email }: { readonly email: string }) {
 }
 
 /**
+ * The throttle wait (R2 / verdict fix #1). Its own component because it owns a ticking
+ * counter and the screen is a conditional return. The resend control does not appear until
+ * the counter reaches zero — a button that is guaranteed to fail is worse than no button,
+ * and a page reload (the old affordance) re-enters the very window it is waiting out.
+ */
+function Espera({ segundos, email }: { readonly segundos: number; readonly email: string }) {
+  const [restante, setRestante] = useState(segundos);
+
+  useEffect(() => {
+    if (restante <= 0) return;
+    const id = window.setTimeout(() => setRestante((s) => s - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [restante]);
+
+  return (
+    <div className={PANTALLA} style={{ maxWidth: 340, gap: 14 }}>
+      <h1 className={TITULO}>Ya te enviamos un correo</h1>
+      <p role="status" className={CUERPO}>
+        Ya te enviamos un correo hace un momento. Ábrelo: es el enlace que sirve. Revisa también tu
+        carpeta de spam.
+      </p>
+      {restante > 0 ? (
+        <p role="status" className={NOTA}>
+          Puedes pedir otro en <strong className="font-semibold text-fg">{restante} s</strong>.
+        </p>
+      ) : (
+        <ReenviarCorreo email={email} />
+      )}
+      <Link href="/entrar" className={VOLVER}>
+        Volver a entrar
+      </Link>
+    </div>
+  );
+}
+
+/**
  * RED-designed member registration, brand-neutral (paint via the resolved hero's token contract).
  * Drives the already-shipped Phase-3 registration action (email+password signUp + claim-by-match on
  * verify); the gym stays host-resolved server-side. Client-side per-field validation mirrors the mock
@@ -103,16 +139,23 @@ function ReenviarCorreo({ email }: { readonly email: string }) {
 export function RegistroForm({
   brandName,
   avisoSimplificado,
+  correo = null,
 }: {
   readonly brandName: string;
   /** The gym's rendered simplificado aviso (#256), or null for the generic fallback —
    *  `AvisoSimplificadoInline` renders either. Resolved server-side (registro/page.tsx). */
   readonly avisoSimplificado: string | null;
+  /** `?correo=` — the address the desk registered, arriving from the invite mail (R2).
+   *  Shown and LOCKED: the invite exists precisely because that address is the key that
+   *  binds this person to their paid row, so offering an editable field here is offering
+   *  them the one mistake the whole flow is built to prevent. Cosmetic by construction —
+   *  the server binds on the VERIFIED inbox, never on this string (red team §2 A1). */
+  readonly correo?: string | null;
 }) {
   const [state, dispatch, pending] = useActionState(registrarAction, INICIAL);
 
   const [nombre, setNombre] = useState("");
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(correo ?? "");
   const [telefono, setTelefono] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
@@ -163,7 +206,7 @@ export function RegistroForm({
   function onSubmit(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const ne = validarNombreCompleto(nombre);
-    const ce = validarCorreo(email);
+    const ce = correo ? null : validarCorreo(email);
     const te = validarTelefono(telefono);
     const pe = validarPasswordNueva(password);
     setErrNombre(ne);
@@ -237,6 +280,15 @@ export function RegistroForm({
     );
   }
 
+  // GoTrue's per-address window is still open. The mail is NOT lost — it is early, and the
+  // previous screen said the opposite ("No salió el correo") with a reload button that walked
+  // straight back into the same window. 32 s was the entire distance between that dead end and
+  // a working link on 09-01. So: name the seconds GoTrue named, count them down, and offer no
+  // control at all until they are gone.
+  if (state.status === "espera") {
+    return <Espera segundos={state.segundos} email={email} />;
+  }
+
   return (
     <>
       <Script
@@ -287,28 +339,42 @@ export function RegistroForm({
           {errNombre && <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errNombre}</p>}
         </div>
 
-        <div className="group">
-          <label className={LABEL} style={errCorreo ? { color: "var(--red)" } : undefined}>
-            Correo
-          </label>
-          <input
-            name="email"
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            onBlur={() => setErrCorreo(validarCorreo(email))}
-            placeholder="tu@correo.com"
-            className={INPUT}
-            style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
-          />
-          {errCorreo ? (
-            <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
-          ) : (
-            <p className={HELP}>Lo usarás para iniciar sesión.</p>
-          )}
-        </div>
+        {correo ? (
+          <div>
+            <p className={LABEL}>Tu correo</p>
+            <p className="mt-1 border-b py-3 text-[15px] text-fg" style={{ borderColor: "var(--line-soft)" }}>
+              {correo}
+            </p>
+            <input type="hidden" name="email" value={correo} />
+            <p className={HELP}>
+              Es el que tu gimnasio registró — con él se conecta tu paquete. ¿No es tuyo? Avisa en
+              recepción.
+            </p>
+          </div>
+        ) : (
+          <div className="group">
+            <label className={LABEL} style={errCorreo ? { color: "var(--red)" } : undefined}>
+              Correo
+            </label>
+            <input
+              name="email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              onBlur={() => setErrCorreo(validarCorreo(email))}
+              placeholder="tu@correo.com"
+              className={INPUT}
+              style={{ borderColor: errCorreo ? "var(--red)" : "var(--line-soft)" }}
+            />
+            {errCorreo ? (
+              <p className="mt-2 text-[10.5px]" style={{ color: "var(--red)" }}>{errCorreo}</p>
+            ) : (
+              <p className={HELP}>Lo usarás para iniciar sesión.</p>
+            )}
+          </div>
+        )}
 
         <div className="group">
           <label className={LABEL} style={errTelefono ? { color: "var(--red)" } : undefined}>

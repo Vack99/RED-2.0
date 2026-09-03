@@ -29,7 +29,10 @@ export type RegistroActionState =
   /** The address is already confirmed — nothing was sent; the door is `/entrar`. */
   | { status: "cuentaExistente" }
   /** A pending signup already existed, so this send replaced the previous link. */
-  | { status: "yaEnviado" };
+  | { status: "yaEnviado" }
+  /** GoTrue's per-address send window is still open: the mail is not lost, it is early.
+   *  `segundos` is what GoTrue itself named, so the screen counts instead of guessing. */
+  | { status: "espera"; segundos: number };
 
 export async function registrarAction(
   _prev: RegistroActionState,
@@ -68,7 +71,14 @@ export async function registrarAction(
   // The three outcomes stay apart all the way to the screen: collapsing them into one
   // "Revisa tu correo" is what left a member resubmitting this form until every link she
   // held was dead (incident 2026-08-30, FC-02/FC-18).
-  if (!result.ok) return { status: "error", error: result.error };
+  // A throttle is the one failure that is only a matter of time — 32 s was the whole distance
+  // between "NO SALIÓ EL CORREO" and a working link on 09-01. It gets a wait screen, not an
+  // error banner and not a retry button that is guaranteed to fail.
+  if (!result.ok) {
+    return result.esperaS
+      ? { status: "espera", segundos: result.esperaS }
+      : { status: "error", error: result.error };
+  }
   if (result.estado === "cuentaExistente") return { status: "cuentaExistente" };
   if (result.estado === "yaEnviado") return { status: "yaEnviado" };
   return { status: "success" };

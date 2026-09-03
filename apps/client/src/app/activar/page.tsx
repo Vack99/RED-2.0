@@ -47,7 +47,7 @@ export default async function ActivarPage({
     const destino = await resolveTenant(null, info.gym_slug);
     if (destino) {
       const url = await construirUrlInvitacion(
-        { gymId: destino.id, gymSlug: info.gym_slug, codigo, ruta: "/activar" },
+        { gymId: destino.id, gymSlug: info.gym_slug, ruta: "/activar", params: { codigo } },
         await createClient(),
       );
       if (url) redirect(url as Route);

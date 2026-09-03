@@ -84,31 +84,45 @@ export type RegistroResultado =
   | { ok: true; estado: "nuevo"; requiereConfirmacion: boolean }
   | { ok: true; estado: "yaEnviado" }
   | { ok: true; estado: "cuentaExistente" }
-  | { ok: false; error: string };
+  /** `esperaS` is present ONLY for GoTrue's per-address send throttle: the mail is not lost,
+   *  it is early, and the wait is a number of SECONDS. Everything else is a failure to fix,
+   *  not a failure to wait out. */
+  | { ok: false; error: string; esperaS?: number };
 
 const DEMASIADOS_CORREOS =
-  "Ya enviamos varios correos a esta dirección. Espera unos minutos antes de volver a intentarlo.";
+  "Ya te enviamos un correo hace un momento. Ábrelo — es el que sirve.";
+
+/** GoTrue's default per-address send window. Used when its message names no number. */
+const ESPERA_POR_DEFECTO_S = 60;
+
+/**
+ * The seconds GoTrue itself names ("you can only request this after 46 seconds"), or the 60 s
+ * window when the message carries no number.
+ *
+ * This is the whole difference between the screen that wedged Marce on 09-01 and one she could
+ * have acted on. She registered, tapped the desk invite 32 s later, and was told the mail had
+ * not gone out — it had; the window simply had 28 s left. "Espera unos minutos" is the wrong
+ * unit AND unactionable; a countdown is neither.
+ */
+function segundosDeEspera(message: string): number {
+  const m = /(\d+)\s*second/i.exec(message);
+  const s = m ? Number(m[1]) : NaN;
+  return Number.isFinite(s) && s > 0 ? s : ESPERA_POR_DEFECTO_S;
+}
 const ERROR_GENERICO = "No pudimos crear tu cuenta. Inténtalo de nuevo en unos minutos.";
 
 /** GoTrue codes → es-MX, the map `sesion.ts` already keeps for login (:16-25). Until now
  *  this door rendered `error.message` verbatim, so a Spanish signup form answered in
  *  English (FC-19). An unmapped code falls back rather than leaking the raw string. */
 const ERRORES_SIGNUP: Record<string, string> = {
-  over_email_send_rate_limit: DEMASIADOS_CORREOS,
   email_address_invalid: "Ese correo no es válido. Revísalo e inténtalo de nuevo.",
   weak_password: "Esa contraseña es muy débil. Usa al menos 8 caracteres y combina letras y números.",
   signup_disabled: "El registro está cerrado en este momento. Pide tu acceso en el gimnasio.",
 };
 
-function mensajeDeError(error: {
-  code?: string | undefined;
-  status?: number | undefined;
-}): string {
+function mensajeDeError(error: { code?: string | undefined }): string {
   const mapeado = error.code ? ERRORES_SIGNUP[error.code] : undefined;
-  if (mapeado) return mapeado;
-  // Any other 429-class code the SDK adds later is still a throttle, not a bad password.
-  if (error.status === 429) return DEMASIADOS_CORREOS;
-  return ERROR_GENERICO;
+  return mapeado ?? ERROR_GENERICO;
 }
 
 /** How fresh `auth.users.created_at` has to be for the returned row to be the one this
@@ -170,6 +184,11 @@ export async function registrarSocio(
         error: error.message,
       }),
     );
+    // A throttle is a wait, not a rejection — it rides back with the seconds so the screen can
+    // count them down instead of offering a retry that is guaranteed to fail.
+    if (error.code === "over_email_send_rate_limit" || error.status === 429) {
+      return { ok: false, error: DEMASIADOS_CORREOS, esperaS: segundosDeEspera(error.message) };
+    }
     return { ok: false, error: mensajeDeError(error) };
   }
   // No mail was sent on this arm, so it must not spend the throttle either.
