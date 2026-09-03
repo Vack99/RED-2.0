@@ -62,10 +62,8 @@ export interface QuickGlanceSheetProps {
   candidates?: CandidateRow[];
   rosterLoading?: boolean;
   rosterBusy?: Set<string>;
-  /** #238 tense: has this session not started yet (`now < startsAt`)? Drives the add button's
-   *  verb + the empty state only — the parent owns the write-path branch. */
-  antesDeInicio?: boolean;
-  /** #238: `now >= startsAt`. Hides the roster's cancel × once the RPC would refuse it. */
+  /** #238: `now >= startsAt`. Hides the roster's cancel × once the RPC would refuse it, and
+   *  its negation is the add button's tense — one bit, so the two can never contradict. */
   claseIniciada?: boolean;
   /** #235 story 10: the last add the RPC refused over balance/vigencia — the roster shows that
    *  member's line to Vender. The parent owns both the classification and the prebuilt href. */
@@ -92,7 +90,6 @@ export function QuickGlanceSheet({
   candidates = [],
   rosterLoading = false,
   rosterBusy,
-  antesDeInicio = false,
   claseIniciada = false,
   ventaSugerida,
   onTogglePresent,
@@ -161,7 +158,6 @@ export function QuickGlanceSheet({
             candidates={candidates}
             loading={rosterLoading}
             busy={rosterBusy ?? EMPTY_BUSY}
-            antesDeInicio={antesDeInicio}
             claseIniciada={claseIniciada}
             ventaSugerida={ventaSugerida}
             onToggle={onTogglePresent}

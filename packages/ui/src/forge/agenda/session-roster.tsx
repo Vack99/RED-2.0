@@ -94,10 +94,9 @@ export interface SessionRosterProps {
   loading: boolean;
   /** clienteIds with a mark/add in flight — their row shows a pending affordance. */
   busy: Set<string>;
-  /** Tense (#238): has the class not started yet (`now < startsAt`)? Copy only — the parent
-   *  re-derives it against a fresh clock inside `onAddWalkIn` to choose the write. */
-  antesDeInicio: boolean;
-  /** `now >= startsAt` — the cancel RPC's own gate, so the × is not offered past it. */
+  /** `now >= startsAt`. ONE bit, two jobs: it hides the cancel × once the RPC would refuse it,
+   *  and its negation is the #238 add-tense. Copy only — the parent re-derives the tense against
+   *  a fresh clock inside `onAddWalkIn` to choose the write. */
   claseIniciada: boolean;
   /** The last add the RPC refused over balance/vigencia (#235 story 10). Omit for no line. */
   ventaSugerida?: VentaSugerida;
@@ -112,7 +111,6 @@ export function SessionRoster({
   candidates,
   loading,
   busy,
-  antesDeInicio,
   claseIniciada,
   ventaSugerida,
   onToggle,
@@ -123,7 +121,7 @@ export function SessionRoster({
   const [query, setQuery] = React.useState("");
 
   const { presentes, total } = rosterResumen(rows);
-  const copia = copiaAgregar(antesDeInicio);
+  const copia = copiaAgregar(!claseIniciada);
   const q = query.trim().toLowerCase();
   const matches = q ? candidates.filter((c) => c.nombre.toLowerCase().includes(q)) : candidates;
 

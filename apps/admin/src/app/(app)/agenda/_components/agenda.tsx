@@ -769,7 +769,6 @@ export function AgendaScreen(props: AgendaScreenProps) {
           candidates={glance.candidates}
           rosterLoading={glance.loading}
           rosterBusy={rosterBusy}
-          antesDeInicio={accionAgregar(cardActual.startsAtIso, ahora) === "reservar"}
           claseIniciada={new Date(cardActual.startsAtIso).getTime() <= ahora.getTime()}
           ventaSugerida={ventaSugerida ?? undefined}
           onTogglePresent={runPase}

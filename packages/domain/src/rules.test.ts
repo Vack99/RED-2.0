@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { antesDeVentanaArribo, calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, copiaReservasEnLinea, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enCurso, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, sesionMasCercana, urgenciaCliente, ventanaArribo } from "./rules";
+import { calcularCorteMes, calcularResumenMes, calcVigenciaEnd, consumirClase, copiaReservasEnLinea, cupoValido, derivarEstado, derivarEstadoSesion, derivarEstadosDia, diasRestantes, disponibles, duracionValida, enCurso, enVentanaArribo, esNoAsistio, estaVencido, forfeit, horaValida, indicePrimeraNoPasada, materializarSesion, modo, muestraEspecial, nombrePaquete, ratioOcupacion, renderPlantilla, sesionMasCercana, urgenciaCliente, ventanaArribo } from "./rules";
 import { VENTANA_ARRIBO_GRACIA_MIN, VENTANA_ARRIBO_PREVIA_MIN } from "./rules";
 import type { AsistenciaResumen, VentaResumen } from "./types";
 
@@ -650,41 +650,15 @@ describe("ventanaArribo / esNoAsistio — the arrival window (2026-07-29)", () =
   });
 });
 
-describe("antesDeVentanaArribo — the reserva/visita tense (#238)", () => {
-  // Same 18:00 UTC start; the opening edge is 16:30. This predicate decides which RECORD a
-  // single operator tap writes — a future booking or an arrival — so the edge is the contract.
+describe("enVentanaArribo — the desk's RESERVA-chip window (#179)", () => {
+  // 18:00 UTC start, so the window opens at 16:30. Half-open [desde, hasta), matching the
+  // SQL tstzrange: the opening instant is INSIDE, one ms earlier is not.
   const INICIO = new Date("2026-07-29T18:00:00.000Z");
   const ABRE = new Date("2026-07-29T16:30:00.000Z");
 
-  it("is FALSE exactly at the opening instant — the window is already open, so the tap checks in", () => {
-    expect(antesDeVentanaArribo(INICIO, ABRE)).toBe(false);
-  });
-
-  it("is TRUE one ms before the opening instant, FALSE one ms after", () => {
-    expect(antesDeVentanaArribo(INICIO, new Date(ABRE.getTime() - 1))).toBe(true);
-    expect(antesDeVentanaArribo(INICIO, new Date(ABRE.getTime() + 1))).toBe(false);
-  });
-
-  it("is TRUE deep before the class — a phone call the day before books", () => {
-    expect(antesDeVentanaArribo(INICIO, new Date("2026-07-28T09:00:00.000Z"))).toBe(true);
-  });
-
-  it("never WRAPS: past the window's CLOSING edge it still resolves to the check-in side", () => {
-    const { hasta } = ventanaArribo(INICIO, 60); // 19:15
-    expect(antesDeVentanaArribo(INICIO, hasta)).toBe(false);
-    expect(antesDeVentanaArribo(INICIO, new Date("2026-08-05T09:00:00.000Z"))).toBe(false);
-  });
-
-  it("agrees with enVentanaArribo at the shared edge — one boundary, two readings", () => {
+  it("is TRUE exactly at the opening instant, FALSE one ms before", () => {
     expect(enVentanaArribo(INICIO, 60, ABRE)).toBe(true);
     expect(enVentanaArribo(INICIO, 60, new Date(ABRE.getTime() - 1))).toBe(false);
-  });
-
-  it("takes the lead as a PARAMETER (#234): a 30-min gym opens its window an hour later", () => {
-    const menos60 = new Date("2026-07-29T17:00:00.000Z");
-    expect(antesDeVentanaArribo(INICIO, menos60)).toBe(false); // open under the 90-min default
-    expect(antesDeVentanaArribo(INICIO, menos60, 30)).toBe(true); // still shut under a 30-min lead
-    expect(antesDeVentanaArribo(INICIO, new Date("2026-07-29T17:30:00.000Z"), 30)).toBe(false);
   });
 });
 

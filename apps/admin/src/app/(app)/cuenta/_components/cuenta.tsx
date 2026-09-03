@@ -112,6 +112,10 @@ const SW_PERILLA = 20;
  * in tokens only (`--yellow` is the FILL accent, `--yellow-fg` its contrast-checked
  * foreground, so the knob stays legible on every brand module). The input itself is the
  * full-size invisible hit target; the visible chrome is `aria-hidden`.
+ *
+ * Its focus ring can't be expressed inline (:focus-visible), so it lives in the screen's own
+ * one `<style>` below — never here, where it would be phrasing-invalid inside the row's
+ * `<label>` and re-emitted once per switch.
  */
 function Interruptor({
   encendido,
@@ -129,14 +133,6 @@ function Interruptor({
       className="relative inline-flex shrink-0 items-center"
       style={{ width: SW_ANCHO, height: SW_ALTO, opacity: pendiente ? 0.45 : 1 }}
     >
-      {/* A focus ring can't be expressed inline (:focus-visible) — one tiny local rule,
-          same idiom as LogoutButton. */}
-      <style>{`
-        .forge-switch:focus-visible + .forge-switch-riel {
-          outline: 2px solid var(--gold);
-          outline-offset: 3px;
-        }
-      `}</style>
       <input
         type="checkbox"
         role="switch"
@@ -253,6 +249,11 @@ export function CuentaScreen({
   // landing the server's own value underneath.
   const [cortePending, setCortePending] = React.useState(false);
   const [corteOn, setCorteOn] = React.useState(corteReservas);
+  // …and the server's value wins whenever it lands: SenalGym refreshes this route when ANOTHER
+  // device flips the cutoff, and without this the knob and its sentence would keep showing the
+  // local value — the opposite of the DB — with the next tap re-asserting it.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing local switch state to a changed server prop is exactly the sanctioned use
+  React.useEffect(() => setCorteOn(corteReservas), [corteReservas]);
   const router = useRouter();
   const sinLeer = mensajes.filter((m) => !m.leido).length;
 
@@ -404,6 +405,15 @@ export function CuentaScreen({
 
   return (
     <div>
+      {/* The screen's one local rule — a :focus-visible ring can't be expressed inline
+          (same idiom as LogoutButton). */}
+      <style>{`
+        .forge-switch:focus-visible + .forge-switch-riel {
+          outline: 2px solid var(--gold);
+          outline-offset: 3px;
+        }
+      `}</style>
+
       {esCupo && (
         <>
           <PlantillasSheet

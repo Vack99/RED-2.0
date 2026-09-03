@@ -264,12 +264,13 @@ export function canceladasLinea(clasesCanceladas: number): string {
  *
  * The boundary is the class's START (owner ruling 2026-09-02, superseding the 90-min arm of
  * #235 ruling 3 for THIS button only): a pick books a reserva until the class begins, and
- * records a visita from that instant on. It is deliberately NOT `antesDeVentanaArribo` — that
- * predicate still owns the ±90-min pasa-lista preselect and `ventana_arribo`, but here it made
- * the last 90 minutes before a class un-bookable, so an early arrival could not be booked at
- * all. Now they are two taps: book, then mark the row present. `ahora < startsAt` is also the
- * RPC's OWN gate (`reservar_clase` raises 'La clase ya comenzó' at exactly this edge), so the
- * button never offers a write the database will refuse.
+ * records a visita from that instant on. The old rule keyed on the arrival window, which opens
+ * 90 min early — that made the last 90 minutes before a class un-bookable, so an early arrival
+ * could not be booked at all. Now that is two taps: book, then mark the row present. The ±90-min
+ * window still governs the pasa-lista preselects (`enVentanaArribo`, `sesionMasCercana`); it just
+ * no longer governs THIS button. `ahora < startsAt` is also the RPC's OWN gate (`reservar_clase`
+ * raises 'La clase ya comenzó' at exactly this edge), so the button never offers a write the
+ * database will refuse.
  */
 export function accionAgregar(startsAtIso: string, ahora: Date): "reservar" | "pase" {
   return ahora.getTime() < new Date(startsAtIso).getTime() ? "reservar" : "pase";

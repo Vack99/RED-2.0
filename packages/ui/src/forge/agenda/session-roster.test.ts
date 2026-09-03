@@ -38,6 +38,16 @@ describe("copiaAgregar", () => {
     });
   });
 
+  // The collapse (review 2026-09-02): the roster now derives this from `!claseIniciada` — the
+  // SAME bit that hides the cancel ×. One bit means the button can never offer RESERVA on a
+  // class the cancel gate already treats as started.
+  it("is the exact negation of claseIniciada — one bit, so the two affordances agree", () => {
+    for (const claseIniciada of [true, false]) {
+      expect(copiaAgregar(!claseIniciada).boton).toBe(claseIniciada ? "Agregar visita" : "Agregar reserva");
+      expect(puedeCancelarReserva({ present: false }, claseIniciada)).toBe(!claseIniciada);
+    }
+  });
+
   it("keeps the empty state and the button on the same verb — they can never contradict", () => {
     for (const antes of [true, false]) {
       const { boton, vacio } = copiaAgregar(antes);
