@@ -75,3 +75,9 @@ The five canonical roles, with one remap: `ready-for-human` is spelled **`hitl`*
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + one `docs/adr/` at the root, shared by every package. See `docs/agents/domain.md`.
+
+## Fable seats: model + effort (owner, 2026-09-02)
+
+When the owner authorizes a fable seat for a subagent/workflow, it runs as **Claude Fable 5.1** at **effort `high`** —
+never `xhigh`/`max`, never Fable 5. Authorization is per session, in the owner's words, with a seat count; it never
+carries over. The same caps + Fable rule now live at user level (`~/.claude/CLAUDE.md`) for every project.
